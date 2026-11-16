@@ -62,7 +62,6 @@ function emLotes<T>(itens: T[], tamanho = LOTE_INSERCAO): T[][] {
 export function hojeEmSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 }
-
 // ---------------------------------------------------------------------------
 // Mapeamento banco → tela
 // ---------------------------------------------------------------------------
@@ -710,7 +709,7 @@ export async function triarPublicacoes(
   filtro: { ids?: string[]; arquivoId?: string; incluirSemPasta?: boolean } = {}
 ): Promise<TriagemResumo> {
   const db = admin();
-  let consulta = db.from("vistagem_publicacoes").select("id, processo_digitos, teor").limit(2000);
+  let consulta = db.from("vistagem_publicacoes").select("id, processo_digitos, teor, status, pendencia, pasta_ci").limit(2000);
   consulta = filtro.incluirSemPasta
     ? consulta.or("status.eq.captada,and(status.eq.triagem_pendente,pendencia.in.(sem_pasta,varias_pastas,sem_area,sem_grupo))")
     : consulta.eq("status", "captada");
@@ -719,7 +718,10 @@ export async function triarPublicacoes(
   const { data, error } = await consulta;
   if (error) falhou("carregar as publicações para a triagem", error);
 
-  const alvos = (data ?? []) as { id: string; processo_digitos: string | null; teor: string }[];
+  // Sem pasta, mas com a CI que o robô abriu (Fase 3): espera a responsável conferir e liberar. A triagem não mexe,
+  // senão apagaria a CI até o SIOE copiar a pasta nova (de madrugada).
+  type Alvo = { id: string; processo_digitos: string | null; teor: string; status: string; pendencia: string | null; pasta_ci: string | null };
+  const alvos = ((data ?? []) as Alvo[]).filter((alvo) => !(alvo.status === "triagem_pendente" && alvo.pendencia === "sem_pasta" && alvo.pasta_ci));
   const resumo: TriagemResumo = { triadas: 0, juridico: 0, pendentes: 0, descartadas: 0, porEscritorio: {} };
   if (alvos.length === 0) return resumo;
   // Ex-cliente sem o escritório: a lista BKP registrava em Operações Legais, sem tipo; vai para o BKP do SIOE no fim (desligado até a troca).

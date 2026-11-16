@@ -117,6 +117,25 @@ describe("CartoesTarefas: prazo apertado", () => {
   });
 });
 
+describe("CartoesTarefas: Ciência dos Agendamentos vistada noutro dia (pedido de 13/11/2026)", () => {
+  // 1002399-97 (13/11/2026): vistada às 21h35 de 12/11; a Giovanna trocava a data para 13/11 no lápis.
+  const ciencia = (extra: Partial<AgendamentoResumo> = {}) =>
+    agendamento({ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", tarefaId: "321", data: "2026-11-12", dataFatal: null, ...extra });
+  const texto = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+  it("mostra a data do envio e diz que não precisa editar", () => {
+    const html = texto(cartoes(ciencia({ enviarHoje: "2026-11-13" }), { hoje: "2026-11-13" }));
+    expect(html).toContain("Data no VIOS 13/11/2026");
+    expect(html).toContain("Vistada para 12/11/2026, que já passou: vai com a data do envio (13/11/2026). Não precisa editar.");
+  });
+
+  it("com a data ainda valendo, mostra a gravada, sem aviso", () => {
+    const html = texto(cartoes(ciencia({ data: "2026-11-13", enviarHoje: null }), { hoje: "2026-11-13" }));
+    expect(html).toContain("Data no VIOS 13/11/2026");
+    expect(html).not.toContain("que já passou");
+  });
+});
+
 describe("CartoesTarefas: de onde veio o prazo (pedido de 11/11/2026)", () => {
   const prazo = (extra: Partial<AgendamentoResumo> = {}) =>
     agendamento({ etiqueta: "PRAZO", tarefa: "APRESENTAR/IMPUGNAR CÁLCULOS", tarefaId: "500", data: "2027-01-22", dataFatal: "2027-01-27", revisor: "Lucas Sebinel Miranda", ...extra });

@@ -16,7 +16,7 @@ export type OrigemDaRegra = "codigo" | "vios" | "sioe" | "servidor" | "configura
 
 export const ORIGEM_DA_REGRA: Record<OrigemDaRegra, { rotulo: string; dica: string }> = {
   configuravel: { rotulo: "Editável aqui", dica: "Muda nesta tela; vale a partir da próxima rodada." },
-  codigo: { rotulo: "Fixa no sistema", dica: "Muda com um ajuste no código do Orquestra." },
+  codigo: { rotulo: "Fixa no sistema", dica: "Muda com um ajuste no código do ORQESTRAI." },
   vios: { rotulo: "Vem do VIOS", dica: "Segue o cadastro do VIOS (fluxos, tarefas, usuários): muda lá." },
   sioe: { rotulo: "Vem do SIOE", dica: "Segue o SIOE (pastas, áreas das pessoas, feriados): muda lá." },
   servidor: { rotulo: "Variável do servidor", dica: "Ligada na Vercel: muda com a configuração do servidor (pedir ao suporte)." },

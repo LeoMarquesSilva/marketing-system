@@ -45,6 +45,19 @@ export function isRsvpOpen(closesAt: string | null, now: Date = new Date()): boo
   return !Number.isNaN(deadline.getTime()) && now.getTime() <= deadline.getTime();
 }
 
+/**
+ * Prazo de uma pessoa: o do evento, ou o próprio do convite quando for mais longo (prorrogação individual).
+ * Sem prazo no evento, a confirmação está desligada para todos, e o prazo do convite não a reabre.
+ */
+export function personalDeadline(eventClosesAt: string | null, inviteClosesAt: string | null | undefined): string | null {
+  if (!eventClosesAt) return null;
+  if (!inviteClosesAt) return eventClosesAt;
+  const own = new Date(inviteClosesAt).getTime();
+  const general = new Date(eventClosesAt).getTime();
+  if (Number.isNaN(own)) return eventClosesAt;
+  return own > general ? inviteClosesAt : eventClosesAt;
+}
+
 /** "13/11" (ou "13/11 às 23h59" com a hora), sempre no horário de Brasília. */
 export function formatRsvpDeadline(closesAt: string, withTime = false): string {
   const date = new Date(closesAt);

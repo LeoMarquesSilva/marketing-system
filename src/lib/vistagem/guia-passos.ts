@@ -68,7 +68,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "vg-gestao-hoje",
       titulo: "O arquivo de hoje",
       texto:
-        "Primeiro, veja se o arquivo da Kurier de hoje chegou: Chegou, Importando, Com erro, Não chegou ou Aguardando. O Orquestra busca sozinho no SharePoint entre 7h e 8h, tenta de novo entre 9h e 10h nos dias úteis, e já faz a triagem.",
+        "Primeiro, veja se o arquivo da Kurier de hoje chegou: Chegou, Importando, Com erro, Não chegou ou Aguardando. O ORQESTRAI busca sozinho no SharePoint entre 7h e 8h, tenta de novo entre 9h e 10h nos dias úteis, e já faz a triagem.",
     },
     {
       id: "buscar",
@@ -271,7 +271,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-vazio",
       titulo: "Sugestão da IA",
       texto:
-        "No Trabalhista, a IA lê a publicação e propõe as tarefas, com o porquê e o grau de confiança; sem prazo nem providência, ela sugere CIÊNCIA NF. \"Usar sugestão\" preenche as tarefas (e o eSocial): confira responsável e datas antes de enviar. Dá para Desfazer ou Ignorar.",
+        "Em todas as áreas, menos Operações Legais, a IA lê a publicação e propõe as tarefas, com o porquê e o grau de confiança. Ela segue as regras da área e o costume do escritório (o que os advogados agendaram nas vistagens recentes). Sem prazo nem providência, sugere CIÊNCIA NF, com um aviso para conferir. \"Usar sugestão\" preenche as tarefas (no Trabalhista, também o eSocial): confira responsável e datas antes de enviar. Dá para Desfazer ou Ignorar.",
     },
     {
       id: "tarefas",
@@ -303,7 +303,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-vazio",
       titulo: "Envie para a conferência",
       texto:
-        "Com todas as tarefas prontas, clique em \"Enviar para conferência\": a controladoria confere e o robô lança no VIOS (sem pasta no VIOS, depois de conferida vira pedido de abertura de pasta na Central do SharePoint). Se nada criar a Ciência dos Agendamentos, o Orquestra acrescenta sozinho (menos quando a vistagem é só CIÊNCIA NF, VERIFICAR RENÚNCIA ou SESSÃO DE JULGAMENTO), e a próxima publicação abre.",
+        "Com todas as tarefas prontas, clique em \"Enviar para conferência\": a controladoria confere e o robô lança no VIOS (sem pasta no VIOS, depois de conferida vira pedido de abertura de pasta na Central do SharePoint). Se nada criar a Ciência dos Agendamentos, o ORQESTRAI acrescenta sozinho (menos quando a vistagem é só CIÊNCIA NF, VERIFICAR RENÚNCIA ou SESSÃO DE JULGAMENTO), e a próxima publicação abre.",
     },
     {
       id: "vistado",
@@ -405,7 +405,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "ck-busca",
       titulo: "Achar uma publicação",
       texto:
-        "Busque por processo, cliente, parte, pessoa ou CI. Ao lado, filtre por área, tribunal, tipo de agendamento (Ciência NF, Prazo, Providência ou Compromisso) e datas.",
+        "Busque por processo, cliente, parte, pessoa ou CI. Nas Checadas, a lista mostra um dia de importação por vez (hoje, ao abrir; troque em \"Data da importação\"), e a busca procura em todas as checadas, de qualquer dia. Ao lado, filtre por área, tribunal, tipo de agendamento (Ciência NF, Prazo, Providência ou Compromisso) e datas.",
     },
     {
       id: "fila",
@@ -495,7 +495,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "cg-ia",
       titulo: "Inteligência artificial",
       texto:
-        "Liga e desliga a sugestão de tarefas (Trabalhista) e a sugestão de pasta (Triagem Manual); salva no clique. Nenhuma das duas grava nada sozinha: só sugere.",
+        "Liga e desliga a sugestão de tarefas (todas as áreas, menos Operações Legais) e a sugestão de pasta (Triagem Manual); salva no clique. Nenhuma das duas grava nada sozinha: só sugere.",
     },
     {
       id: "resumo",

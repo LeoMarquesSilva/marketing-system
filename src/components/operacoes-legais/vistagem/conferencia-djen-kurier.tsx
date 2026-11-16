@@ -281,9 +281,9 @@ export function ConferenciaDjenKurierView({
             </p>
             <p>
               O estudo começa em {INICIO_POR_EXTENSO}. O par é pelo ID de comunicação do DJEN (a Kurier traz o mesmo); sem ele, pelo processo no
-              mesmo dia. A Kurier lida é a da tabela do Orquestra.{" "}
+              mesmo dia. A Kurier lida é a da tabela do ORQESTRAI.{" "}
               <strong className="font-medium text-foreground">BKP:</strong> só antes de 09/11/2026 (as limpezas do piloto deixaram só o
-              Trabalhista no Orquestra), o que falta vem do BKP de publicações do SIOE, sem o ID: ali o par é pelo processo, uma vez por
+              Trabalhista no ORQESTRAI), o que falta vem do BKP de publicações do SIOE, sem o ID: ali o par é pelo processo, uma vez por
               processo e dia.
             </p>
             <p>

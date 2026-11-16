@@ -104,7 +104,7 @@ async function canInteractWith(db: SupabaseClient, target: CelebrationTarget): P
   return target.kind === "aniversario" || since.year - Number(date.slice(0, 4)) >= 1;
 }
 
-export type CelebrationCounts = { likes: number; liked: boolean; comments: number };
+export type CelebrationCounts = { likes: number; liked: boolean; comments: number; praises: number };
 
 /** Curtidas e comentários de várias comemorações de uma vez (chave: `celebrationKey`). */
 export async function celebrationCounts(
@@ -116,17 +116,18 @@ export async function celebrationCounts(
   if (targets.length === 0) return result;
   const ids = [...new Set(targets.map((target) => target.employeeId))];
   const years = [...new Set(targets.map((target) => target.year))];
-  const [reactions, comments] = await Promise.all([
+  const [reactions, comments, praises] = await Promise.all([
     db.from("hr_celebration_reactions").select("employee_id, kind, year, user_id").in("employee_id", ids).in("year", years),
     db.from("hr_celebration_comments").select("employee_id, kind, year").in("employee_id", ids).in("year", years),
+    db.from("hr_celebration_praises").select("employee_id, kind, year").in("employee_id", ids).in("year", years),
   ]);
-  if (reactions.error || comments.error) {
-    console.error(`[${LOG}] contagem:`, reactions.error?.message ?? comments.error?.message);
+  if (reactions.error || comments.error || praises.error) {
+    console.error(`[${LOG}] contagem:`, reactions.error?.message ?? comments.error?.message ?? praises.error?.message);
     return result;
   }
   const entry = (row: { employee_id: unknown; kind: unknown; year: unknown }) => {
     const key = celebrationKey({ employeeId: row.employee_id as string, kind: row.kind as BirthdayArtKind, year: row.year as number });
-    const current = result.get(key) ?? { likes: 0, liked: false, comments: 0 };
+    const current = result.get(key) ?? { likes: 0, liked: false, comments: 0, praises: 0 };
     result.set(key, current);
     return current;
   };
@@ -136,6 +137,7 @@ export async function celebrationCounts(
     if (row.user_id === userId) current.liked = true;
   }
   for (const row of comments.data ?? []) entry(row).comments += 1;
+  for (const row of praises.data ?? []) entry(row).praises += 1;
   return result;
 }
 

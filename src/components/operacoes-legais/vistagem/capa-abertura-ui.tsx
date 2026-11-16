@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ElementType, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ElementType, type KeyboardEvent, type ReactNode } from "react";
 import {
   Bot,
   Check,
   CircleAlert,
   CircleCheck,
   FileText,
+  FolderPlus,
   LoaderCircle,
   PencilLine,
   RefreshCw,
@@ -18,9 +19,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
+import { chaveNome } from "@/lib/vistagem/agendamento";
 import {
   CAMPOS_DA_CAPA,
   montarCapa,
+  nomesDaLista,
   resumoDaCapa,
   ROTULO_DA_FONTE,
   type CampoDaCapa,
@@ -30,11 +33,16 @@ import {
   type DefinicaoDoCampo,
   type FonteDaCapa,
   type GrupoDaCapa,
+  type ListaDoVios,
   type ListasDoVios,
   type PedidoDeAbertura,
   rotuloDoCampoDoRobo,
+  ciDaPastaAberta,
+  situacaoDaAberturaReal,
   type StatusDaFonte,
 } from "@/lib/vistagem/capa-abertura";
+import { linkPastaVios } from "@/lib/vistagem/vios-links";
+import { ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { Aviso, campoClasse, Secao } from "./ui";
 
 export type EstadoDataJud = { carregando: true } | { carregando: false; resultado: (CapaDoDataJud & { ms: number }) | null; erro: string | null };
@@ -47,6 +55,13 @@ export interface EstadoDaAbertura {
 }
 
 const NA_FILA = new Set<PedidoDeAbertura["status"]>(["pendente", "enviado", "processando"]);
+
+/** O que a rota da abertura devolve (GET e POST). */
+interface RespostaDaAbertura {
+  pedidos: PedidoDeAbertura[];
+  aberturaReal: boolean;
+  pastaAberta: AberturaReal["pastaAberta"];
+}
 
 /** Grava ou desfaz a edição de um campo; devolve a mensagem de erro (ou null). */
 export type AoEditarCampo = (chave: ChaveDaCapa, edicao: { valor: string } | { desfazer: true }) => Promise<string | null>;
@@ -101,24 +116,48 @@ async function lerJson<T>(resposta: Response, padrao: string): Promise<T> {
  * Sem pasta (possível abertura): o resumo da capa que o Orquestra montaria para abrir a pasta no VIOS e, num diálogo,
  * a capa inteira para conferir e editar (lápis). As edições ficam gravadas na publicação; nada vai para o VIOS ainda.
  */
-export function CapaParaAberturaDePasta({ publicacaoId }: { publicacaoId: string }) {
+export function CapaParaAberturaDePasta({
+  publicacaoId,
+  onPastaAberta,
+}: {
+  publicacaoId: string;
+  /** Depois da abertura de verdade: a CI nova, para a Triagem Manual liberar com ela (a publicação continua aqui). */
+  onPastaAberta?: (ci: string) => void;
+}) {
   const [capa, setCapa] = useState<CapaParaAbertura | null>(null);
   const [erro, setErro] = useState("");
   const [datajud, setDatajud] = useState<EstadoDataJud>({ carregando: true });
   const [recarga, setRecarga] = useState(0);
   const [aberta, setAberta] = useState(false);
   const [abertura, setAbertura] = useState<EstadoDaAbertura>({ pedidos: [], enviando: false, erro: "" });
+  const [aberturaReal, setAberturaReal] = useState(false);
+  const [pastaAberta, setPastaAberta] = useState<AberturaReal["pastaAberta"]>(null);
+  const avisada = useRef<string | null>(null);
   const url = `/api/operacoes-legais/vistagem/publicacoes/${publicacaoId}/capa`;
   const naFila = abertura.pedidos[0] ? NA_FILA.has(abertura.pedidos[0].status) : false;
+
+  // Só mexe no estado: fica a mesma função entre as renderizações (o efeito de leitura não roda de novo por causa dela).
+  const receber = useCallback((corpo: RespostaDaAbertura) => {
+    setAbertura((atual) => ({ ...atual, pedidos: corpo.pedidos }));
+    setAberturaReal(corpo.aberturaReal);
+    setPastaAberta(corpo.pastaAberta);
+  }, []);
+
+  // A publicação continua na triagem com a CI nova: avisa a tela uma vez para o "Para onde vai" liberar com ela.
+  useEffect(() => {
+    if (!pastaAberta?.naTriagem || avisada.current === pastaAberta.ci) return;
+    avisada.current = pastaAberta.ci;
+    onPastaAberta?.(pastaAberta.ci);
+  }, [pastaAberta, onPastaAberta]);
 
   // Pedidos ao robô: lê ao abrir e, enquanto o último estiver na fila, de novo a cada 10 s.
   useEffect(() => {
     let cancelado = false;
     const ler = () =>
       authFetch(`${url}/abrir`)
-        .then((resposta) => lerJson<{ pedidos: PedidoDeAbertura[] }>(resposta, "Falha ao consultar o robô"))
+        .then((resposta) => lerJson<RespostaDaAbertura>(resposta, "Falha ao consultar o robô"))
         .then((corpo) => {
-          if (!cancelado) setAbertura((atual) => ({ ...atual, pedidos: corpo.pedidos }));
+          if (!cancelado) receber(corpo);
         })
         .catch(() => undefined);
     void ler();
@@ -127,14 +166,19 @@ export function CapaParaAberturaDePasta({ publicacaoId }: { publicacaoId: string
       cancelado = true;
       if (relogio) clearInterval(relogio);
     };
-  }, [url, naFila]);
+  }, [url, naFila, receber]);
 
-  async function simular() {
+  async function pedir(modo: "simular" | "abrir", conferidoNoVios = false) {
     setAbertura((atual) => ({ ...atual, enviando: true, erro: "" }));
     try {
-      const resposta = await authFetch(`${url}/abrir`, { method: "POST" });
-      const corpo = await lerJson<{ pedidos: PedidoDeAbertura[] }>(resposta, "Falha ao pedir a abertura");
-      setAbertura({ pedidos: corpo.pedidos, enviando: false, erro: "" });
+      const resposta = await authFetch(`${url}/abrir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modo, conferidoNoVios }),
+      });
+      const corpo = await lerJson<RespostaDaAbertura>(resposta, "Falha ao pedir a abertura");
+      receber(corpo);
+      setAbertura((atual) => ({ ...atual, enviando: false, erro: "" }));
     } catch (e) {
       setAbertura((atual) => ({ ...atual, enviando: false, erro: e instanceof Error ? e.message : "Falha ao pedir a abertura." }));
     }
@@ -195,7 +239,8 @@ export function CapaParaAberturaDePasta({ publicacaoId }: { publicacaoId: string
         onAbrir={() => setAberta(true)}
         onBuscarDeNovo={buscarDeNovo}
         abertura={abertura}
-        onSimular={simular}
+        onSimular={() => void pedir("simular")}
+        real={{ ligada: aberturaReal, pastaAberta, onAbrir: (conferidoNoVios) => void pedir("abrir", conferidoNoVios) }}
       />
       <Dialog open={aberta} onOpenChange={setAberta}>
         <DialogContent
@@ -236,6 +281,7 @@ export function ResumoDaCapaView({
   onBuscarDeNovo,
   abertura,
   onSimular,
+  real,
 }: {
   capa: CapaParaAbertura | null;
   erro: string;
@@ -244,6 +290,7 @@ export function ResumoDaCapaView({
   onBuscarDeNovo: () => void;
   abertura?: EstadoDaAbertura;
   onSimular?: () => void;
+  real?: AberturaReal;
 }) {
   const campos = useMemo(() => (capa ? camposDaCapa(capa, datajud) : []), [capa, datajud]);
   const { faltando, conferir, editados } = resumoDaCapa(campos);
@@ -312,7 +359,7 @@ export function ResumoDaCapaView({
             Conferir e editar a capa
           </Button>
           {abertura && onSimular ? (
-            <BlocoDoRobo abertura={abertura} faltando={faltando.length} onSimular={onSimular} />
+            <BlocoDoRobo abertura={abertura} faltando={faltando.length} onSimular={onSimular} real={real} />
           ) : (
             <p className="text-[11px] text-muted-foreground">Prévia: nada é gravado no VIOS ainda.</p>
           )}
@@ -322,27 +369,143 @@ export function ResumoDaCapaView({
   );
 }
 
-/** O robô: pede a simulação da abertura (preenche o cadastro no VIOS sem gravar) e mostra o último pedido. */
-export function BlocoDoRobo({ abertura, faltando, onSimular }: { abertura: EstadoDaAbertura; faltando: number; onSimular: () => void }) {
+/** A abertura de verdade (Fase 3): a chave de Configurações, a pasta já aberta e o pedido. */
+export interface AberturaReal {
+  /** Configurações › Robô: abertura de pasta de verdade. */
+  ligada: boolean;
+  /** Depois da abertura: a CI nova e se a publicação ainda está na triagem esperando a conferência. */
+  pastaAberta: { ci: string; naTriagem: boolean; liberada: boolean } | null;
+  /** `conferidoNoVios`: a pessoa conferiu no VIOS que o pedido que parou depois do Gravar não criou a pasta. */
+  onAbrir: (conferidoNoVios: boolean) => void;
+}
+
+/**
+ * O robô. Com a chave de Configurações ligada, "Abrir a pasta no VIOS" vai direto, com confirmação (pedido de
+ * 16/11/2026: sem simulação antes; o robô confere que o número não tem pasta e só grava se o VIOS aceitar a capa
+ * inteira). Desligada, só a simulação (preenche o cadastro no VIOS sem gravar). Depois de abrir, mostra a CI nova: a
+ * publicação continua aqui para a responsável conferir a pasta no VIOS e liberar.
+ */
+export function BlocoDoRobo({
+  abertura,
+  faltando,
+  onSimular,
+  real,
+}: {
+  abertura: EstadoDaAbertura;
+  faltando: number;
+  onSimular: () => void;
+  real?: AberturaReal;
+}) {
+  const [confirmando, setConfirmando] = useState<"abrir" | "de-novo" | null>(null);
   const [ultimo] = abertura.pedidos;
   const naFila = ultimo ? NA_FILA.has(ultimo.status) : false;
+  const situacao = situacaoDaAberturaReal(abertura.pedidos);
+  const conferirNoVios = !situacao.pode && situacao.conferirNoVios === true;
+  const aberta = real?.pastaAberta ?? null;
+  const cabecalho = (
+    <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
+      <Bot className="size-3.5" aria-hidden />
+      Robô
+    </p>
+  );
+
+  if (aberta) {
+    return (
+      <div className="space-y-2 border-t border-[#e6eef0] pt-3">
+        {cabecalho}
+        <Aviso tom="sucesso" titulo={`Pasta aberta no VIOS: CI ${aberta.ci}`}>
+          <a href={linkPastaVios(aberta.ci)} target="_blank" rel="noreferrer" className="block text-xs font-medium underline underline-offset-2">
+            Abrir a pasta no VIOS (nova aba)
+          </a>
+          <span className="mt-1 block text-xs">
+            {aberta.naTriagem
+              ? "Confira a pasta no VIOS (as partes ativas e passivas entram à mão) e, se estiver tudo certo, libere em \"Para onde vai\", aqui embaixo, com esta CI."
+              : aberta.liberada
+                ? "A publicação já foi liberada com esta CI."
+                : "A publicação já saiu da Triagem Manual."}
+          </span>
+        </Aviso>
+        {ultimo && !ultimo.simulado ? <PedidoDoRobo pedido={ultimo} /> : null}
+      </div>
+    );
+  }
+
+  if (!real?.ligada) {
+    return (
+      <div className="space-y-2 border-t border-[#e6eef0] pt-3">
+        {cabecalho}
+        <Button type="button" className="w-full" size="sm" onClick={onSimular} disabled={Boolean(faltando) || naFila || abertura.enviando}>
+          {abertura.enviando ? <LoaderCircle className="animate-spin" /> : <Bot />}
+          Simular a abertura no VIOS
+        </Button>
+        <p className="text-[11px] text-muted-foreground">
+          {faltando
+            ? "Preencha os obrigatórios do VIOS para simular."
+            : "O robô preenche o cadastro do processo no VIOS com esta capa e não grava: é só o teste da abertura."}
+        </p>
+        {abertura.erro ? <Aviso tom="erro">{abertura.erro}</Aviso> : null}
+        {ultimo ? <PedidoDoRobo pedido={ultimo} /> : null}
+      </div>
+    );
+  }
+
+  const podeAbrir = situacao.pode && !faltando && !naFila && !abertura.enviando;
   return (
     <div className="space-y-2 border-t border-[#e6eef0] pt-3">
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
-        <Bot className="size-3.5" aria-hidden />
-        Robô
-      </p>
-      <Button type="button" className="w-full" size="sm" onClick={onSimular} disabled={Boolean(faltando) || naFila || abertura.enviando}>
-        {abertura.enviando ? <LoaderCircle className="animate-spin" /> : <Bot />}
-        Simular a abertura no VIOS
-      </Button>
+      {cabecalho}
+      {conferirNoVios ? (
+        <Aviso tom="alerta" titulo="Confira no VIOS antes de pedir de novo">
+          <span className="block text-xs">{situacao.pode ? null : situacao.motivo}</span>
+          <Button type="button" size="xs" variant="outline" className="mt-2 bg-white" onClick={() => setConfirmando("de-novo")} disabled={Boolean(faltando) || abertura.enviando}>
+            <FolderPlus />
+            Conferi: a pasta não foi criada, abrir de novo
+          </Button>
+        </Aviso>
+      ) : (
+        <Button type="button" className="w-full" size="sm" onClick={() => setConfirmando("abrir")} disabled={!podeAbrir}>
+          {abertura.enviando ? <LoaderCircle className="animate-spin" /> : <FolderPlus />}
+          Abrir a pasta no VIOS
+        </Button>
+      )}
       <p className="text-[11px] text-muted-foreground">
         {faltando
-          ? "Preencha os obrigatórios do VIOS para simular."
-          : "O robô preenche o cadastro do processo no VIOS com esta capa e não grava: é só o teste da abertura."}
+          ? "Preencha os obrigatórios do VIOS para abrir a pasta."
+          : !situacao.pode && !conferirNoVios
+            ? situacao.motivo
+            : "O robô confere que o processo não tem pasta e só grava se o VIOS aceitar a capa inteira; senão, para sem gravar e diz o que falta."}
       </p>
       {abertura.erro ? <Aviso tom="erro">{abertura.erro}</Aviso> : null}
       {ultimo ? <PedidoDoRobo pedido={ultimo} /> : null}
+      <Dialog open={confirmando !== null} onOpenChange={(aberto) => !aberto && setConfirmando(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogTitle>{confirmando === "de-novo" ? "Abrir a pasta de novo?" : "Abrir a pasta no VIOS?"}</DialogTitle>
+          <DialogDescription>
+            {confirmando === "de-novo"
+              ? "Confirme que conferiu no VIOS e a pasta deste processo não foi criada no pedido que parou. O robô ainda procura o número no VIOS antes de gravar."
+              : "O robô confere que o processo não tem pasta, grava o cadastro no VIOS com esta capa e devolve a CI. Isto cria a pasta de verdade."}
+          </DialogDescription>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>Depois, a publicação continua aqui, com a CI nova, para você conferir a pasta e liberar.</li>
+            <li>As partes ativas e passivas, o monitoramento e as tarefas da nova demanda continuam à mão.</li>
+          </ul>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setConfirmando(null)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                const deNovo = confirmando === "de-novo";
+                setConfirmando(null);
+                real.onAbrir(deNovo);
+              }}
+            >
+              <FolderPlus />
+              Abrir a pasta
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -353,18 +516,31 @@ function PedidoDoRobo({ pedido }: { pedido: PedidoDeAbertura }) {
     return (
       <p className="flex items-center gap-2 rounded-md border border-[#dce9eb] bg-[#f6f9fa] px-3 py-2 text-xs text-[#285f7a]" role="status">
         <LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden />
-        {pedido.status === "processando" ? "O robô está preenchendo o cadastro no VIOS…" : `Na fila do robô (pedido em ${quandoPediu})…`}
+        {pedido.status === "processando"
+          ? pedido.simulado
+            ? "O robô está preenchendo o cadastro no VIOS…"
+            : "O robô está abrindo a pasta no VIOS…"
+          : `Na fila do robô (pedido em ${quandoPediu})…`}
       </p>
     );
   }
   if (pedido.status === "erro") {
     return (
-      <Aviso tom="erro" titulo={`O robô parou (pedido em ${quandoPediu})`}>
+      <Aviso tom="erro" titulo={`O robô parou (pedido ${pedido.simulado ? "de simulação" : "de abertura"} em ${quandoPediu})`}>
         {pedido.erro ?? "Erro sem mensagem."}
       </Aviso>
     );
   }
   const resultado = pedido.resultado ?? {};
+  if (!pedido.simulado) {
+    const ci = ciDaPastaAberta(pedido);
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        {ci ? `Aberta pelo robô em ${quandoPediu}` : `Pedido de abertura em ${quandoPediu}`}
+        {pedido.autor ? `, a pedido de ${pedido.autor}` : ""}.
+      </p>
+    );
+  }
   const preenchidos = Object.keys(resultado.preenchidos ?? {}).length;
   const faltou = resultado.nao_encontrados ?? [];
   const recusaria = resultado.recusaria ?? [];
@@ -379,7 +555,7 @@ function PedidoDoRobo({ pedido }: { pedido: PedidoDeAbertura }) {
       }
     >
       <span className="block text-xs">
-        {pedido.simulado ? "Nada foi gravado no VIOS." : "Pedido de verdade."} Pedido em {quandoPediu}
+        Nada foi gravado no VIOS. Pedido em {quandoPediu}
         {pedido.autor ? ` por ${pedido.autor}` : ""}.
       </span>
       {faltou.length ? (
@@ -476,7 +652,6 @@ export function CapaDaAberturaView({
             <CartaoDoGrupo titulo="Escritório" campos={porGrupo("escritorio")} {...{ capa, editando, setEditando, onEditar }} />
           </div>
         </div>
-        <Listas listas={capa.listas} />
       </div>
 
       <footer className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-[#e6eef0] px-5 py-3 text-xs text-muted-foreground">
@@ -514,19 +689,23 @@ function Fonte({ nome, status, detalhe, vazio }: { nome: string; status: StatusD
   );
 }
 
-/** As listas do VIOS que viram sugestão ao editar (usuários, matérias e sistemas). */
-function Listas({ listas }: { listas: ListasDoVios }) {
-  return (
-    <>
-      {(Object.keys(listas) as (keyof ListasDoVios)[]).map((nome) => (
-        <datalist key={nome} id={`capa-lista-${nome}`}>
-          {listas[nome].map((opcao) => (
-            <option key={opcao} value={opcao} />
-          ))}
-        </datalist>
-      ))}
-    </>
-  );
+const TITULO_DA_LISTA: Record<ListaDoVios, string> = {
+  usuarios: "Usuários do VIOS",
+  materias: "Matérias do VIOS",
+  sistemas: "Sistemas do tribunal",
+  clientes: "Clientes com pasta no VIOS",
+  acoes: "Ações usadas no VIOS",
+  etiquetas: "Etiquetas usadas no VIOS",
+};
+
+/** As opções da lista do campo; nos clientes, os do grupo da publicação primeiro, com o grupo ao lado. */
+export function opcoesDaLista(lista: ListaDoVios, listas: ListasDoVios, grupo: string | null): OpcaoBusca[] {
+  if (lista !== "clientes") return nomesDaLista(listas, lista).map((nome) => ({ id: nome, nome }));
+  const chaveDoGrupo = chaveNome(grupo);
+  const doGrupo = (clienteGrupo: string | null) => Boolean(chaveDoGrupo) && chaveNome(clienteGrupo) === chaveDoGrupo;
+  return [...(listas.clientes ?? [])]
+    .sort((a, b) => Number(doGrupo(b.grupo)) - Number(doGrupo(a.grupo)))
+    .map((cliente) => ({ id: cliente.nome, nome: cliente.nome, detalhe: cliente.grupo?.replace(/^grupo\s+/i, "") ?? null }));
 }
 
 type PropsDoCartao = {
@@ -541,8 +720,16 @@ type PropsDoCartao = {
 function CartaoDoGrupo({ titulo, campos, capa, editando, setEditando, onEditar }: PropsDoCartao) {
   const pendentes = campos.filter((campo) => campo.conferir).length;
   const largos = camposLargos(campos);
+  // Com um campo em edição, a lista de busca dele pode passar da borda do cartão.
+  const comEdicao = campos.some((campo) => campo.chave === editando);
   return (
-    <section aria-label={titulo} className="overflow-hidden rounded-lg border border-[#dce9eb] bg-white shadow-[0_1px_2px_rgba(16,41,58,0.05)]">
+    <section
+      aria-label={titulo}
+      className={cn(
+        "rounded-lg border border-[#dce9eb] bg-white shadow-[0_1px_2px_rgba(16,41,58,0.05)]",
+        comEdicao ? "overflow-visible" : "overflow-hidden"
+      )}
+    >
       <div className="flex items-center justify-between gap-2 border-b border-[#e6eef0] px-4 py-2.5">
         <h3 className="text-xs font-semibold uppercase tracking-normal text-[#285f7a]">{titulo}</h3>
         {pendentes ? <span className="text-[11px] font-medium text-amber-700">{pendentes} para conferir</span> : null}
@@ -558,6 +745,8 @@ function CartaoDoGrupo({ titulo, campos, capa, editando, setEditando, onEditar }
             onEditar={() => setEditando(campo.chave)}
             onFechar={() => setEditando(null)}
             onGravar={onEditar}
+            listas={capa.listas}
+            grupo={capa.dados.grupo}
           />
         ))}
       </div>
@@ -573,6 +762,8 @@ function CampoView({
   onEditar,
   onFechar,
   onGravar,
+  listas,
+  grupo,
 }: {
   campo: CampoDaCapa;
   largo: boolean;
@@ -581,6 +772,8 @@ function CampoView({
   onEditar: () => void;
   onFechar: () => void;
   onGravar: AoEditarCampo;
+  listas: ListasDoVios;
+  grupo: string | null;
 }) {
   const vazioObrigatorio = campo.obrigatorio && !campo.valor;
   const [desfazendo, setDesfazendo] = useState(false);
@@ -624,7 +817,7 @@ function CampoView({
       </div>
 
       {editando ? (
-        <EditorDoCampo campo={campo} onFechar={onFechar} onGravar={onGravar} />
+        <EditorDoCampo campo={campo} listas={listas} grupo={grupo} onFechar={onFechar} onGravar={onGravar} />
       ) : (
         <>
           <p
@@ -637,6 +830,12 @@ function CampoView({
           >
             {campo.valor ? (campo.chave === "valor" ? `R$ ${campo.valor}` : campo.valor) : vazioObrigatorio ? "Obrigatório: preencher" : "Vazio"}
           </p>
+          {campo.foraDaLista?.length ? (
+            <p className="mt-0.5 flex items-start gap-1 text-[11px] leading-snug text-amber-800">
+              <TriangleAlert className="mt-px size-3 shrink-0" aria-hidden />
+              <span>Fora da lista do VIOS: {campo.foraDaLista.join("; ")}. Conferir o cadastro no VIOS.</span>
+            </p>
+          ) : null}
           {campo.editado ? (
             <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-sky-800">
               <span>
@@ -667,9 +866,25 @@ function CampoView({
   );
 }
 
-/** O campo em edição: seletor (lista fechada), sugestões (listas do VIOS) ou texto; Enter grava, Esc cancela. */
-function EditorDoCampo({ campo, onFechar, onGravar }: { campo: CampoDaCapa; onFechar: () => void; onGravar: AoEditarCampo }) {
+/**
+ * O campo em edição: seletor (lista curta), busca na lista do VIOS (clientes, ações, pessoas, matérias, etiquetas) ou
+ * texto; Enter grava, Esc cancela.
+ */
+function EditorDoCampo({
+  campo,
+  listas,
+  grupo,
+  onFechar,
+  onGravar,
+}: {
+  campo: CampoDaCapa;
+  listas: ListasDoVios;
+  grupo: string | null;
+  onFechar: () => void;
+  onGravar: AoEditarCampo;
+}) {
   const definicao: DefinicaoDoCampo = CAMPOS_DA_CAPA[campo.chave];
+  const opcoes = useMemo(() => (definicao.lista ? opcoesDaLista(definicao.lista, listas, grupo) : []), [definicao.lista, listas, grupo]);
   const [valor, setValor] = useState(campo.valor ?? "");
   const [gravando, setGravando] = useState(false);
   const [erro, setErro] = useState("");
@@ -709,6 +924,26 @@ function EditorDoCampo({ campo, onFechar, onGravar }: { campo: CampoDaCapa; onFe
         ))}
       </select>
     );
+  } else if (definicao.lista && opcoes.length) {
+    const comuns = {
+      opcoes,
+      rotulo,
+      titulo: TITULO_DA_LISTA[definicao.lista],
+      permitirOutro: Boolean(definicao.aceitaForaDaLista),
+      autoFocus: true,
+    };
+    controle = definicao.multiplo ? (
+      <EscolhaDeVarios {...comuns} valor={valor} onChange={setValor} />
+    ) : (
+      <ComboboxBusca
+        {...comuns}
+        valor={valor}
+        onChange={setValor}
+        placeholder="Buscar na lista do VIOS"
+        permitirVazio
+        pessoas={definicao.lista === "usuarios"}
+      />
+    );
   } else if (definicao.longo) {
     controle = (
       <textarea
@@ -728,8 +963,6 @@ function EditorDoCampo({ campo, onFechar, onGravar }: { campo: CampoDaCapa; onFe
         aria-label={rotulo}
         className={cn(campoClasse, "h-9")}
         value={valor}
-        list={definicao.lista ? `capa-lista-${definicao.lista}` : undefined}
-        placeholder={definicao.lista ? "Escreva para buscar na lista do VIOS" : undefined}
         onChange={(evento) => setValor(evento.target.value)}
         onKeyDown={teclas}
       />
@@ -754,4 +987,58 @@ function EditorDoCampo({ campo, onFechar, onGravar }: { campo: CampoDaCapa; onFe
     </div>
   );
 }
-
+/** Vários valores ("a; b"): cada um vira uma etiqueta no campo, com o x para tirar; a busca acrescenta. */
+function EscolhaDeVarios({
+  valor,
+  onChange,
+  opcoes,
+  rotulo,
+  titulo,
+  permitirOutro,
+  autoFocus,
+}: {
+  valor: string;
+  onChange: (valor: string) => void;
+  opcoes: OpcaoBusca[];
+  rotulo: string;
+  titulo: string;
+  permitirOutro: boolean;
+  autoFocus: boolean;
+}) {
+  const itens = valor.split(";").map((item) => item.trim()).filter(Boolean);
+  const jaTem = (nome: string) => itens.some((item) => chaveNome(item) === chaveNome(nome));
+  const escolhidos = itens.map((item) => (
+    <span
+      key={item}
+      className="inline-flex max-w-full items-center gap-0.5 rounded-full bg-[#e8f8f8] py-0.5 pl-2 pr-0.5 text-xs font-medium text-[#285f7a] ring-1 ring-inset ring-[#47cdd0]/30"
+    >
+      <span className="truncate">{item}</span>
+      <button
+        type="button"
+        aria-label={`Tirar ${item}`}
+        className="grid size-5 shrink-0 place-items-center rounded-full hover:bg-[#47cdd0]/20"
+        onMouseDown={(evento) => {
+          evento.preventDefault();
+          onChange(itens.filter((outro) => outro !== item).join("; "));
+        }}
+      >
+        <X className="size-3" aria-hidden />
+      </button>
+    </span>
+  ));
+  return (
+    <ComboboxBusca
+      opcoes={opcoes.filter((opcao) => !jaTem(opcao.nome))}
+      valor=""
+      onChange={(nome) => {
+        if (nome && !jaTem(nome)) onChange([...itens, nome].join("; "));
+      }}
+      rotulo={rotulo}
+      titulo={titulo}
+      placeholder={itens.length ? "Acrescentar…" : "Buscar na lista do VIOS"}
+      permitirOutro={permitirOutro}
+      autoFocus={autoFocus}
+      antes={escolhidos.length ? <>{escolhidos}</> : null}
+    />
+  );
+}

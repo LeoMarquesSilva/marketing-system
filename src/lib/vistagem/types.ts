@@ -518,11 +518,24 @@ export interface InconsistenciaItem {
 export interface CheckResposta {
   aChecar: ConferenciaItem[];
   revisar: ConferenciaItem[];
+  /** Só as checadas de um dia de importação (`importacao`); as outras se acham pela busca. */
   checadas: ConferenciaItem[];
+  /** Dia de importação das checadas (AAAA-MM-DD): hoje, se a tela não pediu outro. */
+  importacao: string;
+  /** Dias que tiveram importação, do mais recente para o mais antigo, para escolher nas Checadas. */
+  importacoes: string[];
   /** Foto de quem vistou, conferiu e checou, do advogado, do auxiliar e das pessoas das tarefas, pela chave do nome. */
   fotos: Record<string, string>;
   /** AAAA-MM-DD em São Paulo, para a régua de datas. */
   hoje: string;
+}
+
+/** Busca nas checadas de qualquer dia. */
+export interface CheckBuscaResposta {
+  itens: ConferenciaItem[];
+  fotos: Record<string, string>;
+  /** Achou mais do que a busca traz: só vieram as mais recentes. */
+  maisResultados: boolean;
 }
 
 /** Visão "Agendadas" do jurídico: o que foi vistado nos últimos `dias` e onde está cada tarefa. */

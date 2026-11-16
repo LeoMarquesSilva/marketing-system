@@ -159,7 +159,7 @@ describe("compararDjenKurier", () => {
     expect(dia10.soKurier.map((item) => item.id)).toEqual(["bkp:12"]);
   });
 
-  it("BKP só completa: o processo que a Kurier do Orquestra já tem no dia não entra de novo", () => {
+  it("BKP só completa: o processo que a Kurier do ORQESTRAI já tem no dia não entra de novo", () => {
     const [, dia10] = compararDjenKurier(
       [djen(1, "2026-11-10", "0001"), djen(2, "2026-11-10", "0002")],
       [kurier("k1", 1, "2026-11-10", "0001"), bkp(10, "2026-11-10", "0001"), bkp(20, "2026-11-10", "0002"), bkp(30, "2026-11-09", "0001")],

@@ -71,6 +71,8 @@ export function ComboboxBusca({
   titulo,
   icone = null,
   maxResultados = MAX_RESULTADOS,
+  permitirOutro = false,
+  autoFocus = false,
 }: {
   opcoes: OpcaoBusca[];
   valor: string;
@@ -94,6 +96,10 @@ export function ComboboxBusca({
   icone?: ReactNode;
   /** Quantas opções a lista mostra de uma vez (ex.: a lista toda, como no combo do VIOS). */
   maxResultados?: number;
+  /** Aceita o texto digitado quando ele não está na lista (última linha: "fora da lista"). */
+  permitirOutro?: boolean;
+  /** Já abre com o foco (e a lista aberta), como quando se clica para editar. */
+  autoFocus?: boolean;
 }) {
   const id = useId();
   const [aberto, setAberto] = useState(false);
@@ -102,10 +108,14 @@ export function ComboboxBusca({
   const [ampliado, setAmpliado] = useState(false);
   const lista = useRef<HTMLUListElement>(null);
 
-  const filtradas = useMemo(
-    () => filtrar(ampliado && ampliar ? ampliar.todas : opcoes, busca).slice(0, maxResultados),
-    [ampliado, ampliar, busca, maxResultados, opcoes]
-  );
+  const filtradas = useMemo(() => {
+    const base = ampliado && ampliar ? ampliar.todas : opcoes;
+    const achadas = filtrar(base, busca).slice(0, maxResultados);
+    const texto = busca.trim();
+    // Texto que não é nenhuma opção: vira a última linha, para usar como está.
+    const outro = permitirOutro && texto && !base.some((opcao) => normalizar(opcao.nome) === normalizar(texto));
+    return outro ? [...achadas, { id: "__outro", nome: texto, detalhe: "fora da lista" }] : achadas;
+  }, [ampliado, ampliar, busca, maxResultados, opcoes, permitirOutro]);
   // Quantas pessoas de toda a lista batem com a busca: aparece na linha que abre a lista inteira.
   const naListaInteira = useMemo(() => (ampliar && !ampliado && busca.trim() ? filtrar(ampliar.todas, busca).length : null), [ampliado, ampliar, busca]);
   /** Índice da linha que alterna entre a área e todas as pessoas (depois das opções). */
@@ -176,6 +186,7 @@ export function ComboboxBusca({
             antes && "h-7 min-w-32 px-2"
           )}
           placeholder={valor || placeholder}
+          autoFocus={autoFocus}
           value={aberto ? busca : valor}
           onFocus={() => {
             setAberto(true);

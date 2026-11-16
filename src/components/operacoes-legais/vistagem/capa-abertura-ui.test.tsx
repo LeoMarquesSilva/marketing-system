@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CapaParaAbertura, PedidoDeAbertura } from "@/lib/vistagem/capa-abertura";
-import { BlocoDoRobo, CapaDaAberturaView, ResumoDaCapaView, type EstadoDataJud } from "./capa-abertura-ui";
+import { BlocoDoRobo, CapaDaAberturaView, opcoesDaLista, ResumoDaCapaView, type AberturaReal, type EstadoDataJud } from "./capa-abertura-ui";
 
 // O que a rota devolveu para o agravo 2266041-23 (Grupo Lira) no teste local de 10/11/2026.
 const CAPA: CapaParaAbertura = {
@@ -63,8 +63,43 @@ describe("CapaDaAberturaView", () => {
     expect(html).toContain('aria-label="obrigatório"');
     expect(html).toContain("Pastas do grupo");
     expect(html).toContain("consultando (leva até 1 min)");
-    // A lista de usuários do VIOS vira sugestão ao editar.
-    expect(html).toContain('id="capa-lista-usuarios"');
+    // A lista antiga de sugestões (datalist) saiu: cada campo busca na sua lista ao editar.
+    expect(html).not.toContain("capa-lista-");
+  });
+
+  it("marca o que não está na lista do VIOS do campo", () => {
+    const comListas = { ...CAPA, listas: { ...CAPA.listas, clientes: [{ nome: "Outro Cliente Ltda", grupo: "Grupo Lira", pastas: 3 }] } };
+    expect(capa({ capa: comListas })).toContain("Fora da lista do VIOS: Lira Alimentos Industria e Comercio Ltda");
+    // Na lista, o cliente fica sem o aviso.
+    const naLista = { ...CAPA, listas: { ...CAPA.listas, clientes: [{ nome: "Lira Alimentos Industria e Comercio Ltda", grupo: "Grupo Lira", pastas: 40 }] } };
+    expect(capa({ capa: naLista })).not.toContain("Fora da lista do VIOS");
+  });
+});
+
+describe("opcoesDaLista", () => {
+  const listas = {
+    usuarios: ["Manuela Lutke"],
+    materias: [],
+    sistemas: [],
+    clientes: [
+      { nome: "Acme S.A.", grupo: "Grupo Acme", pastas: 2 },
+      { nome: "Lira Alimentos Ltda", grupo: "Grupo Lira", pastas: 40 },
+      { nome: "Sem Grupo Ltda", grupo: null, pastas: 1 },
+    ],
+    acoes: ["Habilitação de Crédito", "Agravo de instrumento"],
+  };
+
+  it("os clientes do grupo da publicação vêm primeiro, com o grupo ao lado", () => {
+    expect(opcoesDaLista("clientes", listas, "Grupo Lira")).toEqual([
+      { id: "Lira Alimentos Ltda", nome: "Lira Alimentos Ltda", detalhe: "Lira" },
+      { id: "Acme S.A.", nome: "Acme S.A.", detalhe: "Acme" },
+      { id: "Sem Grupo Ltda", nome: "Sem Grupo Ltda", detalhe: null },
+    ]);
+  });
+
+  it("as outras listas vêm na ordem em que chegaram", () => {
+    expect(opcoesDaLista("acoes", listas, null).map((opcao) => opcao.nome)).toEqual(["Habilitação de Crédito", "Agravo de instrumento"]);
+    expect(opcoesDaLista("etiquetas", listas, null)).toEqual([]);
   });
 
   it("o campo editado mostra quem editou, o valor de antes e o Desfazer", () => {
@@ -133,6 +168,7 @@ describe("BlocoDoRobo", () => {
     criadoEm: "2026-11-10T19:00:00.000Z",
     atualizadoEm: null,
     resultado: null,
+    capa: null,
     ...extra,
   });
   const bloco = (pedidos: PedidoDeAbertura[], faltando = 0, extra: Partial<{ enviando: boolean; erro: string }> = {}) =>
@@ -176,5 +212,52 @@ describe("BlocoDoRobo", () => {
   it("erro do robô e erro ao pedir aparecem", () => {
     expect(bloco([pedido({ status: "erro", erro: "Capa sem obrigatórios do VIOS: auxiliar." })])).toContain("Capa sem obrigatórios do VIOS: auxiliar.");
     expect(bloco([], 0, { erro: "Já há um pedido de abertura desta publicação na fila do robô." })).toContain("Já há um pedido");
+  });
+
+  describe("abertura de verdade (Fase 3, 16/11/2026)", () => {
+    const ok = pedido({ resultado: { preenchidos: { cnj: "x" }, nao_encontrados: [], recusaria: [] } });
+    const real = (extra: Partial<AberturaReal> = {}): AberturaReal => ({ ligada: true, pastaAberta: null, onAbrir: vi.fn(), ...extra });
+    const comReal = (pedidos: PedidoDeAbertura[], extra: Partial<AberturaReal> = {}) =>
+      renderToStaticMarkup(<BlocoDoRobo abertura={{ pedidos, enviando: false, erro: "" }} faltando={0} onSimular={vi.fn()} real={real(extra)} />);
+    const botaoAbrir = (html: string) => html.match(/<button[^>]*>(?:(?!<\/button>).)*Abrir a pasta no VIOS<\/button>/)?.[0] ?? "";
+
+    it("com a chave desligada, só simula", () => {
+      expect(bloco([ok])).not.toContain("Abrir a pasta no VIOS");
+      expect(comReal([ok], { ligada: false })).not.toContain("Abrir a pasta no VIOS");
+    });
+
+    it("com a chave ligada, abre direto: sem simulação antes e sem o botão de simular", () => {
+      const html = comReal([]);
+      expect(botaoAbrir(html)).not.toContain('disabled=""');
+      expect(html).not.toContain("Simular a abertura no VIOS");
+      expect(html).toContain("só grava se o VIOS aceitar a capa inteira");
+    });
+
+    it("faltando obrigatório, o botão fica travado", () => {
+      const html = renderToStaticMarkup(<BlocoDoRobo abertura={{ pedidos: [], enviando: false, erro: "" }} faltando={2} onSimular={vi.fn()} real={real()} />);
+      expect(botaoAbrir(html)).toContain('disabled=""');
+      expect(html).toContain("Preencha os obrigatórios do VIOS para abrir a pasta.");
+    });
+
+    it("parado depois do Gravar: pede para conferir no VIOS e oferece abrir de novo", () => {
+      const html = comReal([pedido({ simulado: false, status: "erro", erro: "ATENÇÃO: o Gravar já tinha sido clicado — confira no VIOS…" })]);
+      expect(html).toContain("Confira no VIOS antes de pedir de novo");
+      expect(html).toContain("Conferi: a pasta não foi criada, abrir de novo");
+      expect(botaoAbrir(html)).toBe("");
+    });
+
+    it("rodando de verdade, diz que está abrindo a pasta", () => {
+      expect(comReal([pedido({ simulado: false, status: "processando" }), ok])).toContain("O robô está abrindo a pasta no VIOS");
+    });
+
+    it("pasta aberta: mostra a CI e pede para conferir e liberar aqui (não vai direto para a vistagem)", () => {
+      const html = comReal([pedido({ simulado: false, resultado: { ci_pasta: "61402" } }), ok], {
+        pastaAberta: { ci: "61402", naTriagem: true, liberada: false },
+      });
+      expect(html).toContain("Pasta aberta no VIOS: CI 61402");
+      expect(html).toContain("processos_id=61402");
+      expect(html).toContain("libere em");
+      expect(html).not.toContain("Simular a abertura no VIOS");
+    });
   });
 });

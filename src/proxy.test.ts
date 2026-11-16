@@ -63,6 +63,12 @@ describe("proxy — retorno após login", () => {
     expect(response.headers.get("location")).toBeNull();
   });
 
+  it("abre a galeria de fotos do convidado sem exigir login", () => {
+    const response = proxy(request("/galeria/AbC-_123xyzQWE45678rt"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
   it("exige login na página de download das peças e volta para ela depois", () => {
     const response = proxy(request("/entregas/oab"));
     expect(response.status).toBeGreaterThanOrEqual(300);

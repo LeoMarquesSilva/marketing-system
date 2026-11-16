@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Cake, CalendarHeart, Heart, ImageIcon, MessageCircle, Trophy, UserPlus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowRight, Cake, CalendarHeart, Heart, ImageIcon, MessageCircle, PartyPopper, Trophy, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
@@ -17,7 +17,7 @@ const WORK_ON_SCREEN = 4;
 
 const SUBHEADING = "flex items-center gap-1.5 text-xs font-semibold uppercase text-[#48466e]";
 
-const keyOf = (item: HomeCelebration) => `${item.id}:${item.kind}:${item.year}`;
+export const keyOf = (item: HomeCelebration) => `${item.id}:${item.kind}:${item.year}`;
 
 /** Curtidas e comentários de uma comemoração, em números pequenos. */
 function Counters({ item }: { item: HomeCelebration }) {
@@ -158,6 +158,88 @@ function TodayCard({
   );
 }
 
+const SEEN_PREFIX = "orqestrai:inicio:comemoracao-vista:";
+
+/** Quanto do carinho recebido a pessoa já viu neste aparelho (só para destacar o que é novo). */
+function readSeen(key: string): number {
+  try {
+    return Number(window.localStorage.getItem(SEEN_PREFIX + key)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeSeen(key: string, total: number): void {
+  try {
+    window.localStorage.setItem(SEEN_PREFIX + key, String(total));
+  } catch {
+    // Sem armazenamento (modo privado restrito): o aviso só não lembra o que já foi visto.
+  }
+}
+
+/**
+ * Aviso para quem está comemorando: o que o time já deixou para a pessoa, com
+ * atalho para a comemoração dela. Aparece no dia e na semana seguinte.
+ */
+export function MyCelebrationNotice({ item, onOpen }: { item: HomeCelebration; onOpen: (item: HomeCelebration) => void }) {
+  const key = keyOf(item);
+  const total = item.likes + item.comments + item.praises;
+  const [seen, setSeen] = useState<number | null>(null);
+  useEffect(() => {
+    setSeen(readSeen(key));
+  }, [key]);
+  const fresh = seen === null ? 0 : Math.max(0, total - seen);
+  const firstName = item.name.split(" ")[0];
+  const parts = [
+    item.likes > 0 ? `${item.likes} parabéns` : null,
+    item.comments > 0 ? `${item.comments} ${item.comments === 1 ? "mensagem" : "mensagens"}` : null,
+    item.praises > 0 ? `${item.praises} ${item.praises === 1 ? "reconhecimento" : "reconhecimentos"}` : null,
+  ].filter(Boolean);
+  const title =
+    item.kind === "aniversario"
+      ? item.inDays === 0
+        ? `Feliz aniversário, ${firstName}!`
+        : `${firstName}, o time comemorou o seu aniversário`
+      : `${firstName}, parabéns pelos ${item.years ?? 0} ${item.years === 1 ? "ano" : "anos"} de casa!`;
+
+  return (
+    <section
+      aria-label="Sua comemoração"
+      className="relative flex flex-wrap items-center gap-x-5 gap-y-3 overflow-hidden rounded-lg border border-[#ecdcb8] bg-[linear-gradient(100deg,#fffaf0_0%,#fbefd6_100%)] px-5 py-4"
+    >
+      <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#0D1E2E] text-[#E1B16D]">
+        {item.kind === "aniversario" ? <PartyPopper className="size-6" aria-hidden /> : <Trophy className="size-6" aria-hidden />}
+      </span>
+      <div className="min-w-0 flex-1 basis-64">
+        <p className="flex flex-wrap items-center gap-2 text-base font-semibold text-[#0D1E2E]">
+          {title}
+          {fresh > 0 && (
+            <span className="rounded-full bg-[#0D1E2E] px-2.5 py-0.5 text-xs font-semibold text-white">
+              {fresh} {fresh === 1 ? "novidade" : "novidades"}
+            </span>
+          )}
+        </p>
+        <p className="mt-0.5 text-sm text-[#5c4210]">
+          {parts.length > 0
+            ? `O time já deixou para você: ${parts.join(" · ")}.`
+            : "O time pode parabenizar você e deixar mensagens aqui. Quando chegarem, elas aparecem neste aviso."}
+        </p>
+      </div>
+      <Button
+        className="bg-[#12385a] hover:bg-[#0D1E2E]"
+        onClick={() => {
+          writeSeen(key, total);
+          setSeen(total);
+          onOpen(item);
+        }}
+      >
+        Ver minha comemoração
+        <ArrowRight className="size-4" aria-hidden />
+      </Button>
+    </section>
+  );
+}
+
 /**
  * Aniversários da equipe em três colunas: quem comemora hoje e na última
  * semana (dá para parabenizar), os próximos e os aniversários de empresa.
@@ -166,15 +248,19 @@ export function TeamCelebrations({
   data,
   allOpen,
   onAllOpenChange,
+  openKey,
+  onOpenKeyChange,
   onChanged,
 }: {
   data: HomeData;
   allOpen: boolean;
   onAllOpenChange: (open: boolean) => void;
+  /** Comemoração aberta no modal (chave de `keyOf`), ou null. */
+  openKey: string | null;
+  onOpenKeyChange: (key: string | null) => void;
   /** Curtida ou comentário mudou: a tela inicial busca os números de novo. */
   onChanged: () => void;
 }) {
-  const [openKey, setOpenKey] = useState<string | null>(null);
   const { birthdays, workAnniversaries, recentCelebrations, newcomers, today } = data;
   const todays = [...birthdays, ...workAnniversaries].filter((item) => item.inDays === 0);
   const upcomingBirthdays = birthdays.filter((item) => item.inDays > 0);
@@ -182,7 +268,7 @@ export function TeamCelebrations({
   const everything = [...birthdays, ...workAnniversaries, ...recentCelebrations];
   // A comemoração aberta acompanha os números novos quando a tela atualiza.
   const open = openKey ? (everything.find((item) => keyOf(item) === openKey) ?? null) : null;
-  const openItem = (item: HomeCelebration) => setOpenKey(keyOf(item));
+  const openItem = (item: HomeCelebration) => onOpenKeyChange(keyOf(item));
 
   return (
     <>
@@ -297,7 +383,7 @@ export function TeamCelebrations({
         </DialogContent>
       </Dialog>
 
-      <CelebrationDialog item={open} today={today} onClose={() => setOpenKey(null)} onChanged={onChanged} />
+      <CelebrationDialog item={open} today={today} onClose={() => onOpenKeyChange(null)} onChanged={onChanged} />
     </>
   );
 }

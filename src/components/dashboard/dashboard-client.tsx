@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { MarketingRequest } from "@/lib/marketing-requests";
-import { computeDashboardMetrics } from "@/lib/marketing-requests";
+import { computeDashboardMetrics, getDeadlineMoment } from "@/lib/marketing-requests";
 import { useAuth } from "@/contexts/auth-context";
 import { fetchTimesheetForDashboard, type TimesheetRawEntry } from "@/lib/time-entries";
 import { CalendarRange, Download, X } from "lucide-react";
@@ -61,6 +61,12 @@ function getEntryDurationMs(entry: TimesheetRawEntry) {
   const start = new Date(entry.started_at).getTime();
   const end = entry.ended_at ? new Date(entry.ended_at).getTime() : Date.now();
   return Math.max(0, end - start);
+}
+
+/** "2026-10" → "outubro de 2026". Monta a data no fuso local: new Date("2026-10-01") seria UTC e cairia em setembro. */
+function formatMonthKey(key: string) {
+  const [year, month] = key.split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 }
 
 function formatDurationFromMs(ms: number) {
@@ -252,7 +258,7 @@ export function DashboardClient({ requests }: DashboardClientProps) {
       const top3Areas = dataByArea.slice(0, 3).map((a) => `${a.area} (${a.total})`).join(", ");
       const topTypeEntry = dataByType[0];
       const topMonthLabel = topMonthKey
-        ? new Date(`${topMonthKey}-01`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
+        ? formatMonthKey(topMonthKey)
         : "";
       const topMonthPct = topMonthKey && normalizedRequests.length > 0
         ? Number(((monthCounts[topMonthKey] / normalizedRequests.length) * 100).toFixed(1))
@@ -293,7 +299,7 @@ export function DashboardClient({ requests }: DashboardClientProps) {
       }));
 
       const evolucaoRows = monthsSorted.map((key) => ({
-        Mês: new Date(`${key}-01`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
+        Mês: formatMonthKey(key),
         "Quantidade de Demandas": monthCounts[key],
       }));
 
@@ -312,7 +318,8 @@ export function DashboardClient({ requests }: DashboardClientProps) {
           "Solicitado em": request.requested_at
             ? new Date(request.requested_at).toLocaleDateString("pt-BR")
             : "",
-          Prazo: request.deadline ? new Date(request.deadline).toLocaleDateString("pt-BR") : "",
+          // deadline é coluna date ("2026-11-16"): ler no fuso local para não voltar um dia
+          Prazo: getDeadlineMoment(request.deadline, null)?.toLocaleDateString("pt-BR") ?? "",
           "Entregue em": request.delivered_at
             ? new Date(request.delivered_at).toLocaleDateString("pt-BR")
             : "",

@@ -161,3 +161,22 @@ describe("AuthGuard — telas liberadas para toda a equipe", () => {
     expect(markup).toContain("Redirecionando...");
   });
 });
+
+describe("AuthGuard — consultores do PE27 na festa", () => {
+  // Perfil só com o PE27 (Camila, Zamboni): voltava para o /pe27 ao abrir a confirmação da festa.
+  it("não manda o consultor do PE27 de volta ao módulo na confirmação da festa", () => {
+    route.pathname = "/festa-10-anos";
+    authState.user = { id: "consultor" };
+    authState.profile = { department: "Consultoria Estratégica", permissions: ["/pe27", "/pe27/editar"] };
+    authState.loading = false;
+
+    const markup = renderToStaticMarkup(
+      <AuthGuard>
+        <p>Confirmação da festa</p>
+      </AuthGuard>
+    );
+
+    expect(markup).toContain("Confirmação da festa");
+    expect(markup).not.toContain("Redirecionando...");
+  });
+});

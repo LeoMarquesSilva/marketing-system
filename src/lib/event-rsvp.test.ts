@@ -5,6 +5,7 @@ import {
   formatRsvpDeadline,
   isRsvpOpen,
   parseRsvpAnswer,
+  personalDeadline,
   type RsvpPerson,
 } from "./event-rsvp";
 
@@ -80,6 +81,16 @@ describe("countRsvp", () => {
 
 describe("prazo", () => {
   const closesAt = "2026-11-13T23:59:59-03:00";
+
+  it("o prazo do convite só vale se for mais longo e não reabre a confirmação desligada", () => {
+    const terca = "2026-11-17T23:59:59-03:00";
+    expect(personalDeadline(closesAt, null)).toBe(closesAt);
+    expect(personalDeadline(closesAt, terca)).toBe(terca);
+    expect(personalDeadline(closesAt, "2026-11-10T23:59:59-03:00")).toBe(closesAt);
+    expect(personalDeadline(null, terca)).toBeNull();
+    expect(isRsvpOpen(personalDeadline(closesAt, terca), new Date("2026-11-16T10:00:00-03:00"))).toBe(true);
+    expect(isRsvpOpen(personalDeadline(closesAt, null), new Date("2026-11-16T10:00:00-03:00"))).toBe(false);
+  });
 
   it("fica aberto até o fim do dia 13/11 em Brasília", () => {
     expect(isRsvpOpen(closesAt, new Date("2026-11-13T23:00:00-03:00"))).toBe(true);

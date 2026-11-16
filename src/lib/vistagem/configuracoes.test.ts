@@ -5,7 +5,7 @@ import { temDemandaDeRisco, type PastaSioe } from "./triagem";
 describe("configurações da Vistagem", () => {
   it("sem nada no banco, vale o padrão do código", () => {
     expect(montarConfiguracoes([])).toEqual(CONFIGURACOES_PADRAO);
-    expect(CONFIGURACOES_PADRAO.etiquetasDeRisco).toEqual(["Demanda de risco", "Crítico"]);
+    expect(CONFIGURACOES_PADRAO.etiquetasDeRisco).toEqual(["Demanda de risco"]);
     expect(CONFIGURACOES_PADRAO.iaSugestaoTarefa).toBe(true);
   });
 

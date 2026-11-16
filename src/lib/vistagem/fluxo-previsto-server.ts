@@ -1,7 +1,7 @@
 import "server-only";
 
 import { areaDoCatalogo, chaveDoCaminho, contagemPadraoDaArea } from "./agendamento";
-import { cienciaQueFica, ehCienciaDosAgendamentos } from "./ciencia-agendamentos";
+import { cienciaQueFica, dataDaCienciaNoEnvio, ehCienciaDosAgendamentos } from "./ciencia-agendamentos";
 import { criarCalendario, criarCalendarioDePrazo } from "./dias-uteis";
 import { carregarFeriados } from "./feriados";
 import { fluxoDoPrazo, fluxoPrevisto, prazoApertado, type PrazoDaPublicacao } from "./fluxo-previsto";
@@ -82,7 +82,7 @@ export async function carregarBaseDoFluxo(onde: string): Promise<BaseDoFluxo | n
 }
 
 type TarefaParaPrever = Pick<AgendamentoResumo, "id" | "ordem" | "tarefa" | "tarefaId" | "etiqueta" | "data" | "dataFatal" | "responsavel" | "revisor" | "fluxoDatas"> &
-  Partial<Pick<AgendamentoResumo, "diasPrazo">>;
+  Partial<Pick<AgendamentoResumo, "diasPrazo" | "envioStatus">>;
 
 /**
  * O que o fluxo do VIOS cria com cada tarefa da vistagem, com a data e quem fica em cada uma (`fluxoPrevisto`), e o
@@ -103,9 +103,11 @@ export function comFluxoPrevisto<T extends TarefaParaPrever>(
     const fluxoDaTarefa = agendamento.tarefaId ? fluxoDoPrazo(montarFluxo(agendamento.tarefaId, arvore), agendamento, daPublicacao) : null;
     // Prazo curto (ou validado noutro dia): o Enviar vai hoje e o Revisar e o Protocolar ficam antes da fatal.
     const apertada = prazoApertado(agendamento, fluxoDaTarefa, ehDiaUtil, hoje);
+    // Ciência dos Agendamentos ainda não enviada, com a data já passada: vai com a do envio (hoje), sem editar.
+    const cienciaVai = (agendamento.envioStatus ?? "nao_enviado") === "nao_enviado" ? dataDaCienciaNoEnvio(agendamento.tarefa, agendamento.data, hoje) : agendamento.data;
     return {
       ...agendamento,
-      enviarHoje: apertada && apertada.enviar !== agendamento.data ? apertada.enviar : null,
+      enviarHoje: apertada && apertada.enviar !== agendamento.data ? apertada.enviar : cienciaVai !== agendamento.data ? cienciaVai : null,
       fluxoPrevisto: fluxoPrevisto(apertada ? { ...agendamento, data: apertada.enviar } : agendamento, fluxoDaTarefa, ehDiaUtil, {
         hoje,
         datas: agendamento.fluxoDatas,

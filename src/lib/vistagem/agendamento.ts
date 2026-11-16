@@ -358,6 +358,29 @@ export function paraDataVios(iso: string): string {
   return `${dia}/${mes}/${ano}`;
 }
 
+/** A partir desta hora (Brasília), nenhuma tarefa da vistagem fica para hoje: vai a partir do dia útil seguinte. */
+export const HORA_LIMITE_DO_DIA = 18;
+
+/** Hora de agora em São Paulo (0 a 23), no servidor e no navegador. */
+export function horaEmSaoPaulo(agora: Date = new Date()): number {
+  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", hourCycle: "h23" }).format(agora));
+}
+
+/**
+ * Primeiro dia que uma tarefa da vistagem pode ter (pedido de 13/11/2026): hoje; às 18h ou depois, o dia útil
+ * seguinte. Depois do expediente ninguém faz mais nada no dia, e a Conferência só manda ao robô no próximo dia de
+ * trabalho. Vale para as datas que o jurídico escolhe (a da tarefa e as do fluxo) e para o Enviar do Prazo; a data
+ * fatal, que é do processo, não muda.
+ */
+export function primeiroDiaDaTarefa(hoje: string, hora: number, ehDiaUtil: (iso: string) => boolean): string {
+  return hora >= HORA_LIMITE_DO_DIA ? somarDiasUteis(hoje, 1, ehDiaUtil) : hoje;
+}
+
+/** O aviso de quando já passou das 18h: as datas vão a partir do dia útil seguinte. */
+export function avisoDepoisDoHorario(primeiroDia: string): string {
+  return `Já passou das ${HORA_LIMITE_DO_DIA}h: a data tem de ser a partir de ${paraDataVios(primeiroDia)} (próximo dia útil).`;
+}
+
 /** Avisos (não bloqueiam) sobre a data escolhida. */
 export function avisosDaData(iso: string, hoje: string): string[] {
   if (!dataValida(iso)) return [];
@@ -424,6 +447,11 @@ export function validarAgendamentos(
     /** Dia da vistagem: o Enviar do Prazo nunca fica antes dele (prazo curto aperta a cadeia). */
     hoje?: string;
     /**
+     * Já passou das 18h: as datas que o jurídico escolhe (a da tarefa e as do fluxo) têm de ser a partir deste dia, o
+     * útil seguinte (`primeiroDiaDaTarefa`). Só a vistagem do jurídico passa; a Conferência ajusta sem essa trava.
+     */
+    depoisDoHorario?: string | null;
+    /**
      * Exige a Observação nos tipos que pedem (CIÊNCIA NF). Padrão: sim. A Conferência desliga: ali só se ajusta data
      * e pessoas, e uma tarefa vistada antes da regra não pode ficar sem ajuste.
      */
@@ -469,6 +497,9 @@ export function validarAgendamentos(
         : entrada.data;
     if (prazo && !semFatal && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
     if ((!prazo || semFatal) && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
+    // Depois das 18h, a data escolhida não fica para hoje (o Enviar do Prazo já vem do `hoje`, que é o dia seguinte).
+    const depois = contexto.depoisDoHorario;
+    if (depois && (!prazo || semFatal) && dataValida(data) && data < depois) erros.push(`${n}: ${avisoDepoisDoHorario(depois)}`);
     // Audiência, perícia, sessão…: o horário vai junto para o VIOS.
     const compromisso = entrada.etiqueta === "COMPROMISSO";
     const hora = compromisso && horaValida(entrada.hora?.trim()) ? (entrada.hora as string).trim() : null;
@@ -535,6 +566,9 @@ export function validarAgendamentos(
         ];
       });
     if (pessoaForaDoVios) erros.push(`${n}: escolha os responsáveis das tarefas do fluxo na lista de usuários do VIOS.`);
+    if (depois && fluxoDatas.some((item) => item.data && item.data < depois)) {
+      erros.push(`${n}, Fluxo das tarefas: ${avisoDepoisDoHorario(depois)}`);
+    }
     const caminhos = tarefa && contexto.caminhosDaTarefa ? contexto.caminhosDaTarefa(tarefa.id) : null;
     if (caminhos && fluxoDatas.some((item) => !caminhos.has(chaveDoCaminho(item.caminho)))) {
       erros.push(`${n}: há data ou responsável de tarefa do fluxo que esse tipo não cria no VIOS; confira o Fluxo das tarefas.`);

@@ -2,8 +2,10 @@ import "server-only";
 
 import {
   ETIQUETAS_AGENDAMENTO,
+  horaEmSaoPaulo,
   nomesDasPessoas,
   pessoasDaArea,
+  primeiroDiaDaTarefa,
   responsavelSugerido,
   responsaveisNaArea,
   tarefasPermitidas,
@@ -18,14 +20,16 @@ import {
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
 import { enviarDoPrazo, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
+import { MINIMO_BUSCA_NO_BANCO, camposDoCheck, combinaCampos, digitosDoTermo, normalizarBusca, padraoDoTermo, termosDaBusca } from "./busca";
 import { CHECK_AUTOMATICO, foiCheckAutomatico, notaDoCheckAutomatico } from "./check";
 import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { vaiParaCentral } from "./central";
 import { enviarParaCentral } from "./central-server";
-import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
+import { cienciaDosAgendamentos, dataDaCienciaNaVistagem, dataDaCienciaNoEnvio, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
 import { alteracaoDaVistagem, inicioDaConferenciaSegura, reabertaParaAlterar } from "./alterar-vistagem";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
+import { registrarDecisaoDaIa } from "./ia-registro-server";
 import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaAtual, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
@@ -64,6 +68,7 @@ import type {
   CatalogoVistagem,
   ConferenciaItem,
   ConferenciaResposta,
+  CheckBuscaResposta,
   CheckResposta,
   DataDoFluxo,
   DjenParte,
@@ -418,7 +423,9 @@ export async function obterVistagem(
     sugestaoIa: publicacao.sugestao_ia && catalogo ? sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas) : publicacao.sugestao_ia,
     // Na prévia da controladoria a publicação ainda não está na fila do jurídico: a IA gera depois, se for o caso.
     sugestaoIaDisponivel:
-      !previa && Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")) && (await lerConfiguracoes()).iaSugestaoTarefa,
+      !previa &&
+      Boolean(catalogo && areaComSugestaoIa(catalogo.area, publicacao.escritorio_responsavel) && openAIKey("analisePublicacao")) &&
+      (await lerConfiguracoes()).iaSugestaoTarefa,
     hoje: hojeEmSaoPaulo(),
   };
 }
@@ -443,11 +450,12 @@ async function estagiariosNoVios(): Promise<Set<string>> {
 
 /**
  * A "1. CIÊNCIA DOS AGENDAMENTOS" que o Orquestra acrescenta quando nenhuma tarefa é ela e o fluxo do VIOS de nenhuma
- * a cria: Providência no dia, para quem faz o Enviar da primeira tarefa (Reestruturação: estagiário → revisor).
+ * a cria: Providência no dia (vistada às 18h ou depois, no dia útil seguinte), para quem faz o Enviar da primeira
+ * tarefa (Reestruturação: estagiário → revisor).
  */
 async function cienciaParaGravar(
   itens: AgendamentoValidado[],
-  contexto: { arvore: Map<number, TipoNaArvore>; catalogo: CatalogoVistagem; area: string | null }
+  contexto: { arvore: Map<number, TipoNaArvore>; catalogo: CatalogoVistagem; area: string | null; ehDiaUtil: (iso: string) => boolean }
 ): Promise<AgendamentoValidado | null> {
   const estagiarios = ehReestruturacao(contexto.area) ? await estagiariosNoVios() : new Set<string>();
   const ciencia = cienciaDosAgendamentos(
@@ -476,7 +484,7 @@ async function cienciaParaGravar(
     etiqueta: "PROVIDENCIA",
     tarefa: tipo.nomeVios ?? tipo.nome,
     tarefaId: tipo.id,
-    data: hojeEmSaoPaulo(),
+    data: dataDaCienciaNaVistagem(hojeEmSaoPaulo(), horaEmSaoPaulo(), contexto.ehDiaUtil),
     dataFatal: null,
     diasPrazo: null,
     contagemPrazo: null,
@@ -524,6 +532,9 @@ export async function salvarVistagem(
   const [feriados, arvoreInteira] = await Promise.all([carregarFeriados(), carregarArvoreVios()]);
   const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
   const daPublicacao = prazoDaPublicacao(publicacao, catalogos, feriados);
+  // Depois das 18h nada fica para hoje: as datas vão a partir do dia útil seguinte (pedido de 13/11/2026).
+  const hoje = hojeEmSaoPaulo();
+  const primeiroDia = primeiroDiaDaTarefa(hoje, horaEmSaoPaulo(), criarCalendario(feriados));
   const validacao = validarAgendamentos(entrada.agendamentos, {
     tarefas: catalogo.tarefas,
     usuarios: catalogo.usuarios,
@@ -531,7 +542,8 @@ export async function salvarVistagem(
     cadeiaDaTarefa: (tarefaId, prazo) => cadeiaDoFluxo(fluxoDoPrazo(montarFluxo(tarefaId, arvore), prazo, daPublicacao)),
     caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
     semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
-    hoje: hojeEmSaoPaulo(),
+    hoje: primeiroDia,
+    depoisDoHorario: primeiroDia > hoje ? primeiroDia : null,
   });
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
   // Trabalhista: classificação eSocial (só na publicação, não vai para o VIOS) e, se pedir, a tarefa Inserir E-social.
@@ -547,6 +559,7 @@ export async function salvarVistagem(
     arvore,
     catalogo,
     area: publicacao.escritorio_responsavel ?? catalogo.area,
+    ehDiaUtil: criarCalendario(feriados),
   });
   const itensParaGravar = ciencia ? [...validacao.itens, ciencia] : validacao.itens;
   // Mede o acerto da IA: o jurídico usou a sugestão como veio, alterou ou não usou.
@@ -621,6 +634,17 @@ export async function salvarVistagem(
     .maybeSingle();
   if (error) falhou("enviar a vistagem para a controladoria", error);
   if (!atualizada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
+  // Registro da IA: o que o advogado agendou × o que a IA sugeriu (base para a IA aprender).
+  if (publicacao.sugestao_ia && resultadoIa) {
+    await registrarDecisaoDaIa({
+      publicacao,
+      area: catalogo.area,
+      sugestao: sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas),
+      resultado: resultadoIa,
+      itens: validacao.itens,
+      autor: authUserId,
+    });
+  }
   return { central: null };
 }
 
@@ -827,8 +851,13 @@ async function itensDeConferencia(
     comAuxiliar?: boolean;
     /** Põe no item a sugestão da IA da vistagem (a fatal pelos dias só sai depois, com o calendário). */
     comSugestaoIa?: boolean;
+    /** Só as publicações destes lotes (Kurier ou colagem): a importação de um dia. */
+    arquivos?: string[];
+    /** Só estas publicações (resultado da busca). */
+    ids?: string[];
   } = {}
 ): Promise<ConferenciaItem[]> {
+  if ((filtro.arquivos && !filtro.arquivos.length) || (filtro.ids && !filtro.ids.length)) return [];
   let consulta = admin()
     .from("vistagem_publicacoes")
     .select(`${COLUNAS_PUBLICACAO}, area_processo, checado_por, sugestao_ia, sugestao_ia_resultado`)
@@ -837,6 +866,8 @@ async function itensDeConferencia(
     .limit(limite);
   if (filtro.escritorios) consulta = consulta.in("escritorio_responsavel", filtro.escritorios);
   if (filtro.vistadoDesde) consulta = consulta.gte("vistado_em", filtro.vistadoDesde);
+  if (filtro.arquivos) consulta = consulta.in("kurier_arquivo_id", filtro.arquivos);
+  if (filtro.ids) consulta = consulta.in("id", filtro.ids);
   const { data, error } = await consulta;
   if (error) falhou("carregar a conferência", error);
   const linhas = (data ?? []) as (PublicacaoRow & {
@@ -932,7 +963,7 @@ export async function pedirAtualizacaoSintese(
   if (trecho && trecho.length < 3) throw new VistagemError("O trecho da síntese precisa de ao menos 3 caracteres.");
   if (trecho.length > LIMITE_TRECHO_SINTESE) throw new VistagemError(`O trecho passa de ${LIMITE_TRECHO_SINTESE} caracteres.`);
   const autor = (await nomesDosUsuarios([authUserId])).get(authUserId)?.trim();
-  if (!autor) throw new VistagemError("Seu nome não está no cadastro de usuários do Orquestra.", 403);
+  if (!autor) throw new VistagemError("Seu nome não está no cadastro de usuários do ORQESTRAI.", 403);
   // Sem a base ou sem as listas, não trava o pedido: quem recusa é o VIOS, como antes.
   const [pedidas, cadastro, listaDeMaterias, listaDeSistemas] = await Promise.all([
     sintesesDaPasta(publicacao.pasta_ci),
@@ -1183,13 +1214,15 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
 
   const simular = envioSimulado();
   try {
-    const filaPorAgendamento = await enfileirarPublicacao(publicacao, agendamentos, simular);
+    const hoje = hojeEmSaoPaulo();
+    const filaPorAgendamento = await enfileirarPublicacao(publicacao, agendamentos, simular, hoje);
     const agora = new Date().toISOString();
     await Promise.all(
       agendamentos.map((item) =>
         db
           .from("vistagem_agendamentos")
           .update({
+            ...dataQueFoiAoVios(item, hoje),
             envio_status: "pendente",
             envio_simulado: simular,
             sama_agendamento_id: filaPorAgendamento.get(item.id),
@@ -1389,21 +1422,34 @@ async function datasDoFluxoParaOVios(publicacao: PublicacaoComArea, itens: Agend
   return mapa;
 }
 
+/**
+ * A data da Ciência dos Agendamentos que foi ao VIOS fica gravada na tarefa (para a gravar junto com o envio): o
+ * Check compara com ela, e a Conferência não precisa ajustar a data à mão.
+ */
+function dataQueFoiAoVios(item: AgendamentoRow, hoje: string): { data?: string } {
+  const data = dataDaCienciaNoEnvio(item.tarefa, item.data, hoje);
+  return data !== item.data ? { data } : {};
+}
+
 /** Põe as tarefas da publicação na fila do robô; devolve o id da linha da fila de cada agendamento. */
-async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: AgendamentoRow[], simular: boolean): Promise<Map<string, string>> {
+async function enfileirarPublicacao(
+  publicacao: PublicacaoComArea,
+  itens: AgendamentoRow[],
+  simular: boolean,
+  hoje: string
+): Promise<Map<string, string>> {
   const modo = modoDaPublicacao(publicacao.arquivo, modoAgendamento());
   const [equivalentes, datasDoFluxo] = await Promise.all([
     modo === "intimacao" ? comunicacoesEquivalentes(publicacao) : Promise.resolve([] as string[]),
     datasDoFluxoParaOVios(publicacao, itens),
   ]);
-  // A Ciência dos Agendamentos é para o dia do lançamento: validada noutro dia, não vai com data passada.
-  const hoje = hojeEmSaoPaulo();
   const grupos = linhasParaFila(
     { ...publicacao, comunicacoes_equivalentes: equivalentes },
     itens.map((item) => ({
       ...item,
+      // A Ciência dos Agendamentos é para o dia do lançamento: validada noutro dia, não vai com data passada.
       // Prazo curto (ou validado noutro dia): o Enviar vai hoje, nunca no passado.
-      data: ehCienciaDosAgendamentos(item.tarefa) && item.data < hoje ? hoje : (datasDoFluxo.get(item.id)?.enviar ?? item.data),
+      data: ehCienciaDosAgendamentos(item.tarefa) ? dataDaCienciaNoEnvio(item.tarefa, item.data, hoje) : (datasDoFluxo.get(item.id)?.enviar ?? item.data),
       fluxoDatas: datasDoFluxo.get(item.id)?.datas ?? [],
     })),
     { simular, modo }
@@ -1432,13 +1478,15 @@ export async function reenviarGravando(id: string): Promise<{ enviadas: number }
   const simuladas = (data ?? []) as AgendamentoRow[];
   if (!simuladas.length) throw new VistagemError("Não há tarefas simuladas para reenviar.", 422);
 
-  const filaPorAgendamento = await enfileirarPublicacao(publicacao, simuladas, false);
+  const hoje = hojeEmSaoPaulo();
+  const filaPorAgendamento = await enfileirarPublicacao(publicacao, simuladas, false, hoje);
   const agora = new Date().toISOString();
   await Promise.all(
     simuladas.map((item) =>
       db
         .from("vistagem_agendamentos")
         .update({
+          ...dataQueFoiAoVios(item, hoje),
           envio_status: "pendente",
           envio_simulado: false,
           sama_agendamento_id: filaPorAgendamento.get(item.id),
@@ -1482,13 +1530,15 @@ export async function rodarNovamente(
   }
 
   const simular = envioSimulado();
-  const filaPorAgendamento = await enfileirarPublicacao(publicacao, comErro, simular);
+  const hoje = hojeEmSaoPaulo();
+  const filaPorAgendamento = await enfileirarPublicacao(publicacao, comErro, simular, hoje);
   const agora = new Date().toISOString();
   await Promise.all(
     comErro.map((item) =>
       db
         .from("vistagem_agendamentos")
         .update({
+          ...dataQueFoiAoVios(item, hoje),
           envio_status: "pendente",
           envio_simulado: simular,
           sama_agendamento_id: filaPorAgendamento.get(item.id),
@@ -1782,17 +1832,174 @@ export async function listarInconsistencias(situacao: "contestadas" | "abertas" 
 // Check dos agendamentos
 // ---------------------------------------------------------------------------
 
-/** Publicações com as tarefas gravadas no VIOS aguardando o check, as em revisão e as últimas checadas. */
-export async function listarCheck(): Promise<CheckResposta> {
-  // Mesma ficha da conferência (texto maior e auxiliar da pasta): o check mostra a publicação como na vistagem.
-  const ficha = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true };
-  const [aChecar, revisar, checadas] = await Promise.all([
-    itensDeConferencia(["agendado"], 300, true, "conferido_em", ficha),
-    itensDeConferencia(["revisar"], 300, true, "conferido_em", ficha),
-    itensDeConferencia(["checado"], 100, false, "checado_em", ficha),
+/** Mesma ficha da conferência (texto maior e auxiliar da pasta): o check mostra a publicação como na vistagem. */
+const FICHA_DO_CHECK = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true };
+
+/** Teto das checadas de um dia de importação (um lote tem perto de 150 publicações). */
+const LIMITE_CHECADAS_DO_DIA = 500;
+
+/** Quantos dias para trás a escolha do dia de importação alcança, nas Checadas. */
+const DIAS_DE_IMPORTACAO_NO_CHECK = 60;
+
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Lotes (Kurier e colagens) de um dia de importação. */
+async function lotesDoDia(dia: string): Promise<string[]> {
+  const { data, error } = await admin().from("vistagem_kurier_arquivos").select("id").eq("data_arquivo", dia);
+  if (error) falhou("carregar os lotes do dia", error);
+  return ((data ?? []) as { id: string }[]).map((row) => row.id);
+}
+
+/** Dias que tiveram importação, do mais recente para o mais antigo. */
+async function diasDeImportacao(hoje: string): Promise<string[]> {
+  const desde = new Date(Date.parse(`${hoje}T12:00:00Z`) - DIAS_DE_IMPORTACAO_NO_CHECK * 86_400_000).toISOString().slice(0, 10);
+  const { data, error } = await admin()
+    .from("vistagem_kurier_arquivos")
+    .select("data_arquivo")
+    .gte("data_arquivo", desde)
+    .order("data_arquivo", { ascending: false })
+    .limit(500);
+  if (error) falhou("carregar os dias de importação", error);
+  return [...new Set(((data ?? []) as { data_arquivo: string | null }[]).flatMap((row) => (row.data_arquivo ? [row.data_arquivo] : [])))];
+}
+
+/**
+ * Publicações com as tarefas gravadas no VIOS aguardando o check, as em revisão e as checadas de um dia de importação
+ * (hoje, se não vier outro). As checadas só crescem: trazer todas pesaria a cada abertura da tela. As outras são
+ * achadas pela busca, que vai ao banco (`buscarChecadas`).
+ */
+export async function listarCheck(importacao?: string | null): Promise<CheckResposta> {
+  const hoje = hojeEmSaoPaulo();
+  const dia = importacao && DATA_ISO.test(importacao) ? importacao : hoje;
+  const [aChecar, revisar, checadas, importacoes] = await Promise.all([
+    itensDeConferencia(["agendado"], 300, true, "conferido_em", FICHA_DO_CHECK),
+    itensDeConferencia(["revisar"], 300, true, "conferido_em", FICHA_DO_CHECK),
+    lotesDoDia(dia).then((arquivos) => itensDeConferencia(["checado"], LIMITE_CHECADAS_DO_DIA, false, "checado_em", { ...FICHA_DO_CHECK, arquivos })),
+    diasDeImportacao(hoje),
   ]);
   const fotos = await fotosDosItens([...aChecar, ...revisar, ...checadas], "tela de check");
-  return { aChecar, revisar, checadas, fotos, hoje: hojeEmSaoPaulo() };
+  return { aChecar, revisar, checadas, importacao: dia, importacoes, fotos, hoje };
+}
+
+/** Até quantas checadas a busca traz, das checadas mais recentemente para as mais antigas. */
+const LIMITE_BUSCA_CHECADAS = 100;
+
+/** Teto de cada consulta da busca (o banco não devolve mais que 1000 linhas por vez). */
+const TETO_CONSULTA_BUSCA = 1000;
+
+/** Colunas da publicação em que cada palavra é procurada (o texto fica à parte: ver `checadasComOTermo`). */
+const COLUNAS_DA_BUSCA = [
+  "numero_processo",
+  "numero_processo_original",
+  "pasta_ci",
+  "cliente",
+  "grupo_cliente",
+  "escritorio_responsavel",
+  "tribunal",
+  "djen_orgao",
+  "acao_processo",
+  "advogado_responsavel",
+];
+
+/** Checada achada por uma palavra: quando foi checada e se a palavra só apareceu no texto da publicação. */
+type Achada = { checadoEm: string; soNoTexto: boolean };
+
+type LinhaAchada = { id: string; checado_em: string | null };
+
+function guardarAchadas(mapa: Map<string, Achada>, linhas: LinhaAchada[], soNoTexto: boolean) {
+  for (const linha of linhas) {
+    const atual = mapa.get(linha.id);
+    mapa.set(linha.id, { checadoEm: linha.checado_em ?? "", soNoTexto: soNoTexto && (atual?.soNoTexto ?? true) });
+  }
+}
+
+/** Checadas em que alguém com esse nome vistou, vistou de novo, conferiu ou checou. */
+async function checadasDasPessoas(padrao: string): Promise<LinhaAchada[]> {
+  const { data: usuarios, error } = await admin().from("users").select("auth_id").filter("name", "imatch", padrao).not("auth_id", "is", null).limit(20);
+  if (error) falhou("buscar as pessoas", error);
+  const ids = ((usuarios ?? []) as { auth_id: string }[]).map((usuario) => usuario.auth_id);
+  if (!ids.length) return [];
+  const lista = `(${ids.join(",")})`;
+  const { data, error: erro } = await admin()
+    .from("vistagem_publicacoes")
+    .select("id, checado_em")
+    .eq("status", "checado")
+    .or(["vistado_por", "revistado_por", "conferido_por", "checado_por"].map((coluna) => `${coluna}.in.${lista}`).join(","))
+    .order("checado_em", { ascending: false, nullsFirst: false })
+    .limit(TETO_CONSULTA_BUSCA);
+  if (erro) falhou("buscar as checadas das pessoas", erro);
+  return (data ?? []) as LinhaAchada[];
+}
+
+/** Checadas com uma tarefa que bate: nome da tarefa, responsável, revisor ou CI no VIOS. */
+async function checadasDasTarefas(condicoes: string[]): Promise<LinhaAchada[]> {
+  const { data, error } = await admin()
+    .from("vistagem_agendamentos")
+    .select("publicacao_id, publicacao:vistagem_publicacoes!inner(checado_em, status)")
+    .eq("publicacao.status", "checado")
+    .or(condicoes.join(","))
+    .limit(TETO_CONSULTA_BUSCA);
+  if (error) falhou("buscar nas tarefas das checadas", error);
+  type Linha = { publicacao_id: string; publicacao: { checado_em: string | null } | { checado_em: string | null }[] | null };
+  return ((data ?? []) as unknown as Linha[]).map((linha) => ({
+    id: linha.publicacao_id,
+    checado_em: (Array.isArray(linha.publicacao) ? linha.publicacao[0] : linha.publicacao)?.checado_em ?? null,
+  }));
+}
+
+/** Checadas em que a palavra aparece: nas colunas, no texto, em quem vistou, conferiu ou checou, ou nas tarefas. */
+async function checadasComOTermo(termo: string): Promise<Map<string, Achada>> {
+  const padrao = padraoDoTermo(termo);
+  const digitos = digitosDoTermo(termo);
+  const temLetra = /[a-z]/.test(termo);
+  const nasColunas = [
+    ...COLUNAS_DA_BUSCA.map((coluna) => `${coluna}.imatch."${padrao}"`),
+    ...(digitos ? [`processo_digitos.like.*${digitos}*`, `pasta_ci.like.*${digitos}*`] : []),
+  ];
+  const nasTarefas = [
+    ...(temLetra ? ["tarefa", "responsavel", "revisor"].map((coluna) => `${coluna}.imatch."${padrao}"`) : []),
+    ...(digitos ? [`vios_tarefa_id.like.*${digitos}*`] : []),
+  ];
+  const checadas = () =>
+    admin().from("vistagem_publicacoes").select("id, checado_em").eq("status", "checado").order("checado_em", { ascending: false, nullsFirst: false }).limit(TETO_CONSULTA_BUSCA);
+  const [colunas, texto, pessoas, tarefas] = await Promise.all([
+    checadas().or(nasColunas.join(",")),
+    // O texto traz as partes e os intimados, mas também o resto da decisão: o que só bate nele vem por último.
+    checadas().filter("teor", "imatch", padrao),
+    temLetra ? checadasDasPessoas(padrao) : Promise.resolve([]),
+    nasTarefas.length ? checadasDasTarefas(nasTarefas) : Promise.resolve([]),
+  ]);
+  if (colunas.error) falhou("buscar nas checadas", colunas.error);
+  if (texto.error) falhou("buscar no texto das checadas", texto.error);
+  const mapa = new Map<string, Achada>();
+  guardarAchadas(mapa, (texto.data ?? []) as LinhaAchada[], true);
+  guardarAchadas(mapa, [...((colunas.data ?? []) as LinhaAchada[]), ...pessoas, ...tarefas], false);
+  return mapa;
+}
+
+/**
+ * Busca em todas as checadas, de qualquer dia. Cada palavra precisa aparecer, como na tela. O banco separa as
+ * candidatas (com ou sem acento), e a conferência final é a mesma da tela (`combinaCampos`), para achar a mesma coisa.
+ */
+export async function buscarChecadas(busca: string): Promise<CheckBuscaResposta> {
+  const termos = termosDaBusca(busca);
+  if (normalizarBusca(busca).length < MINIMO_BUSCA_NO_BANCO) return { itens: [], fotos: {}, maisResultados: false };
+  const [primeiro, ...resto] = await Promise.all(termos.map(checadasComOTermo));
+  // Fica o que todas as palavras acharam. Primeiro o que bateu fora do texto; depois, do check mais novo ao mais antigo.
+  const candidatas = [...primeiro.entries()]
+    .filter(([id]) => resto.every((mapa) => mapa.has(id)))
+    .map(([id, achada]) => ({
+      id,
+      checadoEm: achada.checadoEm,
+      soNoTexto: [achada, ...resto.map((mapa) => mapa.get(id) as Achada)].filter((cada) => cada.soNoTexto).length,
+    }))
+    .sort((a, b) => a.soNoTexto - b.soNoTexto || b.checadoEm.localeCompare(a.checadoEm));
+  const ids = candidatas.slice(0, LIMITE_BUSCA_CHECADAS).map((candidata) => candidata.id);
+  const itens = (await itensDeConferencia(["checado"], LIMITE_BUSCA_CHECADAS, false, "checado_em", { ...FICHA_DO_CHECK, ids })).filter((item) =>
+    combinaCampos(camposDoCheck(item), busca)
+  );
+  const fotos = await fotosDosItens(itens, "busca do check");
+  return { itens, fotos, maisResultados: candidatas.length > LIMITE_BUSCA_CHECADAS };
 }
 
 /** Check OK: a esteira e o agendamento no VIOS estão corretos. */

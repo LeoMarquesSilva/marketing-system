@@ -58,7 +58,7 @@ const colunasDaKurier = (item: PublicacaoKurier | null): Linha => ({
   "Kurier: ID da comunicação": item?.djenId ?? null,
   "Kurier: localizado": item?.nomeLocalizado ?? null,
   "Kurier: situação": item ? situacaoNaKurier(item) : null,
-  "Kurier: origem": item ? (item.fonte === "bkp" ? "BKP do SIOE" : "Orquestra") : null,
+  "Kurier: origem": item ? (item.fonte === "bkp" ? "BKP do SIOE" : "ORQESTRAI") : null,
   "Kurier: arquivo de": dataDoExcel(item?.arquivo ?? null),
 });
 
@@ -160,7 +160,7 @@ const COMO_LER = [
   ["Situação"],
   ["Nos dois: a Kurier e o DJEN trouxeram. Só na Kurier: o DJEN, buscado pela OAB, não trouxe. Só no DJEN: a Kurier não trouxe."],
   ["Como casa: pelo ID de comunicação do DJEN (a Kurier traz o mesmo); sem ele, pelo processo no mesmo dia de disponibilização."],
-  ["BKP do SIOE: antes de 09/11/2026 as limpezas do piloto deixaram só o Trabalhista no Orquestra; o que falta vem da lista do SharePoint, sem o ID (casa pelo processo, uma vez por processo e dia)."],
+  ["BKP do SIOE: antes de 09/11/2026 as limpezas do piloto deixaram só o Trabalhista no ORQESTRAI; o que falta vem da lista do SharePoint, sem o ID (casa pelo processo, uma vez por processo e dia)."],
   [""],
   ["Totais"],
   ["Ficam fora dos totais: o dia sem busca no DJEN, o dia sem Kurier e o dia em aberto (o próximo arquivo da Kurier ainda pode trazer o resto dele)."],

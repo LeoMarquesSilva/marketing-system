@@ -55,6 +55,7 @@ import { QuemAcessaAVistagem } from "./acessos-vistagem";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { CartaoEditavel, Interruptor } from "./configuracoes-ui";
 import { FluxoDoViosCartao } from "./fluxo-vios-cartao";
+import { HistoricoDasConfiguracoes } from "./historico-configuracoes";
 import { IconeArea } from "./marcas";
 import { formatarDataHora } from "./publicacao-ui";
 import { Aviso, Carregando, Painel, PainelTopo, Selo } from "./ui";
@@ -70,6 +71,7 @@ const ROTULO_DA_CHAVE: Record<ChaveConfiguracao, string> = {
   horaArquivoEsperado: "Hora do alerta do arquivo",
   iaSugestaoTarefa: "IA: sugestão de tarefas",
   iaSugestaoTriagem: "IA: sugestão de pasta",
+  aberturaPastaReal: "Robô: abertura de pasta de verdade",
 };
 
 /** Valor de uma regra em texto, para o histórico e o "padrão". */
@@ -550,7 +552,7 @@ function UsoDaSugestao({ painel }: { painel: PainelDeRegras }) {
 
 function ChavesDaIa({ painel, salvando, onSalvar }: { painel: PainelDeRegras; salvando: boolean; onSalvar: (chave: ChaveConfiguracao, valor: boolean) => void }) {
   const linhas: { chave: "iaSugestaoTarefa" | "iaSugestaoTriagem"; titulo: string; texto: string }[] = [
-    { chave: "iaSugestaoTarefa", titulo: "Sugestão de tarefas (Trabalhista)", texto: "Desligada, o cron não gera e a tela não pede novas sugestões; as já geradas continuam aparecendo." },
+    { chave: "iaSugestaoTarefa", titulo: "Sugestão de tarefas (todas as áreas, menos Operações Legais)", texto: "Desligada, o cron não gera e a tela não pede novas sugestões; as já geradas continuam aparecendo." },
     { chave: "iaSugestaoTriagem", titulo: "Sugestão de pasta (Triagem Manual)", texto: "Desligada, valem só as buscas por número de processo e por parte, que não usam IA." },
   ];
   return (
@@ -580,6 +582,33 @@ function ChavesDaIa({ painel, salvando, onSalvar }: { painel: PainelDeRegras; sa
           </li>
         ))}
       </ul>
+    </CartaoEditavel>
+  );
+}
+
+/** Fase 3 da abertura de pasta (16/11/2026): o robô só grava de verdade com esta chave ligada. */
+function ChaveDaAberturaDePasta({ painel, salvando, onSalvar }: { painel: PainelDeRegras; salvando: boolean; onSalvar: (valor: boolean) => void }) {
+  const ligada = painel.configuracoes.aberturaPastaReal;
+  return (
+    <CartaoEditavel
+      icone={Bot}
+      titulo="Robô: abertura de pasta"
+      descricao="Publicação sem pasta, na Triagem Manual: a controladoria confere a capa e, com esta chave ligada, pede ao robô que abra a pasta no VIOS. Depois, confere a pasta e libera."
+    >
+      <div className="flex items-start gap-3 py-2.5">
+        <Interruptor ligado={ligada} rotulo="Abrir a pasta de verdade no VIOS" desabilitado={salvando} onChange={onSalvar} />
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">
+            Abrir a pasta de verdade no VIOS{" "}
+            <span className={cn("text-xs font-normal", ligada ? "text-emerald-700" : "text-muted-foreground")}>{ligada ? "ligada" : "desligada"}</span>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Ligada, a Triagem Manual mostra “Abrir a pasta no VIOS” no lugar da simulação: o robô confere que o processo não tem pasta,
+            só grava se o VIOS aceitar a capa inteira e devolve a CI. A publicação continua na Triagem Manual, com a CI nova, para a
+            responsável conferir e liberar. Desligada, o robô só simula. As partes ainda se incluem à mão no VIOS.
+          </p>
+        </div>
+      </div>
     </CartaoEditavel>
   );
 }
@@ -716,45 +745,6 @@ function TransparenciaDaIa({ painel, ia }: { painel: PainelDeRegras; ia: IaDocum
           <p className="text-sm text-muted-foreground">Nenhuma publicação sem pasta precisou de sugestão no período.</p>
         )}
       </div>
-    </Painel>
-  );
-}
-
-function Historico({ painel }: { painel: PainelDeRegras }) {
-  if (!painel.historico.length) {
-    return (
-      <Painel>
-        <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-          <span className="grid size-10 place-items-center rounded-md bg-[#e8f8f8] text-[#3e84a8]">
-            <History className="size-5" aria-hidden />
-          </span>
-          <p className="text-sm font-medium text-foreground">Nenhuma alteração ainda</p>
-          <p className="max-w-md text-sm text-muted-foreground">Tudo segue o padrão do sistema. Cada mudança feita aqui fica registrada com quem mudou e quando.</p>
-        </div>
-      </Painel>
-    );
-  }
-  return (
-    <Painel>
-      <ol className="divide-y divide-[#eef3f5]">
-        {painel.historico.map((item, indice) => (
-          <li key={`${item.chave}-${item.alteradoEm}-${indice}`} className="flex gap-3 px-4 py-3">
-            <AvatarPessoa nome={item.alteradoPor ?? "Admin"} className="size-8" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-foreground">
-                <span className="font-medium">{item.alteradoPor ?? "Admin"}</span> mudou{" "}
-                <span className="font-medium">{ROTULO_DA_CHAVE[item.chave as ChaveConfiguracao] ?? item.chave}</span>
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                <span className="line-through decoration-muted-foreground/60">{valorEmTexto(item.chave, item.valorAnterior)}</span>
-                {" → "}
-                <span className="text-foreground">{valorEmTexto(item.chave, item.valorNovo)}</span>
-              </p>
-            </div>
-            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatarDataHora(item.alteradoEm)}</span>
-          </li>
-        ))}
-      </ol>
     </Painel>
   );
 }
@@ -948,6 +938,9 @@ function Configuracoes() {
           <div className="xl:col-span-2" data-tour="cg-ia">
             <ChavesDaIa painel={painel} salvando={salvando} onSalvar={(chave, valor) => void salvar(chave, valor)} />
           </div>
+          <div className="xl:col-span-2">
+            <ChaveDaAberturaDePasta painel={painel} salvando={salvando} onSalvar={(valor) => void salvar("aberturaPastaReal", valor)} />
+          </div>
         </div>
       ) : secao === "esteira" ? (
         <RegrasDaEsteira painel={painel} />
@@ -958,7 +951,7 @@ function Configuracoes() {
           ))}
         </div>
       ) : (
-        <Historico painel={painel} />
+        <HistoricoDasConfiguracoes painel={painel} />
       )}
 
       {editando === "vistadores" ? (

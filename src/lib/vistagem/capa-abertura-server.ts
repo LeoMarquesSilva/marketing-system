@@ -6,10 +6,14 @@ import {
   CAMPOS_DA_CAPA,
   capaDoDjen,
   capaParaOVios,
+  ciDaPastaAberta,
   ehChaveDaCapa,
   lerCapaDoEsaj,
   lerCnj,
+  listasDasPastas,
   montarCapa,
+  pastaDaCapaAberta,
+  situacaoDaAberturaReal,
   problemasParaOVios,
   resumoDaCapa,
   urlDoEsaj,
@@ -35,6 +39,7 @@ import {
   enfileirarAberturaDePasta,
   type CatalogoArea,
 } from "./sama";
+import { lerConfiguracoes } from "./configuracoes-server";
 import { admin, falhou, hojeEmSaoPaulo } from "./server";
 import { buscarPastasPorCnj, carregarTodasAsPastas } from "./sioe";
 import { escritorioDaAreaDoProcesso, pastaAtiva } from "./triagem";
@@ -111,6 +116,18 @@ async function parDasPastasDoGrupo(grupo: string | null, area: string | null, us
   return [...contagem.values()].sort((a, b) => b.pastas - a.pastas)[0] ?? null;
 }
 
+let listasEmCache: { origem: Awaited<ReturnType<typeof carregarTodasAsPastas>>; listas: ReturnType<typeof listasDasPastas> } | null = null;
+
+/**
+ * Clientes, ações e etiquetas das ~35 mil pastas. Montar leva uns 400 ms de CPU: fica guardado enquanto o cache das
+ * pastas (30 min) devolver a mesma lista.
+ */
+async function listasDoProcessoCompleto(): Promise<ReturnType<typeof listasDasPastas>> {
+  const pastas = await carregarTodasAsPastas();
+  if (listasEmCache?.origem !== pastas) listasEmCache = { origem: pastas, listas: listasDasPastas(pastas) };
+  return listasEmCache.listas;
+}
+
 /** Usuários do VIOS sem repetir: a mesma pessoa aparece em várias áreas do catálogo (e a sigla tem de achar uma só). */
 async function usuariosDoVios(): Promise<CatalogoArea["usuarios"]> {
   const catalogo = await carregarCatalogoProcessos().catch(() => [] as CatalogoArea[]);
@@ -149,12 +166,17 @@ export async function capaParaAbertura(id: string): Promise<CapaParaAbertura> {
   const area = data.escritorio_responsavel ?? sugestao?.escritorio ?? null;
   const grupo = data.grupo_cliente ?? sugestao?.grupo ?? null;
   const url = urlDoEsaj(cnj);
-  const [djen, esaj, usuarios, materias, sistemas] = await Promise.all([
+  const [djen, esaj, usuarios, materias, sistemas, doProcessoCompleto] = await Promise.all([
     buscarNoDjen(cnj.digitos),
     url ? buscarNoEsaj(url) : Promise.resolve(null),
     usuariosDoVios(),
     carregarMateriasVios().catch(() => []),
     carregarSistemasVios().catch(() => []),
+    // Clientes, ações e etiquetas como o VIOS grava (Processos Completo, no SIOE). Sem elas, os campos ficam em texto livre.
+    listasDoProcessoCompleto().catch((erro: unknown) => {
+      console.error("[vistagem] listas do Processos Completo", mensagem(erro));
+      return { clientes: [], acoes: [], etiquetas: [] };
+    }),
   ]);
   const par = await parDasPastasDoGrupo(grupo, area, usuarios).catch((erro: unknown) => {
     console.error("[vistagem] par das pastas do grupo", mensagem(erro));
@@ -165,6 +187,7 @@ export async function capaParaAbertura(id: string): Promise<CapaParaAbertura> {
     // O VIOS repete nomes de matéria (ids diferentes): na sugestão, cada nome uma vez.
     materias: [...new Set(materias.map((materia) => materia.nome))],
     sistemas: [...new Set(sistemas.map((sistema) => sistema.nome))],
+    ...doProcessoCompleto,
   };
   return {
     dados: {
@@ -275,16 +298,81 @@ export async function numeroDaPublicacao(id: string): Promise<string> {
   return (data.numero_processo ?? data.numero_processo_original) as string;
 }
 
-/** Os pedidos de abertura da publicação ao robô (o mais novo primeiro). */
-export async function pedidosDeAbertura(id: string): Promise<PedidoDeAbertura[]> {
-  return aberturasDaPublicacao(id);
+/** O que a tela da abertura precisa: os pedidos ao robô, se a abertura de verdade está ligada e a pasta aberta. */
+export interface AberturaDaPublicacao {
+  pedidos: PedidoDeAbertura[];
+  /** Configurações › Robô: abertura de pasta de verdade. */
+  aberturaReal: boolean;
+  /**
+   * Depois da abertura de verdade: a CI nova. `naTriagem`: a publicação está na Triagem Manual, com a CI, esperando a
+   * responsável conferir e liberar; `liberada`: já saiu da triagem com essa CI.
+   */
+  pastaAberta: { ci: string; naTriagem: boolean; liberada: boolean } | null;
+}
+
+/** Grupo do cliente pelas pastas que ele já tem no VIOS (o mais frequente), ou o que a triagem sugeriu. */
+async function grupoDoCliente(cliente: string | null, sugerido: string | null): Promise<string | null> {
+  if (cliente) {
+    const listas = await listasDoProcessoCompleto().catch(() => null);
+    const achado = listas?.clientes.find((item) => chaveNome(item.nome) === chaveNome(cliente));
+    if (achado?.grupo) return achado.grupo;
+  }
+  return sugerido;
 }
 
 /**
- * Pede ao robô a abertura da pasta com a capa como está (fontes + edições da controladoria). Fase 2: só simulação.
- * Recusa se faltar obrigatório do VIOS, se a publicação já tiver pasta (aqui ou no SIOE) ou se já houver pedido na fila.
+ * Fase 3: depois que o robô abriu a pasta de verdade, a publicação continua na Triagem Manual, agora com a CI nova
+ * (pedido do usuário, 16/11/2026: a responsável confere a pasta no VIOS e libera, em vez de ir direto para a
+ * vistagem). A pasta vai montada da capa entre as candidatas, porque o SIOE só a copia de madrugada; o "Liberar para o
+ * jurídico" da triagem acha a CI ali. Repetir não faz mal: só grava com a publicação ainda pendente.
  */
-export async function pedirAberturaDaPasta(id: string, authUserId: string): Promise<PedidoDeAbertura[]> {
+async function registrarPastaAberta(id: string, pedido: PedidoDeAbertura): Promise<AberturaDaPublicacao["pastaAberta"]> {
+  const ci = ciDaPastaAberta(pedido);
+  if (!ci || !pedido.capa) return null;
+  const { data: publicacao, error } = await admin()
+    .from("vistagem_publicacoes")
+    .select("status, pasta_ci, sugestao_triagem")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) falhou("carregar a publicação", error);
+  if (!publicacao) return null;
+  if (publicacao.status !== "triagem_pendente") return { ci, naTriagem: false, liberada: publicacao.pasta_ci === ci };
+  if (publicacao.pasta_ci !== ci) {
+    const sugestao = publicacao.sugestao_triagem as SugestaoTriagem | null;
+    const pasta = pastaDaCapaAberta(ci, pedido.capa, await grupoDoCliente(pedido.capa.cliente, sugestao?.grupo ?? null));
+    const { error: erroPasta } = await admin()
+      .from("vistagem_publicacoes")
+      .update({ pasta_ci: ci, pastas_candidatas: [pasta] })
+      .eq("id", id)
+      .eq("status", "triagem_pendente");
+    if (erroPasta) falhou("gravar a pasta aberta na publicação", erroPasta);
+  }
+  return { ci, naTriagem: true, liberada: false };
+}
+
+/**
+ * Os pedidos de abertura da publicação ao robô (o mais novo primeiro). Se a última abertura de verdade terminou, a
+ * publicação fica com a CI nova, na Triagem Manual, para a responsável conferir e liberar.
+ */
+export async function pedidosDeAbertura(id: string): Promise<AberturaDaPublicacao> {
+  const [pedidos, configuracoes] = await Promise.all([aberturasDaPublicacao(id), lerConfiguracoes()]);
+  const real = pedidos.find((pedido) => !pedido.simulado);
+  const pastaAberta = real ? await registrarPastaAberta(id, real) : null;
+  return { pedidos, aberturaReal: configuracoes.aberturaPastaReal, pastaAberta };
+}
+
+/**
+ * Pede ao robô a abertura da pasta com a capa como está (fontes + edições da controladoria): simulação (Fase 2) ou,
+ * com a chave de Configurações ligada, de verdade, direto (Fase 3, `situacaoDaAberturaReal`). Recusa se faltar
+ * obrigatório do VIOS, se a publicação já tiver pasta (aqui ou no SIOE) ou se já houver pedido na fila. O robô ainda
+ * confere no VIOS, antes de gravar, que o número não tem pasta, e só grava se o VIOS aceitar a capa inteira.
+ */
+export async function pedirAberturaDaPasta(
+  id: string,
+  authUserId: string,
+  modo: "simular" | "abrir" = "simular",
+  { conferidoNoVios = false }: { conferidoNoVios?: boolean } = {}
+): Promise<AberturaDaPublicacao> {
   const { data: publicacao, error } = await admin().from("vistagem_publicacoes").select("pendencia, pasta_ci").eq("id", id).maybeSingle();
   if (error) falhou("carregar a publicação", error);
   if (!publicacao) throw new VistagemError("Publicação não encontrada.", 404);
@@ -306,13 +394,20 @@ export async function pedirAberturaDaPasta(id: string, authUserId: string): Prom
   if (anteriores.some((pedido) => ["pendente", "enviado", "processando"].includes(pedido.status))) {
     throw new VistagemError("Já há um pedido de abertura desta publicação na fila do robô.", 409);
   }
+  if (modo === "abrir") {
+    if (!(await lerConfiguracoes()).aberturaPastaReal) {
+      throw new VistagemError("A abertura de verdade está desligada (Vistagem › Configurações › Robô: abertura de pasta).", 409);
+    }
+    const situacao = situacaoDaAberturaReal(anteriores, { conferidoNoVios });
+    if (!situacao.pode) throw new VistagemError(situacao.motivo, 409);
+  }
   const { data: usuario } = await admin().from("users").select("name").eq("auth_id", authUserId).maybeSingle();
   await enfileirarAberturaDePasta({
     publicacaoId: id,
     capa: paraOVios,
     autor: (usuario?.name as string | null) ?? "Controladoria",
     data: paraDataVios(hojeEmSaoPaulo()),
-    simular: true,
+    simular: modo !== "abrir",
   });
-  return aberturasDaPublicacao(id);
+  return pedidosDeAbertura(id);
 }

@@ -1,5 +1,5 @@
 import { chaveNome } from "./agendamento";
-import { advogadosDoEscritorioCitados, ESCRITORIO_CIVEL_INSOLVENCIA, ESCRITORIO_INSOLVENCIA } from "./triagem";
+import { advogadosDoEscritorioCitados, ESCRITORIO_CIVEL_INSOLVENCIA, ESCRITORIO_INSOLVENCIA, type PastaSioe } from "./triagem";
 
 /**
  * Capa para a abertura de pasta (Fase 1, só leitura): o que dá para preencher na tela "Cadastro de Processo
@@ -30,6 +30,8 @@ export interface CampoDaCapa {
   /** Editado pela controladoria: o que as fontes tinham (para desfazer) e quem editou. */
   original?: { valor: string | null; fonte: FonteDaCapa };
   editado?: { por: string | null; em: string };
+  /** O que não está na lista do VIOS do campo (cliente ainda sem pasta, etiqueta de grupo novo): conferir no VIOS. */
+  foraDaLista?: string[];
 }
 
 export interface Cnj {
@@ -410,7 +412,11 @@ export function parteDoCliente(cliente: string | null | undefined, capa: Pick<Ca
 // --------------------------------------------------------------------------------------------------------------- campos
 
 export type GrupoDaCapa = "processo" | "partes" | "escritorio";
-export type ListaDoVios = "usuarios" | "materias" | "sistemas";
+/**
+ * Listas do VIOS para escolher ao editar. Usuários, matérias e sistemas são cópias do SAMA; clientes, ações e etiquetas
+ * saem do "Processos Completo" do VIOS (processos_completo do SIOE), com a grafia que o VIOS grava.
+ */
+export type ListaDoVios = "usuarios" | "materias" | "sistemas" | "clientes" | "acoes" | "etiquetas";
 
 export interface DefinicaoDoCampo {
   rotulo: string;
@@ -421,8 +427,12 @@ export interface DefinicaoDoCampo {
   opcoes?: readonly string[];
   /** Sugestões ao editar (pode escrever outro valor). */
   sugestoes?: readonly string[];
-  /** Sugestões de uma lista do VIOS (o SAMA guarda a cópia). */
+  /** Escolhe numa lista do VIOS, com busca. */
   lista?: ListaDoVios;
+  /** Aceita valor fora da lista (a nossa cópia só tem quem já tem pasta): a capa marca para conferir. */
+  aceitaForaDaLista?: boolean;
+  /** Vários valores separados por "; " (etiquetas, matérias). */
+  multiplo?: boolean;
   /** Texto longo (várias partes): edita numa caixa maior. */
   longo?: boolean;
 }
@@ -450,14 +460,19 @@ export const CAMPOS_DA_CAPA = {
   cidade: { rotulo: "Cidade", grupo: "processo", obrigatorio: true },
   vara: { rotulo: "Órgão julgador (vara/câmara)", grupo: "processo" },
   tipoVara: { rotulo: "Tipo de órgão julgador", grupo: "processo" },
-  acao: { rotulo: "Ação", grupo: "processo", obrigatorio: true },
+  acao: { rotulo: "Ação", grupo: "processo", obrigatorio: true, lista: "acoes", aceitaForaDaLista: true },
   fase: { rotulo: "Fase", grupo: "processo", obrigatorio: true, opcoes: ["Conhecimento", "Recursal", "Execução", "Liquidação", "Suspenso", "Arquivado Definitivamente"] },
   dataAcao: { rotulo: "Data da ação / distribuição", grupo: "processo", obrigatorio: true },
   valor: { rotulo: "Valor da ação (R$)", grupo: "processo", obrigatorio: true },
-  situacao: { rotulo: "Situação do processo", grupo: "processo", obrigatorio: true, opcoes: ["Ativo", "Suspenso", "Arquivado definitivamente", "Encerrado - Ex-Cliente"] },
+  situacao: {
+    rotulo: "Situação do processo",
+    grupo: "processo",
+    obrigatorio: true,
+    opcoes: ["Ativo", "Suspenso", "Arquivado Provisoriamente", "Arquivado definitivamente", "Encerrado - Ex-Cliente"],
+  },
   segredo: { rotulo: "Em segredo de justiça?", grupo: "processo", opcoes: ["Não", "Sim"] },
 
-  cliente: { rotulo: "Cliente", grupo: "partes", obrigatorio: true },
+  cliente: { rotulo: "Cliente", grupo: "partes", obrigatorio: true, lista: "clientes", aceitaForaDaLista: true },
   polo: { rotulo: "Polo do cliente", grupo: "partes", obrigatorio: true, opcoes: ["Ativo", "Passivo", "Terceiro"] },
   tipoParteAtiva: {
     rotulo: "Tipo da parte ativa",
@@ -489,8 +504,8 @@ export const CAMPOS_DA_CAPA = {
   },
   responsavel: { rotulo: "Advogado responsável", grupo: "escritorio", obrigatorio: true, lista: "usuarios" },
   auxiliar: { rotulo: "Auxiliar", grupo: "escritorio", obrigatorio: true, lista: "usuarios" },
-  etiqueta: { rotulo: "Etiquetas", grupo: "escritorio", obrigatorio: true },
-  materias: { rotulo: "Matéria", grupo: "escritorio", obrigatorio: true, lista: "materias" },
+  etiqueta: { rotulo: "Etiquetas", grupo: "escritorio", obrigatorio: true, lista: "etiquetas", multiplo: true, aceitaForaDaLista: true },
+  materias: { rotulo: "Matéria", grupo: "escritorio", obrigatorio: true, lista: "materias", multiplo: true },
 } as const satisfies Record<string, DefinicaoDoCampo>;
 
 export type ChaveDaCapa = keyof typeof CAMPOS_DA_CAPA;
@@ -512,10 +527,79 @@ export interface AjusteDaCapa {
 }
 export type AjustesDaCapa = Partial<Record<ChaveDaCapa, AjusteDaCapa>>;
 
+/** Cliente como o VIOS grava, com o grupo e quantas pastas ele tem (para achar o do grupo da publicação). */
+export interface ClienteDoVios {
+  nome: string;
+  grupo: string | null;
+  pastas: number;
+}
+
 export interface ListasDoVios {
   usuarios: string[];
   materias: string[];
   sistemas: string[];
+  /** Do "Processos Completo" (SIOE): os clientes, as ações e as etiquetas que as pastas já usam. */
+  clientes?: ClienteDoVios[];
+  acoes?: string[];
+  etiquetas?: string[];
+}
+
+/** Os nomes de uma lista do VIOS (vazio quando a lista não veio). */
+export function nomesDaLista(listas: Partial<ListasDoVios>, lista: ListaDoVios): string[] {
+  if (lista === "clientes") return (listas.clientes ?? []).map((cliente) => cliente.nome);
+  return listas[lista] ?? [];
+}
+
+/** "Carteira Ex-Cliente | Demanda de risco" (como vem no Processos Completo) → as etiquetas uma a uma. */
+export function etiquetasDaPasta(texto: string | null | undefined): string[] {
+  return (texto ?? "").split(/\s*[|;]\s*/).map((etiqueta) => etiqueta.trim()).filter(Boolean);
+}
+
+/** Uma pasta do "Processos Completo", só o que vira lista. */
+export interface PastaParaLista {
+  cliente: string | null;
+  grupoCliente: string | null;
+  acao?: string | null;
+  etiquetas: string | null;
+}
+
+/**
+ * Clientes, ações e etiquetas que as pastas do VIOS usam, com a grafia do VIOS: as ações e as etiquetas mais usadas
+ * primeiro; os clientes em ordem alfabética, cada um com o grupo mais frequente das pastas dele.
+ */
+export function listasDasPastas(pastas: PastaParaLista[]): Required<Pick<ListasDoVios, "clientes" | "acoes" | "etiquetas">> {
+  const clientes = new Map<string, { nome: string; grupos: Map<string, number>; pastas: number }>();
+  const acoes = new Map<string, { nome: string; vezes: number }>();
+  const etiquetas = new Map<string, { nome: string; vezes: number }>();
+  const contar = (mapa: Map<string, { nome: string; vezes: number }>, nome: string) => {
+    const chave = sem(nome);
+    if (!chave) return;
+    const atual = mapa.get(chave) ?? { nome, vezes: 0 };
+    atual.vezes++;
+    mapa.set(chave, atual);
+  };
+  for (const pasta of pastas) {
+    const nome = pasta.cliente?.trim();
+    if (nome) {
+      const chave = sem(nome);
+      const atual = clientes.get(chave) ?? { nome, grupos: new Map<string, number>(), pastas: 0 };
+      atual.pastas++;
+      const grupo = pasta.grupoCliente?.trim();
+      if (grupo) atual.grupos.set(grupo, (atual.grupos.get(grupo) ?? 0) + 1);
+      clientes.set(chave, atual);
+    }
+    if (pasta.acao?.trim()) contar(acoes, pasta.acao.trim());
+    for (const etiqueta of etiquetasDaPasta(pasta.etiquetas)) contar(etiquetas, etiqueta);
+  }
+  const maisUsadas = (mapa: Map<string, { nome: string; vezes: number }>) =>
+    [...mapa.values()].sort((a, b) => b.vezes - a.vezes || a.nome.localeCompare(b.nome, "pt-BR")).map((item) => item.nome);
+  return {
+    clientes: [...clientes.values()]
+      .map((cliente) => ({ nome: cliente.nome, grupo: [...cliente.grupos].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null, pastas: cliente.pastas }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+    acoes: maisUsadas(acoes),
+    etiquetas: maisUsadas(etiquetas),
+  };
 }
 
 export interface ParDaPasta {
@@ -648,29 +732,50 @@ export function montarCapa(dados: DadosDaCapa, extras: { ajustes?: AjustesDaCapa
     const definicao: DefinicaoDoCampo = CAMPOS_DA_CAPA[chave];
     const fonte = preenchido[chave] ?? { valor: null, fonte: "falta" as const };
     const valor = fonte.valor?.trim() ? fonte.valor.trim() : null;
+    const dasFontes = conferirNaLista(definicao, valor, listas);
     const base: CampoDaCapa = {
       chave,
       campo: definicao.rotulo,
       grupo: definicao.grupo,
       obrigatorio: Boolean(definicao.obrigatorio),
-      valor,
+      valor: dasFontes.valor,
       fonte: valor ? fonte.fonte : "falta",
-      conferir: Boolean(fonte.conferir) || (!valor && Boolean(definicao.obrigatorio)),
+      conferir: Boolean(fonte.conferir) || (!valor && Boolean(definicao.obrigatorio)) || dasFontes.fora.length > 0,
       ...(fonte.nota ? { nota: fonte.nota } : {}),
+      ...(dasFontes.fora.length ? { foraDaLista: dasFontes.fora } : {}),
     };
     const ajuste = extras.ajustes?.[chave];
     if (!ajuste) return base;
-    const editado = ajuste.valor?.trim() ? ajuste.valor.trim() : null;
+    const editado = conferirNaLista(definicao, ajuste.valor?.trim() ? ajuste.valor.trim() : null, listas);
+    // A marca de fora da lista é do valor editado, não do que as fontes tinham.
+    const semMarca: CampoDaCapa = { ...base };
+    delete semMarca.foraDaLista;
     return {
-      ...base,
-      valor: editado,
+      ...semMarca,
+      valor: editado.valor,
       fonte: "editado",
-      conferir: !editado && base.obrigatorio,
+      conferir: (!editado.valor && base.obrigatorio) || editado.fora.length > 0,
       nota: undefined,
       original: { valor: base.valor, fonte: base.fonte },
       editado: { por: ajuste.porNome, em: ajuste.em },
+      ...(editado.fora.length ? { foraDaLista: editado.fora } : {}),
     };
   });
+}
+
+/**
+ * O valor com a grafia da lista do VIOS do campo (o robô procura pelo nome exato) e o que ficou fora dela. Sem a
+ * lista (não carregou), o valor fica como veio e nada é marcado.
+ */
+function conferirNaLista(definicao: DefinicaoDoCampo, valor: string | null, listas: Partial<ListasDoVios>): { valor: string | null; fora: string[] } {
+  if (!definicao.lista || !valor) return { valor, fora: [] };
+  const nomes = nomesDaLista(listas, definicao.lista);
+  if (!nomes.length) return { valor, fora: [] };
+  const porChave = new Map(nomes.map((nome) => [sem(nome), nome]));
+  const itens = definicao.multiplo ? emLista(valor) : [valor];
+  const fora = itens.filter((item) => !porChave.has(sem(item)));
+  const naGrafia = itens.map((item) => porChave.get(sem(item)) ?? item);
+  return { valor: definicao.multiplo ? naGrafia.join("; ") : naGrafia[0], fora };
 }
 
 /** O que impede ou pede atenção antes de abrir: obrigatórios vazios, campos para conferir e editados. */
@@ -719,7 +824,70 @@ export interface PedidoDeAbertura {
     recusaria?: string[];
     avisos?: string[];
     ci?: string | null;
+    /** De verdade (Fase 3): o CI da pasta que o robô abriu no VIOS. */
+    ci_pasta?: string | null;
   } | null;
+  /** A capa que foi ao robô neste pedido (para saber se a simulação vale para a capa de agora). */
+  capa: CapaDoVios | null;
+}
+
+const NA_FILA_DO_ROBO = new Set<PedidoDeAbertura["status"]>(["pendente", "enviado", "processando"]);
+
+/** O CI da pasta aberta de verdade, se o pedido for de verdade e tiver terminado. */
+export function ciDaPastaAberta(pedido: PedidoDeAbertura | undefined): string | null {
+  if (!pedido || pedido.simulado || pedido.status !== "concluido") return null;
+  return pedido.resultado?.ci_pasta?.replace(/\D/g, "") || null;
+}
+
+export type SituacaoDaAberturaReal = { pode: true } | { pode: false; motivo: string; conferirNoVios?: true };
+
+/**
+ * Fase 3: quando a controladoria pode pedir a abertura de verdade. Sem simulação antes (pedido do usuário,
+ * 16/11/2026: conferiu e editou a capa, "Abrir a pasta no VIOS" vai direto); o próprio robô confere que o número não
+ * tem pasta e só grava se o VIOS aceitar a capa inteira. Não deixa com pedido na fila nem com a pasta já aberta. Se o
+ * último pedido parou depois do Gravar (ATENÇÃO), só pede de novo quem conferiu no VIOS que a pasta não foi criada
+ * (`conferidoNoVios`). Os pedidos vêm do mais novo para o mais antigo.
+ */
+export function situacaoDaAberturaReal(pedidos: PedidoDeAbertura[], { conferidoNoVios = false }: { conferidoNoVios?: boolean } = {}): SituacaoDaAberturaReal {
+  if (pedidos.some((pedido) => NA_FILA_DO_ROBO.has(pedido.status))) return { pode: false, motivo: "Já há um pedido desta publicação na fila do robô." };
+  const real = pedidos.find((pedido) => !pedido.simulado);
+  const ci = ciDaPastaAberta(real);
+  if (ci) return { pode: false, motivo: `A pasta já foi aberta no VIOS: CI ${ci}.` };
+  if (real?.status === "erro" && /^ATEN[ÇC][ÃA]O/i.test(real.erro ?? "") && !conferidoNoVios) {
+    return {
+      pode: false,
+      conferirNoVios: true,
+      motivo: "O último pedido parou depois do Gravar: confira no VIOS se a pasta foi criada. Se não foi, peça de novo.",
+    };
+  }
+  return { pode: true };
+}
+
+/** "161.341,87" → 161341.87 (null se não for número). */
+function valorDaCapa(texto: string | null): number | null {
+  const numero = Number((texto ?? "").replace(/\./g, "").replace(",", "."));
+  return texto && Number.isFinite(numero) ? numero : null;
+}
+
+/**
+ * A pasta que o robô acabou de abrir, no formato da triagem: o SIOE só copia o VIOS de madrugada, então até lá a
+ * pasta nova não está lá. Montada da capa que foi ao VIOS; o grupo vem das pastas do cliente.
+ */
+export function pastaDaCapaAberta(ci: string, capa: CapaDoVios, grupo: string | null): PastaSioe {
+  return {
+    ci,
+    cnj: capa.cnj ?? "",
+    vinculo: null,
+    cliente: capa.cliente,
+    grupoCliente: grupo,
+    area: capa.area,
+    advogadoResponsavel: capa.responsavel,
+    situacao: capa.situacao ?? "Ativo",
+    etiquetas: capa.etiquetas.length ? capa.etiquetas.join(" | ") : null,
+    acao: capa.acao,
+    fase: capa.fase,
+    valorAcao: valorDaCapa(capa.valor),
+  };
 }
 
 /** Rótulo do campo que o robô devolveu (ele chama as etiquetas de "etiquetas"). */

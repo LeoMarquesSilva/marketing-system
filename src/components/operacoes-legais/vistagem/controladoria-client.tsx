@@ -708,7 +708,14 @@ function DetalhePendencia({
         <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-l @4xl:border-t-0">
           {publicacao.pendencia === "sem_pasta" ? <VerificacaoSemPasta publicacao={publicacao} /> : null}
           {/* Abertura automática de pasta: o resumo da capa que iria para o VIOS; a capa inteira abre num diálogo, com o lápis. */}
-          {publicacao.pendencia === "sem_pasta" ? <CapaParaAberturaDePasta key={`capa-${publicacao.id}`} publicacaoId={publicacao.id} /> : null}
+          {publicacao.pendencia === "sem_pasta" ? (
+            <CapaParaAberturaDePasta
+              key={`capa-${publicacao.id}`}
+              publicacaoId={publicacao.id}
+              // Pasta aberta pelo robô: a publicação continua aqui com a CI nova; "Para onde vai" libera com ela.
+              onPastaAberta={(ci) => setPublicacao((atual) => (atual.pastaCi === ci ? atual : { ...atual, pastaCi: ci }))}
+            />
+          ) : null}
           <Resolucao key={publicacao.id} publicacao={publicacao} onResolvida={resolvida} onAgendar={agendar} />
         </div>
       </div>

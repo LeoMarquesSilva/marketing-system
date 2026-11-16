@@ -46,7 +46,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
 import { BirthdayArtsDialog } from "@/components/inicio/birthday-arts-dialog";
-import { TeamCelebrations } from "@/components/inicio/team-celebrations";
+import { MyCelebrationNotice, TeamCelebrations, keyOf as celebrationKeyOf } from "@/components/inicio/team-celebrations";
 import { NavBadgePill, sumBadges, useNavBadges } from "@/components/layout/nav-badges";
 import { ToolLogo } from "@/components/rh/registration/welcome-ui";
 import { useAuth } from "@/contexts/auth-context";
@@ -996,6 +996,8 @@ export function InicioClient() {
   const [modulesOpen, setModulesOpen] = useState<string | null>(null);
   const [birthdaysOpen, setBirthdaysOpen] = useState(false);
   const [artsOpen, setArtsOpen] = useState(false);
+  /** Comemoração aberta no modal (o aviso do topo e a lista de aniversários abrem a mesma). */
+  const [celebrationOpen, setCelebrationOpen] = useState<string | null>(null);
   const fronts = useMemo(() => buildNav(profile).filter((front) => !front.untitled), [profile]);
   const moduleCount = fronts.reduce((sum, front) => sum + front.features.length, 0);
 
@@ -1038,6 +1040,10 @@ export function InicioClient() {
   return (
     <div className="mx-auto max-w-[1360px] space-y-5">
       <Hero data={data} loading={loading} />
+
+      {data?.myCelebrations.map((item) => (
+        <MyCelebrationNotice key={celebrationKeyOf(item)} item={item} onOpen={(target) => setCelebrationOpen(celebrationKeyOf(target))} />
+      ))}
 
       <Favorites fronts={fronts} data={data} />
 
@@ -1184,6 +1190,8 @@ export function InicioClient() {
             data={data}
             allOpen={birthdaysOpen}
             onAllOpenChange={setBirthdaysOpen}
+            openKey={celebrationOpen}
+            onOpenKeyChange={setCelebrationOpen}
             onChanged={() => setAttempt((value) => value + 1)}
           />
         ) : error ? null : (

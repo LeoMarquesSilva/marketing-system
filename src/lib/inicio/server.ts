@@ -196,7 +196,7 @@ async function loadTeam(db: SupabaseClient, today: string, viewerId: string) {
   const newcomers: HomeNewcomer[] = [];
   const workAnniversaries: HomeWorkAnniversary[] = [];
   const recentCelebrations: HomeCelebration[] = [];
-  const social = { likes: 0, liked: false, comments: 0 };
+  const social = { likes: 0, liked: false, comments: 0, praises: 0 };
   /** Ano em que a comemoração cai (a arte é por ano). */
   const yearIn = (inDays: number) => Number(addDays(today, inDays).slice(0, 4));
 
@@ -390,6 +390,10 @@ export async function getHomeData(): Promise<HomeData> {
     newcomers: team.newcomers,
     workAnniversaries: team.workAnniversaries,
     recentCelebrations: team.recentCelebrations,
+    // Hoje ou na última semana (inDays <= 0): é quando o time pode parabenizar.
+    myCelebrations: employee
+      ? [...team.birthdays, ...team.workAnniversaries, ...team.recentCelebrations].filter((item) => item.id === employee.id && item.inDays <= 0)
+      : [],
     canManageBirthdayArts: canManageBirthdayArts(viewer),
     links: links.slice(0, MAX_LINKS),
     favorites: sanitizeFavorites(viewer.home_favorites),

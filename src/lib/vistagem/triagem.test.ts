@@ -64,12 +64,18 @@ describe("triar", () => {
     expect(triar([pasta({ etiquetas: "Carteira X | Demanda de risco" })], areaDoAdvogado).demandaRisco).toBe(true);
   });
 
-  it("etiqueta Crítico vale como demanda de risco", () => {
-    expect(triar([pasta({ etiquetas: "Carteira X | Crítico" })], areaDoAdvogado).demandaRisco).toBe(true);
-    expect(triar([pasta({ etiquetas: "CRITICO" })], areaDoAdvogado).demandaRisco).toBe(true);
+  it("etiqueta Crítico não é demanda de risco no padrão (16/11/2026)", () => {
+    expect(triar([pasta({ etiquetas: "Carteira X | Crítico" })], areaDoAdvogado).demandaRisco).toBe(false);
+    expect(triar([pasta({ etiquetas: "Crítico | Demanda de risco | Carteira X" })], areaDoAdvogado).demandaRisco).toBe(true);
+  });
+
+  it("etiqueta configurada em Configurações vale como demanda de risco, como palavra inteira", () => {
+    const contexto = { etiquetasDeRisco: ["Demanda de risco", "Crítico"] };
+    expect(triar([pasta({ etiquetas: "Carteira X | Crítico" })], areaDoAdvogado, contexto).demandaRisco).toBe(true);
+    expect(triar([pasta({ etiquetas: "CRITICO" })], areaDoAdvogado, contexto).demandaRisco).toBe(true);
     // Palavra que só contém "critic" no meio não conta.
-    expect(triar([pasta({ etiquetas: "Carteira Autocritica Ltda" })], areaDoAdvogado).demandaRisco).toBe(false);
-    expect(triar([pasta({ etiquetas: "Carteira X" })], areaDoAdvogado).demandaRisco).toBe(false);
+    expect(triar([pasta({ etiquetas: "Carteira Autocritica Ltda" })], areaDoAdvogado, contexto).demandaRisco).toBe(false);
+    expect(triar([pasta({ etiquetas: "Carteira X" })], areaDoAdvogado, contexto).demandaRisco).toBe(false);
   });
 
   it("manda ex-cliente para Operações Legais", () => {
