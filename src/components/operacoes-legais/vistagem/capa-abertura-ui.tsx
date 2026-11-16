@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ElementType, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ElementType, type KeyboardEvent, type ReactNode } from "react";
 import {
   Bot,
   Check,
   CircleAlert,
   CircleCheck,
   FileText,
+  FolderPlus,
   LoaderCircle,
   PencilLine,
   RefreshCw,
@@ -36,8 +37,11 @@ import {
   type ListasDoVios,
   type PedidoDeAbertura,
   rotuloDoCampoDoRobo,
+  ciDaPastaAberta,
+  situacaoDaAberturaReal,
   type StatusDaFonte,
 } from "@/lib/vistagem/capa-abertura";
+import { linkPastaVios } from "@/lib/vistagem/vios-links";
 import { ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { Aviso, campoClasse, Secao } from "./ui";
 
@@ -51,6 +55,13 @@ export interface EstadoDaAbertura {
 }
 
 const NA_FILA = new Set<PedidoDeAbertura["status"]>(["pendente", "enviado", "processando"]);
+
+/** O que a rota da abertura devolve (GET e POST). */
+interface RespostaDaAbertura {
+  pedidos: PedidoDeAbertura[];
+  aberturaReal: boolean;
+  pastaAberta: AberturaReal["pastaAberta"];
+}
 
 /** Grava ou desfaz a edição de um campo; devolve a mensagem de erro (ou null). */
 export type AoEditarCampo = (chave: ChaveDaCapa, edicao: { valor: string } | { desfazer: true }) => Promise<string | null>;
@@ -105,24 +116,49 @@ async function lerJson<T>(resposta: Response, padrao: string): Promise<T> {
  * Sem pasta (possível abertura): o resumo da capa que o Orquestra montaria para abrir a pasta no VIOS e, num diálogo,
  * a capa inteira para conferir e editar (lápis). As edições ficam gravadas na publicação; nada vai para o VIOS ainda.
  */
-export function CapaParaAberturaDePasta({ publicacaoId }: { publicacaoId: string }) {
+export function CapaParaAberturaDePasta({
+  publicacaoId,
+  onPastaAberta,
+}: {
+  publicacaoId: string;
+  /** Depois da abertura de verdade: a CI nova, para a Triagem Manual liberar com ela (a publicação continua aqui). */
+  onPastaAberta?: (ci: string) => void;
+}) {
   const [capa, setCapa] = useState<CapaParaAbertura | null>(null);
   const [erro, setErro] = useState("");
   const [datajud, setDatajud] = useState<EstadoDataJud>({ carregando: true });
   const [recarga, setRecarga] = useState(0);
   const [aberta, setAberta] = useState(false);
   const [abertura, setAbertura] = useState<EstadoDaAbertura>({ pedidos: [], enviando: false, erro: "" });
+  const [aberturaReal, setAberturaReal] = useState(false);
+  const [pastaAberta, setPastaAberta] = useState<AberturaReal["pastaAberta"]>(null);
+  const [capaMudou, setCapaMudou] = useState(false);
+  const avisada = useRef<string | null>(null);
   const url = `/api/operacoes-legais/vistagem/publicacoes/${publicacaoId}/capa`;
   const naFila = abertura.pedidos[0] ? NA_FILA.has(abertura.pedidos[0].status) : false;
+
+  // Só mexe no estado: fica a mesma função entre as renderizações (o efeito de leitura não roda de novo por causa dela).
+  const receber = useCallback((corpo: RespostaDaAbertura) => {
+    setAbertura((atual) => ({ ...atual, pedidos: corpo.pedidos }));
+    setAberturaReal(corpo.aberturaReal);
+    setPastaAberta(corpo.pastaAberta);
+  }, []);
+
+  // A publicação continua na triagem com a CI nova: avisa a tela uma vez para o "Para onde vai" liberar com ela.
+  useEffect(() => {
+    if (!pastaAberta?.naTriagem || avisada.current === pastaAberta.ci) return;
+    avisada.current = pastaAberta.ci;
+    onPastaAberta?.(pastaAberta.ci);
+  }, [pastaAberta, onPastaAberta]);
 
   // Pedidos ao robô: lê ao abrir e, enquanto o último estiver na fila, de novo a cada 10 s.
   useEffect(() => {
     let cancelado = false;
     const ler = () =>
       authFetch(`${url}/abrir`)
-        .then((resposta) => lerJson<{ pedidos: PedidoDeAbertura[] }>(resposta, "Falha ao consultar o robô"))
+        .then((resposta) => lerJson<RespostaDaAbertura>(resposta, "Falha ao consultar o robô"))
         .then((corpo) => {
-          if (!cancelado) setAbertura((atual) => ({ ...atual, pedidos: corpo.pedidos }));
+          if (!cancelado) receber(corpo);
         })
         .catch(() => undefined);
     void ler();
@@ -131,14 +167,20 @@ export function CapaParaAberturaDePasta({ publicacaoId }: { publicacaoId: string
       cancelado = true;
       if (relogio) clearInterval(relogio);
     };
-  }, [url, naFila]);
+  }, [url, naFila, receber]);
 
-  async function simular() {
+  async function pedir(modo: "simular" | "abrir") {
     setAbertura((atual) => ({ ...atual, enviando: true, erro: "" }));
     try {
-      const resposta = await authFetch(`${url}/abrir`, { method: "POST" });
-      const corpo = await lerJson<{ pedidos: PedidoDeAbertura[] }>(resposta, "Falha ao pedir a abertura");
-      setAbertura({ pedidos: corpo.pedidos, enviando: false, erro: "" });
+      const resposta = await authFetch(`${url}/abrir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modo }),
+      });
+      const corpo = await lerJson<RespostaDaAbertura>(resposta, "Falha ao pedir a abertura");
+      receber(corpo);
+      setAbertura((atual) => ({ ...atual, enviando: false, erro: "" }));
+      if (modo === "simular") setCapaMudou(false);
     } catch (e) {
       setAbertura((atual) => ({ ...atual, enviando: false, erro: e instanceof Error ? e.message : "Falha ao pedir a abertura." }));
     }
@@ -184,6 +226,8 @@ export function CapaParaAberturaDePasta({ publicacaoId }: { publicacaoId: string
       });
       const corpo = await lerJson<{ ajustes: CapaParaAbertura["ajustes"] }>(resposta, "Falha ao gravar a edição");
       setCapa((atual) => (atual ? { ...atual, ajustes: corpo.ajustes } : atual));
+      // A simulação que passou valia para a capa de antes: para abrir de verdade, simula de novo.
+      setCapaMudou(true);
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : "Falha ao gravar a edição.";
@@ -199,7 +243,8 @@ export function CapaParaAberturaDePasta({ publicacaoId }: { publicacaoId: string
         onAbrir={() => setAberta(true)}
         onBuscarDeNovo={buscarDeNovo}
         abertura={abertura}
-        onSimular={simular}
+        onSimular={() => void pedir("simular")}
+        real={{ ligada: aberturaReal, capaMudou, pastaAberta, onAbrir: () => void pedir("abrir") }}
       />
       <Dialog open={aberta} onOpenChange={setAberta}>
         <DialogContent
@@ -240,6 +285,7 @@ export function ResumoDaCapaView({
   onBuscarDeNovo,
   abertura,
   onSimular,
+  real,
 }: {
   capa: CapaParaAbertura | null;
   erro: string;
@@ -248,6 +294,7 @@ export function ResumoDaCapaView({
   onBuscarDeNovo: () => void;
   abertura?: EstadoDaAbertura;
   onSimular?: () => void;
+  real?: AberturaReal;
 }) {
   const campos = useMemo(() => (capa ? camposDaCapa(capa, datajud) : []), [capa, datajud]);
   const { faltando, conferir, editados } = resumoDaCapa(campos);
@@ -316,7 +363,7 @@ export function ResumoDaCapaView({
             Conferir e editar a capa
           </Button>
           {abertura && onSimular ? (
-            <BlocoDoRobo abertura={abertura} faltando={faltando.length} onSimular={onSimular} />
+            <BlocoDoRobo abertura={abertura} faltando={faltando.length} onSimular={onSimular} real={real} />
           ) : (
             <p className="text-[11px] text-muted-foreground">Prévia: nada é gravado no VIOS ainda.</p>
           )}
@@ -326,27 +373,119 @@ export function ResumoDaCapaView({
   );
 }
 
-/** O robô: pede a simulação da abertura (preenche o cadastro no VIOS sem gravar) e mostra o último pedido. */
-export function BlocoDoRobo({ abertura, faltando, onSimular }: { abertura: EstadoDaAbertura; faltando: number; onSimular: () => void }) {
+/** A abertura de verdade (Fase 3): a chave de Configurações, a pasta já aberta e o pedido. */
+export interface AberturaReal {
+  /** Configurações › Robô: abertura de pasta de verdade. */
+  ligada: boolean;
+  /** A capa foi editada depois da última simulação: precisa simular de novo antes de abrir. */
+  capaMudou: boolean;
+  /** Depois da abertura: a CI nova e se a publicação ainda está na triagem esperando a conferência. */
+  pastaAberta: { ci: string; naTriagem: boolean; liberada: boolean } | null;
+  onAbrir: () => void;
+}
+
+/**
+ * O robô: pede a simulação da abertura (preenche o cadastro no VIOS sem gravar) e, com a chave ligada e uma simulação
+ * sem pendência, a abertura de verdade, com confirmação. Depois de abrir, mostra a CI nova: a publicação continua aqui
+ * para a responsável conferir a pasta no VIOS e liberar (pedido de 16/11/2026).
+ */
+export function BlocoDoRobo({
+  abertura,
+  faltando,
+  onSimular,
+  real,
+}: {
+  abertura: EstadoDaAbertura;
+  faltando: number;
+  onSimular: () => void;
+  real?: AberturaReal;
+}) {
+  const [confirmando, setConfirmando] = useState(false);
   const [ultimo] = abertura.pedidos;
   const naFila = ultimo ? NA_FILA.has(ultimo.status) : false;
+  const situacao = situacaoDaAberturaReal(abertura.pedidos);
+  const podeAbrir = Boolean(real?.ligada) && situacao.pode && !real?.capaMudou && !faltando;
+  const motivo = !situacao.pode ? situacao.motivo : real?.capaMudou ? "A capa mudou depois da última simulação: simule de novo." : null;
+  const aberta = real?.pastaAberta ?? null;
+
+  if (aberta) {
+    return (
+      <div className="space-y-2 border-t border-[#e6eef0] pt-3">
+        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
+          <Bot className="size-3.5" aria-hidden />
+          Robô
+        </p>
+        <Aviso tom="sucesso" titulo={`Pasta aberta no VIOS: CI ${aberta.ci}`}>
+          <a href={linkPastaVios(aberta.ci)} target="_blank" rel="noreferrer" className="block text-xs font-medium underline underline-offset-2">
+            Abrir a pasta no VIOS (nova aba)
+          </a>
+          <span className="mt-1 block text-xs">
+            {aberta.naTriagem
+              ? "Confira a pasta no VIOS (as partes ativas e passivas entram à mão) e, se estiver tudo certo, libere em \"Para onde vai\", aqui embaixo, com esta CI."
+              : aberta.liberada
+                ? "A publicação já foi liberada com esta CI."
+                : "A publicação já saiu da Triagem Manual."}
+          </span>
+        </Aviso>
+        {ultimo && !ultimo.simulado ? <PedidoDoRobo pedido={ultimo} /> : null}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2 border-t border-[#e6eef0] pt-3">
       <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
         <Bot className="size-3.5" aria-hidden />
         Robô
       </p>
-      <Button type="button" className="w-full" size="sm" onClick={onSimular} disabled={Boolean(faltando) || naFila || abertura.enviando}>
+      <Button type="button" className="w-full" size="sm" variant={real?.ligada ? "outline" : "default"} onClick={onSimular} disabled={Boolean(faltando) || naFila || abertura.enviando}>
         {abertura.enviando ? <LoaderCircle className="animate-spin" /> : <Bot />}
         Simular a abertura no VIOS
       </Button>
+      {real?.ligada ? (
+        <Button type="button" className="w-full" size="sm" onClick={() => setConfirmando(true)} disabled={!podeAbrir || naFila || abertura.enviando}>
+          <FolderPlus />
+          Abrir a pasta no VIOS
+        </Button>
+      ) : null}
       <p className="text-[11px] text-muted-foreground">
         {faltando
           ? "Preencha os obrigatórios do VIOS para simular."
-          : "O robô preenche o cadastro do processo no VIOS com esta capa e não grava: é só o teste da abertura."}
+          : real?.ligada
+            ? podeAbrir
+              ? "A simulação passou: o robô pode abrir a pasta de verdade com esta capa."
+              : (motivo ?? "Simule a abertura antes de abrir de verdade.")
+            : "O robô preenche o cadastro do processo no VIOS com esta capa e não grava: é só o teste da abertura."}
       </p>
       {abertura.erro ? <Aviso tom="erro">{abertura.erro}</Aviso> : null}
       {ultimo ? <PedidoDoRobo pedido={ultimo} /> : null}
+      <Dialog open={confirmando} onOpenChange={setConfirmando}>
+        <DialogContent className="sm:max-w-md">
+          <DialogTitle>Abrir a pasta no VIOS?</DialogTitle>
+          <DialogDescription>
+            O robô confere que o processo não tem pasta, grava o cadastro no VIOS com esta capa e devolve a CI. Isto cria a pasta de verdade.
+          </DialogDescription>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>Depois, a publicação continua aqui, com a CI nova, para você conferir a pasta e liberar.</li>
+            <li>As partes ativas e passivas, o monitoramento e as tarefas da nova demanda continuam à mão.</li>
+          </ul>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setConfirmando(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setConfirmando(false);
+                real?.onAbrir();
+              }}
+            >
+              <FolderPlus />
+              Abrir a pasta
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -357,18 +496,31 @@ function PedidoDoRobo({ pedido }: { pedido: PedidoDeAbertura }) {
     return (
       <p className="flex items-center gap-2 rounded-md border border-[#dce9eb] bg-[#f6f9fa] px-3 py-2 text-xs text-[#285f7a]" role="status">
         <LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden />
-        {pedido.status === "processando" ? "O robô está preenchendo o cadastro no VIOS…" : `Na fila do robô (pedido em ${quandoPediu})…`}
+        {pedido.status === "processando"
+          ? pedido.simulado
+            ? "O robô está preenchendo o cadastro no VIOS…"
+            : "O robô está abrindo a pasta no VIOS…"
+          : `Na fila do robô (pedido em ${quandoPediu})…`}
       </p>
     );
   }
   if (pedido.status === "erro") {
     return (
-      <Aviso tom="erro" titulo={`O robô parou (pedido em ${quandoPediu})`}>
+      <Aviso tom="erro" titulo={`O robô parou (pedido ${pedido.simulado ? "de simulação" : "de abertura"} em ${quandoPediu})`}>
         {pedido.erro ?? "Erro sem mensagem."}
       </Aviso>
     );
   }
   const resultado = pedido.resultado ?? {};
+  if (!pedido.simulado) {
+    const ci = ciDaPastaAberta(pedido);
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        {ci ? `Aberta pelo robô em ${quandoPediu}` : `Pedido de abertura em ${quandoPediu}`}
+        {pedido.autor ? `, a pedido de ${pedido.autor}` : ""}.
+      </p>
+    );
+  }
   const preenchidos = Object.keys(resultado.preenchidos ?? {}).length;
   const faltou = resultado.nao_encontrados ?? [];
   const recusaria = resultado.recusaria ?? [];
@@ -383,7 +535,7 @@ function PedidoDoRobo({ pedido }: { pedido: PedidoDeAbertura }) {
       }
     >
       <span className="block text-xs">
-        {pedido.simulado ? "Nada foi gravado no VIOS." : "Pedido de verdade."} Pedido em {quandoPediu}
+        Nada foi gravado no VIOS. Pedido em {quandoPediu}
         {pedido.autor ? ` por ${pedido.autor}` : ""}.
       </span>
       {faltou.length ? (

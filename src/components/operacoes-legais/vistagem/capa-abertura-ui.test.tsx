@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CapaParaAbertura, PedidoDeAbertura } from "@/lib/vistagem/capa-abertura";
-import { BlocoDoRobo, CapaDaAberturaView, opcoesDaLista, ResumoDaCapaView, type EstadoDataJud } from "./capa-abertura-ui";
+import { BlocoDoRobo, CapaDaAberturaView, opcoesDaLista, ResumoDaCapaView, type AberturaReal, type EstadoDataJud } from "./capa-abertura-ui";
 
 // O que a rota devolveu para o agravo 2266041-23 (Grupo Lira) no teste local de 10/11/2026.
 const CAPA: CapaParaAbertura = {
@@ -168,6 +168,7 @@ describe("BlocoDoRobo", () => {
     criadoEm: "2026-11-10T19:00:00.000Z",
     atualizadoEm: null,
     resultado: null,
+    capa: null,
     ...extra,
   });
   const bloco = (pedidos: PedidoDeAbertura[], faltando = 0, extra: Partial<{ enviando: boolean; erro: string }> = {}) =>
@@ -211,5 +212,46 @@ describe("BlocoDoRobo", () => {
   it("erro do robô e erro ao pedir aparecem", () => {
     expect(bloco([pedido({ status: "erro", erro: "Capa sem obrigatórios do VIOS: auxiliar." })])).toContain("Capa sem obrigatórios do VIOS: auxiliar.");
     expect(bloco([], 0, { erro: "Já há um pedido de abertura desta publicação na fila do robô." })).toContain("Já há um pedido");
+  });
+
+  describe("abertura de verdade (Fase 3, 16/11/2026)", () => {
+    const ok = pedido({ resultado: { preenchidos: { cnj: "x" }, nao_encontrados: [], recusaria: [] } });
+    const real = (extra: Partial<AberturaReal> = {}): AberturaReal => ({ ligada: true, capaMudou: false, pastaAberta: null, onAbrir: vi.fn(), ...extra });
+    const comReal = (pedidos: PedidoDeAbertura[], extra: Partial<AberturaReal> = {}) =>
+      renderToStaticMarkup(<BlocoDoRobo abertura={{ pedidos, enviando: false, erro: "" }} faltando={0} onSimular={vi.fn()} real={real(extra)} />);
+    const botaoAbrir = (html: string) => html.match(/<button[^>]*>(?:(?!<\/button>).)*Abrir a pasta no VIOS<\/button>/)?.[0] ?? "";
+
+    it("com a chave desligada, só simula", () => {
+      expect(bloco([ok])).not.toContain("Abrir a pasta no VIOS");
+      expect(comReal([ok], { ligada: false })).not.toContain("Abrir a pasta no VIOS");
+    });
+
+    it("depois de uma simulação sem pendência, o botão de abrir fica liberado", () => {
+      const html = comReal([ok]);
+      expect(botaoAbrir(html)).not.toContain('disabled=""');
+      expect(html).toContain("A simulação passou: o robô pode abrir a pasta de verdade com esta capa.");
+    });
+
+    it("sem simulação, ou com a capa mudada, o botão fica travado e diz por quê", () => {
+      expect(botaoAbrir(comReal([]))).toContain('disabled=""');
+      expect(comReal([])).toContain("Simule a abertura antes de abrir de verdade.");
+      const mudou = comReal([ok], { capaMudou: true });
+      expect(botaoAbrir(mudou)).toContain('disabled=""');
+      expect(mudou).toContain("A capa mudou depois da última simulação: simule de novo.");
+    });
+
+    it("rodando de verdade, diz que está abrindo a pasta", () => {
+      expect(comReal([pedido({ simulado: false, status: "processando" }), ok])).toContain("O robô está abrindo a pasta no VIOS");
+    });
+
+    it("pasta aberta: mostra a CI e pede para conferir e liberar aqui (não vai direto para a vistagem)", () => {
+      const html = comReal([pedido({ simulado: false, resultado: { ci_pasta: "61402" } }), ok], {
+        pastaAberta: { ci: "61402", naTriagem: true, liberada: false },
+      });
+      expect(html).toContain("Pasta aberta no VIOS: CI 61402");
+      expect(html).toContain("processos_id=61402");
+      expect(html).toContain("libere em");
+      expect(html).not.toContain("Simular a abertura no VIOS");
+    });
   });
 });

@@ -71,6 +71,7 @@ const ROTULO_DA_CHAVE: Record<ChaveConfiguracao, string> = {
   horaArquivoEsperado: "Hora do alerta do arquivo",
   iaSugestaoTarefa: "IA: sugestão de tarefas",
   iaSugestaoTriagem: "IA: sugestão de pasta",
+  aberturaPastaReal: "Robô: abertura de pasta de verdade",
 };
 
 /** Valor de uma regra em texto, para o histórico e o "padrão". */
@@ -585,6 +586,33 @@ function ChavesDaIa({ painel, salvando, onSalvar }: { painel: PainelDeRegras; sa
   );
 }
 
+/** Fase 3 da abertura de pasta (16/11/2026): o robô só grava de verdade com esta chave ligada. */
+function ChaveDaAberturaDePasta({ painel, salvando, onSalvar }: { painel: PainelDeRegras; salvando: boolean; onSalvar: (valor: boolean) => void }) {
+  const ligada = painel.configuracoes.aberturaPastaReal;
+  return (
+    <CartaoEditavel
+      icone={Bot}
+      titulo="Robô: abertura de pasta"
+      descricao="Publicação sem pasta, na Triagem Manual: a controladoria confere a capa, simula e, com esta chave ligada, pede ao robô que abra a pasta no VIOS. Depois, confere a pasta e libera."
+    >
+      <div className="flex items-start gap-3 py-2.5">
+        <Interruptor ligado={ligada} rotulo="Abrir a pasta de verdade no VIOS" desabilitado={salvando} onChange={onSalvar} />
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">
+            Abrir a pasta de verdade no VIOS{" "}
+            <span className={cn("text-xs font-normal", ligada ? "text-emerald-700" : "text-muted-foreground")}>{ligada ? "ligada" : "desligada"}</span>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Ligada, depois de uma simulação sem pendência aparece “Abrir a pasta no VIOS”: o robô confere que o processo não tem pasta,
+            grava o cadastro e devolve a CI. A publicação continua na Triagem Manual, com a CI nova, para a responsável conferir e liberar.
+            Desligada, o robô só simula. As partes ainda se incluem à mão no VIOS.
+          </p>
+        </div>
+      </div>
+    </CartaoEditavel>
+  );
+}
+
 /* --------------------------------------------------------------- leitura */
 
 function SeloDeOrigem({ origem, painel }: { origem: OrigemDaRegra; painel: PainelDeRegras }) {
@@ -909,6 +937,9 @@ function Configuracoes() {
           </div>
           <div className="xl:col-span-2" data-tour="cg-ia">
             <ChavesDaIa painel={painel} salvando={salvando} onSalvar={(chave, valor) => void salvar(chave, valor)} />
+          </div>
+          <div className="xl:col-span-2">
+            <ChaveDaAberturaDePasta painel={painel} salvando={salvando} onSalvar={(valor) => void salvar("aberturaPastaReal", valor)} />
           </div>
         </div>
       ) : secao === "esteira" ? (

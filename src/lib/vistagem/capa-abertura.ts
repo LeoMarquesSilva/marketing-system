@@ -1,5 +1,5 @@
 import { chaveNome } from "./agendamento";
-import { advogadosDoEscritorioCitados, ESCRITORIO_CIVEL_INSOLVENCIA, ESCRITORIO_INSOLVENCIA } from "./triagem";
+import { advogadosDoEscritorioCitados, ESCRITORIO_CIVEL_INSOLVENCIA, ESCRITORIO_INSOLVENCIA, type PastaSioe } from "./triagem";
 
 /**
  * Capa para a abertura de pasta (Fase 1, só leitura): o que dá para preencher na tela "Cadastro de Processo
@@ -824,7 +824,86 @@ export interface PedidoDeAbertura {
     recusaria?: string[];
     avisos?: string[];
     ci?: string | null;
+    /** De verdade (Fase 3): o CI da pasta que o robô abriu no VIOS. */
+    ci_pasta?: string | null;
   } | null;
+  /** A capa que foi ao robô neste pedido (para saber se a simulação vale para a capa de agora). */
+  capa: CapaDoVios | null;
+}
+
+const NA_FILA_DO_ROBO = new Set<PedidoDeAbertura["status"]>(["pendente", "enviado", "processando"]);
+
+/** O CI da pasta aberta de verdade, se o pedido for de verdade e tiver terminado. */
+export function ciDaPastaAberta(pedido: PedidoDeAbertura | undefined): string | null {
+  if (!pedido || pedido.simulado || pedido.status !== "concluido") return null;
+  return pedido.resultado?.ci_pasta?.replace(/\D/g, "") || null;
+}
+
+/** A simulação não deixou nada para resolver: tudo preenchido e a validação do VIOS aceitaria gravar. */
+export function simulacaoSemPendencia(pedido: PedidoDeAbertura): boolean {
+  return pedido.status === "concluido" && !(pedido.resultado?.nao_encontrados?.length ?? 0) && !(pedido.resultado?.recusaria?.length ?? 0);
+}
+
+/** Mesma capa: os mesmos campos com os mesmos valores (a ordem das chaves não conta). */
+export function mesmaCapa(a: CapaDoVios | null | undefined, b: CapaDoVios | null | undefined): boolean {
+  if (!a || !b) return false;
+  const chaves = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
+  const valor = (capa: Record<string, unknown>, chave: string) => {
+    const atual = capa[chave];
+    if (Array.isArray(atual)) return JSON.stringify(atual.map((item) => String(item).trim()));
+    return atual === null || atual === undefined ? "" : String(atual).trim();
+  };
+  return chaves.every((chave) => valor(a as Record<string, unknown>, chave) === valor(b as Record<string, unknown>, chave));
+}
+
+export type SituacaoDaAberturaReal = { pode: true } | { pode: false; motivo: string };
+
+/**
+ * Fase 3 (16/11/2026): quando a controladoria pode pedir a abertura de verdade. Só depois de uma simulação sem
+ * pendência com esta mesma capa, sem pedido na fila e sem uma abertura de verdade que já terminou ou que parou depois
+ * do Gravar (essa a pessoa confere no VIOS antes). Os pedidos vêm do mais novo para o mais antigo. Sem `capa`
+ * (undefined, a tela), não compara a capa: o servidor compara ao receber o pedido.
+ */
+export function situacaoDaAberturaReal(pedidos: PedidoDeAbertura[], capa?: CapaDoVios | null): SituacaoDaAberturaReal {
+  if (pedidos.some((pedido) => NA_FILA_DO_ROBO.has(pedido.status))) return { pode: false, motivo: "Já há um pedido desta publicação na fila do robô." };
+  const real = pedidos.find((pedido) => !pedido.simulado);
+  const ci = ciDaPastaAberta(real);
+  if (ci) return { pode: false, motivo: `A pasta já foi aberta no VIOS: CI ${ci}.` };
+  if (real?.status === "erro" && /^ATEN[ÇC][ÃA]O/i.test(real.erro ?? "")) {
+    return { pode: false, motivo: "O último pedido de verdade parou depois do Gravar: confira no VIOS se a pasta foi criada antes de pedir de novo." };
+  }
+  const simulacao = pedidos.find((pedido) => pedido.simulado);
+  if (!simulacao || simulacao.status !== "concluido") return { pode: false, motivo: "Simule a abertura antes de abrir de verdade." };
+  if (!simulacaoSemPendencia(simulacao)) return { pode: false, motivo: "A última simulação teve pendência: ajuste a capa e simule de novo." };
+  if (capa !== undefined && !mesmaCapa(simulacao.capa, capa)) return { pode: false, motivo: "A capa mudou depois da última simulação: simule de novo." };
+  return { pode: true };
+}
+
+/** "161.341,87" → 161341.87 (null se não for número). */
+function valorDaCapa(texto: string | null): number | null {
+  const numero = Number((texto ?? "").replace(/\./g, "").replace(",", "."));
+  return texto && Number.isFinite(numero) ? numero : null;
+}
+
+/**
+ * A pasta que o robô acabou de abrir, no formato da triagem: o SIOE só copia o VIOS de madrugada, então até lá a
+ * pasta nova não está lá. Montada da capa que foi ao VIOS; o grupo vem das pastas do cliente.
+ */
+export function pastaDaCapaAberta(ci: string, capa: CapaDoVios, grupo: string | null): PastaSioe {
+  return {
+    ci,
+    cnj: capa.cnj ?? "",
+    vinculo: null,
+    cliente: capa.cliente,
+    grupoCliente: grupo,
+    area: capa.area,
+    advogadoResponsavel: capa.responsavel,
+    situacao: capa.situacao ?? "Ativo",
+    etiquetas: capa.etiquetas.length ? capa.etiquetas.join(" | ") : null,
+    acao: capa.acao,
+    fase: capa.fase,
+    valorAcao: valorDaCapa(capa.valor),
+  };
 }
 
 /** Rótulo do campo que o robô devolveu (ele chama as etiquetas de "etiquetas"). */

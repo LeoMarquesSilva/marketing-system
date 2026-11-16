@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   AlarmClock,
+  Bot,
   ArrowRight,
   History,
   Minus,
@@ -42,13 +43,14 @@ import { Painel } from "./ui";
  * fica escondido (dá para mostrar).
  */
 
-type Grupo = "vistadores" | "etiquetasDeRisco" | "horaArquivoEsperado" | "ia";
+type Grupo = "vistadores" | "etiquetasDeRisco" | "horaArquivoEsperado" | "ia" | "robo";
 
 const DA_REGRA: Record<Grupo, { rotulo: string; icone: LucideIcon }> = {
   vistadores: { rotulo: "Vistadores", icone: UsersRound },
   etiquetasDeRisco: { rotulo: "Etiquetas de risco", icone: ShieldAlert },
   horaArquivoEsperado: { rotulo: "Alerta do arquivo", icone: AlarmClock },
   ia: { rotulo: "IA", icone: Sparkles },
+  robo: { rotulo: "Robô", icone: Bot },
 };
 
 const ROTULO_COMPLETO: Record<string, string> = {
@@ -57,6 +59,7 @@ const ROTULO_COMPLETO: Record<string, string> = {
   horaArquivoEsperado: "Hora do alerta do arquivo",
   iaSugestaoTarefa: "IA: sugestão de tarefas",
   iaSugestaoTriagem: "IA: sugestão de pasta",
+  aberturaPastaReal: "Robô: abertura de pasta de verdade",
 };
 
 const grupoDa = (chave: string): Grupo =>
@@ -64,7 +67,9 @@ const grupoDa = (chave: string): Grupo =>
   chave === "etiquetasDeRisco" ||
   chave === "horaArquivoEsperado"
     ? chave
-    : "ia";
+    : chave === "aberturaPastaReal"
+      ? "robo"
+      : "ia";
 
 const TIPO_CURTO: Record<TipoDeDemanda, string> = {
   normal: "normais",

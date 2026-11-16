@@ -268,7 +268,7 @@ export async function enfileirarSintese(pedido: {
 
 /**
  * Abertura de pasta: pede ao robô que preencha o cadastro de processo com a capa conferida pela controladoria
- * (coluna abertura, migração 20261110000015 do sama-rpa). Fase 2: sempre simulação.
+ * (coluna abertura, migração 20261110000015 do sama-rpa). Simulação, ou de verdade (Fase 3) com `simular: false`.
  */
 export async function enfileirarAberturaDePasta(pedido: {
   publicacaoId: string;
@@ -305,7 +305,7 @@ export async function enfileirarAberturaDePasta(pedido: {
 export async function aberturasDaPublicacao(publicacaoId: string): Promise<PedidoDeAbertura[]> {
   const { data, error } = await sama()
     .from("vios_agendamentos")
-    .select("id, status, erro, simular, responsavel, resultado, criado_em, atualizado_em")
+    .select("id, status, erro, simular, responsavel, resultado, criado_em, atualizado_em, abertura")
     .eq("operacao", "abrir_pasta")
     .eq("abertura->>publicacao_id", publicacaoId)
     .order("criado_em", { ascending: false })
@@ -323,6 +323,7 @@ export async function aberturasDaPublicacao(publicacaoId: string): Promise<Pedid
     criadoEm: row.criado_em as string,
     atualizadoEm: (row.atualizado_em as string | null) ?? null,
     resultado: (row.resultado as PedidoDeAbertura["resultado"]) ?? null,
+    capa: ((row.abertura as { capa?: CapaDoVios } | null)?.capa as CapaDoVios | undefined) ?? null,
   }));
 }
 
