@@ -132,7 +132,6 @@ export function CapaParaAberturaDePasta({
   const [abertura, setAbertura] = useState<EstadoDaAbertura>({ pedidos: [], enviando: false, erro: "" });
   const [aberturaReal, setAberturaReal] = useState(false);
   const [pastaAberta, setPastaAberta] = useState<AberturaReal["pastaAberta"]>(null);
-  const [capaMudou, setCapaMudou] = useState(false);
   const avisada = useRef<string | null>(null);
   const url = `/api/operacoes-legais/vistagem/publicacoes/${publicacaoId}/capa`;
   const naFila = abertura.pedidos[0] ? NA_FILA.has(abertura.pedidos[0].status) : false;
@@ -169,18 +168,17 @@ export function CapaParaAberturaDePasta({
     };
   }, [url, naFila, receber]);
 
-  async function pedir(modo: "simular" | "abrir") {
+  async function pedir(modo: "simular" | "abrir", conferidoNoVios = false) {
     setAbertura((atual) => ({ ...atual, enviando: true, erro: "" }));
     try {
       const resposta = await authFetch(`${url}/abrir`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modo }),
+        body: JSON.stringify({ modo, conferidoNoVios }),
       });
       const corpo = await lerJson<RespostaDaAbertura>(resposta, "Falha ao pedir a abertura");
       receber(corpo);
       setAbertura((atual) => ({ ...atual, enviando: false, erro: "" }));
-      if (modo === "simular") setCapaMudou(false);
     } catch (e) {
       setAbertura((atual) => ({ ...atual, enviando: false, erro: e instanceof Error ? e.message : "Falha ao pedir a abertura." }));
     }
@@ -226,8 +224,6 @@ export function CapaParaAberturaDePasta({
       });
       const corpo = await lerJson<{ ajustes: CapaParaAbertura["ajustes"] }>(resposta, "Falha ao gravar a edição");
       setCapa((atual) => (atual ? { ...atual, ajustes: corpo.ajustes } : atual));
-      // A simulação que passou valia para a capa de antes: para abrir de verdade, simula de novo.
-      setCapaMudou(true);
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : "Falha ao gravar a edição.";
@@ -244,7 +240,7 @@ export function CapaParaAberturaDePasta({
         onBuscarDeNovo={buscarDeNovo}
         abertura={abertura}
         onSimular={() => void pedir("simular")}
-        real={{ ligada: aberturaReal, capaMudou, pastaAberta, onAbrir: () => void pedir("abrir") }}
+        real={{ ligada: aberturaReal, pastaAberta, onAbrir: (conferidoNoVios) => void pedir("abrir", conferidoNoVios) }}
       />
       <Dialog open={aberta} onOpenChange={setAberta}>
         <DialogContent
@@ -377,17 +373,17 @@ export function ResumoDaCapaView({
 export interface AberturaReal {
   /** Configurações › Robô: abertura de pasta de verdade. */
   ligada: boolean;
-  /** A capa foi editada depois da última simulação: precisa simular de novo antes de abrir. */
-  capaMudou: boolean;
   /** Depois da abertura: a CI nova e se a publicação ainda está na triagem esperando a conferência. */
   pastaAberta: { ci: string; naTriagem: boolean; liberada: boolean } | null;
-  onAbrir: () => void;
+  /** `conferidoNoVios`: a pessoa conferiu no VIOS que o pedido que parou depois do Gravar não criou a pasta. */
+  onAbrir: (conferidoNoVios: boolean) => void;
 }
 
 /**
- * O robô: pede a simulação da abertura (preenche o cadastro no VIOS sem gravar) e, com a chave ligada e uma simulação
- * sem pendência, a abertura de verdade, com confirmação. Depois de abrir, mostra a CI nova: a publicação continua aqui
- * para a responsável conferir a pasta no VIOS e liberar (pedido de 16/11/2026).
+ * O robô. Com a chave de Configurações ligada, "Abrir a pasta no VIOS" vai direto, com confirmação (pedido de
+ * 16/11/2026: sem simulação antes; o robô confere que o número não tem pasta e só grava se o VIOS aceitar a capa
+ * inteira). Desligada, só a simulação (preenche o cadastro no VIOS sem gravar). Depois de abrir, mostra a CI nova: a
+ * publicação continua aqui para a responsável conferir a pasta no VIOS e liberar.
  */
 export function BlocoDoRobo({
   abertura,
@@ -400,21 +396,23 @@ export function BlocoDoRobo({
   onSimular: () => void;
   real?: AberturaReal;
 }) {
-  const [confirmando, setConfirmando] = useState(false);
+  const [confirmando, setConfirmando] = useState<"abrir" | "de-novo" | null>(null);
   const [ultimo] = abertura.pedidos;
   const naFila = ultimo ? NA_FILA.has(ultimo.status) : false;
   const situacao = situacaoDaAberturaReal(abertura.pedidos);
-  const podeAbrir = Boolean(real?.ligada) && situacao.pode && !real?.capaMudou && !faltando;
-  const motivo = !situacao.pode ? situacao.motivo : real?.capaMudou ? "A capa mudou depois da última simulação: simule de novo." : null;
+  const conferirNoVios = !situacao.pode && situacao.conferirNoVios === true;
   const aberta = real?.pastaAberta ?? null;
+  const cabecalho = (
+    <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
+      <Bot className="size-3.5" aria-hidden />
+      Robô
+    </p>
+  );
 
   if (aberta) {
     return (
       <div className="space-y-2 border-t border-[#e6eef0] pt-3">
-        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
-          <Bot className="size-3.5" aria-hidden />
-          Robô
-        </p>
+        {cabecalho}
         <Aviso tom="sucesso" titulo={`Pasta aberta no VIOS: CI ${aberta.ci}`}>
           <a href={linkPastaVios(aberta.ci)} target="_blank" rel="noreferrer" className="block text-xs font-medium underline underline-offset-2">
             Abrir a pasta no VIOS (nova aba)
@@ -432,52 +430,74 @@ export function BlocoDoRobo({
     );
   }
 
+  if (!real?.ligada) {
+    return (
+      <div className="space-y-2 border-t border-[#e6eef0] pt-3">
+        {cabecalho}
+        <Button type="button" className="w-full" size="sm" onClick={onSimular} disabled={Boolean(faltando) || naFila || abertura.enviando}>
+          {abertura.enviando ? <LoaderCircle className="animate-spin" /> : <Bot />}
+          Simular a abertura no VIOS
+        </Button>
+        <p className="text-[11px] text-muted-foreground">
+          {faltando
+            ? "Preencha os obrigatórios do VIOS para simular."
+            : "O robô preenche o cadastro do processo no VIOS com esta capa e não grava: é só o teste da abertura."}
+        </p>
+        {abertura.erro ? <Aviso tom="erro">{abertura.erro}</Aviso> : null}
+        {ultimo ? <PedidoDoRobo pedido={ultimo} /> : null}
+      </div>
+    );
+  }
+
+  const podeAbrir = situacao.pode && !faltando && !naFila && !abertura.enviando;
   return (
     <div className="space-y-2 border-t border-[#e6eef0] pt-3">
-      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
-        <Bot className="size-3.5" aria-hidden />
-        Robô
-      </p>
-      <Button type="button" className="w-full" size="sm" variant={real?.ligada ? "outline" : "default"} onClick={onSimular} disabled={Boolean(faltando) || naFila || abertura.enviando}>
-        {abertura.enviando ? <LoaderCircle className="animate-spin" /> : <Bot />}
-        Simular a abertura no VIOS
-      </Button>
-      {real?.ligada ? (
-        <Button type="button" className="w-full" size="sm" onClick={() => setConfirmando(true)} disabled={!podeAbrir || naFila || abertura.enviando}>
-          <FolderPlus />
+      {cabecalho}
+      {conferirNoVios ? (
+        <Aviso tom="alerta" titulo="Confira no VIOS antes de pedir de novo">
+          <span className="block text-xs">{situacao.pode ? null : situacao.motivo}</span>
+          <Button type="button" size="xs" variant="outline" className="mt-2 bg-white" onClick={() => setConfirmando("de-novo")} disabled={Boolean(faltando) || abertura.enviando}>
+            <FolderPlus />
+            Conferi: a pasta não foi criada, abrir de novo
+          </Button>
+        </Aviso>
+      ) : (
+        <Button type="button" className="w-full" size="sm" onClick={() => setConfirmando("abrir")} disabled={!podeAbrir}>
+          {abertura.enviando ? <LoaderCircle className="animate-spin" /> : <FolderPlus />}
           Abrir a pasta no VIOS
         </Button>
-      ) : null}
+      )}
       <p className="text-[11px] text-muted-foreground">
         {faltando
-          ? "Preencha os obrigatórios do VIOS para simular."
-          : real?.ligada
-            ? podeAbrir
-              ? "A simulação passou: o robô pode abrir a pasta de verdade com esta capa."
-              : (motivo ?? "Simule a abertura antes de abrir de verdade.")
-            : "O robô preenche o cadastro do processo no VIOS com esta capa e não grava: é só o teste da abertura."}
+          ? "Preencha os obrigatórios do VIOS para abrir a pasta."
+          : !situacao.pode && !conferirNoVios
+            ? situacao.motivo
+            : "O robô confere que o processo não tem pasta e só grava se o VIOS aceitar a capa inteira; senão, para sem gravar e diz o que falta."}
       </p>
       {abertura.erro ? <Aviso tom="erro">{abertura.erro}</Aviso> : null}
       {ultimo ? <PedidoDoRobo pedido={ultimo} /> : null}
-      <Dialog open={confirmando} onOpenChange={setConfirmando}>
+      <Dialog open={confirmando !== null} onOpenChange={(aberto) => !aberto && setConfirmando(null)}>
         <DialogContent className="sm:max-w-md">
-          <DialogTitle>Abrir a pasta no VIOS?</DialogTitle>
+          <DialogTitle>{confirmando === "de-novo" ? "Abrir a pasta de novo?" : "Abrir a pasta no VIOS?"}</DialogTitle>
           <DialogDescription>
-            O robô confere que o processo não tem pasta, grava o cadastro no VIOS com esta capa e devolve a CI. Isto cria a pasta de verdade.
+            {confirmando === "de-novo"
+              ? "Confirme que conferiu no VIOS e a pasta deste processo não foi criada no pedido que parou. O robô ainda procura o número no VIOS antes de gravar."
+              : "O robô confere que o processo não tem pasta, grava o cadastro no VIOS com esta capa e devolve a CI. Isto cria a pasta de verdade."}
           </DialogDescription>
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             <li>Depois, a publicação continua aqui, com a CI nova, para você conferir a pasta e liberar.</li>
             <li>As partes ativas e passivas, o monitoramento e as tarefas da nova demanda continuam à mão.</li>
           </ul>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setConfirmando(false)}>
+            <Button type="button" variant="outline" onClick={() => setConfirmando(null)}>
               Cancelar
             </Button>
             <Button
               type="button"
               onClick={() => {
-                setConfirmando(false);
-                real?.onAbrir();
+                const deNovo = confirmando === "de-novo";
+                setConfirmando(null);
+                real.onAbrir(deNovo);
               }}
             >
               <FolderPlus />

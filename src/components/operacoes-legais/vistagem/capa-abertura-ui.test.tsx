@@ -216,7 +216,7 @@ describe("BlocoDoRobo", () => {
 
   describe("abertura de verdade (Fase 3, 16/11/2026)", () => {
     const ok = pedido({ resultado: { preenchidos: { cnj: "x" }, nao_encontrados: [], recusaria: [] } });
-    const real = (extra: Partial<AberturaReal> = {}): AberturaReal => ({ ligada: true, capaMudou: false, pastaAberta: null, onAbrir: vi.fn(), ...extra });
+    const real = (extra: Partial<AberturaReal> = {}): AberturaReal => ({ ligada: true, pastaAberta: null, onAbrir: vi.fn(), ...extra });
     const comReal = (pedidos: PedidoDeAbertura[], extra: Partial<AberturaReal> = {}) =>
       renderToStaticMarkup(<BlocoDoRobo abertura={{ pedidos, enviando: false, erro: "" }} faltando={0} onSimular={vi.fn()} real={real(extra)} />);
     const botaoAbrir = (html: string) => html.match(/<button[^>]*>(?:(?!<\/button>).)*Abrir a pasta no VIOS<\/button>/)?.[0] ?? "";
@@ -226,18 +226,24 @@ describe("BlocoDoRobo", () => {
       expect(comReal([ok], { ligada: false })).not.toContain("Abrir a pasta no VIOS");
     });
 
-    it("depois de uma simulação sem pendência, o botão de abrir fica liberado", () => {
-      const html = comReal([ok]);
+    it("com a chave ligada, abre direto: sem simulação antes e sem o botão de simular", () => {
+      const html = comReal([]);
       expect(botaoAbrir(html)).not.toContain('disabled=""');
-      expect(html).toContain("A simulação passou: o robô pode abrir a pasta de verdade com esta capa.");
+      expect(html).not.toContain("Simular a abertura no VIOS");
+      expect(html).toContain("só grava se o VIOS aceitar a capa inteira");
     });
 
-    it("sem simulação, ou com a capa mudada, o botão fica travado e diz por quê", () => {
-      expect(botaoAbrir(comReal([]))).toContain('disabled=""');
-      expect(comReal([])).toContain("Simule a abertura antes de abrir de verdade.");
-      const mudou = comReal([ok], { capaMudou: true });
-      expect(botaoAbrir(mudou)).toContain('disabled=""');
-      expect(mudou).toContain("A capa mudou depois da última simulação: simule de novo.");
+    it("faltando obrigatório, o botão fica travado", () => {
+      const html = renderToStaticMarkup(<BlocoDoRobo abertura={{ pedidos: [], enviando: false, erro: "" }} faltando={2} onSimular={vi.fn()} real={real()} />);
+      expect(botaoAbrir(html)).toContain('disabled=""');
+      expect(html).toContain("Preencha os obrigatórios do VIOS para abrir a pasta.");
+    });
+
+    it("parado depois do Gravar: pede para conferir no VIOS e oferece abrir de novo", () => {
+      const html = comReal([pedido({ simulado: false, status: "erro", erro: "ATENÇÃO: o Gravar já tinha sido clicado — confira no VIOS…" })]);
+      expect(html).toContain("Confira no VIOS antes de pedir de novo");
+      expect(html).toContain("Conferi: a pasta não foi criada, abrir de novo");
+      expect(botaoAbrir(html)).toBe("");
     });
 
     it("rodando de verdade, diz que está abrindo a pasta", () => {

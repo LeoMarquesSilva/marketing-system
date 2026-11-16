@@ -21,13 +21,18 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 }
 
-/** Pede ao robô a abertura da pasta com a capa conferida: `{ modo: "simular" }` (padrão) ou `{ modo: "abrir" }` (Fase 3). */
+/**
+ * Pede ao robô a abertura da pasta com a capa conferida: `{ modo: "simular" }` (padrão) ou `{ modo: "abrir" }`
+ * (Fase 3). `conferidoNoVios: true`: a pessoa conferiu no VIOS que o pedido que parou depois do Gravar não criou a pasta.
+ */
 export async function POST(request: Request, context: RouteContext) {
   try {
     const authUserId = await exigirAcessoVistagem();
     const { id } = await context.params;
-    const corpo = (await request.json().catch(() => null)) as { modo?: unknown } | null;
-    return NextResponse.json(await pedirAberturaDaPasta(id, authUserId, corpo?.modo === "abrir" ? "abrir" : "simular"));
+    const corpo = (await request.json().catch(() => null)) as { modo?: unknown; conferidoNoVios?: unknown } | null;
+    return NextResponse.json(
+      await pedirAberturaDaPasta(id, authUserId, corpo?.modo === "abrir" ? "abrir" : "simular", { conferidoNoVios: corpo?.conferidoNoVios === true })
+    );
   } catch (error) {
     return respostaDeErro(error, "Não foi possível pedir a abertura ao robô.");
   }

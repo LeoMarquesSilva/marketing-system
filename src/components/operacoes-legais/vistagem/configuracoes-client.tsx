@@ -593,7 +593,7 @@ function ChaveDaAberturaDePasta({ painel, salvando, onSalvar }: { painel: Painel
     <CartaoEditavel
       icone={Bot}
       titulo="Robô: abertura de pasta"
-      descricao="Publicação sem pasta, na Triagem Manual: a controladoria confere a capa, simula e, com esta chave ligada, pede ao robô que abra a pasta no VIOS. Depois, confere a pasta e libera."
+      descricao="Publicação sem pasta, na Triagem Manual: a controladoria confere a capa e, com esta chave ligada, pede ao robô que abra a pasta no VIOS. Depois, confere a pasta e libera."
     >
       <div className="flex items-start gap-3 py-2.5">
         <Interruptor ligado={ligada} rotulo="Abrir a pasta de verdade no VIOS" desabilitado={salvando} onChange={onSalvar} />
@@ -603,9 +603,9 @@ function ChaveDaAberturaDePasta({ painel, salvando, onSalvar }: { painel: Painel
             <span className={cn("text-xs font-normal", ligada ? "text-emerald-700" : "text-muted-foreground")}>{ligada ? "ligada" : "desligada"}</span>
           </p>
           <p className="text-xs text-muted-foreground">
-            Ligada, depois de uma simulação sem pendência aparece “Abrir a pasta no VIOS”: o robô confere que o processo não tem pasta,
-            grava o cadastro e devolve a CI. A publicação continua na Triagem Manual, com a CI nova, para a responsável conferir e liberar.
-            Desligada, o robô só simula. As partes ainda se incluem à mão no VIOS.
+            Ligada, a Triagem Manual mostra “Abrir a pasta no VIOS” no lugar da simulação: o robô confere que o processo não tem pasta,
+            só grava se o VIOS aceitar a capa inteira e devolve a CI. A publicação continua na Triagem Manual, com a CI nova, para a
+            responsável conferir e liberar. Desligada, o robô só simula. As partes ainda se incluem à mão no VIOS.
           </p>
         </div>
       </div>

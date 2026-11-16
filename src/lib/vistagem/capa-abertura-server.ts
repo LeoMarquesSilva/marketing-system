@@ -363,11 +363,16 @@ export async function pedidosDeAbertura(id: string): Promise<AberturaDaPublicaca
 
 /**
  * Pede ao robô a abertura da pasta com a capa como está (fontes + edições da controladoria): simulação (Fase 2) ou,
- * com a chave de Configurações ligada, de verdade (Fase 3, `situacaoDaAberturaReal`: depois de uma simulação sem
- * pendência com esta mesma capa). Recusa se faltar obrigatório do VIOS, se a publicação já tiver pasta (aqui ou no
- * SIOE) ou se já houver pedido na fila. O robô ainda confere no VIOS, antes de gravar, que o número não tem pasta.
+ * com a chave de Configurações ligada, de verdade, direto (Fase 3, `situacaoDaAberturaReal`). Recusa se faltar
+ * obrigatório do VIOS, se a publicação já tiver pasta (aqui ou no SIOE) ou se já houver pedido na fila. O robô ainda
+ * confere no VIOS, antes de gravar, que o número não tem pasta, e só grava se o VIOS aceitar a capa inteira.
  */
-export async function pedirAberturaDaPasta(id: string, authUserId: string, modo: "simular" | "abrir" = "simular"): Promise<AberturaDaPublicacao> {
+export async function pedirAberturaDaPasta(
+  id: string,
+  authUserId: string,
+  modo: "simular" | "abrir" = "simular",
+  { conferidoNoVios = false }: { conferidoNoVios?: boolean } = {}
+): Promise<AberturaDaPublicacao> {
   const { data: publicacao, error } = await admin().from("vistagem_publicacoes").select("pendencia, pasta_ci").eq("id", id).maybeSingle();
   if (error) falhou("carregar a publicação", error);
   if (!publicacao) throw new VistagemError("Publicação não encontrada.", 404);
@@ -393,7 +398,7 @@ export async function pedirAberturaDaPasta(id: string, authUserId: string, modo:
     if (!(await lerConfiguracoes()).aberturaPastaReal) {
       throw new VistagemError("A abertura de verdade está desligada (Vistagem › Configurações › Robô: abertura de pasta).", 409);
     }
-    const situacao = situacaoDaAberturaReal(anteriores, paraOVios);
+    const situacao = situacaoDaAberturaReal(anteriores, { conferidoNoVios });
     if (!situacao.pode) throw new VistagemError(situacao.motivo, 409);
   }
   const { data: usuario } = await admin().from("users").select("name").eq("auth_id", authUserId).maybeSingle();

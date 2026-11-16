@@ -839,43 +839,27 @@ export function ciDaPastaAberta(pedido: PedidoDeAbertura | undefined): string | 
   return pedido.resultado?.ci_pasta?.replace(/\D/g, "") || null;
 }
 
-/** A simulação não deixou nada para resolver: tudo preenchido e a validação do VIOS aceitaria gravar. */
-export function simulacaoSemPendencia(pedido: PedidoDeAbertura): boolean {
-  return pedido.status === "concluido" && !(pedido.resultado?.nao_encontrados?.length ?? 0) && !(pedido.resultado?.recusaria?.length ?? 0);
-}
-
-/** Mesma capa: os mesmos campos com os mesmos valores (a ordem das chaves não conta). */
-export function mesmaCapa(a: CapaDoVios | null | undefined, b: CapaDoVios | null | undefined): boolean {
-  if (!a || !b) return false;
-  const chaves = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
-  const valor = (capa: Record<string, unknown>, chave: string) => {
-    const atual = capa[chave];
-    if (Array.isArray(atual)) return JSON.stringify(atual.map((item) => String(item).trim()));
-    return atual === null || atual === undefined ? "" : String(atual).trim();
-  };
-  return chaves.every((chave) => valor(a as Record<string, unknown>, chave) === valor(b as Record<string, unknown>, chave));
-}
-
-export type SituacaoDaAberturaReal = { pode: true } | { pode: false; motivo: string };
+export type SituacaoDaAberturaReal = { pode: true } | { pode: false; motivo: string; conferirNoVios?: true };
 
 /**
- * Fase 3 (16/11/2026): quando a controladoria pode pedir a abertura de verdade. Só depois de uma simulação sem
- * pendência com esta mesma capa, sem pedido na fila e sem uma abertura de verdade que já terminou ou que parou depois
- * do Gravar (essa a pessoa confere no VIOS antes). Os pedidos vêm do mais novo para o mais antigo. Sem `capa`
- * (undefined, a tela), não compara a capa: o servidor compara ao receber o pedido.
+ * Fase 3: quando a controladoria pode pedir a abertura de verdade. Sem simulação antes (pedido do usuário,
+ * 16/11/2026: conferiu e editou a capa, "Abrir a pasta no VIOS" vai direto); o próprio robô confere que o número não
+ * tem pasta e só grava se o VIOS aceitar a capa inteira. Não deixa com pedido na fila nem com a pasta já aberta. Se o
+ * último pedido parou depois do Gravar (ATENÇÃO), só pede de novo quem conferiu no VIOS que a pasta não foi criada
+ * (`conferidoNoVios`). Os pedidos vêm do mais novo para o mais antigo.
  */
-export function situacaoDaAberturaReal(pedidos: PedidoDeAbertura[], capa?: CapaDoVios | null): SituacaoDaAberturaReal {
+export function situacaoDaAberturaReal(pedidos: PedidoDeAbertura[], { conferidoNoVios = false }: { conferidoNoVios?: boolean } = {}): SituacaoDaAberturaReal {
   if (pedidos.some((pedido) => NA_FILA_DO_ROBO.has(pedido.status))) return { pode: false, motivo: "Já há um pedido desta publicação na fila do robô." };
   const real = pedidos.find((pedido) => !pedido.simulado);
   const ci = ciDaPastaAberta(real);
   if (ci) return { pode: false, motivo: `A pasta já foi aberta no VIOS: CI ${ci}.` };
-  if (real?.status === "erro" && /^ATEN[ÇC][ÃA]O/i.test(real.erro ?? "")) {
-    return { pode: false, motivo: "O último pedido de verdade parou depois do Gravar: confira no VIOS se a pasta foi criada antes de pedir de novo." };
+  if (real?.status === "erro" && /^ATEN[ÇC][ÃA]O/i.test(real.erro ?? "") && !conferidoNoVios) {
+    return {
+      pode: false,
+      conferirNoVios: true,
+      motivo: "O último pedido parou depois do Gravar: confira no VIOS se a pasta foi criada. Se não foi, peça de novo.",
+    };
   }
-  const simulacao = pedidos.find((pedido) => pedido.simulado);
-  if (!simulacao || simulacao.status !== "concluido") return { pode: false, motivo: "Simule a abertura antes de abrir de verdade." };
-  if (!simulacaoSemPendencia(simulacao)) return { pode: false, motivo: "A última simulação teve pendência: ajuste a capa e simule de novo." };
-  if (capa !== undefined && !mesmaCapa(simulacao.capa, capa)) return { pode: false, motivo: "A capa mudou depois da última simulação: simule de novo." };
   return { pode: true };
 }
 
