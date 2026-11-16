@@ -424,7 +424,7 @@ export async function obterVistagem(
     // Na prévia da controladoria a publicação ainda não está na fila do jurídico: a IA gera depois, se for o caso.
     sugestaoIaDisponivel:
       !previa &&
-      Boolean(catalogo && areaComSugestaoIa(catalogo.area, publicacao.escritorio_responsavel) && openAIKey("analisePublicacao")) &&
+      Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")) &&
       (await lerConfiguracoes()).iaSugestaoTarefa,
     hoje: hojeEmSaoPaulo(),
   };
