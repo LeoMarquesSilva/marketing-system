@@ -5,8 +5,9 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { openAIKey } from "@/lib/openai-keys";
 import { OPENAI_DEFAULT_MODEL, isOpenAIReasoningModel } from "@/lib/openai-models";
-import type { EtiquetaAgendamento, OpcaoTarefa } from "./agendamento";
-import { CLASSIFICACOES_ESOCIAL } from "./esocial";
+import { chaveNome, type EtiquetaAgendamento, type OpcaoTarefa } from "./agendamento";
+import type { ContagemPrazo } from "./dias-uteis";
+import { CLASSIFICACOES_ESOCIAL, ESOCIAL_PADRAO } from "./esocial";
 import { VistagemError } from "./errors";
 import {
   COLUNAS_PUBLICACAO_COM_AREA,
@@ -18,16 +19,22 @@ import {
 } from "./juridico-server";
 import { carregarCatalogoProcessos } from "./sama";
 import { lerConfiguracoes } from "./configuracoes-server";
+import { registrarSugestaoDaIa } from "./ia-registro-server";
 import { admin, falhou } from "./server";
 import {
   PRAZO_DE,
   areaComSugestaoIa,
+  costumesDaArea,
   custoDaChamada,
+  ehAreaTrabalhista,
   entradaDaSugestao,
   esocialDaResposta,
   instrucoesDaSugestao,
+  secaoDoHistorico,
   tarefasDaResposta,
+  trechoDecisivo,
   type SugestaoIa,
+  type TarefaDoHistorico,
 } from "./sugestao-ia";
 
 // A ordem conta: a IA decide de quem é o prazo antes de escolher as tarefas.
@@ -49,18 +56,110 @@ const RESPOSTA = z.object({
   confianca: z.enum(["alta", "media", "baixa"]),
 });
 
-/** Pede à OpenAI as tarefas da publicação, escolhidas só da lista do VIOS da área. */
-async function pedirSugestao(publicacao: PublicacaoComArea, listas: Record<EtiquetaAgendamento, OpcaoTarefa[]>): Promise<SugestaoIa> {
+/** Status de publicação já vistada pelo jurídico: de onde vem o costume da área. */
+const STATUS_VISTADA = ["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar", "abertura_pasta"];
+/** Janela do costume: as vistagens dos últimos 60 dias. */
+const JANELA_HISTORICO_MS = 60 * 24 * 60 * 60 * 1000;
+/** O costume muda devagar; 6 h de cache mantém as instruções iguais e a OpenAI aproveita o cache dela. */
+const VALIDADE_HISTORICO_MS = 6 * 60 * 60 * 1000;
+const cacheHistorico = new Map<string, { em: number; texto: Promise<string | null> }>();
+
+type LinhaDoHistorico = {
+  publicacao_id: string;
+  tarefa: string | null;
+  etiqueta: EtiquetaAgendamento;
+  dias_prazo: number | null;
+  contagem_prazo: ContagemPrazo | null;
+  vistagem_publicacoes:
+    | { escritorio_responsavel: string | null; vistado_em: string | null; processo_digitos: string | null }
+    | { escritorio_responsavel: string | null; vistado_em: string | null; processo_digitos: string | null }[]
+    | null;
+};
+
+/**
+ * O costume do escritório na área (escritório da publicação): as tarefas que os advogados agendaram nas vistagens dos
+ * últimos 60 dias, com trechos das publicações. É assim que a IA aprende com o que o jurídico fez. `ate` e
+ * `excluirProcesso` são do teste às cegas: só o que veio antes e sem o próprio processo (sem cache).
+ */
+export async function historicoDaArea(
+  escritorio: string | null,
+  { ate, excluirProcesso }: { ate?: string; excluirProcesso?: string | null } = {}
+): Promise<string | null> {
+  if (!escritorio) return null;
+  const teste = Boolean(ate || excluirProcesso);
+  const guardado = cacheHistorico.get(escritorio);
+  if (!teste && guardado && Date.now() - guardado.em < VALIDADE_HISTORICO_MS) return guardado.texto;
+  // O cron pede 4 sugestões da mesma área de uma vez: todas esperam a mesma leitura.
+  const texto = montarHistorico(escritorio, { ate, excluirProcesso });
+  if (!teste) {
+    cacheHistorico.set(escritorio, { em: Date.now(), texto });
+    texto.catch(() => cacheHistorico.delete(escritorio));
+  }
+  return texto;
+}
+
+async function montarHistorico(escritorio: string, { ate, excluirProcesso }: { ate?: string; excluirProcesso?: string | null }): Promise<string | null> {
+  const db = admin();
+  let consulta = db
+    .from("vistagem_agendamentos")
+    .select(
+      "publicacao_id, tarefa, etiqueta, dias_prazo, contagem_prazo, vistagem_publicacoes!inner(escritorio_responsavel, status, vistado_em, data_publicacao, processo_digitos)"
+    )
+    .eq("vistagem_publicacoes.escritorio_responsavel", escritorio)
+    .in("vistagem_publicacoes.status", STATUS_VISTADA)
+    .gte("vistagem_publicacoes.vistado_em", new Date(Date.now() - JANELA_HISTORICO_MS).toISOString())
+    .limit(5000);
+  if (ate) consulta = consulta.lt("vistagem_publicacoes.data_publicacao", ate);
+  const { data, error } = await consulta;
+  if (error) falhou("carregar o histórico de vistagens da área", error);
+  const linhas: TarefaDoHistorico[] = ((data ?? []) as unknown as LinhaDoHistorico[]).flatMap((linha) => {
+    const publicacao = Array.isArray(linha.vistagem_publicacoes) ? linha.vistagem_publicacoes[0] : linha.vistagem_publicacoes;
+    if (!linha.tarefa || (excluirProcesso && publicacao?.processo_digitos === excluirProcesso)) return [];
+    return [
+      {
+        publicacaoId: linha.publicacao_id,
+        tarefa: linha.tarefa,
+        classe: linha.etiqueta,
+        dias: linha.dias_prazo,
+        contagem: linha.contagem_prazo,
+        em: publicacao?.vistado_em ?? "",
+      },
+    ];
+  });
+  const costumes = costumesDaArea(linhas);
+  const ids = [...new Set(costumes.flatMap((costume) => costume.publicacoes))];
+  const trechos = new Map<string, string>();
+  if (ids.length) {
+    const { data: teores, error: erroTeor } = await db.from("vistagem_publicacoes").select("id, teor").in("id", ids);
+    if (erroTeor) falhou("carregar os exemplos do histórico", erroTeor);
+    for (const item of (teores ?? []) as { id: string; teor: string | null }[]) if (item.teor) trechos.set(item.id, trechoDecisivo(item.teor));
+  }
+  return secaoDoHistorico(costumes, trechos);
+}
+
+/**
+ * Pede à OpenAI as tarefas da publicação, escolhidas só da lista do VIOS da área, com as instruções da área (Trabalhista
+ * ou CPC) e o costume do escritório. Fora do Trabalhista não há eSocial.
+ */
+export async function pedirSugestao(
+  publicacao: PublicacaoComArea,
+  catalogo: { area: string; tarefas: Record<EtiquetaAgendamento, OpcaoTarefa[]> },
+  historico: string | null
+): Promise<{ sugestao: SugestaoIa; instrucoes: string }> {
   const apiKey = openAIKey("analisePublicacao");
   if (!apiKey) throw new VistagemError("A chave da OpenAI não está configurada.", 503);
   const modelo = OPENAI_DEFAULT_MODEL;
+  const trabalhista = ehAreaTrabalhista(catalogo.area);
+  const listas = catalogo.tarefas;
+  const chaveDaArea = chaveNome(catalogo.area).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const instrucoes = instrucoesDaSugestao(listas, { area: catalogo.area, historico });
   // modelos de raciocínio recusam temperature; nos outros, 0 para a resposta variar pouco
   const raciocinio = isOpenAIReasoningModel(modelo);
   const { object, usage } = await generateObject({
     model: createOpenAI({ apiKey })(modelo),
     schema: RESPOSTA,
-    schemaName: "vistagem_trabalhista",
-    system: instrucoesDaSugestao(listas),
+    schemaName: trabalhista ? "vistagem_trabalhista" : "vistagem_por_area",
+    system: instrucoes,
     prompt: entradaDaSugestao({
       dataPublicacao: publicacao.data_publicacao,
       tribunal: publicacao.tribunal,
@@ -72,14 +171,18 @@ async function pedirSugestao(publicacao: PublicacaoComArea, listas: Record<Etiqu
     }),
     temperature: raciocinio ? undefined : 0,
     providerOptions: {
-      // instruções e lista são iguais em todas as chamadas: a chave ajuda a OpenAI a usar o cache
-      openai: { ...(raciocinio ? { reasoningEffort: "low" as const } : {}), promptCacheKey: "vistagem-trabalhista", store: false },
+      // instruções e lista são iguais para todas as publicações da área: a chave ajuda a OpenAI a usar o cache
+      openai: {
+        ...(raciocinio ? { reasoningEffort: "low" as const } : {}),
+        promptCacheKey: trabalhista ? "vistagem-trabalhista" : `vistagem-${chaveDaArea}`,
+        store: false,
+      },
     },
   });
-  return {
+  const sugestao: SugestaoIa = {
     resumo: object.resumo.trim(),
-    tarefas: tarefasDaResposta(object, listas),
-    esocial: esocialDaResposta(object.esocial),
+    tarefas: tarefasDaResposta(object, listas, { trabalhista }),
+    esocial: trabalhista ? esocialDaResposta(object.esocial) : ESOCIAL_PADRAO,
     confianca: object.confianca,
     parteContraria: object.prazo_de === "parte_contraria",
     prazoDe: object.prazo_de,
@@ -91,15 +194,18 @@ async function pedirSugestao(publicacao: PublicacaoComArea, listas: Record<Etiqu
       saida: usage.outputTokens ?? 0,
     }),
   };
+  return { sugestao, instrucoes };
 }
 
-async function gravarSugestao(id: string, sugestao: SugestaoIa): Promise<void> {
+/** Grava a sugestão na publicação e, no registro da IA, o que ela leu e sugeriu. */
+async function gravarSugestao(publicacao: PublicacaoComArea, area: string, pedido: { sugestao: SugestaoIa; instrucoes: string }): Promise<void> {
   const { error } = await admin()
     .from("vistagem_publicacoes")
-    .update({ sugestao_ia: sugestao, sugestao_ia_em: sugestao.geradaEm })
-    .eq("id", id)
+    .update({ sugestao_ia: pedido.sugestao, sugestao_ia_em: pedido.sugestao.geradaEm })
+    .eq("id", publicacao.id)
     .eq("status", "juridico_vistar");
   if (error) falhou("gravar a sugestão da IA", error);
+  await registrarSugestaoDaIa(publicacao, area, pedido.instrucoes, pedido.sugestao);
 }
 
 /** Sugestão da publicação para a tela do jurídico: a já gravada ou uma nova. */
@@ -109,15 +215,17 @@ export async function sugestaoDaPublicacao(id: string, areas: AreasVistagem = nu
   if (publicacao.sugestao_ia) return publicacao.sugestao_ia;
   if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
   const catalogo = catalogoParaPublicacao(await carregarCatalogoProcessos(), publicacao);
-  if (!catalogo || !areaComSugestaoIa(catalogo.area)) throw new VistagemError("A sugestão da IA ainda é só para o Trabalhista.", 422);
+  if (!catalogo || !areaComSugestaoIa(catalogo.area, publicacao.escritorio_responsavel)) {
+    throw new VistagemError("A sugestão da IA não está disponível para esta área.", 422);
+  }
   if (!(await lerConfiguracoes()).iaSugestaoTarefa) throw new VistagemError("A sugestão da IA está desligada nas configurações da Vistagem.", 422);
-  const sugestao = await pedirSugestao(publicacao, catalogo.tarefas);
-  await gravarSugestao(id, sugestao);
-  return sugestao;
+  const pedido = await pedirSugestao(publicacao, catalogo, await historicoDaArea(publicacao.escritorio_responsavel));
+  await gravarSugestao(publicacao, catalogo.area, pedido);
+  return pedido.sugestao;
 }
 
 /**
- * No cron da Kurier: gera as sugestões das publicações do Trabalhista que ainda não têm,
+ * No cron da Kurier: gera as sugestões das publicações que ainda não têm (todas as áreas, menos Operações Legais),
  * 4 por vez, até o tempo acabar (as que sobrarem a tela gera ao abrir).
  */
 export async function gerarSugestoesPendentes(prazoMs: number): Promise<{ pendentes: number; geradas: number; erros: number; custoUS: number }> {
@@ -135,16 +243,16 @@ export async function gerarSugestoesPendentes(prazoMs: number): Promise<{ penden
   const catalogos = await carregarCatalogoProcessos();
   const fila = ((data ?? []) as PublicacaoComArea[])
     .map((publicacao) => ({ publicacao, catalogo: catalogoParaPublicacao(catalogos, publicacao) }))
-    .filter((item) => item.catalogo && areaComSugestaoIa(item.catalogo.area));
+    .filter((item) => item.catalogo && areaComSugestaoIa(item.catalogo.area, item.publicacao.escritorio_responsavel));
   let geradas = 0;
   let erros = 0;
   let custoUS = 0;
   for (let i = 0; i < fila.length && Date.now() < fim; i += 4) {
     const lote = await Promise.allSettled(
       fila.slice(i, i + 4).map(async ({ publicacao, catalogo }) => {
-        const sugestao = await pedirSugestao(publicacao, catalogo!.tarefas);
-        await gravarSugestao(publicacao.id, sugestao);
-        return sugestao.custoUS;
+        const pedido = await pedirSugestao(publicacao, catalogo!, await historicoDaArea(publicacao.escritorio_responsavel));
+        await gravarSugestao(publicacao, catalogo!.area, pedido);
+        return pedido.sugestao.custoUS;
       })
     );
     for (const item of lote) {
