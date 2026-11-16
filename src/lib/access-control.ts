@@ -64,7 +64,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de projetos" },
   { key: "/icp", label: "ICP (cliente ideal)", manualOnly: true },
-  { key: "/rh", label: "RH (férias, dados cadastrais, organograma e boas práticas)", manualOnly: true },
+  { key: "/rh", label: "RH (férias, dados cadastrais, organograma, boas práticas e gestão de PDI)", manualOnly: true },
   { key: "/pe27", label: "PE27 · Planejamento 2027 (só leitura)", manualOnly: true },
   { key: "/pe27/editar", label: "PE27 · editar decisões, alavancas e metas", manualOnly: true },
   { key: "/documentario", label: "Minidocumentário 10 anos (ver e aprovar)", manualOnly: true },
@@ -103,6 +103,17 @@ export const ACCESS_PRESETS: Record<string, string[]> = {
   Administrador: [...ALL_KEYS],
 };
 
+/**
+ * Trava de teste do PDI (Meu PDI, página do plano, gestão e API): com true, só admin
+ * abre. Ligada em 16/11/2026 a pedido do usuário enquanto o módulo está em teste;
+ * para liberar, trocar para false ("/pdi" volta a ser de todos e "/rh/pdi" do RH).
+ */
+export const PDI_ADMIN_ONLY = true;
+
+export function isPdiPath(pathname: string): boolean {
+  return pathname === "/pdi" || pathname.startsWith("/pdi/") || pathname === "/rh/pdi" || pathname.startsWith("/rh/pdi/");
+}
+
 /** Rotas sempre acessíveis para qualquer usuário autenticado. */
 export const ALWAYS_ALLOWED_PATHS = [
   "/perfil",
@@ -122,6 +133,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/meus-links",
   // Votação do BP Awards (o comitê fica em /rh/bp-awards, só com RH).
   "/bp-awards",
+  // PDI: o próprio plano e o da equipe que a pessoa lidera (o servidor confere; a gestão fica em /rh/pdi).
+  ...(PDI_ADMIN_ONLY ? [] : ["/pdi"]),
   // Resposta às pesquisas com a equipe (o servidor confere se a pessoa está no público).
   "/pesquisa",
   // Confirmação de presença na festa de 10 anos (o servidor confere se a pessoa é da equipe).
@@ -417,6 +430,8 @@ export function canAccessPath(
   }
 
   if (pathname === HOME_PATH) return canSeeHome(profile);
+
+  if (PDI_ADMIN_ONLY && isPdiPath(pathname)) return isAdminRole(profile);
 
   if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return true;

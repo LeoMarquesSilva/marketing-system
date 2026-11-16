@@ -29,7 +29,6 @@ import { cienciaDosAgendamentos, dataDaCienciaNaVistagem, dataDaCienciaNoEnvio, 
 import { alteracaoDaVistagem, inicioDaConferenciaSegura, reabertaParaAlterar } from "./alterar-vistagem";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
-import { registrarDecisaoDaIa } from "./ia-registro-server";
 import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaAtual, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
@@ -423,9 +422,7 @@ export async function obterVistagem(
     sugestaoIa: publicacao.sugestao_ia && catalogo ? sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas) : publicacao.sugestao_ia,
     // Na prévia da controladoria a publicação ainda não está na fila do jurídico: a IA gera depois, se for o caso.
     sugestaoIaDisponivel:
-      !previa &&
-      Boolean(catalogo && areaComSugestaoIa(catalogo.area, publicacao.escritorio_responsavel) && openAIKey("analisePublicacao")) &&
-      (await lerConfiguracoes()).iaSugestaoTarefa,
+      !previa && Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")) && (await lerConfiguracoes()).iaSugestaoTarefa,
     hoje: hojeEmSaoPaulo(),
   };
 }
@@ -634,17 +631,6 @@ export async function salvarVistagem(
     .maybeSingle();
   if (error) falhou("enviar a vistagem para a controladoria", error);
   if (!atualizada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
-  // Registro da IA: o que o advogado agendou × o que a IA sugeriu (base para a IA aprender).
-  if (publicacao.sugestao_ia && resultadoIa) {
-    await registrarDecisaoDaIa({
-      publicacao,
-      area: catalogo.area,
-      sugestao: sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas),
-      resultado: resultadoIa,
-      itens: validacao.itens,
-      autor: authUserId,
-    });
-  }
   return { central: null };
 }
 

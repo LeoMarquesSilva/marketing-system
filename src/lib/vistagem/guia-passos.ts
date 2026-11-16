@@ -271,7 +271,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-vazio",
       titulo: "Sugestão da IA",
       texto:
-        "Em todas as áreas, menos Operações Legais, a IA lê a publicação e propõe as tarefas, com o porquê e o grau de confiança. Ela segue as regras da área e o costume do escritório (o que os advogados agendaram nas vistagens recentes). Sem prazo nem providência, sugere CIÊNCIA NF, com um aviso para conferir. \"Usar sugestão\" preenche as tarefas (no Trabalhista, também o eSocial): confira responsável e datas antes de enviar. Dá para Desfazer ou Ignorar.",
+        "No Trabalhista, a IA lê a publicação e propõe as tarefas, com o porquê e o grau de confiança; sem prazo nem providência, ela sugere CIÊNCIA NF. \"Usar sugestão\" preenche as tarefas (e o eSocial): confira responsável e datas antes de enviar. Dá para Desfazer ou Ignorar.",
     },
     {
       id: "tarefas",
@@ -495,7 +495,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "cg-ia",
       titulo: "Inteligência artificial",
       texto:
-        "Liga e desliga a sugestão de tarefas (todas as áreas, menos Operações Legais) e a sugestão de pasta (Triagem Manual); salva no clique. Nenhuma das duas grava nada sozinha: só sugere.",
+        "Liga e desliga a sugestão de tarefas (Trabalhista) e a sugestão de pasta (Triagem Manual); salva no clique. Nenhuma das duas grava nada sozinha: só sugere.",
     },
     {
       id: "resumo",

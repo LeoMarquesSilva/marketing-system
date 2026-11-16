@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { TAREFA_ESOCIAL, pedeTarefaEsocial } from "@/lib/vistagem/esocial";
-import { fatalSugerida, sugereSoCiencia, type ConfiancaSugestao, type ResultadoSugestao, type SugestaoIa, type TarefaSugerida } from "@/lib/vistagem/sugestao-ia";
+import { fatalSugerida, type ConfiancaSugestao, type ResultadoSugestao, type SugestaoIa, type TarefaSugerida } from "@/lib/vistagem/sugestao-ia";
 import type { SugestaoNaVistagem } from "@/lib/vistagem/types";
 import { cn } from "@/lib/utils";
 import { formatarData } from "./publicacao-ui";
@@ -164,11 +164,6 @@ export function CartaoSugestaoIa({
         </Selo>
       </TituloIa>
       <p className="px-4 pt-3 text-sm text-foreground">{sugestao.resumo}</p>
-      {sugereSoCiencia(sugestao) ? (
-        <Aviso tom="alerta" titulo="Confira antes de usar" className="mx-4 mt-2">
-          A IA não viu prazo para o cliente. Leia a publicação: às vezes há um prazo (manifestação, impugnação, recurso) que ela não percebeu.
-        </Aviso>
-      ) : null}
       <ListaSugerida
         tarefas={sugestao.tarefas}
         fatais={sugestao.tarefas.map((tarefa) => fatalSugerida(tarefa, dataPublicacao, contaPrazo))}

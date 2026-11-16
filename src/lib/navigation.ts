@@ -43,6 +43,7 @@ import {
   Scale,
   Settings,
   Sparkles,
+  Sprout,
   Ticket,
   TrendingUp,
   Trophy,
@@ -76,6 +77,8 @@ import {
   canSeeVistagemPath,
   entradaDaVistagem,
   isAdminRole,
+  isPdiPath,
+  PDI_ADMIN_ONLY,
   isFacilitiesPath,
   isVistagemPath,
   isCollaboratorPhotosManager,
@@ -352,6 +355,17 @@ export const NAV_FRONTS: NavFront[] = [
     label: "Pessoas e Cultura",
     features: [
       {
+        // Plano de Desenvolvimento Individual (substitui o PDI do Feedz): todos veem o
+        // próprio plano e o da equipe que lideram; a gestão é do RH.
+        id: "pdi",
+        label: "PDI",
+        icon: Sprout,
+        pages: [
+          { href: "/pdi", label: "Meu PDI" },
+          { href: "/rh/pdi", label: "Gestão" },
+        ],
+      },
+      {
         id: "ferias",
         label: "Gestão de férias",
         shortLabel: "Férias",
@@ -517,6 +531,7 @@ const EXTRA_HEADERS: Array<{ href: string; eyebrow: string; title: string; icon:
 export type NavProfile = AccessProfile & { department?: string | null };
 
 const ALWAYS_VISIBLE = new Set([
+  "/pdi",
   "/minhas-fotos",
   "/fotos-eventos",
   "/meus-clientes",
@@ -526,6 +541,7 @@ const ALWAYS_VISIBLE = new Set([
 ]);
 
 const RH_RESTRICTED = new Set([
+  "/rh/pdi",
   "/rh/fichas-cadastrais",
   "/rh/organograma",
   "/rh/boas-praticas",
@@ -548,6 +564,12 @@ const COLLABORATOR_PAGES = new Set([
  * permissões explícitas, colaborador de conteúdo (sem permissões) e legado/admin.
  */
 export function createNavVisibility(profile: NavProfile | null | undefined): (href: string) => boolean {
+  const base = createBaseNavVisibility(profile);
+  // PDI em teste: só admin enxerga o módulo inteiro (trava em access-control).
+  return (href) => (PDI_ADMIN_ONLY && isPdiPath(href) ? isAdminRole(profile) : base(href));
+}
+
+function createBaseNavVisibility(profile: NavProfile | null | undefined): (href: string) => boolean {
   // Consultores externos liberados só no PE27 não veem nem as telas abertas a todos.
   if (isPe27OnlyProfile(profile)) return (href) => isPe27Path(href);
   const feriasView =
