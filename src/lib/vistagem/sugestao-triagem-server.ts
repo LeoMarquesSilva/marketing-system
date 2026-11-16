@@ -105,18 +105,19 @@ async function sugerir(
   publicacao: PublicacaoSemPasta,
   indice: IndiceSioe,
   areaDoAdvogado: (nome: string | null) => string | null,
-  comIa = true
+  comIa = true,
+  etiquetasDeRisco?: string[]
 ): Promise<SugestaoTriagem | null> {
   // 1) Outro processo citado no teor (o principal) que já tem pasta.
   const numeros = numerosCitados(publicacao.teor, publicacao.numero_processo);
   if (numeros.length) {
     const pastas = await buscarPastasPorCnj(numeros);
     const numero = numeros.find((item) => pastas.get(item)?.length);
-    if (numero) return sugestaoPorNumero(numero, pastas.get(numero) ?? [], areaDoAdvogado);
+    if (numero) return sugestaoPorNumero(numero, pastas.get(numero) ?? [], areaDoAdvogado, etiquetasDeRisco);
   }
   // 2) Uma parte que já é cliente.
   const partes = [...new Set([...(publicacao.djen_partes ?? []).map((parte) => parte.nome), ...(publicacao.djen_intimados ?? [])].filter(Boolean))];
-  const porParte = sugestaoPorPartes(partes, indice.porCliente, areaDoAdvogado);
+  const porParte = sugestaoPorPartes(partes, indice.porCliente, areaDoAdvogado, etiquetasDeRisco);
   if (porParte) return porParte;
   // 3) A IA, mesmo sem certeza (a controladoria confere). Desligada em Configurações, fica sem sugestão.
   if (!comIa) return null;
@@ -125,7 +126,7 @@ async function sugerir(
   const principal = ia.resposta.processo_principal?.replace(/\D/g, "") ?? "";
   if (principal.length === 20) {
     const pastas = (await buscarPastasPorCnj([principal])).get(principal) ?? [];
-    if (pastas.length) return { ...sugestaoPorNumero(principal, pastas, areaDoAdvogado), custoUS: ia.custoUS };
+    if (pastas.length) return { ...sugestaoPorNumero(principal, pastas, areaDoAdvogado, etiquetasDeRisco), custoUS: ia.custoUS };
   }
   const doGrupo = ia.resposta.grupo ? indice.porGrupo.get(ia.resposta.grupo.trim()) ?? [] : [];
   return sugestaoDaIa(ia.resposta, indice.grupos, {
@@ -161,7 +162,7 @@ export async function gerarSugestoesDeTriagem(
   for (let i = 0; i < fila.length && Date.now() < fim; i += 4) {
     const lote = await Promise.allSettled(
       fila.slice(i, i + 4).map(async (publicacao) => {
-        const sugestao = await sugerir(publicacao, indice, areaDoAdvogado, configuracoes.iaSugestaoTriagem);
+        const sugestao = await sugerir(publicacao, indice, areaDoAdvogado, configuracoes.iaSugestaoTriagem, configuracoes.etiquetasDeRisco);
         if (!sugestao) return null;
         const { error: erroGravar } = await admin()
           .from("vistagem_publicacoes")
