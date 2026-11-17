@@ -10,11 +10,14 @@ import { BUCKET_AUTOS, type SugestaoNova } from "./autos-types";
 import { ProcessosError } from "./errors";
 import { extrairPaginas, type TextoDoPdf } from "./leitura-pdf";
 import { detalharProcesso } from "./processos-server";
+import { sugestoesDaRecCredito } from "./rec-credito-leitura";
+import { itensDoProcesso, tiposDeTitulo } from "./rec-credito-server";
 import { db, falhou } from "./server";
 import {
   ESQUEMA_LEITURA,
   ESQUEMA_SINTESE,
   MINIMO_TEXTO_PAGINA,
+  criarConferidor,
   dividirEmBlocos,
   entradaDaLeitura,
   entradaDaSintese,
@@ -200,6 +203,9 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
 
     const leitura = juntarLeituras(leituras);
     const sugestoes = montarSugestoes(leitura, contexto, texto.paginas);
+    // Rec. Crédito: títulos, citações, pedidos e dinheiro, sem repetir o que a ficha já tem.
+    const [lancados, tipos] = await Promise.all([itensDoProcesso(documento.processoId), tiposDeTitulo()]);
+    sugestoes.push(...sugestoesDaRecCredito(leitura.rec_credito, lancados, tipos, criarConferidor(texto.paginas)));
 
     // A síntese do processo, redigida com os fatos de todos os pedaços. Falhar aqui não derruba o resto da leitura.
     const avisos: string[] = [];

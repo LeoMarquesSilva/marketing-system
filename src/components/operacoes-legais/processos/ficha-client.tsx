@@ -197,6 +197,8 @@ function Ficha({ id }: { id: string }) {
   const [feito, setFeito] = useState("");
   const [dialogo, setDialogo] = useState<Dialogo>(null);
   const [ocupado, setOcupado] = useState("");
+  // Sugestão aprovada pode ter incluído título, citação, pedido ou lançamento: o painel da Rec. Crédito recarrega.
+  const [versaoRec, setVersaoRec] = useState(0);
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -365,6 +367,7 @@ function Ficha({ id }: { id: string }) {
               autos={autos}
               onErro={setErro}
               onDecidido={(decisao, mensagem) => {
+                setVersaoRec((atual) => atual + 1);
                 setProcesso(decisao.processo);
                 setAutos(decisao.autos);
                 setErro("");
@@ -412,6 +415,7 @@ function Ficha({ id }: { id: string }) {
 
           <PainelRecCredito
             processoId={processo.id}
+            atualizacao={versaoRec}
             onErro={setErro}
             onFeito={(mensagem) => {
               setErro("");

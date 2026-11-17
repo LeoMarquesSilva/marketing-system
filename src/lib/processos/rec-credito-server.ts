@@ -107,6 +107,11 @@ async function itensPorProcesso(processos: string[] | null): Promise<Map<string,
   return mapa;
 }
 
+/** Itens já lançados num processo (a leitura dos autos não propõe de novo o que já está na ficha). */
+export async function itensDoProcesso(processoId: string): Promise<ItensRecCredito> {
+  return (await itensPorProcesso([processoId])).get(processoId) ?? { titulos: [], citacoes: [], pedidos: [], lancamentos: [] };
+}
+
 function hoje(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 }
@@ -188,8 +193,17 @@ export async function carregarRecCredito(processoId: string): Promise<RecCredito
 
 const ROTULO_HISTORICO = "Rec. Crédito";
 
-/** Inclui um título, citação, pedido ou lançamento lançado à mão na ficha. */
-export async function incluirItem(processoId: string, tipo: TipoItem, dados: Record<string, unknown>, ator: Ator): Promise<RecCreditoDoProcesso> {
+/**
+ * Inclui um título, citação, pedido ou lançamento: lançado à mão na ficha ou vindo de uma sugestão da leitura
+ * dos autos aprovada (`dosAutos`, com o documento e a página de onde saiu).
+ */
+export async function incluirItem(
+  processoId: string,
+  tipo: TipoItem,
+  dados: Record<string, unknown>,
+  ator: Ator,
+  dosAutos?: { documentoId: string | null; pagina: number | null }
+): Promise<RecCreditoDoProcesso> {
   const colunas = colunasDoItem(tipo, dados);
   if (tipo === "titulo") await conferirTipoDeTitulo(colunas.tipo as string);
   const { data: processo, error: erroProcesso } = await db().from("proc_processos").select("id").eq("id", processoId).maybeSingle();
@@ -197,9 +211,17 @@ export async function incluirItem(processoId: string, tipo: TipoItem, dados: Rec
   if (!processo) throw new ProcessosError("Processo não encontrado.", 404);
   const { error } = await db()
     .from(TABELA_DO_ITEM[tipo])
-    .insert({ processo_id: processoId, ...colunas, origem: "manual", criado_por: ator.authUserId, criado_por_nome: ator.nome });
+    .insert({
+      processo_id: processoId,
+      ...colunas,
+      origem: dosAutos ? "autos" : "manual",
+      documento_id: dosAutos?.documentoId ?? null,
+      pagina: dosAutos?.pagina ?? null,
+      criado_por: ator.authUserId,
+      criado_por_nome: ator.nome,
+    });
   if (error) falhou("incluir o item", error);
-  await registrarNoHistorico(processoId, ROTULO_HISTORICO, null, `Incluído: ${descreverItem(tipo, colunas)}`, ator);
+  await registrarNoHistorico(processoId, ROTULO_HISTORICO, null, `Incluído: ${descreverItem(tipo, colunas)}`, ator, dosAutos ? "ia" : "manual");
   return carregarRecCredito(processoId);
 }
 

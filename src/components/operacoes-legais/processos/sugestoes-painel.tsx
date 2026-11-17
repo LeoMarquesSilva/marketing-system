@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import type { AutosDoProcesso, Confianca, ContatoSugerido, EnderecoSugerido, PessoaSugerida, Sugestao, ValorDeCampo } from "@/lib/processos/autos-types";
 import { GRUPOS_CAMPO, campoPorChave, estaPreenchido, formatarValor, rotuloDoCampo } from "@/lib/processos/campos";
 import { ITENS_SANEAMENTO } from "@/lib/processos/preenchimento";
+import { ROTULO_DO_ITEM } from "@/lib/processos/rec-credito";
+import type { ItemSugerido } from "@/lib/processos/rec-credito-leitura";
 import { aplicarNaParte, entradaDaPessoa, linhaDoEndereco } from "@/lib/processos/sugestoes";
 import { TIPOS_CONTATO, rotuloDoPapel, type ParteEntrada, type ProcessoDetalhe } from "@/lib/processos/types";
 import { DialogoAcao } from "../vistagem/dialogo-acao";
@@ -13,6 +15,7 @@ import { Aviso, Campo, Painel, PainelTopo, Selo, type TomSelo } from "../vistage
 import { Controle, doFormulario, paraFormulario } from "./editar-campos";
 import { EditarParte } from "./editar-parte";
 import { abrirAutos, formatarDataHora, mensagemDeErro, processosApi } from "./processos-api";
+import { ConferirItemSugerido } from "./rec-credito-painel";
 
 type Decisao = { processo: ProcessoDetalhe; autos: AutosDoProcesso };
 
@@ -22,7 +25,10 @@ const CONFIANCA: Record<Confianca, { tom: TomSelo; rotulo: string }> = {
   baixa: { tom: "alerta", rotulo: "Confiança baixa" },
 };
 
-const ROTULO_ITEM = new Map(ITENS_SANEAMENTO.map((item) => [item.chave, item.rotulo]));
+const ROTULO_ITEM = new Map([
+  ...ITENS_SANEAMENTO.map((item) => [item.chave, item.rotulo] as const),
+  ...Object.entries(ROTULO_DO_ITEM).map(([item, rotulo]) => [`rec_credito_${item}`, `Rec. Crédito: ${rotulo.toLowerCase()}`] as const),
+]);
 const ROTULO_GRUPO = new Map<string, string>(GRUPOS_CAMPO.map((grupo) => [grupo.id, grupo.rotulo]));
 const ROTULO_CONTATO = new Map<string, string>(TIPOS_CONTATO.map((item) => [item.valor, item.rotulo]));
 
@@ -56,6 +62,16 @@ function Proposta({ sugestao, processo }: { sugestao: Sugestao; processo: Proces
           </p>
         ))}
         {estaPreenchido(atual) ? <p className="text-xs text-amber-800">Hoje no cadastro: {formatarValor(item, atual)}. Aprovar troca o valor.</p> : null}
+      </>
+    );
+  }
+  if (sugestao.tipo === "rec_credito") {
+    // O resumo já diz o item inteiro ("Título: Duplicata nº 10, R$ 1.000,00, vencimento 10/01/2024").
+    const [rotulo, ...resto] = sugestao.resumo.split(": ");
+    return (
+      <>
+        <p className="text-xs font-medium text-muted-foreground">{rotulo}</p>
+        <p className="break-words text-sm font-semibold text-[#10293a]">{resto.join(": ")}</p>
       </>
     );
   }
@@ -281,15 +297,16 @@ export function PainelSugestoes({
   };
 
   // Formulário de parte para conferir: a pessoa nova, ou a parte já cadastrada com o dado proposto.
-  const parteEmEdicao = editando && editando.tipo !== "campo" ? (processo.partes.find((item) => item.id === editando.parteId) ?? null) : null;
-  const dadosDaParte: ParteEntrada | null =
-    editando && editando.tipo !== "campo"
-      ? editando.tipo === "parte_nova"
-        ? entradaDaPessoa(editando.valor as PessoaSugerida, processo.partes)
-        : parteEmEdicao
-          ? aplicarNaParte(parteEmEdicao, editando.tipo, editando.valor)
-          : null
-      : null;
+  const deParte = editando && editando.tipo !== "campo" && editando.tipo !== "rec_credito" ? editando : null;
+  const parteEmEdicao = deParte ? (processo.partes.find((item) => item.id === deParte.parteId) ?? null) : null;
+  const dadosDaParte: ParteEntrada | null = deParte
+    ? deParte.tipo === "parte_nova"
+      ? entradaDaPessoa(deParte.valor as PessoaSugerida, processo.partes)
+      : parteEmEdicao
+        ? aplicarNaParte(parteEmEdicao, deParte.tipo, deParte.valor)
+        : null
+    : null;
+  const itemEmEdicao = editando?.tipo === "rec_credito" ? (editando.valor as ItemSugerido) : null;
 
   return (
     <Painel aria-labelledby={tituloId}>
@@ -315,7 +332,7 @@ export function PainelSugestoes({
           {pendentes.map((sugestao) => {
             const aprovando = ocupado === `aprovar:${sugestao.id}`;
             const recusando = ocupado === `recusar:${sugestao.id}`;
-            const parteSumiu = sugestao.tipo !== "campo" && sugestao.tipo !== "parte_nova" && !processo.partes.some((item) => item.id === sugestao.parteId);
+            const parteSumiu = sugestao.tipo !== "campo" && sugestao.tipo !== "parte_nova" && sugestao.tipo !== "rec_credito" && !processo.partes.some((item) => item.id === sugestao.parteId);
             return (
               <li key={sugestao.id} className="grid gap-3 px-4 py-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                 <div className="min-w-0 space-y-2">
@@ -384,6 +401,17 @@ export function PainelSugestoes({
           uf={typeof processo.valores.uf === "string" && processo.valores.uf ? processo.valores.uf : null}
           onFechar={() => setEditando(null)}
           aprovar={(corpo) => decidir(editando, { acao: "aprovar", ...corpo }, "Sugestão aprovada com o seu ajuste e gravada no cadastro.")}
+        />
+      ) : null}
+      {editando && itemEmEdicao ? (
+        <ConferirItemSugerido
+          key={editando.id}
+          item={itemEmEdicao.item}
+          dados={itemEmEdicao.dados}
+          tipos={itemEmEdicao.tipos ?? []}
+          trecho={editando.trecho ? <Trecho sugestao={editando} /> : null}
+          onFechar={() => setEditando(null)}
+          aprovar={(dados) => decidir(editando, { acao: "aprovar", valor: dados }, "Sugestão aprovada com o seu ajuste e incluída na Rec. Crédito.")}
         />
       ) : null}
       {editando && dadosDaParte ? (

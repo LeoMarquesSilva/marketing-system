@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Confianca, ContatoSugerido, EnderecoSugerido, PessoaSugerida, SugestaoNova, TipoSugestao, ValorSugestao } from "./autos-types";
 import { campoPorChave, coagirValor, estaPreenchido, formatarValor, textoDoValor, type Valores } from "./campos";
+import { ESQUEMA_REC_CREDITO, instrucoesRecCredito, juntarRecCredito, leituraRecCreditoVazia } from "./rec-credito-leitura";
 import { TIPOS_CONTATO, rotuloDoPapel, type Contato, type Endereco, type PapelParte, type Parte, type ParteEntrada, type PoloParte, type TipoContato } from "./types";
 
 /**
@@ -78,12 +79,13 @@ export const ESQUEMA_LEITURA = z.object({
       pagina: z.number().describe("O n da marca [[PÁGINA n]] onde o fato está."),
     })
   ),
+  rec_credito: ESQUEMA_REC_CREDITO,
 });
 
 export type LeituraDosAutos = z.infer<typeof ESQUEMA_LEITURA>;
 
 export function leituraVazia(): LeituraDosAutos {
-  return { campos: [], pessoas: [], enderecos: [], contatos: [], fatos: [] };
+  return { campos: [], pessoas: [], enderecos: [], contatos: [], fatos: [], rec_credito: leituraRecCreditoVazia() };
 }
 
 export function juntarLeituras(leituras: LeituraDosAutos[]): LeituraDosAutos {
@@ -95,6 +97,7 @@ export function juntarLeituras(leituras: LeituraDosAutos[]): LeituraDosAutos {
     tudo.contatos.push(...leitura.contatos);
     tudo.fatos.push(...(leitura.fatos ?? []));
   }
+  tudo.rec_credito = juntarRecCredito(leituras.map((leitura) => leitura.rec_credito));
   return tudo;
 }
 
@@ -413,6 +416,8 @@ export function instrucoesDaLeitura(): string {
     "- Os atos que importam para entender o processo: o que a petição inicial pede, contra quem, com que fundamento (contrato, título, notas) e de quanto; a citação e o resultado dela; a defesa, os embargos ou a impugnação e o que alegam; as decisões e sentenças e o que decidiram; penhoras, bloqueios (SISBAJUD, RENAJUD) e pesquisas de bens, com o resultado; acordos; recursos e o julgamento deles; recuperação judicial ou falência do devedor; o que ficou pendente.",
     "- Uma frase objetiva por fato, dizendo quem praticou o ato e qual foi o resultado. `data` em AAAA-MM-DD quando o texto traz; `pagina` é a marca da página.",
     "- No máximo 15 por pedaço, os mais relevantes. Ignore atos de mero expediente: juntadas, conclusões, certidões de publicação, remessas, procurações e guias.",
+    "",
+    ...instrucoesRecCredito(),
   ].join("\n");
 }
 
@@ -456,6 +461,7 @@ export const ESQUEMA_SINTESE = z.object({
   objeto: z.string().nullable().describe("Uma frase com o objeto da ação (o que se pede). Nulo se os fatos não permitem afirmar."),
   fase: z.enum(FASES_DA_SINTESE).nullable().describe("Fase em que o processo está, pelos últimos fatos. Nulo se não der para afirmar."),
   parecer_risco: z.string().nullable().describe("Os fatores de risco que os autos mostram para o cliente do escritório, sem classificar a probabilidade. Nulo se os fatos não permitem."),
+  proximos_passos: z.string().nullable().describe("O que está pendente no processo segundo os últimos fatos. Nulo se os fatos não permitem afirmar."),
 });
 export type SinteseDosAutos = z.infer<typeof ESQUEMA_SINTESE>;
 
@@ -504,6 +510,7 @@ export function instrucoesDaSintese(): string {
     "- No máximo 3.000 caracteres. Se os fatos forem poucos, a síntese é curta: não encha.",
     "- `objeto`: uma frase com o que a ação pede (ex.: \"Execução de duplicatas vencidas e não pagas\"). Nulo se não der para afirmar.",
     "- `fase`: Conhecimento (ainda sem sentença), Recursal (há recurso pendente de julgamento), Execução (execução de título ou cumprimento de sentença em curso) ou Suspenso (o processo está suspenso por decisão). Vale a situação dos últimos fatos. Nulo se não der para afirmar.",
+    "- `proximos_passos`: uma a três frases com o que está pendente no processo segundo os últimos fatos: o que a última decisão determinou e ainda não foi cumprido, o que se aguarda (retorno de AR ou de mandado, resposta de SISBAJUD ou RENAJUD, manifestação do credor, julgamento de recurso). Descreva a pendência como está nos autos; não invente providência nem prazo. Nulo se os fatos não permitem afirmar.",
     "- `parecer_risco`: três a seis frases, em texto simples, com os fatores que os autos mostram a favor e contra o interesse do cliente do escritório: garantias, bens localizados ou não, bloqueios com ou sem resultado, recuperação judicial ou falência do devedor, decisões favoráveis e desfavoráveis, acordo cumprido ou descumprido. Descreva os fatores; não classifique a probabilidade, não dê percentual, nota nem valor de provisão. Nulo se os fatos forem insuficientes.",
   ].join("\n");
 }
@@ -576,6 +583,22 @@ export function sugestoesDaSintese(resultado: SinteseDosAutos, contexto: Context
       chave: `campo:parecer_risco:${documentoId}`,
       resumo: `Parecer do risco: ${parecer.replace(/\s+/g, " ").slice(0, 300)}`,
       valor: { valor: parecer },
+      pagina: null,
+      trecho: null,
+      trechoConferido: true,
+      confianca: "media",
+    });
+  }
+  const passos = (resultado.proximos_passos ?? "").replace(/\r/g, "").trim().slice(0, 1500);
+  if (passos.length >= 20 && !estaPreenchido(contexto.valores.proximos_passos)) {
+    sugestoes.push({
+      tipo: "campo",
+      campo: "proximos_passos",
+      parteId: null,
+      item: "proximos_passos",
+      chave: `campo:proximos_passos:${documentoId}`,
+      resumo: `Próximos passos: ${passos.replace(/\s+/g, " ").slice(0, 300)}`,
+      valor: { valor: passos },
       pagina: null,
       trecho: null,
       trechoConferido: true,

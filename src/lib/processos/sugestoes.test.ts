@@ -365,7 +365,7 @@ describe("síntese do processo", () => {
     expect(entrada).toContain("(30 páginas)");
   });
 
-  const redigida = { sintese: `Resumo\n${"A credora executa duplicatas vencidas contra a devedora. ".repeat(3)}\n\n\n\nAndamento\n15/03/2024: citação positiva (p. 4)`, objeto: "Execução de duplicatas vencidas e não pagas", fase: null, parecer_risco: null };
+  const redigida = { sintese: `Resumo\n${"A credora executa duplicatas vencidas contra a devedora. ".repeat(3)}\n\n\n\nAndamento\n15/03/2024: citação positiva (p. 4)`, objeto: "Execução de duplicatas vencidas e não pagas", fase: null, parecer_risco: null, proximos_passos: null };
 
   it("vira sugestão da síntese e do objeto quando os dois estão vazios", () => {
     const sugestoes = sugestoesDaSintese(redigida, contexto(), "doc-1", "2026-11-12");
@@ -387,7 +387,7 @@ describe("síntese do processo", () => {
   });
 
   it("não propõe síntese vazia nem curta demais", () => {
-    expect(sugestoesDaSintese({ sintese: "Sem dados.", objeto: null, fase: null, parecer_risco: null }, contexto(), "doc-1", "2026-11-12")).toEqual([]);
+    expect(sugestoesDaSintese({ sintese: "Sem dados.", objeto: null, fase: null, parecer_risco: null, proximos_passos: null }, contexto(), "doc-1", "2026-11-12")).toEqual([]);
   });
 
   it("propõe a fase e o parecer do risco só quando estão vazios no cadastro", () => {
@@ -399,6 +399,16 @@ describe("síntese do processo", () => {
     expect(vazio[2]).toMatchObject({ chave: "campo:parecer_risco:doc-1", valor: { valor: parecer }, trecho: null });
     const preenchido = sugestoesDaSintese(completa, contexto({ fase: "Execução", parecer_risco: "Já avaliado.", objeto: "Cobrança" }), "doc-1", "2026-11-12");
     expect(preenchido.map((item) => item.campo)).toEqual(["sintese"]);
+  });
+
+  it("propõe os próximos passos só quando o campo está vazio", () => {
+    const passos = "Aguarda o retorno do AR expedido ao novo endereço do devedor.";
+    const comPassos = { ...redigida, proximos_passos: passos };
+    expect(sugestoesDaSintese(comPassos, contexto(), "doc-1", "2026-11-12").find((item) => item.campo === "proximos_passos")).toMatchObject({
+      chave: "campo:proximos_passos:doc-1",
+      valor: { valor: passos },
+    });
+    expect(sugestoesDaSintese(comPassos, contexto({ proximos_passos: "Já anotado." }), "doc-1", "2026-11-12").some((item) => item.campo === "proximos_passos")).toBe(false);
   });
 });
 

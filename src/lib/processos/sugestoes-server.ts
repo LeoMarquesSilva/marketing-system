@@ -5,6 +5,8 @@ import type { AutosDoProcesso, PessoaSugerida, Sugestao, ValorDeCampo } from "./
 import { ProcessosError } from "./errors";
 import { criarParte, salvarParte } from "./partes-server";
 import { atualizarProcesso, detalharProcesso } from "./processos-server";
+import type { ItemSugerido } from "./rec-credito-leitura";
+import { incluirItem } from "./rec-credito-server";
 import { db, falhou, type Ator } from "./server";
 import { aplicarNaParte, entradaDaPessoa } from "./sugestoes";
 import type { OrigemAlteracao, ProcessoDetalhe } from "./types";
@@ -37,6 +39,12 @@ async function gravar(sugestao: Sugestao & { processoId: string }, editado: { va
     if (valor === null || valor === "") throw new ProcessosError("Informe o valor a gravar ou recuse a sugestão.", 400);
     const campos = { ...(proposto.junto ?? {}), [sugestao.campo as string]: valor };
     return { processo: await atualizarProcesso(processoId, campos, ator, origemDaSugestao(sugestao)), gravado: { valor, ...(proposto.junto ? { junto: proposto.junto } : {}) } };
+  }
+  if (sugestao.tipo === "rec_credito") {
+    const proposto = sugestao.valor as ItemSugerido;
+    const dados = editado.valor && typeof editado.valor === "object" && !Array.isArray(editado.valor) ? (editado.valor as Record<string, unknown>) : proposto.dados;
+    await incluirItem(processoId, proposto.item, dados, ator, { documentoId: sugestao.documentoId, pagina: sugestao.pagina });
+    return { processo: await detalharProcesso(processoId), gravado: dados };
   }
   const atual = await detalharProcesso(processoId);
   if (sugestao.tipo === "parte_nova") {

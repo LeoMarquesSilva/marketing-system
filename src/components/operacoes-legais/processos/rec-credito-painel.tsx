@@ -37,7 +37,7 @@ interface CampoForm {
   largo?: boolean;
 }
 
-function camposDoTipo(tipo: TipoItem, tiposTitulo: string[]): CampoForm[] {
+export function camposDoTipo(tipo: TipoItem, tiposTitulo: string[]): CampoForm[] {
   switch (tipo) {
     case "titulo":
       return [
@@ -83,7 +83,7 @@ const PADRAO: Record<TipoItem, Formulario> = {
 
 const paraTexto = (valor: unknown) => (valor === null || valor === undefined ? "" : typeof valor === "number" ? valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(valor));
 
-function formularioDoItem(item: object): Formulario {
+export function formularioDoItem(item: object): Formulario {
   return Object.fromEntries(Object.entries(item).map(([chave, valor]) => [chave, paraTexto(valor)]));
 }
 
@@ -95,7 +95,18 @@ const data = (iso: string | null) => (iso ? formatarData(iso) : "sem data");
 type Edicao = { tipo: TipoItem; id: string | null; formulario: Formulario } | { tipo: TipoItem; id: string; excluir: true; descricao: string };
 
 /** Saneamento da Recuperação de Crédito na ficha: títulos e cálculo, citações, pedidos e dinheiro. */
-export function PainelRecCredito({ processoId, onFeito, onErro }: { processoId: string; onFeito: (mensagem: string) => void; onErro: (mensagem: string) => void }) {
+export function PainelRecCredito({
+  processoId,
+  atualizacao = 0,
+  onFeito,
+  onErro,
+}: {
+  processoId: string;
+  /** Muda quando algo de fora (uma sugestão aprovada) incluiu item: o painel recarrega. */
+  atualizacao?: number;
+  onFeito: (mensagem: string) => void;
+  onErro: (mensagem: string) => void;
+}) {
   const [dados, setDados] = useState<RecCreditoDoProcesso | null>(null);
   const [tiposTitulo, setTiposTitulo] = useState<string[]>([]);
   const [falha, setFalha] = useState("");
@@ -116,7 +127,7 @@ export function PainelRecCredito({ processoId, onFeito, onErro }: { processoId: 
 
   useEffect(() => {
     void carregar();
-  }, [carregar]);
+  }, [carregar, atualizacao]);
 
   function abrir(tipo: TipoItem, item?: { id: string }) {
     setErroDialogo("");
@@ -386,7 +397,7 @@ function Linha({ icone: Icone, acoes, children }: { icone: typeof Scale; acoes: 
   );
 }
 
-function FormularioItem({
+export function FormularioItem({
   edicao,
   campos,
   salvando,
@@ -394,9 +405,18 @@ function FormularioItem({
   onMudar,
   onFechar,
   onSalvar,
+  titulo,
+  descricao,
+  rotuloSalvar = "Salvar",
+  extra,
 }: {
   edicao: { tipo: TipoItem; id: string | null; formulario: Formulario };
   campos: CampoForm[];
+  titulo?: string;
+  descricao?: string;
+  rotuloSalvar?: string;
+  /** Embaixo do formulário (ex.: o trecho dos autos de onde a sugestão saiu). */
+  extra?: ReactNode;
   salvando: boolean;
   erro: string;
   onMudar: (chave: string, valor: string) => void;
@@ -411,8 +431,8 @@ function FormularioItem({
       onFechar={onFechar}
       ocupado={salvando}
       icone={edicao.id ? PencilLine : Plus}
-      titulo={edicao.id ? `Editar ${nome}` : `Incluir ${nome}`}
-      descricao="Lançamento à mão: fica no histórico do processo com o seu nome."
+      titulo={titulo ?? (edicao.id ? `Editar ${nome}` : `Incluir ${nome}`)}
+      descricao={descricao ?? "Lançamento à mão: fica no histórico do processo com o seu nome."}
       className="sm:max-w-2xl"
       aviso={faltando.length ? `Falta: ${faltando.join(", ")}.` : undefined}
       rodape={
@@ -421,7 +441,7 @@ function FormularioItem({
             Cancelar
           </Button>
           <Button onClick={onSalvar} disabled={salvando || faltando.length > 0}>
-            {salvando ? <LoaderCircle className="animate-spin" /> : null} Salvar
+            {salvando ? <LoaderCircle className="animate-spin" /> : null} {rotuloSalvar}
           </Button>
         </>
       }
@@ -455,6 +475,57 @@ function FormularioItem({
           );
         })}
       </div>
+      {extra}
     </DialogoAcao>
+  );
+}
+
+/** Conferência de uma sugestão da leitura dos autos antes de aprovar: o mesmo formulário da ficha, preenchido. */
+export function ConferirItemSugerido({
+  item,
+  dados,
+  tipos,
+  trecho,
+  onFechar,
+  aprovar,
+}: {
+  item: TipoItem;
+  dados: Record<string, string | number | null>;
+  tipos: string[];
+  trecho?: ReactNode;
+  onFechar: () => void;
+  aprovar: (dados: Record<string, string | null>) => Promise<void>;
+}) {
+  const [formulario, setFormulario] = useState<Formulario>(() => formularioDoItem(dados));
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+  const proposto = typeof dados.tipo === "string" ? dados.tipo : "";
+  const campos = camposDoTipo(item, item === "titulo" && proposto && !tipos.includes(proposto) ? [...tipos, proposto] : tipos);
+
+  async function salvar() {
+    setSalvando(true);
+    setErro("");
+    try {
+      await aprovar(Object.fromEntries(campos.map((campo) => [campo.chave, formulario[campo.chave]?.trim() || null])));
+    } catch (falha) {
+      setErro(mensagemDeErro(falha));
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <FormularioItem
+      edicao={{ tipo: item, id: null, formulario }}
+      campos={campos}
+      salvando={salvando}
+      erro={erro}
+      titulo="Conferir a sugestão da IA"
+      descricao={`Ajuste se for preciso. Ao aprovar, ${ROTULO_DO_ITEM[item].toLowerCase()} entra na Rec. Crédito do processo, com a página dos autos.`}
+      rotuloSalvar="Aprovar e gravar"
+      extra={trecho}
+      onMudar={(chave, valor) => setFormulario((atual) => ({ ...atual, [chave]: valor }))}
+      onFechar={onFechar}
+      onSalvar={() => void salvar()}
+    />
   );
 }
