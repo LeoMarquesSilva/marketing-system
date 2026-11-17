@@ -56,12 +56,23 @@ export interface FeedzImportLog {
   created_by_name: string | null;
 }
 
-/** Bucket PRIVADO das fotos das ocorrências (visualização por link assinado). */
+/** Bucket PRIVADO das fotos e vídeos das ocorrências (visualização por link assinado). */
 export const FEEDBACK_PHOTOS_BUCKET = "RH-BOAS-PRATICAS";
 export const FEEDBACK_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+/** Fotos + vídeos por feedback. */
 export const FEEDBACK_PHOTOS_MAX = 10;
 export const FEEDBACK_PHOTO_TYPES = ["image/webp", "image/jpeg", "image/png"] as const;
 export type FeedbackPhotoType = (typeof FEEDBACK_PHOTO_TYPES)[number];
+
+/** Vídeo sobe como veio do celular (MP4, MOV do iPhone ou WebM). */
+export const FEEDBACK_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"] as const;
+export type FeedbackVideoType = (typeof FEEDBACK_VIDEO_TYPES)[number];
+export const FEEDBACK_VIDEO_MAX_BYTES = 200 * 1024 * 1024;
+export const FEEDBACK_VIDEOS_MAX = 3;
+
+export function isFeedbackVideo(media: { content_type: string }): boolean {
+  return media.content_type.startsWith("video/");
+}
 
 /** Manual de Boas Práticas 2025 (PDF de 17 páginas) no bucket PRIVADO de manuais do RH. */
 export const GOOD_PRACTICES_MANUAL = {
@@ -86,9 +97,13 @@ export interface FeedbackPhoto {
   height: number | null;
   /** Quando a foto foi tirada (EXIF), se a câmera gravou. */
   taken_at: string | null;
+  /** Vídeo: duração em segundos, quando o navegador conseguiu ler. */
+  duration_seconds: number | null;
   created_at: string;
   /** Link assinado, vale 1 hora. */
   url: string;
+  /** Vídeo: miniatura (link assinado de 1 hora), quando o navegador conseguiu gerar. */
+  poster_url: string | null;
 }
 
 /** Colaborador do cadastro, para escolher quem recebeu e quem é o gestor. */
