@@ -16,6 +16,7 @@ import { Controle, doFormulario, paraFormulario } from "./editar-campos";
 import { EditarParte } from "./editar-parte";
 import { abrirAutos, formatarDataHora, mensagemDeErro, processosApi } from "./processos-api";
 import { ConferirItemSugerido } from "./rec-credito-painel";
+import { TextoSintese } from "./texto-sintese";
 
 type Decisao = { processo: ProcessoDetalhe; autos: AutosDoProcesso };
 
@@ -45,9 +46,10 @@ function Proposta({ sugestao, processo }: { sugestao: Sugestao; processo: Proces
       return (
         <>
           <p className="text-xs font-medium text-muted-foreground">{rotuloDoCampo(sugestao.campo)}</p>
-          <p className="max-h-[32rem] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-[#dce9eb] bg-[#f7fbfc] px-3 py-2.5 text-sm leading-6 text-foreground">
-            {String((sugestao.valor as ValorDeCampo).valor)}
-          </p>
+          <TextoSintese
+            texto={String((sugestao.valor as ValorDeCampo).valor)}
+            className="max-h-[32rem] overflow-y-auto rounded-md border border-[#dce9eb] bg-[#f7fbfc] px-3 py-2.5"
+          />
           {estaPreenchido(atual) ? <p className="text-xs text-amber-800">O cadastro já tem texto neste campo: a proposta acima mantém o que existe e acrescenta a parte da IA no fim.</p> : null}
         </>
       );

@@ -13,6 +13,7 @@ import { LogoGrupo, SeloArea } from "../vistagem/marcas";
 import { Selo } from "../vistagem/ui";
 import { type CapaConsultada, LinhaDoTempo } from "./linha-do-tempo";
 import { BarraPreenchimento } from "./preenchimento-ui";
+import { TextoSintese } from "./texto-sintese";
 
 /** Grupos de campos que formam a capa do processo (ficam no cabeçalho; o resto fica no corpo da ficha). */
 export const GRUPOS_DA_CAPA: GrupoCampo[] = ["identificacao", "classificacao", "responsaveis", "orgao", "datas", "andamento"];
@@ -495,7 +496,7 @@ export function CabecalhoDoProcesso({
                 conteudo: (
                   <div className="grid gap-x-6 gap-y-3 @md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
                     <Celula rotulo={campoPorChave("sintese")?.rotulo ?? "Síntese"}>
-                      {texto("sintese") ? <TextoLongo texto={texto("sintese") as string} /> : <p className="text-sm text-muted-foreground">—</p>}
+                      {texto("sintese") ? <TextoSintese texto={texto("sintese") as string} recolher /> : <p className="text-sm text-muted-foreground">—</p>}
                       {texto("objeto") ? (
                         <div className="mt-2">
                           <p className="text-[11px] font-medium text-[#285f7a]">Objeto</p>
