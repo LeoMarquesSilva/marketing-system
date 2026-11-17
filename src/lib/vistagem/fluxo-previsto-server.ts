@@ -1,7 +1,7 @@
 import "server-only";
 
-import { areaDoCatalogo, chaveDoCaminho, contagemPadraoDaArea } from "./agendamento";
-import { cienciaQueFica, dataDaCienciaNoEnvio, ehCienciaDosAgendamentos } from "./ciencia-agendamentos";
+import { areaDoCatalogo, contagemPadraoDaArea } from "./agendamento";
+import { dataDaCienciaNoEnvio, repetidasNaVistagem } from "./ciencia-agendamentos";
 import { criarCalendario, criarCalendarioDePrazo } from "./dias-uteis";
 import { carregarFeriados } from "./feriados";
 import { fluxoDoPrazo, fluxoPrevisto, prazoApertado, type PrazoDaPublicacao } from "./fluxo-previsto";
@@ -41,26 +41,22 @@ export function arvoreDaPublicacao(arvore: Map<number, TipoNaArvore>, areas: Cat
 }
 
 /**
- * Uma Ciência dos Agendamentos só por vistagem (`cienciaQueFica`): diz, para cada tarefa, se a Ciência num caminho
- * do fluxo dela é a que fica; as outras o robô cancela no VIOS.
+ * Uma Ciência dos Agendamentos e um Embargos de Declaração só por vistagem (`repetidasNaVistagem`): diz, para cada
+ * tarefa, se a do caminho no fluxo dela fica repetida; essas o robô cancela no VIOS.
  */
-function marcarCienciaRepetida<T extends { id: string; ordem: number; tarefa: string; tarefaId: string | null }>(
+function marcarRepetidas<T extends { id: string; ordem: number; tarefa: string; tarefaId: string | null }>(
   agendamentos: T[],
   arvore: Map<number, TipoNaArvore>
-): (T & { cienciaFica: (caminho: string[]) => boolean })[] {
+): (T & { repetida: (caminho: string[]) => boolean })[] {
   const ordenados = [...agendamentos].sort((a, b) => a.ordem - b.ordem);
-  const fica = cienciaQueFica(
+  const repetida = repetidasNaVistagem(
     ordenados.map((agendamento) => ({
       chave: agendamento.id,
       nome: agendamento.tarefa,
       fluxo: agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null,
     }))
   );
-  return agendamentos.map((agendamento) => ({
-    ...agendamento,
-    cienciaFica: (caminho: string[]) =>
-      !fica || (fica.chave === agendamento.id && fica.caminho !== null && chaveDoCaminho(fica.caminho) === chaveDoCaminho(caminho)),
-  }));
+  return agendamentos.map((agendamento) => ({ ...agendamento, repetida: (caminho: string[]) => repetida(agendamento.id, caminho) }));
 }
 
 /** O que o fluxo precisa para prever as tarefas: a árvore do VIOS, os feriados e a lista de tarefas de cada área. */
@@ -86,8 +82,8 @@ type TarefaParaPrever = Pick<AgendamentoResumo, "id" | "ordem" | "tarefa" | "tar
 
 /**
  * O que o fluxo do VIOS cria com cada tarefa da vistagem, com a data e quem fica em cada uma (`fluxoPrevisto`), e o
- * Enviar de hoje no prazo apertado. A Ciência dos Agendamentos que se repete entre as tarefas sai marcada como
- * repetida (o robô cancela; quem agenda à mão não cria).
+ * Enviar de hoje no prazo apertado. A Ciência dos Agendamentos e o Embargos de Declaração (com o que ele cria) que
+ * se repetem entre as tarefas saem marcados como repetidos (o robô cancela; quem agenda à mão cancela no VIOS).
  */
 export function comFluxoPrevisto<T extends TarefaParaPrever>(
   agendamentos: T[],
@@ -98,7 +94,7 @@ export function comFluxoPrevisto<T extends TarefaParaPrever>(
 ): (T & { enviarHoje: string | null; fluxoPrevisto: TarefaPrevista[] })[] {
   const arvore = arvoreDaPublicacao(base.arvore, base.catalogos, publicacao);
   const daPublicacao = prazoDaPublicacao(publicacao, base.catalogos, base.feriados);
-  return marcarCienciaRepetida(agendamentos, arvore).map(({ cienciaFica, ...resto }) => {
+  return marcarRepetidas(agendamentos, arvore).map(({ repetida, ...resto }) => {
     const agendamento = resto as unknown as T;
     const fluxoDaTarefa = agendamento.tarefaId ? fluxoDoPrazo(montarFluxo(agendamento.tarefaId, arvore), agendamento, daPublicacao) : null;
     // Prazo curto (ou validado noutro dia): o Enviar vai hoje e o Revisar e o Protocolar ficam antes da fatal.
@@ -112,9 +108,7 @@ export function comFluxoPrevisto<T extends TarefaParaPrever>(
         hoje,
         datas: agendamento.fluxoDatas,
         apertada,
-      }).map((tarefa) =>
-        tarefa.quando === "criacao" && ehCienciaDosAgendamentos(tarefa.nome) && !cienciaFica(tarefa.caminho) ? { ...tarefa, repetida: true } : tarefa
-      ),
+      }).map((tarefa) => (tarefa.quando === "criacao" && repetida(tarefa.caminho) ? { ...tarefa, repetida: true } : tarefa)),
     };
   });
 }

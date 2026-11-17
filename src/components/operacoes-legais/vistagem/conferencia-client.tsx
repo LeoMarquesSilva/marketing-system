@@ -39,6 +39,7 @@ import { marcarEnviosSincronizados, sincronizarEnvios } from "@/lib/vistagem/env
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
 import { vaiParaCentral } from "@/lib/vistagem/central";
+import { textoDaRepetida } from "@/lib/vistagem/ciencia-agendamentos";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { ROTULO_AJUSTE_CURTO } from "@/lib/vistagem/fluxo-previsto";
 import { MAX_TEXTO_INCONSISTENCIA, TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
@@ -337,7 +338,7 @@ function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
               >
                 <span className={cn("font-medium", tarefa.repetida ? "text-muted-foreground line-through" : "text-foreground")}>{tarefa.nome}</span>
                 {tarefa.repetida ? (
-                  <span className="text-muted-foreground">repetida: o robô cancela no VIOS (Duplicidade)</span>
+                  <span className="text-muted-foreground">{textoDaRepetida(tarefa.caminho)}</span>
                 ) : (
                   <>
                     <span className={cn("tabular-nums", tarefa.data ? "text-foreground" : "text-muted-foreground")}>

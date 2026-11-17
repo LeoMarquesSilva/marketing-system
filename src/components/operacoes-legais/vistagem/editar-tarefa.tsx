@@ -186,7 +186,8 @@ function FormularioDaTarefa({
   const fluxo = fluxoPara(form.dataFatal || null);
   const apertada = comFatal && form.dataFatal ? prazoApertado({ etiqueta: tarefa.etiqueta, dataFatal: form.dataFatal, data: form.data }, fluxo, ehDiaUtil, hoje) : null;
   const dataNoVios = apertada?.enviar ?? form.data;
-  // A Ciência repetida o servidor já marcou, olhando as outras tarefas da vistagem: o robô cancela, e ela não se edita.
+  // A Ciência e o Embargos repetidos (com o que ele cria) o servidor já marcou, olhando as outras tarefas da vistagem:
+  // o robô cancela, e eles não se editam.
   const repetidas = new Set((tarefa.fluxoPrevisto ?? []).filter((item) => item.repetida).map((item) => chaveDoCaminho(item.caminho)));
   const previstas = fluxo
     ? fluxoPrevisto({ data: dataNoVios, responsavel: form.responsavel, revisor: form.revisor || null }, fluxo, ehDiaUtil, {

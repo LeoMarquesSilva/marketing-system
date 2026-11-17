@@ -1,4 +1,5 @@
 import { paraDataVios, revisorFicaNaTarefa, separarNomes } from "./agendamento";
+import { repetidaDoCaminho, type Repetida } from "./ciencia-agendamentos";
 import type { AgendamentoResumo } from "./types";
 
 /** Uma linha do "Fluxo das tarefas" (como fica no VIOS): a tarefa pedida ou uma que o fluxo cria junto com ela. */
@@ -20,8 +21,11 @@ export interface LinhaNoVios {
   dataVios: string | null;
   /** Prazo apertado: a tarefa pedida vai com o Enviar de hoje; a nota diz qual era o vistado. */
   nota: string | null;
-  /** 1. CIÊNCIA DOS AGENDAMENTOS repetida na vistagem: o VIOS cria, mas só a da primeira tarefa fica. */
-  repetida: boolean;
+  /**
+   * Repetida na vistagem (a 1. CIÊNCIA DOS AGENDAMENTOS, o EMBARGOS DE DECLARAÇÃO ou uma que ele cria): o VIOS cria,
+   * mas só a da primeira tarefa fica e o robô cancela as outras. null: fica.
+   */
+  repetida: Repetida | null;
 }
 
 export interface AgendaNoVios {
@@ -80,7 +84,7 @@ export function agendaNoVios(
           editada: false,
           dataVios: null,
           nota: null,
-          repetida: false,
+          repetida: null,
         }))
         .sort(ordenar),
     };
@@ -98,7 +102,7 @@ export function agendaNoVios(
     editada: false,
     dataVios: null,
     nota: item.enviarHoje && item.data ? `vistado para ${paraDataVios(item.data)}, que já passou: vai hoje` : null,
-    repetida: false,
+    repetida: null,
   };
   const doFluxo: LinhaNoVios[] = (item.fluxoPrevisto ?? [])
     .filter((tarefa) => tarefa.quando === "criacao")
@@ -114,7 +118,7 @@ export function agendaNoVios(
       editada: tarefa.editada,
       dataVios: tarefa.dataVios,
       nota: null,
-      repetida: Boolean(tarefa.repetida),
+      repetida: tarefa.repetida ? repetidaDoCaminho(tarefa.caminho) : null,
     }));
   return { gravada: false, aoConcluir, linhas: [pedida, ...doFluxo].sort(ordenar) };
 }

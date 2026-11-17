@@ -275,7 +275,7 @@ export function prazoApertado(
 
 /**
  * O que o robô grava nas tarefas do fluxo depois de lançar: as datas que ficaram diferentes da que o VIOS dá e os
- * responsáveis escolhidos pelo jurídico (a Ciência repetida o robô cancela: não vai).
+ * responsáveis escolhidos pelo jurídico (a Ciência e o Embargos repetidos o robô cancela: não vão).
  */
 export function fluxoParaOVios(previstas: TarefaPrevista[]): DataDoFluxo[] {
   return previstas.flatMap((tarefa) => {

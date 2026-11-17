@@ -196,6 +196,24 @@ describe("motivoDaCentral", () => {
       expect(motivo).toContain("1. CIÊNCIA DOS AGENDAMENTOS | Ana Souza (repetida nesta vistagem: cancelar no VIOS");
     });
 
+    it("aponta o Embargos repetido e o que ele cria, para cancelar à mão", () => {
+      const motivo = motivoDaCentral(
+        publicacao,
+        [
+          {
+            ...prazo,
+            fluxo_previsto: [
+              previsto("EMBARGOS DE DECLARAÇÃO", "2026-11-26", "Ana Souza", { caminho: ["EMBARGOS DE DECLARAÇÃO"], repetida: true }),
+              previsto("2. REVISAR", "2026-11-27", "Bruno Lima", { caminho: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"], nivel: 2, repetida: true }),
+            ],
+          },
+        ],
+        "Ana Souza"
+      );
+      expect(motivo).toContain("EMBARGOS DE DECLARAÇÃO | Ana Souza (repetido nesta vistagem: cancelar no VIOS, com o que ele cria");
+      expect(motivo).toContain("2. REVISAR | Bruno Lima (criada por EMBARGOS DE DECLARAÇÃO; do Embargos repetido: cancelar no VIOS)");
+    });
+
     it("prazo apertado vai com o Enviar de hoje, dizendo qual era o vistado", () => {
       const apertado = { ...prazo, data: "2026-11-05", enviar_hoje: "2026-11-09", fluxo_previsto: [previsto("2. REVISAR", "2026-11-10", "Bruno Lima")] };
       const motivo = motivoDaCentral(publicacao, [apertado], "Ana Souza");

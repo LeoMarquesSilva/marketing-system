@@ -67,7 +67,7 @@ import {
   type OrigemPrazo,
 } from "@/lib/vistagem/agendamento";
 import { reabertaParaAlterar } from "@/lib/vistagem/alterar-vistagem";
-import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
+import { cienciaDosAgendamentos, repetidasNaVistagem, textoDaRepetida } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
   ROTULO_CONTAGEM,
@@ -512,7 +512,7 @@ export function FluxoNoVios({
     junto.length ? `cria junto ${plural(junto.length, "tarefa", "tarefas")}` : null,
     alteradas ? `${plural(alteradas, "data alterada", "datas alteradas")}` : null,
     pessoasTrocadas ? `${plural(pessoasTrocadas, "responsável alterado", "responsáveis alterados")}` : null,
-    repetidas ? `${plural(repetidas, "Ciência repetida", "Ciências repetidas")} (o robô cancela)` : null,
+    repetidas ? `${plural(repetidas, "tarefa repetida", "tarefas repetidas")} (o robô cancela)` : null,
     aoConcluir.length ? `ao concluir, ${aoConcluir.map((tarefa) => tarefa.nome).join(", ")}` : null,
   ]
     .filter(Boolean)
@@ -649,7 +649,7 @@ export function FluxoNoVios({
                     {nomeDe(item)}
                   </span>
                   {item.tipo === "fluxo" && item.tarefa.repetida ? (
-                    <span className="text-muted-foreground">repetida: o robô cancela no VIOS (Duplicidade); fica a da primeira tarefa</span>
+                    <span className="text-muted-foreground">{textoDaRepetida(item.tarefa.caminho)}</span>
                   ) : item.tipo === "fluxo" ? (
                     <>
                       {campoDoFluxo(item.tarefa)}
@@ -950,13 +950,14 @@ export function EditorVistagem({
   // A fatal conta só dias úteis fora do recesso forense; Enviar/Revisar/Protocolar seguem o expediente.
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(detalhe?.feriados ?? []), [detalhe?.feriados]);
   /**
-   * Uma Ciência dos Agendamentos só por vistagem: fica a da primeira tarefa incluída (ela mesma, ou a mais perto dela
-   * no fluxo do VIOS); as outras o robô cancela no VIOS depois de lançar (tipo Duplicidade).
+   * Uma Ciência dos Agendamentos e um Embargos de Declaração só por vistagem: fica a da primeira tarefa incluída
+   * (ela mesma, ou a mais perto dela no fluxo do VIOS); as outras o robô cancela no VIOS depois de lançar (tipo
+   * Duplicidade), e o Embargos repetido sai com o que ele cria.
    */
-  const cienciaFica = useMemo(() => {
+  const repetidaEm = useMemo(() => {
     const catalogo = detalhe?.catalogo;
-    if (!detalhe || !catalogo) return null;
-    return cienciaQueFica(
+    if (!detalhe || !catalogo) return () => false;
+    return repetidasNaVistagem(
       linhas
         .filter((linha) => linha.tarefa)
         .map((linha) => {
@@ -965,10 +966,6 @@ export function EditorVistagem({
         })
     );
   }, [detalhe, linhas]);
-  const cienciaFicaEm = (chave: number, caminho: string[] | null) =>
-    !cienciaFica ||
-    (cienciaFica.chave === chave &&
-      (caminho === null ? cienciaFica.caminho === null : cienciaFica.caminho !== null && chaveDoCaminho(cienciaFica.caminho) === chaveDoCaminho(caminho)));
   /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência e nas pastas RC-Insolvência, Úteis nas outras. */
   const contagemPadrao = contagemPadraoDaPublicacao(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area, detalhe?.publicacao.etiquetas);
   /** Área da publicação: nas audiências do Trabalhista o revisor fica na tarefa (`revisorFicaNaTarefa`). */
@@ -1552,13 +1549,11 @@ export function EditorVistagem({
                                 : null,
                           }
                         ).map((tarefa) =>
-                          // Uma Ciência só por vistagem: fica a da primeira tarefa; as outras o robô cancela.
-                          tarefa.quando === "criacao" && ehCienciaDosAgendamentos(tarefa.nome) && !cienciaFicaEm(linha.chave, tarefa.caminho)
-                            ? { ...tarefa, repetida: true }
-                            : tarefa
+                          // Uma Ciência e um Embargos só por vistagem: fica o da primeira tarefa; os outros o robô cancela.
+                          tarefa.quando === "criacao" && repetidaEm(linha.chave, tarefa.caminho) ? { ...tarefa, repetida: true } : tarefa
                         )
                       : [];
-                    const cienciaPedidaRepetida = ehCienciaDosAgendamentos(linha.tarefa) && !cienciaFicaEm(linha.chave, null);
+                    const cienciaPedidaRepetida = repetidaEm(linha.chave, null);
                     const avisos = comFatal
                       ? linha.dataFatal
                         ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(

@@ -6,6 +6,7 @@ import { ArrowRight, Bot, CalendarClock, CalendarDays, ChevronDown, CircleCheckB
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, ROTULO_ORIGEM_PRAZO, chaveNome, nomesDasPessoas } from "@/lib/vistagem/agendamento";
+import { TEXTO_DA_REPETIDA } from "@/lib/vistagem/ciencia-agendamentos";
 import { agendaNoVios, nomeCurto, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import type { AgendamentoResumo, AjusteNaTarefa, EnvioStatus, MudancaNaTarefa } from "@/lib/vistagem/types";
@@ -161,6 +162,8 @@ export function DiaNaAgenda({ data, hoje }: { data: string | null; hoje: string 
  */
 export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; fotos: Record<string, string>; hoje: string }) {
   const agenda = agendaNoVios(item);
+  // A Ciência e o Embargos repetidos (com o que ele cria) o robô cancela no VIOS: ficam riscados na lista.
+  const repetidas = agenda.linhas.filter((linha) => linha.repetida).length;
   // Sempre começa aberta; recolher vale só para este cartão, enquanto a tela estiver aberta.
   const [aberta, setAberta] = useState(true);
   const id = useId();
@@ -180,6 +183,7 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
         <span className="text-xs font-semibold text-[#285f7a]">Fluxo das tarefas</span>
         <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
           · {agenda.linhas.length} tarefas{agenda.gravada ? ", gravadas pelo robô" : ""}
+          {repetidas ? ` (${repetidas} ${repetidas === 1 ? "repetida" : "repetidas"}: o robô cancela)` : ""}
         </span>
         <span className="flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-[#347796]">
           {aberta ? "Recolher" : "Expandir"}
@@ -201,7 +205,14 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
                 <DiaNaAgenda data={linha.data} hoje={hoje} />
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                    <span className={cn("break-words text-xs", linha.principal ? "font-semibold text-[#10293a]" : "font-medium text-foreground")}>{linha.nome}</span>
+                    <span
+                      className={cn(
+                        "break-words text-xs",
+                        linha.principal ? "font-semibold text-[#10293a]" : linha.repetida ? "font-medium text-muted-foreground line-through" : "font-medium text-foreground"
+                      )}
+                    >
+                      {linha.nome}
+                    </span>
                     {linha.principal ? <Selo tom="marca" className="px-1.5 py-0 text-[11px]">esta tarefa</Selo> : null}
                     {linha.hora ? <span className="text-[11px] tabular-nums text-muted-foreground">às {linha.hora}</span> : null}
                     {linha.ci ? <LinkVios ci={linha.ci} /> : null}
@@ -212,6 +223,7 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
                       criada por {linha.criadaPor}
                     </p>
                   ) : null}
+                  {linha.repetida ? <p className="text-[11px] text-muted-foreground">{TEXTO_DA_REPETIDA[linha.repetida]}</p> : null}
                   {linha.nota ? <p className="text-[11px] text-amber-800">Data ajustada · {linha.nota}</p> : null}
                   {dataMudou ? (
                     <p className="text-[11px] text-amber-800">
