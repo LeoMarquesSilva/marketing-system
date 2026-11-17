@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Confianca, ContatoSugerido, EnderecoSugerido, PessoaSugerida, SugestaoNova, TipoSugestao, ValorSugestao } from "./autos-types";
 import { campoPorChave, coagirValor, estaPreenchido, formatarValor, textoDoValor, type Valores } from "./campos";
+import { ultimoAndamentoDaSintese } from "./sintese-leitura";
 import { ESQUEMA_REC_CREDITO, instrucoesRecCredito, juntarRecCredito, leituraRecCreditoVazia } from "./rec-credito-leitura";
 import { TIPOS_CONTATO, rotuloDoPapel, type Contato, type Endereco, type PapelParte, type Parte, type ParteEntrada, type PoloParte, type TipoContato } from "./types";
 
@@ -583,6 +584,26 @@ export function sugestoesDaSintese(resultado: SinteseDosAutos, contexto: Context
       chave: `campo:parecer_risco:${documentoId}`,
       resumo: `Parecer do risco: ${parecer.replace(/\s+/g, " ").slice(0, 300)}`,
       valor: { valor: parecer },
+      pagina: null,
+      trecho: null,
+      trechoConferido: true,
+      confianca: "media",
+    });
+  }
+  // O último andamento do cadastro (campo do VIOS) recebe a "Situação atual" da síntese, datada pelo último marco
+  // do Andamento: quando está vazio ou quando a data da leitura é mais recente que a do cadastro.
+  const ultimo = sintese.length >= 80 ? ultimoAndamentoDaSintese(sintese) : null;
+  const dataAtual = typeof contexto.valores.ultimo_andamento_data === "string" ? contexto.valores.ultimo_andamento_data.slice(0, 10) : "";
+  if (ultimo && ultimo.texto.length >= 20 && (!estaPreenchido(contexto.valores.ultimo_andamento_texto) || (ultimo.data !== null && ultimo.data > dataAtual))) {
+    const texto = ultimo.texto.slice(0, 2000);
+    sugestoes.push({
+      tipo: "campo",
+      campo: "ultimo_andamento_texto",
+      parteId: null,
+      item: "ultimo_andamento_texto",
+      chave: `campo:ultimo_andamento_texto:${documentoId}`,
+      resumo: `Último andamento${ultimo.data ? ` (${ultimo.data.split("-").reverse().join("/")})` : ""}: ${texto.replace(/\s+/g, " ").slice(0, 300)}`,
+      valor: ultimo.data ? { valor: texto, junto: { ultimo_andamento_data: ultimo.data } } : { valor: texto },
       pagina: null,
       trecho: null,
       trechoConferido: true,

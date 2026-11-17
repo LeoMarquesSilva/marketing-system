@@ -503,10 +503,15 @@ export function CabecalhoDoProcesso({
                           <TextoLongo texto={texto("objeto") as string} />
                         </div>
                       ) : null}
+                      {["sintese", "objeto"].some((chave) => pendentes.has(chave)) ? (
+                        <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-amber-800">
+                          <CloudUpload className="size-3" aria-hidden /> a gravar no VIOS
+                        </span>
+                      ) : null}
                     </Celula>
                     <Celula rotulo={mostrar("ultimo_andamento_data") ? `Último andamento · ${mostrar("ultimo_andamento_data")}` : "Último andamento"}>
                       {texto("ultimo_andamento_texto") ? <TextoLongo texto={texto("ultimo_andamento_texto") as string} /> : <p className="text-sm text-muted-foreground">—</p>}
-                      {["sintese", "objeto", "ultimo_andamento_texto", "ultimo_andamento_data"].some((chave) => pendentes.has(chave)) ? (
+                      {["ultimo_andamento_texto", "ultimo_andamento_data"].some((chave) => pendentes.has(chave)) ? (
                         <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-amber-800">
                           <CloudUpload className="size-3" aria-hidden /> a gravar no VIOS
                         </span>

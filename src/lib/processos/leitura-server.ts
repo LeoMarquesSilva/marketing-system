@@ -5,13 +5,15 @@ import { generateObject } from "ai";
 import { openAIKey } from "@/lib/openai-keys";
 import { OPENAI_DEFAULT_MODEL, isOpenAIReasoningModel } from "@/lib/openai-models";
 import { custoDaChamada } from "@/lib/vistagem/sugestao-ia";
-import { carregarDocumento, descartarSeConcluido } from "./autos-server";
+import { carregarDocumento, descartarSeConcluido, pedirContinuacaoNoEproc } from "./autos-server";
 import { BUCKET_AUTOS, type SugestaoNova } from "./autos-types";
 import { ProcessosError } from "./errors";
 import { extrairPaginas, type TextoDoPdf } from "./leitura-pdf";
+import { migracaoParaEproc } from "./migracao-eproc";
 import { detalharProcesso } from "./processos-server";
 import { sugestoesDaRecCredito } from "./rec-credito-leitura";
 import { itensDoProcesso, tiposDeTitulo } from "./rec-credito-server";
+import { lerSistema } from "./tribunais";
 import { db, falhou } from "./server";
 import {
   ESQUEMA_LEITURA,
@@ -223,6 +225,33 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
       } catch (erro) {
         console.error("[processos] síntese dos autos:", erro instanceof Error ? erro.message : erro);
         avisos.push("A IA não conseguiu redigir a síntese desta vez. Leia de novo para tentar outra vez.");
+      }
+    }
+    // Autos do e-SAJ que terminam na certidão de migração: o processo continua no eproc.
+    const migracao = migracaoParaEproc(texto.paginas);
+    if (migracao) {
+      if (lerSistema(typeof processo.valores.sistema_tribunal === "string" ? processo.valores.sistema_tribunal : null) !== "eproc") {
+        const conferido = criarConferidor(texto.paginas).trecho(migracao.pagina, migracao.trecho);
+        sugestoes.push({
+          tipo: "campo",
+          campo: "sistema_tribunal",
+          parteId: null,
+          item: "sistema_tribunal",
+          chave: "campo:sistema_tribunal:eproc",
+          resumo: `Sistema do tribunal: E-PROC (o processo migrou do e-SAJ para o eproc${migracao.numero ? `, nº ${migracao.numero}` : ""})`,
+          valor: { valor: "E-PROC" },
+          pagina: conferido.pagina,
+          trecho: migracao.trecho,
+          trechoConferido: conferido.conferido,
+          confianca: conferido.conferido ? "alta" : "media",
+        });
+      }
+      try {
+        const aviso = await pedirContinuacaoNoEproc(documentoId, migracao);
+        if (aviso) avisos.push(aviso);
+      } catch (erro) {
+        console.error("[processos] pedir os autos do eproc:", erro instanceof Error ? erro.message : erro);
+        avisos.push(`O processo migrou para o eproc (p. ${migracao.pagina}), mas o pedido dos autos de lá falhou: peça na ficha.`);
       }
     }
     const gravadas = await gravarSugestoes(documento.processoId, documentoId, sugestoes);

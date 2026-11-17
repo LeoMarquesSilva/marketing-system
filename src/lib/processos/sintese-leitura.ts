@@ -139,6 +139,28 @@ export function lerSintese(texto: string): ParteDaSintese[] {
   return partes;
 }
 
+/**
+ * O último andamento que a síntese da IA descreve: o bloco "Situação atual" (o último, se houver mais de um)
+ * e a data do último marco datado do Andamento (AAAA-MM-DD). Nulo sem "Situação atual".
+ */
+export function ultimoAndamentoDaSintese(texto: string): { texto: string; data: string | null } | null {
+  const partes = lerSintese(texto);
+  const situacao = [...partes].reverse().find((parte): parte is Extract<ParteDaSintese, { tipo: "texto" }> => parte.tipo === "texto" && parte.rotulo === "Situação atual");
+  const corpo = situacao?.paragrafos.join("\n").trim();
+  if (!corpo) return null;
+  let data: string | null = null;
+  for (const parte of partes) {
+    if (parte.tipo !== "andamento") continue;
+    for (const marco of parte.marcos) {
+      const completa = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(marco.data ?? "");
+      if (!completa) continue;
+      const iso = `${completa[3]}-${completa[2].padStart(2, "0")}-${completa[1].padStart(2, "0")}`;
+      if (!data || iso > data) data = iso;
+    }
+  }
+  return { texto: corpo, data };
+}
+
 // ---------------------------------------------------------------------------
 // Destaques no meio da frase
 // ---------------------------------------------------------------------------

@@ -401,6 +401,22 @@ describe("síntese do processo", () => {
     expect(preenchido.map((item) => item.campo)).toEqual(["sintese"]);
   });
 
+  it("a situação atual vira sugestão do último andamento, datada pelo último marco", () => {
+    const comSituacao = {
+      ...redigida,
+      sintese: `${redigida.sintese}\n20/05/2024: penhora negativa (p. 9)\n\nSituação atual\nAguarda manifestação da credora sobre a penhora negativa.`,
+    };
+    const vazio = sugestoesDaSintese(comSituacao, contexto(), "doc-1", "2026-11-12").find((item) => item.campo === "ultimo_andamento_texto");
+    expect(vazio).toMatchObject({
+      chave: "campo:ultimo_andamento_texto:doc-1",
+      valor: { valor: "Aguarda manifestação da credora sobre a penhora negativa.", junto: { ultimo_andamento_data: "2024-05-20" } },
+    });
+    const antigo = sugestoesDaSintese(comSituacao, contexto({ ultimo_andamento_texto: "Citado.", ultimo_andamento_data: "2024-01-10" }), "doc-1", "2026-11-12");
+    expect(antigo.some((item) => item.campo === "ultimo_andamento_texto")).toBe(true);
+    const recente = sugestoesDaSintese(comSituacao, contexto({ ultimo_andamento_texto: "Acordo.", ultimo_andamento_data: "2025-02-01" }), "doc-1", "2026-11-12");
+    expect(recente.some((item) => item.campo === "ultimo_andamento_texto")).toBe(false);
+  });
+
   it("propõe os próximos passos só quando o campo está vazio", () => {
     const passos = "Aguarda o retorno do AR expedido ao novo endereço do devedor.";
     const comPassos = { ...redigida, proximos_passos: passos };

@@ -312,6 +312,70 @@ export async function carregarDocumento(
   };
 }
 
+/* ------------------------------------------- continuação no eproc */
+
+/**
+ * Os autos do e-SAJ terminaram na certidão de migração para o eproc: pede ao robô os autos do eproc, que
+ * continuam o processo. Fica em nome de quem pediu o download do e-SAJ (com a mesma liberação de segredo de
+ * justiça). Não pede de novo quando os autos lidos já são do eproc, quando há pedido em aberto ou quando já
+ * houve pedido ao eproc depois destes autos. Devolve o que fez, para o aviso da leitura.
+ */
+export async function pedirContinuacaoNoEproc(documentoId: string, migracao: { pagina: number; numero: string | null }): Promise<string | null> {
+  const { data: documento, error } = await db().from("proc_documentos").select("id, processo_id, pedido_id, criado_em, enviado_por, enviado_por_nome").eq("id", documentoId).maybeSingle();
+  if (error) falhou("carregar o documento", error);
+  if (!documento) return null;
+  const processoId = documento.processo_id as string;
+
+  let origem: Linha | null = null;
+  if (documento.pedido_id) {
+    const { data, error: erroPedido } = await db()
+      .from("proc_autos_pedidos")
+      .select("sistema, segredo_liberado, segredo_liberado_por, segredo_liberado_por_nome, pedido_por, pedido_por_nome")
+      .eq("id", documento.pedido_id as string)
+      .maybeSingle();
+    if (erroPedido) falhou("carregar o pedido dos autos", erroPedido);
+    origem = data as Linha | null;
+    if (origem?.sistema === "eproc") return null;
+  }
+
+  const processo = await carregarProcesso(processoId);
+  const robo = roboDoProcesso(migracao.numero ?? processo.cnj, "eproc");
+  if (!robo.disponivel || !robo.cnj || !robo.tribunal) return `O processo migrou para o eproc (p. ${migracao.pagina}), mas ainda não há robô para o eproc deste tribunal: anexe os autos de lá à mão.`;
+
+  const { data: depois, error: erroDepois } = await db()
+    .from("proc_autos_pedidos")
+    .select("id")
+    .eq("processo_id", processoId)
+    .eq("sistema", "eproc")
+    .gte("criado_em", documento.criado_em as string)
+    .limit(1);
+  if (erroDepois) falhou("conferir os pedidos ao eproc", erroDepois);
+  if (depois?.length) return null;
+
+  const liberado = origem?.segredo_liberado === true;
+  const { error: erroPedir } = await db()
+    .from("proc_autos_pedidos")
+    .insert({
+      processo_id: processoId,
+      cnj: robo.cnj,
+      sistema: "eproc",
+      tribunal: robo.tribunal,
+      segredo_liberado: liberado,
+      segredo_liberado_por: liberado ? (origem?.segredo_liberado_por ?? null) : null,
+      segredo_liberado_por_nome: liberado ? (origem?.segredo_liberado_por_nome ?? null) : null,
+      segredo_liberado_em: liberado ? new Date().toISOString() : null,
+      pedido_por: origem?.pedido_por ?? documento.enviado_por ?? null,
+      pedido_por_nome: origem?.pedido_por_nome ?? documento.enviado_por_nome ?? null,
+    });
+  if (erroPedir) {
+    if ((erroPedir as { code?: string }).code === "23505") return `O processo migrou para o eproc (p. ${migracao.pagina}); já há um pedido de autos em aberto, peça os do eproc depois dele.`;
+    falhou("pedir os autos do eproc", erroPedir);
+  }
+  const ator: Ator = { authUserId: (origem?.pedido_por ?? documento.enviado_por ?? null) as string, nome: (origem?.pedido_por_nome ?? documento.enviado_por_nome ?? null) as string | null };
+  await registrarNoHistorico(processoId, "autos", null, `Migrado do e-SAJ para o eproc (certidão na p. ${migracao.pagina} dos autos): download dos autos do eproc pedido ao robô (${robo.tribunal})`, ator);
+  return `O processo migrou para o eproc (p. ${migracao.pagina}): os autos de lá foram pedidos ao robô.`;
+}
+
 /* ------------------------------------------------- o PDF é temporário */
 
 /** Exclui o PDF do bucket e marca o documento. O registro e as sugestões (com página e trecho) continuam. */
