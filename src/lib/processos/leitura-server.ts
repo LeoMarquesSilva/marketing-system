@@ -13,15 +13,22 @@ import { detalharProcesso } from "./processos-server";
 import { db, falhou } from "./server";
 import {
   ESQUEMA_LEITURA,
+  ESQUEMA_SINTESE,
   MINIMO_TEXTO_PAGINA,
   dividirEmBlocos,
   entradaDaLeitura,
+  entradaDaSintese,
+  fatosParaSintese,
   instrucoesDaLeitura,
+  instrucoesDaSintese,
   juntarLeituras,
   montarSugestoes,
+  sugestoesDaSintese,
   type BlocoDeTexto,
   type ContextoDaLeitura,
+  type FatoDosAutos,
   type LeituraDosAutos,
+  type SinteseDosAutos,
 } from "./sugestoes";
 
 /** Autos maiores que isso são lidos só até aqui (o resto fica anotado no documento). */
@@ -30,6 +37,8 @@ const MAXIMO_DE_PAGINAS = Number(process.env.PROCESSOS_LEITURA_MAX_PAGINAS) || 8
 const EM_PARALELO = 4;
 /** A rota tem 300 s: depois deste tempo não começa bloco novo e fecha com o que já leu. */
 const PRAZO_MS = 230_000;
+/** A síntese é a última chamada: só começa se ainda couber no tempo da rota. */
+const PRAZO_SINTESE_MS = 255_000;
 /** Leitura "lendo" há mais que isso é de uma execução que morreu: pode recomeçar. */
 const LEITURA_TRAVADA_MS = 6 * 60_000;
 
@@ -57,6 +66,24 @@ async function lerBloco(apiKey: string, modelo: string, contexto: ContextoDaLeit
   });
   return {
     leitura: object,
+    custoUS: custoDaChamada({ entrada: usage.inputTokens ?? 0, cache: usage.inputTokenDetails?.cacheReadTokens ?? 0, saida: usage.outputTokens ?? 0 }),
+  };
+}
+
+/** Segunda etapa da leitura: com os fatos de todos os pedaços, a IA redige a síntese do processo. */
+async function redigirSintese(apiKey: string, modelo: string, contexto: ContextoDaLeitura, fatos: FatoDosAutos[], total: number): Promise<{ sintese: SinteseDosAutos; custoUS: number }> {
+  const raciocinio = isOpenAIReasoningModel(modelo);
+  const { object, usage } = await generateObject({
+    model: createOpenAI({ apiKey })(modelo),
+    schema: ESQUEMA_SINTESE,
+    schemaName: "sintese_do_processo",
+    system: instrucoesDaSintese(),
+    prompt: entradaDaSintese(contexto, fatos, total),
+    temperature: raciocinio ? undefined : 0,
+    providerOptions: { openai: { ...(raciocinio ? { reasoningEffort: "medium" as const } : {}), promptCacheKey: "processos-sintese", store: false } },
+  });
+  return {
+    sintese: object,
     custoUS: custoDaChamada({ entrada: usage.inputTokens ?? 0, cache: usage.inputTokenDetails?.cacheReadTokens ?? 0, saida: usage.outputTokens ?? 0 }),
   };
 }
@@ -171,10 +198,29 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
     await Promise.all(Array.from({ length: Math.min(EM_PARALELO, blocos.length) }, trabalhar));
     if (!leituras.length) throw new ProcessosError("A IA não respondeu à leitura dos autos. Tente de novo em alguns minutos.", 502);
 
-    const sugestoes = montarSugestoes(juntarLeituras(leituras), contexto, texto.paginas);
+    const leitura = juntarLeituras(leituras);
+    const sugestoes = montarSugestoes(leitura, contexto, texto.paginas);
+
+    // A síntese do processo, redigida com os fatos de todos os pedaços. Falhar aqui não derruba o resto da leitura.
+    const avisos: string[] = [];
+    const fatos = fatosParaSintese(leitura.fatos);
+    if (!fatos.length) {
+      avisos.push("A IA não encontrou fatos suficientes nos autos para redigir a síntese.");
+    } else if (Date.now() - inicio > PRAZO_SINTESE_MS) {
+      avisos.push("Não deu tempo de redigir a síntese nesta leitura. Leia de novo para gerá-la.");
+    } else {
+      try {
+        const redigida = await redigirSintese(apiKey, modelo, contexto, fatos, texto.total);
+        custoUS += redigida.custoUS;
+        const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+        sugestoes.push(...sugestoesDaSintese(redigida.sintese, contexto, documentoId, hoje));
+      } catch (erro) {
+        console.error("[processos] síntese dos autos:", erro instanceof Error ? erro.message : erro);
+        avisos.push("A IA não conseguiu redigir a síntese desta vez. Leia de novo para tentar outra vez.");
+      }
+    }
     const gravadas = await gravarSugestoes(documento.processoId, documentoId, sugestoes);
 
-    const avisos: string[] = [];
     const naoLidos = blocos.length - leituras.length;
     if (naoLidos > 0) avisos.push(`Leitura parcial: ${naoLidos} de ${blocos.length} trechos ficaram sem ler (${falhas ? "falha da IA" : "tempo esgotado"}). Leia de novo para completar.`);
     if (texto.total > texto.paginas.length) avisos.push(`O arquivo tem ${texto.total} páginas; foram lidas as primeiras ${texto.paginas.length}.`);

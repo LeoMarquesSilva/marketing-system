@@ -8,11 +8,15 @@ import {
   documentoValido,
   entradaDaLeitura,
   entradaDaPessoa,
+  entradaDaSintese,
+  fatosParaSintese,
+  juntarLeituras,
   leituraVazia,
   montarSugestoes,
   normalizarContato,
   normalizarNome,
   normalizarOab,
+  sugestoesDaSintese,
   type LeituraDosAutos,
 } from "./sugestoes";
 import type { Parte } from "./types";
@@ -324,5 +328,139 @@ describe("entradaDaLeitura", () => {
     expect(entrada).toContain("Maria Advogada (advogado, polo ativo)");
     expect(entrada).toContain("Páginas 1 a 4 de 4");
     expect(entrada).toContain("[[PÁGINA 4]]");
+  });
+});
+
+describe("síntese do processo", () => {
+  const fatos = [
+    { data: "2024-03-15", fato: "O oficial de justiça citou a executada na pessoa do representante.", pagina: 4 },
+    { data: "2023-05-02", fato: "A credora ajuizou execução de duplicatas vencidas, no valor de R$ 45.300,00.", pagina: 1 },
+    { data: "2023-05-02", fato: "A credora ajuizou execução de duplicatas vencidas, no valor de R$ 45.300,00.", pagina: 2 },
+    { data: "ontem", fato: "O juízo determinou o bloqueio de valores pelo SISBAJUD, que voltou negativo.", pagina: 9 },
+    { data: null, fato: "juntada", pagina: 3 },
+  ];
+
+  it("junta os fatos de todos os pedaços dos autos", () => {
+    const junta = juntarLeituras([leitura({ fatos: [fatos[0]] }), leitura({ fatos: [fatos[1]] })]);
+    expect(junta.fatos).toHaveLength(2);
+  });
+
+  it("ordena por página, tira repetidos e fatos vazios e descarta data fora do formato", () => {
+    const prontos = fatosParaSintese(fatos);
+    expect(prontos.map((item) => item.pagina)).toEqual([1, 4, 9]);
+    expect(prontos[2].data).toBeNull();
+  });
+
+  it("para de incluir quando passa do teto de texto", () => {
+    const muitos = Array.from({ length: 50 }, (_, i) => ({ data: null, fato: `Fato relevante número ${i} do processo em questão.`, pagina: i + 1 }));
+    expect(fatosParaSintese(muitos, 400).length).toBeLessThan(10);
+  });
+
+  it("manda ao modelo quem é quem e os fatos com página e data", () => {
+    const entrada = entradaDaSintese(contexto({ acao: "Execução de Título Extrajudicial" }), fatosParaSintese(fatos), 30);
+    expect(entrada).toContain("Ação: Execução de Título Extrajudicial");
+    expect(entrada).toContain("- Auto Peças Brasil Ltda (polo passivo)");
+    expect(entrada).not.toContain("Maria Advogada");
+    expect(entrada).toContain("- p. 4, 2024-03-15: O oficial de justiça citou");
+    expect(entrada).toContain("(30 páginas)");
+  });
+
+  const redigida = { sintese: `Resumo\n${"A credora executa duplicatas vencidas contra a devedora. ".repeat(3)}\n\n\n\nAndamento\n15/03/2024: citação positiva (p. 4)`, objeto: "Execução de duplicatas vencidas e não pagas", fase: null, parecer_risco: null };
+
+  it("vira sugestão da síntese e do objeto quando os dois estão vazios", () => {
+    const sugestoes = sugestoesDaSintese(redigida, contexto(), "doc-1", "2026-11-12");
+    expect(sugestoes.map((item) => [item.campo, item.chave])).toEqual([
+      ["sintese", "campo:sintese:doc-1"],
+      ["objeto", "campo:objeto:doc-1"],
+    ]);
+    const texto = (sugestoes[0].valor as { valor: string }).valor;
+    expect(texto.startsWith("Resumo\nA credora executa")).toBe(true);
+    expect(texto).not.toContain("\n\n\n");
+    expect(sugestoes[0]).toMatchObject({ tipo: "campo", pagina: null, trecho: null, trechoConferido: true });
+  });
+
+  it("com síntese no cadastro, mantém o que existe e acrescenta a da IA, datada", () => {
+    const sugestoes = sugestoesDaSintese(redigida, contexto({ sintese: "01/02/2024 - Ajuizada a execução.", objeto: "Cobrança" }), "doc-1", "2026-11-12");
+    expect(sugestoes).toHaveLength(1);
+    const texto = (sugestoes[0].valor as { valor: string }).valor;
+    expect(texto.startsWith("01/02/2024 - Ajuizada a execução.\n\n12/11/2026 (IA, leitura dos autos):\nResumo")).toBe(true);
+  });
+
+  it("não propõe síntese vazia nem curta demais", () => {
+    expect(sugestoesDaSintese({ sintese: "Sem dados.", objeto: null, fase: null, parecer_risco: null }, contexto(), "doc-1", "2026-11-12")).toEqual([]);
+  });
+
+  it("propõe a fase e o parecer do risco só quando estão vazios no cadastro", () => {
+    const parecer = "A devedora está em recuperação judicial e o bloqueio de valores foi liberado pelo tribunal. Há alienação fiduciária de semirreboques em garantia.";
+    const completa = { ...redigida, fase: "Recursal" as const, parecer_risco: parecer };
+    const vazio = sugestoesDaSintese(completa, contexto(), "doc-1", "2026-11-12");
+    expect(vazio.map((item) => item.campo)).toEqual(["sintese", "fase", "parecer_risco", "objeto"]);
+    expect(vazio[1].valor).toEqual({ valor: "Recursal" });
+    expect(vazio[2]).toMatchObject({ chave: "campo:parecer_risco:doc-1", valor: { valor: parecer }, trecho: null });
+    const preenchido = sugestoesDaSintese(completa, contexto({ fase: "Execução", parecer_risco: "Já avaliado.", objeto: "Cobrança" }), "doc-1", "2026-11-12");
+    expect(preenchido.map((item) => item.campo)).toEqual(["sintese"]);
+  });
+});
+
+describe("campos de Recuperação de Crédito lidos dos autos", () => {
+  const paginas = [
+    "A exequente é credora da executada pela Cédula de Crédito Bancário nº 1161191, de 25/04/2022. Dá-se à causa o valor de R$ 45.300,00. Distribuído em 02/05/2023.",
+    "Este cumprimento decorre do processo 1001234-56.2022.8.26.0100. Demonstrativo atualizado do débito: R$ 61.870,44. A recuperação judicial tramita sob o nº 1009999-11.2025.8.26.0100.",
+  ];
+
+  it("propõe contrato, valor da causa, valor envolvido e distribuição quando vazios", () => {
+    const sugestoes = montarSugestoes(
+      leitura({
+        campos: [
+          { campo: "contrato_credito", valor: "Cédula de Crédito Bancário nº 1161191, de 25/04/2022", pagina: 1, trecho: "Cédula de Crédito Bancário nº 1161191, de 25/04/2022", confianca: "alta" },
+          { campo: "contrato_credito", valor: "CCB 1161191", pagina: 2, trecho: "texto que não está na página", confianca: "media" },
+          { campo: "valor_acao", valor: "45300.00", pagina: 1, trecho: "Dá-se à causa o valor de R$ 45.300,00", confianca: "alta" },
+          { campo: "valor_envolvido", valor: "61870.44", pagina: 2, trecho: "Demonstrativo atualizado do débito: R$ 61.870,44", confianca: "alta" },
+          { campo: "data_distribuicao", valor: "2023-05-02", pagina: 1, trecho: "Distribuído em 02/05/2023", confianca: "alta" },
+        ],
+      }),
+      contexto(),
+      paginas
+    );
+    const porCampo = Object.fromEntries(sugestoes.map((item) => [item.campo, (item.valor as { valor: unknown }).valor]));
+    expect(porCampo).toEqual({
+      contrato_credito: "Cédula de Crédito Bancário nº 1161191, de 25/04/2022",
+      valor_acao: 45300,
+      valor_envolvido: 61870.44,
+      data_distribuicao: "2023-05-02",
+    });
+  });
+
+  it("não propõe o que o cadastro já tem", () => {
+    const sugestoes = montarSugestoes(
+      leitura({ campos: [{ campo: "valor_acao", valor: "45300.00", pagina: 1, trecho: "Dá-se à causa o valor de R$ 45.300,00", confianca: "alta" }] }),
+      contexto({ valor_acao: 18136.81 }),
+      paginas
+    );
+    expect(sugestoes).toEqual([]);
+  });
+
+  it("não propõe data de encerramento nem de arquivamento para processo ativo", () => {
+    const lida = leitura({ campos: [{ campo: "data_encerramento", valor: "2023-05-02", pagina: 1, trecho: "Distribuído em 02/05/2023", confianca: "alta" }] });
+    expect(montarSugestoes(lida, contexto({ situacao: "Ativo" }), paginas)).toEqual([]);
+    expect(montarSugestoes(lida, contexto({ situacao: "Arquivado definitivamente" }), paginas).map((item) => item.campo)).toEqual(["data_encerramento"]);
+  });
+
+  it("junta os outros números numa proposta só, mantém os já cadastrados e ignora o próprio processo", () => {
+    const sugestoes = montarSugestoes(
+      leitura({
+        campos: [
+          { campo: "outros_numeros", valor: "1001234-56.2022.8.26.0100", pagina: 2, trecho: "decorre do processo 1001234-56.2022.8.26.0100", confianca: "alta" },
+          { campo: "outros_numeros", valor: "Recuperação judicial nº 1009999-11.2025.8.26.0100", pagina: 2, trecho: "tramita sob o nº 1009999-11.2025.8.26.0100", confianca: "alta" },
+          { campo: "outros_numeros", valor: "1012345-67.2023.8.26.0100", pagina: 1, trecho: "este processo", confianca: "alta" },
+          { campo: "outros_numeros", valor: "10012345620228260100", pagina: 2, trecho: "repetido", confianca: "alta" },
+        ],
+      }),
+      contexto({ outros_numeros: ["Outros: 583002023"] }),
+      paginas
+    );
+    expect(sugestoes).toHaveLength(1);
+    expect(sugestoes[0]).toMatchObject({ campo: "outros_numeros", trechoConferido: true });
+    expect((sugestoes[0].valor as { valor: string }).valor).toBe("Outros: 583002023\n1001234-56.2022.8.26.0100\n1009999-11.2025.8.26.0100");
   });
 });

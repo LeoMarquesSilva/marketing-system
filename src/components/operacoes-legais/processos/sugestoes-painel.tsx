@@ -34,6 +34,18 @@ function Proposta({ sugestao, processo }: { sugestao: Sugestao; processo: Proces
   if (sugestao.tipo === "campo" && sugestao.campo) {
     const item = campoPorChave(sugestao.campo);
     const atual = processo.valores[sugestao.campo];
+    // Texto longo (a síntese do processo): o texto inteiro, para ler antes de decidir.
+    if (item?.tipo === "texto_longo") {
+      return (
+        <>
+          <p className="text-xs font-medium text-muted-foreground">{rotuloDoCampo(sugestao.campo)}</p>
+          <p className="max-h-[32rem] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-[#dce9eb] bg-[#f7fbfc] px-3 py-2.5 text-sm leading-6 text-foreground">
+            {String((sugestao.valor as ValorDeCampo).valor)}
+          </p>
+          {estaPreenchido(atual) ? <p className="text-xs text-amber-800">O cadastro já tem texto neste campo: a proposta acima mantém o que existe e acrescenta a parte da IA no fim.</p> : null}
+        </>
+      );
+    }
     return (
       <>
         <p className="text-xs font-medium text-muted-foreground">{rotuloDoCampo(sugestao.campo)}</p>
@@ -146,6 +158,7 @@ function ConferirCampo({ sugestao, uf, onFechar, aprovar }: { sugestao: Sugestao
       icone={Sparkles}
       titulo="Conferir a sugestão da IA"
       descricao="Ajuste o valor se for preciso. Ao aprovar, ele é gravado no cadastro com origem “IA” no histórico."
+      className={item.tipo === "texto_longo" ? "sm:max-w-3xl" : undefined}
       rodape={
         <>
           <Button variant="outline" onClick={onFechar} disabled={salvando}>
@@ -168,6 +181,9 @@ function ConferirCampo({ sugestao, uf, onFechar, aprovar }: { sugestao: Sugestao
 
 const FONTE: Record<Exclude<Sugestao["fonte"], undefined>, string> = { autos: "Autos (IA)", datajud: "DataJud", cnj: "Número CNJ" };
 const ehDaCapa = (sugestao: Sugestao) => sugestao.fonte === "datajud" || sugestao.fonte === "cnj";
+const ehSintese = (sugestao: Sugestao) => sugestao.tipo === "campo" && sugestao.campo === "sintese";
+/** Textos que a IA redige com o conjunto dos autos (não são cópia de uma página): síntese e parecer do risco. */
+const ehRedigida = (sugestao: Sugestao) => sugestao.tipo === "campo" && (sugestao.campo === "sintese" || sugestao.campo === "parecer_risco") && !sugestao.trecho;
 
 function Trecho({ sugestao, onAbrir }: { sugestao: Sugestao; onAbrir?: () => void }) {
   // Capa das fontes oficiais: o "trecho" é a descrição do dado na fonte, sem página de autos.
@@ -213,8 +229,10 @@ export function PainelSugestoes({
   const [editando, setEditando] = useState<Sugestao | null>(null);
 
   const pendentes = autos.sugestoes.filter((item) => item.situacao === "pendente");
-  // As de capa primeiro (são as que completam o cabeçalho do processo), depois as dos autos.
-  pendentes.sort((a, b) => Number(ehDaCapa(b)) - Number(ehDaCapa(a)));
+  // A síntese do processo vem no topo (é o que a pessoa lê primeiro); depois as de capa, que completam o
+  // cabeçalho, e por fim as demais dos autos.
+  const ordem = (sugestao: Sugestao) => (ehSintese(sugestao) ? 0 : ehRedigida(sugestao) ? 1 : ehDaCapa(sugestao) ? 2 : 3);
+  pendentes.sort((a, b) => ordem(a) - ordem(b));
   const daCapa = pendentes.filter(ehDaCapa);
   const decididas = autos.sugestoes.filter((item) => item.situacao !== "pendente").sort((a, b) => (b.decididoEm ?? "").localeCompare(a.decididoEm ?? ""));
   if (!pendentes.length && !decididas.length) return null;
@@ -309,7 +327,7 @@ export function PainelSugestoes({
                       </Selo>
                     ) : null}
                     <Selo tom="ia">{sugestao.tipo === "campo" ? (ROTULO_GRUPO.get(campoPorChave(sugestao.campo ?? "")?.grupo ?? "") ?? "Cadastro") : (ROTULO_ITEM.get(sugestao.item) ?? "Cadastro")}</Selo>
-                    <Selo tom={CONFIANCA[sugestao.confianca].tom}>{CONFIANCA[sugestao.confianca].rotulo}</Selo>
+                    {ehRedigida(sugestao) ? <Selo tom="neutro">Redigida pela IA a partir dos autos</Selo> : <Selo tom={CONFIANCA[sugestao.confianca].tom}>{CONFIANCA[sugestao.confianca].rotulo}</Selo>}
                     {!sugestao.trechoConferido ? (
                       <Selo tom="alerta" icone={TriangleAlert}>
                         Trecho não localizado no PDF

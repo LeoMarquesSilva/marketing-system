@@ -54,7 +54,7 @@ export function Controle({ item, valor, onChange, uf = null }: { item: CampoProc
   if (item.lista) return <ControleDeLista item={item} valor={valor} onChange={onChange} uf={uf} />;
   switch (item.tipo) {
     case "texto_longo":
-      return <Textarea value={valor} onChange={(evento) => onChange(evento.target.value)} rows={6} className="text-sm" />;
+      return <Textarea value={valor} onChange={(evento) => onChange(evento.target.value)} rows={valor.length > 600 ? 16 : 6} className="max-h-[55dvh] text-sm leading-6" />;
     case "lista":
       return <Textarea value={valor} onChange={(evento) => onChange(evento.target.value)} rows={3} className="text-sm" />;
     case "data":
