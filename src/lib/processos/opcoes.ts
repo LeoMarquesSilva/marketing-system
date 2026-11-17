@@ -33,6 +33,7 @@ export const LISTAS: DefinicaoLista[] = [
   { chave: "tipo_orgao_julgador", rotulo: "Tipo de órgão julgador", origemVios: "Cadastros > Tipo de Órgão Julgador" },
   { chave: "tipo_parte", rotulo: "Tipo de parte", origemVios: "Cadastros > Tipo de parte" },
   { chave: "pedidos", rotulo: "Pedidos", origemVios: "Cadastros > Pedidos" },
+  { chave: "tipo_titulo", rotulo: "Tipo de título (Rec. Crédito)", origemVios: "Lista da equipe (nota promissória, duplicata, CCB)" },
 ];
 
 const POR_CHAVE = new Map(LISTAS.map((lista) => [lista.chave, lista]));

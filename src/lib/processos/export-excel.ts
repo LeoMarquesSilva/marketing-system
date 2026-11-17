@@ -25,15 +25,15 @@ const PRIMEIRA_LINHA = 3;
 const fina = (cor = BORDER) => ({ style: "thin" as const, color: { rgb: cor } });
 const caixa = (cor = BORDER): CellStyle["border"] => ({ top: fina(cor), bottom: fina(cor), left: fina(cor), right: fina(cor) });
 
-const estiloTitulo: CellStyle = { font: { name: FONT, sz: 14, bold: true, color: { rgb: WHITE } }, fill: { patternType: "solid", fgColor: { rgb: NAVY } }, alignment: { vertical: "center" } };
-const estiloLegenda: CellStyle = { font: { name: FONT, sz: 10, color: { rgb: NAVY } }, fill: { patternType: "solid", fgColor: { rgb: "E8F8F8" } }, alignment: { vertical: "center" } };
-const cabecalho = (novo: boolean): CellStyle => ({
+export const estiloTitulo: CellStyle = { font: { name: FONT, sz: 14, bold: true, color: { rgb: WHITE } }, fill: { patternType: "solid", fgColor: { rgb: NAVY } }, alignment: { vertical: "center" } };
+export const estiloLegenda: CellStyle = { font: { name: FONT, sz: 10, color: { rgb: NAVY } }, fill: { patternType: "solid", fgColor: { rgb: "E8F8F8" } }, alignment: { vertical: "center" } };
+export const cabecalho = (novo: boolean): CellStyle => ({
   font: { name: FONT, sz: 10, bold: true, color: { rgb: novo ? NAVY : WHITE } },
   fill: { patternType: "solid", fgColor: { rgb: novo ? TEAL : NAVY } },
   alignment: { horizontal: "center", vertical: "center", wrapText: true },
   border: caixa(NAVY),
 });
-const dado = (zebra: boolean): CellStyle => ({
+export const dado = (zebra: boolean): CellStyle => ({
   font: { name: FONT, sz: 10, color: { rgb: NAVY } },
   fill: zebra ? { patternType: "solid", fgColor: { rgb: ZEBRA } } : undefined,
   alignment: { vertical: "top", wrapText: true },

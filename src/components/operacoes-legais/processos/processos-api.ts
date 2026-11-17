@@ -33,18 +33,22 @@ export const processosApi = {
     return ler<T>(await authFetch(`${BASE}${caminho}`, { method: "POST", body: formulario }));
   },
   /** Baixa a planilha dos processos indicados (todos, sem ids). */
-  baixarPlanilha: async (ids: string[] | null) => {
-    const resposta = await authFetch(`${BASE}/exportar`, comCorpo("POST", ids ? { ids } : {}));
-    if (!resposta.ok) throw new Error(((await resposta.json().catch(() => null)) as { error?: string } | null)?.error ?? "Não foi possível gerar a planilha.");
-    const nome = /filename="([^"]+)"/.exec(resposta.headers.get("Content-Disposition") ?? "")?.[1] ?? "processos.xlsx";
-    const url = URL.createObjectURL(await resposta.blob());
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = nome;
-    link.click();
-    URL.revokeObjectURL(url);
-  },
+  baixarPlanilha: async (ids: string[] | null) => baixar(`${BASE}/exportar`, ids, "processos.xlsx"),
+  /** Baixa a planilha da carteira de Rec. Crédito (os processos filtrados na tela). */
+  baixarCarteira: async (ids: string[] | null) => baixar(`${BASE}/carteira`, ids, "carteira-rec-credito.xlsx"),
 };
+
+async function baixar(endereco: string, ids: string[] | null, padrao: string): Promise<void> {
+  const resposta = await authFetch(endereco, comCorpo("POST", ids ? { ids } : {}));
+  if (!resposta.ok) throw new Error(((await resposta.json().catch(() => null)) as { error?: string } | null)?.error ?? "Não foi possível gerar a planilha.");
+  const nome = /filename="([^"]+)"/.exec(resposta.headers.get("Content-Disposition") ?? "")?.[1] ?? padrao;
+  const url = URL.createObjectURL(await resposta.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 /** Chamadas das telas de Pessoas (o cadastro único que Processos usa). */
 export const pessoasApi = criarApi("/api/operacoes-legais/pessoas");

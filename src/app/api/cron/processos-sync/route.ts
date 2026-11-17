@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth";
 import { descartarVencidos } from "@/lib/processos/autos-server";
+import { atualizarIndicesSeVelhos } from "@/lib/processos/indices-server";
 import { sincronizarPessoasComVios } from "@/lib/processos/pessoas-sync-server";
 import { sincronizarProcessos } from "@/lib/processos/sync-server";
 
@@ -21,11 +22,16 @@ export async function GET(request: Request) {
     console.error("[cron/processos-sync] descarte dos PDFs:", erro instanceof Error ? erro.message : erro);
     return null;
   });
+  // Índices do TJSP para o cálculo da Rec. Crédito: reimporta uma vez por semana; falha vira só registro.
+  const indices = await atualizarIndicesSeVelhos().catch((erro) => {
+    console.error("[cron/processos-sync] índices do TJSP:", erro instanceof Error ? erro.message : erro);
+    return null;
+  });
   try {
     const processos = await sincronizarProcessos({ origem: "sharepoint" });
     // As partes novas nascem só com o nome: a carga de pessoas liga ao VIOS e junta com quem já existe.
     const pessoas = await sincronizarPessoasComVios().catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
-    return NextResponse.json({ processos, pessoas, autos });
+    return NextResponse.json({ processos, pessoas, autos, indices });
   } catch (erro) {
     console.error("[cron/processos-sync]", erro instanceof Error ? erro.message : erro);
     return NextResponse.json({ error: "Falha ao sincronizar os processos." }, { status: 500 });

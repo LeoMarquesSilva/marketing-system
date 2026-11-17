@@ -161,6 +161,8 @@ export const CAMPOS: CampoProcesso[] = [
   campo("natureza_credito", "Natureza concursal/extraconcursal", "credito", "opcao", "novo", { tabela: "credito", naLista: true, opcoes: NATUREZAS_CREDITO }),
   campo("data_acordo", "Data do acordo", "credito", "data", "novo", { tabela: "credito", naLista: true }),
   campo("valor_acordo", "Valor do acordo", "credito", "valor", "novo", { tabela: "credito", naLista: true }),
+  // Fora da lista do saneamento: é acompanhamento, não cadastro. Aparece na carteira de Rec. Crédito.
+  campo("proximos_passos", "Próximos passos", "credito", "texto_longo", "novo", { tabela: "credito" }),
 
   // Síntese e andamento
   campo("objeto", "Objeto", "andamento", "texto_longo", "vios", { colunasVios: ["Objeto"] }),

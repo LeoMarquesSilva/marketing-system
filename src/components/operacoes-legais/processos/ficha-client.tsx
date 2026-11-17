@@ -40,6 +40,7 @@ import { EditarCampos } from "./editar-campos";
 import { EditarParte } from "./editar-parte";
 import { BarraPreenchimento } from "./preenchimento-ui";
 import { formatarDataHora, mensagemDeErro, processosApi } from "./processos-api";
+import { PainelRecCredito } from "./rec-credito-painel";
 import { PainelSugestoes } from "./sugestoes-painel";
 
 const ENVIO_ABERTO = new Set(["pendente", "enviado", "erro"]);
@@ -408,6 +409,17 @@ function Ficha({ id }: { id: string }) {
               </Vazio>
             )}
           </Painel>
+
+          <PainelRecCredito
+            processoId={processo.id}
+            onErro={setErro}
+            onFeito={(mensagem) => {
+              setErro("");
+              setFeito(mensagem);
+              // O lançamento entra no histórico da ficha.
+              void carregar();
+            }}
+          />
 
           {(["credito", "valores"] as const).map((grupo) => {
             const titulo = GRUPOS_CAMPO.find((item) => item.id === grupo)?.rotulo ?? grupo;
