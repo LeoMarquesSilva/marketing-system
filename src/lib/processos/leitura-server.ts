@@ -11,7 +11,7 @@ import { ProcessosError } from "./errors";
 import { extrairPaginas, type TextoDoPdf } from "./leitura-pdf";
 import { migracaoParaEproc } from "./migracao-eproc";
 import { detalharProcesso } from "./processos-server";
-import { sugestoesDaRecCredito } from "./rec-credito-leitura";
+import { sugestoesDaRecCredito, type ItemSugerido } from "./rec-credito-leitura";
 import { itensDoProcesso, tiposDeTitulo } from "./rec-credito-server";
 import { lerSistema } from "./tribunais";
 import { db, falhou } from "./server";
@@ -206,8 +206,15 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
     const leitura = juntarLeituras(leituras);
     const sugestoes = montarSugestoes(leitura, contexto, texto.paginas);
     // Rec. Crédito: títulos, citações, pedidos e dinheiro, sem repetir o que a ficha já tem.
-    const [lancados, tipos] = await Promise.all([itensDoProcesso(documento.processoId), tiposDeTitulo()]);
-    sugestoes.push(...sugestoesDaRecCredito(leitura.rec_credito, lancados, tipos, criarConferidor(texto.paginas)));
+    // Os de outros documentos também contam: autos do eproc repetem o histórico do e-SAJ que veio antes.
+    const [lancados, tipos, outros] = await Promise.all([
+      itensDoProcesso(documento.processoId),
+      tiposDeTitulo(),
+      db().from("proc_sugestoes").select("valor").eq("processo_id", documento.processoId).eq("tipo", "rec_credito").neq("documento_id", documentoId),
+    ]);
+    if (outros.error) falhou("carregar as sugestões anteriores", outros.error);
+    const jaSugeridos = (outros.data ?? []).map((linha) => linha.valor as ItemSugerido);
+    sugestoes.push(...sugestoesDaRecCredito(leitura.rec_credito, lancados, tipos, criarConferidor(texto.paginas), jaSugeridos));
 
     // A síntese do processo, redigida com os fatos de todos os pedaços. Falhar aqui não derruba o resto da leitura.
     const avisos: string[] = [];

@@ -158,17 +158,80 @@ export function chavesExistentes(itens: ItensRecCredito): Set<string> {
 
 const ORDEM_SITUACAO: Record<string, number> = { requerido: 0, prejudicado: 1, indeferido: 2, deferido: 2 };
 
+/** Itens já lançados, no formato das sugestões, para comparar com o que a leitura achou. */
+export function comoSugeridos(itens: ItensRecCredito): ItemSugerido[] {
+  return [
+    ...itens.titulos.map((titulo): ItemSugerido => ({ item: "titulo", dados: { tipo: titulo.tipo, numero: titulo.numero, valor: titulo.valor, vencimento: titulo.vencimento } })),
+    ...itens.citacoes.map((citacao): ItemSugerido => ({ item: "citacao", dados: { tentativaEm: citacao.tentativaEm, meio: citacao.meio, resultado: citacao.resultado, endereco: citacao.endereco } })),
+    ...itens.pedidos.map((pedido): ItemSugerido => ({ item: "pedido", dados: { tipo: pedido.tipo, pedidoEm: pedido.pedidoEm, situacao: pedido.situacao, decididoEm: pedido.decididoEm } })),
+    ...itens.lancamentos.map((lancamento): ItemSugerido => ({ item: "lancamento", dados: { tipo: lancamento.tipo, data: lancamento.data, valor: lancamento.valor } })),
+  ];
+}
+
+const DIA = 86_400_000;
+/** Datas a até `dias` uma da outra (as duas presentes). */
+function perto(a: unknown, b: unknown, dias: number): boolean {
+  if (typeof a !== "string" || typeof b !== "string" || !DATA.test(a) || !DATA.test(b)) return false;
+  return Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) <= dias * DIA;
+}
+
+/** "RENAJUD e INFOJUD" e "INFOJUD e RENAJUD" são o mesmo pedido. */
+function tipoDoPedido(valor: unknown): string {
+  return String(valor ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((palavra) => palavra && !["e", "de", "da", "do", "via", "pesquisa"].includes(palavra))
+    .sort()
+    .join(" ");
+}
+
+/**
+ * O mesmo item lido duas vezes, com pequenas diferenças: autos do eproc que repetem o histórico do e-SAJ,
+ * a data do protocolo num e a da juntada noutro. Datas valem com folga de alguns dias.
+ */
+export function mesmoItem(a: ItemSugerido, b: ItemSugerido): boolean {
+  if (a.item !== b.item) return false;
+  const x = a.dados;
+  const y = b.dados;
+  switch (a.item) {
+    case "titulo":
+      return centavos(Number(x.valor)) === centavos(Number(y.valor)) && (x.vencimento === y.vencimento || perto(x.vencimento, y.vencimento, 3));
+    case "citacao":
+      if (x.resultado !== y.resultado) return false;
+      if (x.tentativaEm || y.tentativaEm) return perto(x.tentativaEm, y.tentativaEm, 5);
+      return chaveTexto(x.endereco as string | null) === chaveTexto(y.endereco as string | null);
+    case "pedido": {
+      if (tipoDoPedido(x.tipo) !== tipoDoPedido(y.tipo)) return false;
+      if (perto(x.pedidoEm, y.pedidoEm, 5) || perto(x.decididoEm, y.decididoEm, 5)) return true;
+      const semData = (dados: ItemSugerido["dados"]) => !dados.pedidoEm && !dados.decididoEm;
+      return semData(x) && semData(y) && x.situacao === y.situacao;
+    }
+    case "lancamento":
+      return x.tipo === y.tipo && centavos(Number(x.valor)) === centavos(Number(y.valor)) && (x.data === y.data || perto(x.data, y.data, 5));
+  }
+}
+
 /**
  * O que a IA leu da Rec. Crédito vira sugestões: sem repetir o que já está na ficha, sem repetir entre
  * pedaços (fica a proposta mais confiável) e com a página e o trecho conferidos no PDF.
  */
-export function sugestoesDaRecCredito(lido: LeituraRecCredito, existentes: ItensRecCredito, tiposTitulo: string[], conferidor: ConferidorDeTrecho): SugestaoNova[] {
+export function sugestoesDaRecCredito(
+  lido: LeituraRecCredito,
+  existentes: ItensRecCredito,
+  tiposTitulo: string[],
+  conferidor: ConferidorDeTrecho,
+  /** O que outros documentos do processo já sugeriram (aprovado, recusado ou pendente). */
+  jaSugeridos: ItemSugerido[] = []
+): SugestaoNova[] {
   const jaTem = chavesExistentes(existentes);
+  const conhecidos = [...comoSugeridos(existentes), ...jaSugeridos];
   const porChave = new Map<string, SugestaoNova & { peso: number }>();
   const contagem: Record<TipoItem, number> = { titulo: 0, citacao: 0, pedido: 0, lancamento: 0 };
 
   const incluir = (item: TipoItem, chave: string, resumo: string, valor: ItemSugerido, de: { pagina: number; trecho: string; confianca: Confianca }, pesoExtra = 0) => {
-    if (jaTem.has(chave)) return;
+    if (jaTem.has(chave) || conhecidos.some((conhecido) => mesmoItem(valor, conhecido))) return;
     const achado = conferidor.trecho(de.pagina, de.trecho);
     const confianca: Confianca = achado.conferido ? de.confianca : "baixa";
     const nova = {

@@ -88,4 +88,25 @@ describe("sugestões da Rec. Crédito", () => {
     expect(sugestao).toMatchObject({ confianca: "baixa", trechoConferido: false });
     expect((sugestao.valor as ItemSugerido).dados).toEqual({ tentativaEm: "2024-02-10", meio: "ar", resultado: "negativa", endereco: "Rua A, 10", observacao: "Mudou-se" });
   });
+
+  it("autos do eproc não repetem o que os do e-SAJ já sugeriram, mesmo com a data um pouco diferente", () => {
+    const doEsaj: ItemSugerido[] = [
+      { item: "pedido", dados: { tipo: "RENAJUD e INFOJUD", pedidoEm: "2023-11-07", situacao: "indeferido", decididoEm: "2023-11-10" } },
+      { item: "lancamento", dados: { tipo: "guia_paga", data: "2024-02-01", valor: 35.9 } },
+    ];
+    const sugestoes = sugestoesDaRecCredito(
+      leitura({
+        pedidos: [
+          { tipo: "INFOJUD e RENAJUD", data_pedido: "2023-11-08", situacao: "indeferido", data_decisao: "2023-11-23", resultado: null, valor_obtido: null, ...de(40) },
+          { tipo: "SISBAJUD", data_pedido: "2025-10-14", situacao: "deferido", data_decisao: null, resultado: null, valor_obtido: null, ...de(41) },
+        ],
+        lancamentos: [{ tipo: "guia_paga", data: "2024-02-03", valor: 35.9, descricao: null, ...de(12) }],
+      }),
+      nada,
+      TIPOS,
+      conferidor,
+      doEsaj
+    );
+    expect(sugestoes.map((item) => (item.valor as ItemSugerido).dados.tipo)).toEqual(["SISBAJUD"]);
+  });
 });
