@@ -231,6 +231,8 @@ export interface DocViewer {
   name: string;
   is_admin: boolean;
   can_edit: boolean;
+  /** Sobe, cataloga e exclui arquivos do acervo. */
+  can_upload: boolean;
   /** Se quem está vendo é um dos sócios (ricardo, gustavo): registra as próprias decisões. */
   person_key: string | null;
 }

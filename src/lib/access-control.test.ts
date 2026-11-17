@@ -11,6 +11,7 @@ import {
   hasIcpAccess,
   canEditPe27,
   canEditDocumentario,
+  canUploadDocumentarioAcervo,
   hasDocumentarioAccess,
   hasOperacoesLegaisAccess,
   hasPe27Access,
@@ -319,6 +320,15 @@ describe("Minidocumentário 10 anos", () => {
     expect(firstAllowedPath({ role: null, permissions: ["/documentario/editar"] })).toBe("/");
     expect(isManualOnlyKey("/documentario")).toBe(true);
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/documentario");
+    expect(canUploadDocumentarioAcervo({ role: "admin" })).toBe(true);
+    expect(canUploadDocumentarioAcervo(producao)).toBe(true);
+    expect(canUploadDocumentarioAcervo(socio)).toBe(false);
+    // Chave só do acervo: sobe fotos, mas não edita o projeto; sem a chave de ver, não vale.
+    const acervo = { role: null, permissions: ["/rh", "/documentario", "/documentario/acervo/enviar"] };
+    expect(canUploadDocumentarioAcervo(acervo)).toBe(true);
+    expect(canEditDocumentario(acervo)).toBe(false);
+    expect(canUploadDocumentarioAcervo({ role: null, permissions: ["/documentario/acervo/enviar"] })).toBe(false);
+    expect(isManualOnlyKey("/documentario/acervo/enviar")).toBe(true);
   });
 });
 

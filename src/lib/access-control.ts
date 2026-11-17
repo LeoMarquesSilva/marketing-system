@@ -69,6 +69,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/pe27/editar", label: "PE27 · editar decisões, alavancas e metas", manualOnly: true },
   { key: "/documentario", label: "Minidocumentário 10 anos (ver e aprovar)", manualOnly: true },
   { key: "/documentario/editar", label: "Minidocumentário 10 anos · editar, gravar e subir acervo", manualOnly: true },
+  { key: "/documentario/acervo/enviar", label: "Minidocumentário 10 anos · só subir e catalogar fotos do acervo (junto com “ver e aprovar”)", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
@@ -90,6 +91,8 @@ export const PE27_EDIT_KEY = "/pe27/editar";
 export const DOCUMENTARIO_KEY = "/documentario";
 /** Chave de permissão (não é rota): editar, conduzir a gravação e subir acervo. */
 export const DOCUMENTARIO_EDIT_KEY = "/documentario/editar";
+/** Chave de permissão (não é rota): só subir e catalogar o acervo, junto com a de ver. */
+export const DOCUMENTARIO_ACERVO_KEY = "/documentario/acervo/enviar";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -306,6 +309,17 @@ export function canEditDocumentario(profile: AccessProfile | null | undefined): 
   if (!profile) return false;
   if (isAdminRole(profile)) return true;
   return Boolean(profile.permissions?.includes(DOCUMENTARIO_EDIT_KEY));
+}
+
+/**
+ * Subir, catalogar e excluir arquivos do acervo: quem edita o projeto, ou quem vê
+ * o documentário e tem a chave só do acervo (não mexe no documento, nas gravações
+ * nem nas decisões dos sócios).
+ */
+export function canUploadDocumentarioAcervo(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (canEditDocumentario(profile)) return true;
+  return hasDocumentarioAccess(profile) && Boolean(profile.permissions?.includes(DOCUMENTARIO_ACERVO_KEY));
 }
 
 export function isDocumentarioPath(pathname: string): boolean {
@@ -541,7 +555,7 @@ export function firstAllowedPath(profile: AccessProfile | null | undefined): str
   const primeiro = allowed.includes(MARKETING_DASHBOARD_PATH) ? MARKETING_DASHBOARD_PATH : allowed[0];
   // A chave de edição do PE27 não é uma página: entra pela Visão geral do módulo.
   if (primeiro === PE27_EDIT_KEY) return PE27_KEY;
-  if (primeiro === DOCUMENTARIO_EDIT_KEY) return DOCUMENTARIO_KEY;
+  if (primeiro === DOCUMENTARIO_EDIT_KEY || primeiro === DOCUMENTARIO_ACERVO_KEY) return DOCUMENTARIO_KEY;
   // O jurídico entra direto na aba Vistagem, onde está o trabalho dele.
   return primeiro === VISTAGEM_KEY ? entradaDaVistagem(profile) : primeiro;
 }
