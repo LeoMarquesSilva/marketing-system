@@ -16,6 +16,7 @@ import {
   normalizarContato,
   normalizarNome,
   normalizarOab,
+  separarSintese,
   sugestoesDaSintese,
   type LeituraDosAutos,
 } from "./sugestoes";
@@ -374,7 +375,7 @@ describe("síntese do processo", () => {
       ["objeto", "campo:objeto:doc-1"],
     ]);
     const texto = (sugestoes[0].valor as { valor: string }).valor;
-    expect(texto.startsWith("Resumo\nA credora executa")).toBe(true);
+    expect(texto.startsWith("12/11/2026 (IA, leitura dos autos):\nResumo\nA credora executa")).toBe(true);
     expect(texto).not.toContain("\n\n\n");
     expect(sugestoes[0]).toMatchObject({ tipo: "campo", pagina: null, trecho: null, trechoConferido: true });
   });
@@ -384,6 +385,25 @@ describe("síntese do processo", () => {
     expect(sugestoes).toHaveLength(1);
     const texto = (sugestoes[0].valor as { valor: string }).valor;
     expect(texto.startsWith("01/02/2024 - Ajuizada a execução.\n\n12/11/2026 (IA, leitura dos autos):\nResumo")).toBe(true);
+  });
+
+  it("troca a parte da IA anterior pela síntese nova e mantém o texto da equipe", () => {
+    const cadastro = "01/02/2024 - Ajuizada a execução.\n\n05/11/2026 (IA, leitura dos autos):\nResumo\nTexto antigo da IA.\nAndamento\n01/01/2024: citação (p. 2)";
+    const [sintese] = sugestoesDaSintese(redigida, contexto({ sintese: cadastro, objeto: "Cobrança" }), "doc-2", "2026-11-12", true);
+    const texto = (sintese.valor as { valor: string }).valor;
+    expect(texto.startsWith("01/02/2024 - Ajuizada a execução.\n\n12/11/2026 (IA, leitura dos autos):\nResumo\nA credora executa")).toBe(true);
+    expect(texto).not.toContain("Texto antigo da IA");
+    expect(texto.match(/^Resumo$/gm)).toHaveLength(1);
+    expect(sintese.resumo).toContain("consolidada com a leitura anterior");
+  });
+
+  it("separa o texto da equipe da parte da IA, também a gravada sem cabeçalho", () => {
+    expect(separarSintese("Anotação da equipe.\n\n12/11/2026 (IA, leitura dos autos):\nResumo\nA.\n\n13/11/2026 (IA, leitura dos autos):\nResumo\nB.")).toEqual({
+      equipe: "Anotação da equipe.",
+      ia: "Resumo\nA.\n\nResumo\nB.",
+    });
+    expect(separarSintese("Resumo\nA.\n\n13/11/2026 (IA, leitura dos autos):\nResumo\nB.")).toEqual({ equipe: "", ia: "Resumo\nA.\n\nResumo\nB." });
+    expect(separarSintese("Só a equipe escreveu.")).toEqual({ equipe: "Só a equipe escreveu.", ia: null });
   });
 
   it("não propõe síntese vazia nem curta demais", () => {

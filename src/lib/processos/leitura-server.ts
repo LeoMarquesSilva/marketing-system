@@ -28,6 +28,7 @@ import {
   instrucoesDaSintese,
   juntarLeituras,
   montarSugestoes,
+  separarSintese,
   sugestoesDaSintese,
   type BlocoDeTexto,
   type ContextoDaLeitura,
@@ -76,14 +77,21 @@ async function lerBloco(apiKey: string, modelo: string, contexto: ContextoDaLeit
 }
 
 /** Segunda etapa da leitura: com os fatos de todos os pedaços, a IA redige a síntese do processo. */
-async function redigirSintese(apiKey: string, modelo: string, contexto: ContextoDaLeitura, fatos: FatoDosAutos[], total: number): Promise<{ sintese: SinteseDosAutos; custoUS: number }> {
+export async function redigirSintese(
+  apiKey: string,
+  modelo: string,
+  contexto: ContextoDaLeitura,
+  fatos: FatoDosAutos[],
+  total: number,
+  anterior: string | null = null
+): Promise<{ sintese: SinteseDosAutos; custoUS: number }> {
   const raciocinio = isOpenAIReasoningModel(modelo);
   const { object, usage } = await generateObject({
     model: createOpenAI({ apiKey })(modelo),
     schema: ESQUEMA_SINTESE,
     schemaName: "sintese_do_processo",
     system: instrucoesDaSintese(),
-    prompt: entradaDaSintese(contexto, fatos, total),
+    prompt: entradaDaSintese(contexto, fatos, total, anterior),
     temperature: raciocinio ? undefined : 0,
     providerOptions: { openai: { ...(raciocinio ? { reasoningEffort: "medium" as const } : {}), promptCacheKey: "processos-sintese", store: false } },
   });
@@ -91,6 +99,29 @@ async function redigirSintese(apiKey: string, modelo: string, contexto: Contexto
     sintese: object,
     custoUS: custoDaChamada({ entrada: usage.inputTokens ?? 0, cache: usage.inputTokenDetails?.cacheReadTokens ?? 0, saida: usage.outputTokens ?? 0 }),
   };
+}
+
+/** A parte da síntese escrita pela IA: a do cadastro ou, sem ela, a pendente mais recente de outro documento. */
+export async function sinteseAnterior(processoId: string, documentoId: string, doCadastro: unknown): Promise<string | null> {
+  const noCadastro = separarSintese(typeof doCadastro === "string" ? doCadastro : null).ia;
+  if (noCadastro) return noCadastro;
+  const { data, error } = await db()
+    .from("proc_sugestoes")
+    .select("valor")
+    .eq("processo_id", processoId)
+    .eq("campo", "sintese")
+    .eq("situacao", "pendente")
+    .neq("documento_id", documentoId)
+    .order("criado_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) falhou("carregar a síntese anterior", error);
+  return separarSintese((data?.valor as { valor?: string } | undefined)?.valor ?? null).ia;
+}
+
+export async function removerSintesesPendentes(processoId: string, documentoId: string): Promise<void> {
+  const { error } = await db().from("proc_sugestoes").delete().eq("processo_id", processoId).eq("campo", "sintese").eq("situacao", "pendente").neq("documento_id", documentoId);
+  if (error) console.error("[processos] tirar as sínteses superadas:", error.message);
 }
 
 async function encerrar(documentoId: string, patch: Record<string, unknown>): Promise<void> {
@@ -218,6 +249,7 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
 
     // A síntese do processo, redigida com os fatos de todos os pedaços. Falhar aqui não derruba o resto da leitura.
     const avisos: string[] = [];
+    let substituirSinteses = false;
     const fatos = fatosParaSintese(leitura.fatos);
     if (!fatos.length) {
       avisos.push("A IA não encontrou fatos suficientes nos autos para redigir a síntese.");
@@ -225,10 +257,15 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
       avisos.push("Não deu tempo de redigir a síntese nesta leitura. Leia de novo para gerá-la.");
     } else {
       try {
-        const redigida = await redigirSintese(apiKey, modelo, contexto, fatos, texto.total);
+        // Síntese que a IA já escreveu (no cadastro, ou pendente de outro documento): a nova a consolida, para
+        // o processo ter uma síntese só.
+        const anterior = await sinteseAnterior(documento.processoId, documentoId, processo.valores.sintese);
+        const redigida = await redigirSintese(apiKey, modelo, contexto, fatos, texto.total, anterior);
         custoUS += redigida.custoUS;
         const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
-        sugestoes.push(...sugestoesDaSintese(redigida.sintese, contexto, documentoId, hoje));
+        const daSintese = sugestoesDaSintese(redigida.sintese, contexto, documentoId, hoje, Boolean(anterior));
+        sugestoes.push(...daSintese);
+        if (daSintese.some((item) => item.campo === "sintese")) substituirSinteses = true;
       } catch (erro) {
         console.error("[processos] síntese dos autos:", erro instanceof Error ? erro.message : erro);
         avisos.push("A IA não conseguiu redigir a síntese desta vez. Leia de novo para tentar outra vez.");
@@ -262,6 +299,8 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
       }
     }
     const gravadas = await gravarSugestoes(documento.processoId, documentoId, sugestoes);
+    // A síntese nova já consolida as pendentes de outros documentos: elas saem da fila.
+    if (substituirSinteses) await removerSintesesPendentes(documento.processoId, documentoId);
 
     const naoLidos = blocos.length - leituras.length;
     if (naoLidos > 0) avisos.push(`Leitura parcial: ${naoLidos} de ${blocos.length} trechos ficaram sem ler (${falhas ? "falha da IA" : "tempo esgotado"}). Leia de novo para completar.`);
