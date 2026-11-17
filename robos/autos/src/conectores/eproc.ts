@@ -13,14 +13,17 @@ import {
   ehLoginSso,
   emSegredoPelaCapa,
   instanciasDoCnj,
+  chaveDaPeca,
+  mensagemDaPesquisa,
   ordenarDocumentos,
+  pecasNovas,
   tipoDoArquivo,
   type DocumentoEproc,
   type InstanciaEproc,
   type TipoDeArquivo,
 } from "./eproc-urls.ts";
 import { lerCnj, type NumeroCnj } from "./esaj-urls.ts";
-import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from "./tipos.ts";
+import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./tipos.ts";
 
 /**
  * Conector do eproc do TJSP. O login é o SSO do tribunal: entrar numa instalação do eproc (1º grau cível,
@@ -303,16 +306,9 @@ class ConectorEprocTjsp implements Conector {
           await iguais.first().click();
           continue;
         }
-        const mensagem = (
-          await pagina
-            .locator(TELA.mensagem)
-            .first()
-            .innerText({ timeout: 500 })
-            .catch(() => "")
-        )
-          .replace(/\s+/g, " ")
-          .trim();
-        if (mensagem) return mensagem.slice(0, 200);
+        // A faixa "Usuário logado como …" usa a mesma classe dos avisos e fica na tela o tempo todo: não é resposta.
+        const mensagem = mensagemDaPesquisa(await pagina.locator(TELA.mensagem).allInnerTexts().catch(() => []));
+        if (mensagem) return mensagem;
         await pagina.waitForTimeout(1_000);
       }
       const captura = await ambiente.diagnostico(pagina, "consulta eproc");
@@ -385,7 +381,7 @@ class ConectorEprocTjsp implements Conector {
     return { tipo, corpo };
   }
 
-  private async montarPdf(ambiente: Ambiente, cnj: NumeroCnj, documentos: DocumentoEproc[], destino: string): Promise<void> {
+  private async montarPdf(ambiente: Ambiente, cnj: NumeroCnj, documentos: DocumentoEproc[], destino: string, parcial = false): Promise<void> {
     const { registrar } = ambiente;
     const final = await PDFDocument.create();
     const fonte = await final.embedFont(StandardFonts.Helvetica);
@@ -442,7 +438,16 @@ class ConectorEprocTjsp implements Conector {
       if (parte === 0) {
         escrever(pagina, negrito, `Autos do processo ${cnj.mascarado} (eproc do TJSP)`, 50, y, 14);
         y -= 18;
-        escrever(pagina, fonte, `Montado pelo robô do ORQESTRAI em ${new Date().toLocaleString("pt-BR")}: ${documentos.length} documentos, do evento mais antigo para o mais novo.`, 50, y, 9);
+        escrever(
+          pagina,
+          fonte,
+          parcial
+            ? `Montado pelo robô do ORQESTRAI em ${new Date().toLocaleString("pt-BR")}: só as ${documentos.length} peças novas desde o download anterior (a partir do evento ${documentos[0]?.evento ?? "?"}).`
+            : `Montado pelo robô do ORQESTRAI em ${new Date().toLocaleString("pt-BR")}: ${documentos.length} documentos, do evento mais antigo para o mais novo.`,
+          50,
+          y,
+          9
+        );
         y -= 24;
       }
       for (const linha of indice.slice(parte * LINHAS_POR_PAGINA, (parte + 1) * LINHAS_POR_PAGINA)) {
@@ -457,7 +462,7 @@ class ConectorEprocTjsp implements Conector {
     await conferirPdf(destino);
   }
 
-  async baixar(ambiente: Ambiente, pedido: Pedido, destino: string): Promise<void> {
+  async baixar(ambiente: Ambiente, pedido: Pedido, destino: string): Promise<ResultadoDoDownload> {
     const cnj = lerCnj(pedido.cnj);
     if (!cnj) throw new FalhaDoConector(`Número de processo inválido: ${pedido.cnj}.`);
     await this.entrar(ambiente);
@@ -473,8 +478,16 @@ class ConectorEprocTjsp implements Conector {
       const captura = await ambiente.diagnostico(ambiente.pagina, "capa eproc");
       throw new FalhaDoConector(`O processo não tem documentos na tabela de eventos do ${SISTEMA}. Diagnóstico guardado em ${captura}.`);
     }
-    ambiente.registrar(`${documentos.length} documentos na tabela de eventos. Baixando um por um.`);
-    await this.montarPdf(ambiente, cnj, documentos, destino);
+    // Download incremental: só as peças que ainda não vieram em pedidos anteriores deste processo.
+    const novos = pecasNovas(documentos, pedido.pecasBaixadas);
+    if (!novos.length) {
+      ambiente.registrar(`${documentos.length} documentos na tabela de eventos, todos já baixados antes: nada novo.`);
+      return { semNovidades: true };
+    }
+    const parcial = novos.length < documentos.length;
+    ambiente.registrar(parcial ? `${novos.length} peças novas de ${documentos.length} na tabela de eventos. Baixando só as novas.` : `${documentos.length} documentos na tabela de eventos. Baixando um por um.`);
+    await this.montarPdf(ambiente, cnj, novos, destino, parcial);
+    return { pecas: novos.map(chaveDaPeca) };
   }
 
   /** Abre o processo, descreve a capa e a árvore e confere o primeiro documento, sem montar o PDF. */

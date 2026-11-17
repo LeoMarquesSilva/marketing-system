@@ -18,13 +18,21 @@ export interface Ambiente {
   diagnostico: (pagina: Page, etapa: string) => Promise<string>;
 }
 
+export interface ResultadoDoDownload {
+  pecas?: string[];
+  semNovidades?: boolean;
+}
+
 export interface Conector {
   /** "sistema:TRIBUNAL", como o ORQESTRAI grava no pedido (ex.: "esaj:TJSP"). */
   chave: string;
   /** Deixa a sessão do tribunal pronta (com a pessoa, se preciso). Usado também pelo modo --login. */
   entrar(ambiente: Ambiente): Promise<void>;
-  /** Baixa os autos do pedido para `destino` (caminho do PDF). */
-  baixar(ambiente: Ambiente, pedido: Pedido, destino: string): Promise<void>;
+  /**
+   * Baixa os autos do pedido para `destino` (caminho do PDF). O eproc devolve as peças que vieram (para o
+   * próximo download trazer só as novas) ou `semNovidades` quando não há nada novo (sem PDF).
+   */
+  baixar(ambiente: Ambiente, pedido: Pedido, destino: string): Promise<ResultadoDoDownload | void>;
   /** Abre os autos e só descreve o que achou na tela (modo --inspecionar), sem baixar. */
   inspecionar?(ambiente: Ambiente, cnj: string): Promise<void>;
 }

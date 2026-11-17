@@ -69,6 +69,27 @@ export interface DocumentoEproc {
   url: string;
 }
 
+/**
+ * Identidade de uma peça nos autos do eproc: o evento e o nome do documento ("12:PET1"). Os eventos não mudam
+ * depois de lançados; é por ela que o próximo download traz só o que ainda não veio.
+ */
+export function chaveDaPeca(documento: Pick<DocumentoEproc, "evento" | "nome">): string {
+  return `${documento.evento}:${documento.nome.replace(/\s+/g, " ").trim().toUpperCase()}`;
+}
+
+/** O aviso que a pesquisa devolveu, sem a faixa fixa de "Usuário logado como … Sair do Sistema". */
+export function mensagemDaPesquisa(textos: string[]): string | null {
+  const aviso = textos.map((texto) => texto.replace(/\s+/g, " ").trim()).find((texto) => texto && !/usu[áa]rio logado como|sair do sistema/i.test(texto));
+  return aviso ? aviso.slice(0, 200) : null;
+}
+
+/** As peças que ainda não foram baixadas, na ordem dos autos. */
+export function pecasNovas(documentos: DocumentoEproc[], baixadas: readonly string[] | undefined): DocumentoEproc[] {
+  if (!baixadas?.length) return documentos;
+  const ja = new Set(baixadas);
+  return documentos.filter((documento) => !ja.has(chaveDaPeca(documento)));
+}
+
 /** Ordem dos autos: do evento mais antigo para o mais novo (a tabela da capa vem do mais novo para o mais antigo). */
 export function ordenarDocumentos(documentos: DocumentoEproc[]): DocumentoEproc[] {
   const vistos = new Set<string>();

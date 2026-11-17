@@ -143,7 +143,9 @@ export async function carregarAutos(processoId: string): Promise<AutosDoProcesso
  */
 export async function pedirAutos(processoId: string, entrada: Record<string, unknown>, ator: Ator): Promise<AutosDoProcesso> {
   const processo = await carregarProcesso(processoId);
-  const robo = roboDoProcesso(processo.cnj, processo.sistema);
+  // Processo que já veio do eproc (migrado do e-SAJ): o eproc traz o processo inteiro, inclusive o histórico do
+  // e-SAJ, e baixa só as peças novas. O pedido vai para lá mesmo que o cadastro ainda diga e-SAJ.
+  const robo = roboDoProcesso(processo.cnj, (await jaVeioDoEproc(processoId)) ? "eproc" : processo.sistema);
   if (!robo.disponivel || !robo.cnj || !robo.sistema || !robo.tribunal) throw new ProcessosError(robo.motivo ?? "Não há robô para este processo.", 422);
   const liberar = entrada.liberarSegredo === true;
   if (processo.segredo && !liberar) {
@@ -313,6 +315,20 @@ export async function carregarDocumento(
 }
 
 /* ------------------------------------------- continuação no eproc */
+
+/** O processo já teve autos entregues pelo eproc. */
+export async function jaVeioDoEproc(processoId: string): Promise<boolean> {
+  const { count, error } = await db().from("proc_autos_pedidos").select("id", { count: "exact", head: true }).eq("processo_id", processoId).eq("sistema", "eproc").eq("status", "concluido");
+  if (error) falhou("conferir os pedidos ao eproc", error);
+  return (count ?? 0) > 0;
+}
+
+/** Peças do eproc já baixadas para o processo (somando os documentos): o robô traz só as que faltam. */
+export async function pecasBaixadas(processoId: string): Promise<string[]> {
+  const { data, error } = await db().from("proc_documentos").select("pecas").eq("processo_id", processoId).not("pecas", "is", null);
+  if (error) falhou("carregar as peças já baixadas", error);
+  return [...new Set((data ?? []).flatMap((linha) => (linha.pecas as string[] | null) ?? []))];
+}
 
 /**
  * Os autos do e-SAJ terminaram na certidão de migração para o eproc: pede ao robô os autos do eproc, que

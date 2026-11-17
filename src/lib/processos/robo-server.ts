@@ -2,9 +2,10 @@ import "server-only";
 
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { COLUNAS_PEDIDO, paraPedido, prepararUpload, registrarDocumento } from "./autos-server";
+import { COLUNAS_PEDIDO, paraPedido, pecasBaixadas, prepararUpload, registrarDocumento } from "./autos-server";
 import { MOTIVOS_ESPERA, TAMANHO_MAXIMO_AUTOS, type DocumentoAutos, type PedidoAutos } from "./autos-types";
 import { ProcessosError } from "./errors";
+import { registrarNoHistorico } from "./processos-server";
 import { db, falhou } from "./server";
 
 /**
@@ -38,8 +39,11 @@ function validar<T>(esquema: z.ZodType<T>, entrada: unknown): T {
   return lido.data;
 }
 
+/** O pedido como o robô recebe: no eproc, com as peças já baixadas (ele traz só as novas). */
+export type PedidoParaRobo = PedidoAutos & { pecasBaixadas: string[] };
+
 /** Entrega ao robô o pedido mais antigo que ele sabe atender e o marca como "em andamento". */
-export async function proximoPedido(entrada: unknown): Promise<PedidoAutos | null> {
+export async function proximoPedido(entrada: unknown): Promise<PedidoParaRobo | null> {
   const dados = validar(esquemaProximo, entrada);
   const aceitos = new Set(dados.conectores);
   const { data, error } = await db()
@@ -69,7 +73,10 @@ export async function proximoPedido(entrada: unknown): Promise<PedidoAutos | nul
       .eq("atualizado_em", pedido.atualizadoEm)
       .select(COLUNAS_PEDIDO);
     if (erroTomar) falhou("reservar o pedido", erroTomar);
-    if (tomado?.length) return paraPedido(tomado[0] as Record<string, unknown>);
+    if (tomado?.length) {
+      const reservado = paraPedido(tomado[0] as Record<string, unknown>);
+      return { ...reservado, pecasBaixadas: reservado.sistema === "eproc" ? await pecasBaixadas(reservado.processoId) : [] };
+    }
   }
   return null;
 }
@@ -81,7 +88,15 @@ const esquemaAtualizacao = z.discriminatedUnion("acao", [
   z.object({ acao: z.literal("seguir") }),
   z.object({ acao: z.literal("erro"), mensagem: z.string().trim().min(1).max(1000) }),
   z.object({ acao: z.literal("upload"), nome: z.string().trim().min(1).max(200), tamanho: z.number().int().positive().max(TAMANHO_MAXIMO_AUTOS) }),
-  z.object({ acao: z.literal("concluir"), path: z.string().trim().min(1).max(500), nome: z.string().trim().min(1).max(200) }),
+  z.object({
+    acao: z.literal("concluir"),
+    path: z.string().trim().min(1).max(500),
+    nome: z.string().trim().min(1).max(200),
+    /** eproc: as peças ("evento:nome") que vieram neste PDF. */
+    pecas: z.array(z.string().trim().min(1).max(300)).max(5000).optional(),
+  }),
+  /** eproc: o robô conferiu os autos e não há peça nova desde o último download. */
+  z.object({ acao: z.literal("sem_novidades") }),
 ]);
 
 export type RespostaDoRobo =
@@ -134,7 +149,23 @@ export async function atualizarPedidoDoRobo(pedidoId: string, entrada: unknown):
     }
     case "concluir": {
       const documento = await registrarDocumento(pedido.processoId, { path: dados.path, nome: dados.nome }, { origem: "robo", pedidoId: pedido.id, robo: pedido.robo });
+      if (dados.pecas?.length) {
+        const { error } = await db().from("proc_documentos").update({ pecas: dados.pecas }).eq("id", documento.id);
+        if (error) falhou("registrar as peças do documento", error);
+      }
       return { pedido: await mudar(pedido, { status: "concluido", motivo_espera: null, erro: null, concluido_em: new Date().toISOString() }), documento };
+    }
+    case "sem_novidades": {
+      const concluido = await mudar(pedido, { status: "concluido", motivo_espera: null, erro: null, concluido_em: new Date().toISOString() });
+      const { data } = await db().from("proc_autos_pedidos").select("pedido_por, pedido_por_nome").eq("id", pedido.id).maybeSingle();
+      await registrarNoHistorico(
+        pedido.processoId,
+        "autos",
+        null,
+        `Autos conferidos no ${pedido.sistema === "eproc" ? "eproc" : pedido.sistema} (${pedido.tribunal}): nenhuma peça nova desde o último download`,
+        { authUserId: (data?.pedido_por as string | null) as string, nome: (data?.pedido_por_nome as string | null) ?? null }
+      );
+      return { pedido: concluido };
     }
   }
 }

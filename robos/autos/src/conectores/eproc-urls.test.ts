@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lerCnj } from "./esaj-urls";
-import { arquivoEmbutido, ehAreaLogada, ehCapaDoProcesso, ehLoginSso, emSegredoPelaCapa, instanciasDoCnj, ordenarDocumentos, tipoDoArquivo } from "./eproc-urls";
+import { arquivoEmbutido, chaveDaPeca, ehAreaLogada, ehCapaDoProcesso, ehLoginSso, emSegredoPelaCapa, instanciasDoCnj, mensagemDaPesquisa, ordenarDocumentos, pecasNovas, tipoDoArquivo } from "./eproc-urls";
 
 const bytes = (texto: string) => new Uint8Array([...texto].map((letra) => letra.charCodeAt(0)));
 
@@ -69,5 +69,25 @@ describe("documentos", () => {
     expect(arquivoEmbutido('<object data="/eproc/doc.pdf"></object>', base)).toBe("https://eproc1g.tjsp.jus.br/eproc/doc.pdf");
     expect(arquivoEmbutido('<iframe src="about:blank"></iframe>', base)).toBeNull();
     expect(arquivoEmbutido("<p>sem arquivo</p>", base)).toBeNull();
+  });
+});
+
+describe("download incremental", () => {
+  const doc = (evento: number, nome: string) => ({ evento, ordem: 0, nome, data: "", url: `https://eproc1g.tjsp.jus.br/doc?${evento}${nome}` });
+  it("identifica a peça pelo evento e pelo nome", () => {
+    expect(chaveDaPeca(doc(12, " pet1 "))).toBe("12:PET1");
+  });
+  it("traz só as peças que ainda não vieram", () => {
+    const documentos = [doc(1, "INIC1"), doc(5, "DEC1"), doc(9, "PET1")];
+    expect(pecasNovas(documentos, ["1:INIC1", "5:DEC1"]).map(chaveDaPeca)).toEqual(["9:PET1"]);
+    expect(pecasNovas(documentos, undefined)).toHaveLength(3);
+    expect(pecasNovas(documentos, ["1:INIC1", "5:DEC1", "9:PET1"])).toEqual([]);
+  });
+});
+
+describe("aviso da pesquisa", () => {
+  it("ignora a faixa de usuário logado", () => {
+    expect(mensagemDaPesquisa(["Usuário logado como FULANO/ . Utilize o botão \"Sair do Sistema\" caso queira efetuar novo login.", "Processo não encontrado."])).toBe("Processo não encontrado.");
+    expect(mensagemDaPesquisa(["Usuário logado como FULANO. Sair do Sistema"])).toBeNull();
   });
 });

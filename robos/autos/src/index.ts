@@ -218,10 +218,15 @@ async function principal(): Promise<void> {
     registrar(`Pedido ${pedido.cnj} (${pedido.tribunal}), tentativa ${pedido.tentativas}.`);
     try {
       if (!conector || !cnj) throw new FalhaDoConector(`Este robô não atende ${pedido.sistema} do ${pedido.tribunal}.`);
-      await conector.baixar(ambientePara(pedido), pedido, destino);
-      registrar("PDF baixado. Enviando ao ORQESTRAI.");
-      await fila.entregar(pedido.id, destino, nomeDoPdf(cnj));
-      registrar(`Autos de ${pedido.cnj} entregues. A leitura pela IA segue no ORQESTRAI.`);
+      const resultado = await conector.baixar(ambientePara(pedido), pedido, destino);
+      if (resultado?.semNovidades) {
+        await fila.semNovidades(pedido.id);
+        registrar(`Autos de ${pedido.cnj} conferidos: nenhuma peça nova desde o último download.`);
+      } else {
+        registrar("PDF baixado. Enviando ao ORQESTRAI.");
+        await fila.entregar(pedido.id, destino, nomeDoPdf(cnj), resultado?.pecas);
+        registrar(`Autos de ${pedido.cnj} entregues${resultado?.pecas?.length ? ` (${resultado.pecas.length} peças)` : ""}. A leitura pela IA segue no ORQESTRAI.`);
+      }
     } catch (erro) {
       if (erro instanceof PedidoEncerrado) {
         registrar(`Pedido ${pedido.cnj} saiu da fila (cancelado ou encerrado na ficha).`);
