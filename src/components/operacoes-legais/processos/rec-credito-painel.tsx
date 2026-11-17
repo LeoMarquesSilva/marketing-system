@@ -403,7 +403,7 @@ function FormularioItem({
   onFechar: () => void;
   onSalvar: () => void;
 }) {
-  const faltando = campos.filter((campo) => campo.obrigatorio && !edicao.formulario[campo.chave]?.trim()).map((campo) => campo.rotulo.toLowerCase());
+  const faltando = campos.filter((campo) => campo.obrigatorio && !edicao.formulario[campo.chave]?.trim()).map((campo) => campo.rotulo.replace(" (R$)", "").toLowerCase());
   const nome = ROTULO_DO_ITEM[edicao.tipo].toLowerCase();
   return (
     <DialogoAcao

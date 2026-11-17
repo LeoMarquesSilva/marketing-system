@@ -122,9 +122,10 @@ function dadosDoProcesso(linha: Linha): DadosDoProcessoNaCarteira {
     devedor: parte.devedor === true,
     nome: ((Array.isArray(parte.pessoa) ? parte.pessoa[0] : parte.pessoa) as Linha | null)?.nome as string | undefined,
   }));
-  // Devedor: quem está marcado como tal; sem marca, as partes do polo passivo.
+  // Devedor: quem está marcado como tal; sem marca, as partes do polo passivo (menos "O Juízo", que o VIOS
+  // põe como parte em carta precatória).
   const devedores = partes.filter((parte) => parte.devedor && parte.nome);
-  const lista = devedores.length ? devedores : partes.filter((parte) => parte.papel === "parte" && parte.polo === "passivo" && parte.nome);
+  const lista = devedores.length ? devedores : partes.filter((parte) => parte.papel === "parte" && parte.polo === "passivo" && parte.nome && !/^o ju[ií]zo\b/i.test(parte.nome));
   return {
     id: linha.id as string,
     ci: texto(linha.ci),
