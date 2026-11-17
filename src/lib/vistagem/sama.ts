@@ -5,7 +5,7 @@ import { chaveNome, classeDasEtiquetas, type EtapaVios, type OpcaoVios } from ".
 import { VistagemError } from "./errors";
 import { cisDoResultado, tarefasViosDoResultado, type LinhaFilaSama, type ModoAgendamento, type TarefaNoVios } from "./fila-vios";
 import type { BaseDaData, ResponsabilidadeDoTipo, TipoNaArvore } from "./fluxo-vios";
-import type { CapaDoVios, PedidoDeAbertura } from "./capa-abertura";
+import type { CapaDoVios, PedidoDeAbertura, TarefaDaAbertura, TipoDaTarefaNova } from "./capa-abertura";
 import type { MateriaVios, SintesePedida } from "./types";
 
 /**
@@ -267,8 +267,26 @@ export async function enfileirarSintese(pedido: {
 }
 
 /**
+ * Um tipo de tarefa de Processo pela grafia do VIOS (ex.: ATUALIZAÇÃO DE CADASTRO = 539), com as etiquetas e os fixos
+ * do cadastro do tipo. Null se a cópia do SAMA não tiver ou não responder: o robô escolhe pelo nome.
+ */
+export async function tipoDeTarefaPorNome(nome: string): Promise<TipoDaTarefaNova | null> {
+  const { data, error } = await sama().from("vios_tipos_tarefa").select("etapa_id, nome, pasta_tipos, etiquetas, responsaveis").limit(5000);
+  if (error) {
+    console.error("[vistagem] tipo de tarefa no SAMA:", error.message);
+    return null;
+  }
+  const linhas = (data ?? []) as { etapa_id: number; nome: string; pasta_tipos: string[] | null; etiquetas: number[] | null; responsaveis: string[] | null }[];
+  const achado = linhas.find((linha) => chaveNome(linha.nome) === chaveNome(nome) && (linha.pasta_tipos ?? []).includes("Processo"));
+  return achado
+    ? { id: Number(achado.etapa_id), etiquetas: (achado.etiquetas ?? []).map(Number), responsaveis: (achado.responsaveis ?? []).map(String).filter(Boolean) }
+    : null;
+}
+
+/**
  * Abertura de pasta: pede ao robô que preencha o cadastro de processo com a capa conferida pela controladoria
  * (coluna abertura, migração 20261110000015 do sama-rpa). Simulação, ou de verdade (Fase 3) com `simular: false`.
+ * `tarefas`: o que o robô cria na pasta nova depois de abri-la (a ATUALIZAÇÃO DE CADASTRO); o robô antigo ignora.
  */
 export async function enfileirarAberturaDePasta(pedido: {
   publicacaoId: string;
@@ -276,6 +294,7 @@ export async function enfileirarAberturaDePasta(pedido: {
   autor: string;
   data: string;
   simular: boolean;
+  tarefas?: TarefaDaAbertura[];
 }): Promise<string> {
   const { data, error } = await sama()
     .from("vios_agendamentos")
@@ -290,7 +309,7 @@ export async function enfileirarAberturaDePasta(pedido: {
       pasta: pedido.capa.cnj ?? "",
       pasta_tipo: "Processo",
       simular: pedido.simular,
-      abertura: { publicacao_id: pedido.publicacaoId, capa: pedido.capa },
+      abertura: { publicacao_id: pedido.publicacaoId, capa: pedido.capa, ...(pedido.tarefas?.length ? { tarefas: pedido.tarefas } : {}) },
     })
     .select("id")
     .single();

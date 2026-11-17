@@ -1,4 +1,5 @@
-import { chaveNome } from "./agendamento";
+import { chaveNome, paraDataVios } from "./agendamento";
+import { somarDiasUteis } from "./dias-uteis";
 import { advogadosDoEscritorioCitados, ESCRITORIO_CIVEL_INSOLVENCIA, ESCRITORIO_INSOLVENCIA, type PastaSioe } from "./triagem";
 
 /**
@@ -810,6 +811,57 @@ export function problemasParaOVios(capa: CapaDoVios): string[] {
 }
 
 /** Um pedido de abertura ao robô (linha operacao abrir_pasta da fila do SAMA). */
+/** A tarefa que a pasta aberta pelo robô já leva (pedido de 17/11/2026). */
+export const TAREFA_DA_PASTA_NOVA = "ATUALIZAÇÃO DE CADASTRO";
+/** Etiqueta PROVIDÊNCIA do VIOS: a do tipo 539, usada se a cópia do SAMA não trouxer o tipo. */
+const ETIQUETA_PROVIDENCIA = 204;
+
+/** Tipo de tarefa do VIOS como a cópia do SAMA guarda (vios_tipos_tarefa). */
+export interface TipoDaTarefaNova {
+  id: number;
+  etiquetas: number[];
+  /** Os fixos do cadastro do tipo: a reserva, se o robô não conseguir ler a regra no VIOS. */
+  responsaveis: string[];
+}
+
+/** O que vai ao robô em `abertura.tarefas`: ele cria cada uma na pasta nova, logo depois de abri-la. */
+export interface TarefaDaAbertura {
+  tarefa: string;
+  tarefa_id: string | null;
+  etiqueta_id: string;
+  /** DD/MM/AAAA. */
+  data: string;
+  responsaveis_do_tipo: string[];
+  observacao: string;
+}
+
+/** O que o robô devolve de cada tarefa da pasta nova. */
+export interface TarefaCriadaNaAbertura {
+  tarefa: string;
+  ci_vios: string | null;
+  data: string;
+  responsaveis?: string[];
+  erro?: string;
+}
+
+/**
+ * A pasta nova já leva a ATUALIZAÇÃO DE CADASTRO, para o dia útil seguinte a hoje, com os responsáveis da regra do tipo
+ * no VIOS (o robô lê a regra na hora; os fixos do cadastro vão como reserva). Sem o tipo na cópia do SAMA, o robô
+ * escolhe pelo nome.
+ */
+export function tarefasDaAbertura(tipo: TipoDaTarefaNova | null, hoje: string, ehDiaUtil: (iso: string) => boolean): TarefaDaAbertura[] {
+  return [
+    {
+      tarefa: TAREFA_DA_PASTA_NOVA,
+      tarefa_id: tipo ? String(tipo.id) : null,
+      etiqueta_id: String(tipo?.etiquetas[0] ?? ETIQUETA_PROVIDENCIA),
+      data: paraDataVios(somarDiasUteis(hoje, 1, ehDiaUtil)),
+      responsaveis_do_tipo: tipo?.responsaveis ?? [],
+      observacao: "Pasta aberta pelo robô do Orquestra a partir de uma publicação sem pasta. Conferir e completar o cadastro: partes, valor da causa e monitoramento.",
+    },
+  ];
+}
+
 export interface PedidoDeAbertura {
   id: string;
   status: "pendente" | "enviado" | "processando" | "concluido" | "erro";
@@ -826,6 +878,8 @@ export interface PedidoDeAbertura {
     ci?: string | null;
     /** De verdade (Fase 3): o CI da pasta que o robô abriu no VIOS. */
     ci_pasta?: string | null;
+    /** As tarefas que o robô criou na pasta nova (a ATUALIZAÇÃO DE CADASTRO), ou o erro de cada uma. */
+    tarefas?: TarefaCriadaNaAbertura[];
   } | null;
   /** A capa que foi ao robô neste pedido (para saber se a simulação vale para a capa de agora). */
   capa: CapaDoVios | null;

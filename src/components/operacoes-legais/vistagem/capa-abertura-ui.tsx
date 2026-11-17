@@ -39,9 +39,11 @@ import {
   rotuloDoCampoDoRobo,
   ciDaPastaAberta,
   situacaoDaAberturaReal,
+  TAREFA_DA_PASTA_NOVA,
   type StatusDaFonte,
+  type TarefaCriadaNaAbertura,
 } from "@/lib/vistagem/capa-abertura";
-import { linkPastaVios } from "@/lib/vistagem/vios-links";
+import { linkPastaVios, linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { Aviso, campoClasse, Secao } from "./ui";
 
@@ -486,7 +488,8 @@ export function BlocoDoRobo({
           </DialogDescription>
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             <li>Depois, a publicação continua aqui, com a CI nova, para você conferir a pasta e liberar.</li>
-            <li>As partes ativas e passivas, o monitoramento e as tarefas da nova demanda continuam à mão.</li>
+            <li>Junto, o robô agenda na pasta nova a {TAREFA_DA_PASTA_NOVA}, para o dia útil seguinte, com os responsáveis da regra do tipo no VIOS.</li>
+            <li>As partes ativas e passivas e o monitoramento continuam à mão.</li>
           </ul>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setConfirmando(null)}>
@@ -535,12 +538,17 @@ function PedidoDoRobo({ pedido }: { pedido: PedidoDeAbertura }) {
   if (!pedido.simulado) {
     const ci = ciDaPastaAberta(pedido);
     return (
-      <p className="text-[11px] text-muted-foreground">
-        {ci ? `Aberta pelo robô em ${quandoPediu}` : `Pedido de abertura em ${quandoPediu}`}
-        {pedido.autor ? `, a pedido de ${pedido.autor}` : ""}.
-      </p>
+      <div className="space-y-2">
+        <TarefasDaPastaNova tarefas={resultado.tarefas ?? []} />
+        <p className="text-[11px] text-muted-foreground">
+          {ci ? `Aberta pelo robô em ${quandoPediu}` : `Pedido de abertura em ${quandoPediu}`}
+          {pedido.autor ? `, a pedido de ${pedido.autor}` : ""}.
+        </p>
+      </div>
     );
   }
+  // Na simulação, o robô diz o que a abertura de verdade agendaria na pasta nova e com quem.
+  const previstas = (resultado.avisos ?? []).filter((aviso) => aviso.startsWith("Na abertura de verdade"));
   const preenchidos = Object.keys(resultado.preenchidos ?? {}).length;
   const faltou = resultado.nao_encontrados ?? [];
   const recusaria = resultado.recusaria ?? [];
@@ -569,7 +577,46 @@ function PedidoDoRobo({ pedido }: { pedido: PedidoDeAbertura }) {
         </ul>
       ) : null}
       {recusaria.length ? <span className="mt-1 block text-xs">O VIOS recusaria: {recusaria.join(", ")}.</span> : null}
+      {previstas.map((aviso) => (
+        <span key={aviso} className="mt-1 block text-xs">
+          {aviso}
+        </span>
+      ))}
     </Aviso>
+  );
+}
+
+/** As tarefas que o robô criou na pasta nova (ATUALIZAÇÃO DE CADASTRO): CI, data e quem ficou; ou o que deu errado. */
+export function TarefasDaPastaNova({ tarefas }: { tarefas: TarefaCriadaNaAbertura[] }) {
+  if (!tarefas.length) return null;
+  return (
+    <ul aria-label="Tarefas da pasta nova" className="space-y-1.5">
+      {tarefas.map((tarefa) => (
+        <li
+          key={`${tarefa.tarefa}-${tarefa.data}`}
+          className={cn(
+            "rounded-md border px-3 py-2 text-xs",
+            tarefa.ci_vios ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"
+          )}
+        >
+          <span className="flex flex-wrap items-center gap-x-1.5 font-medium">
+            {tarefa.ci_vios ? <CircleCheck className="size-3.5 shrink-0" aria-hidden /> : <TriangleAlert className="size-3.5 shrink-0" aria-hidden />}
+            {tarefa.tarefa}
+            {tarefa.ci_vios ? (
+              <a href={linkTarefaVios(tarefa.ci_vios)} target="_blank" rel="noreferrer" className="tabular-nums underline underline-offset-2">
+                CI {tarefa.ci_vios}
+              </a>
+            ) : null}
+            <span className="font-normal tabular-nums">· para {tarefa.data}</span>
+          </span>
+          {tarefa.ci_vios ? (
+            tarefa.responsaveis?.length ? <span className="mt-0.5 block">{tarefa.responsaveis.join(", ")}</span> : null
+          ) : (
+            <span className="mt-0.5 block">Não foi criada: {tarefa.erro ?? "sem detalhe"}. Crie à mão no VIOS.</span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

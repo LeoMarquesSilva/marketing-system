@@ -16,6 +16,8 @@ import {
   situacaoDaAberturaReal,
   problemasParaOVios,
   resumoDaCapa,
+  tarefasDaAbertura,
+  TAREFA_DA_PASTA_NOVA,
   urlDoEsaj,
   type AjustesDaCapa,
   type CapaDoDataJud,
@@ -37,9 +39,12 @@ import {
   carregarMateriasVios,
   carregarSistemasVios,
   enfileirarAberturaDePasta,
+  tipoDeTarefaPorNome,
   type CatalogoArea,
 } from "./sama";
 import { lerConfiguracoes } from "./configuracoes-server";
+import { criarCalendario } from "./dias-uteis";
+import { carregarFeriados } from "./feriados";
 import { admin, falhou, hojeEmSaoPaulo } from "./server";
 import { buscarPastasPorCnj, carregarTodasAsPastas } from "./sioe";
 import { escritorioDaAreaDoProcesso, pastaAtiva } from "./triagem";
@@ -401,13 +406,20 @@ export async function pedirAberturaDaPasta(
     const situacao = situacaoDaAberturaReal(anteriores, { conferidoNoVios });
     if (!situacao.pode) throw new VistagemError(situacao.motivo, 409);
   }
-  const { data: usuario } = await admin().from("users").select("name").eq("auth_id", authUserId).maybeSingle();
+  const [{ data: usuario }, tipo, feriados] = await Promise.all([
+    admin().from("users").select("name").eq("auth_id", authUserId).maybeSingle(),
+    tipoDeTarefaPorNome(TAREFA_DA_PASTA_NOVA),
+    carregarFeriados().catch(() => [] as string[]),
+  ]);
+  const hoje = hojeEmSaoPaulo();
   await enfileirarAberturaDePasta({
     publicacaoId: id,
     capa: paraOVios,
     autor: (usuario?.name as string | null) ?? "Controladoria",
-    data: paraDataVios(hojeEmSaoPaulo()),
+    data: paraDataVios(hoje),
     simular: modo !== "abrir",
+    // A pasta nova já leva a ATUALIZAÇÃO DE CADASTRO, para o dia útil seguinte (pedido de 17/11/2026).
+    tarefas: tarefasDaAbertura(tipo, hoje, criarCalendario(feriados)),
   });
   return pedidosDeAbertura(id);
 }
