@@ -70,7 +70,31 @@ export async function anexarAutos(processoId: string, arquivo: File): Promise<{ 
  * Abre o PDF dos autos em outra aba, na página indicada. A aba abre já no clique (antes da URL assinada
  * chegar), senão o navegador bloqueia como pop-up.
  */
+export interface PdfParaAbrir {
+  url: string;
+  pagina: number | null;
+}
+
+let visualizador: ((pdf: PdfParaAbrir) => void) | null = null;
+
+/** O visualizador da ficha se registra aqui; devolve a função que desfaz o registro. */
+export function registrarVisualizador(abrir: (pdf: PdfParaAbrir) => void): () => void {
+  visualizador = abrir;
+  return () => {
+    if (visualizador === abrir) visualizador = null;
+  };
+}
+
+/**
+ * Abre o PDF dos autos (URL assinada de 10 min), na página indicada. Com o visualizador da ficha montado, abre
+ * nele (o navegador embutido do app não abre aba nova); sem ele, em aba nova ou, bloqueada, na própria aba.
+ */
 export async function abrirAutos(documentoId: string, pagina?: number | null): Promise<void> {
+  if (visualizador) {
+    const { url } = await processosApi.get<{ url: string }>(`/autos/documentos/${documentoId}`);
+    visualizador({ url, pagina: pagina ?? null });
+    return;
+  }
   const aba = window.open("about:blank", "_blank");
   try {
     const { url } = await processosApi.get<{ url: string }>(`/autos/documentos/${documentoId}`);

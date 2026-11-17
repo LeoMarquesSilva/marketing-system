@@ -42,6 +42,7 @@ import { BarraPreenchimento } from "./preenchimento-ui";
 import { formatarDataHora, mensagemDeErro, processosApi } from "./processos-api";
 import { PainelRecCredito } from "./rec-credito-painel";
 import { PainelSugestoes } from "./sugestoes-painel";
+import { VisualizadorAutos } from "./visualizador-autos";
 
 const ENVIO_ABERTO = new Set(["pendente", "enviado", "erro"]);
 
@@ -319,6 +320,7 @@ function Ficha({ id }: { id: string }) {
 
   return (
     <div className="space-y-4">
+      <VisualizadorAutos />
       <Painel aria-labelledby={tituloId}>
         <FaixaDoProcesso
           numero={texto("cnj") ?? "Sem número CNJ"}
