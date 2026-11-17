@@ -110,6 +110,11 @@ interface Arquivo {
   corpo: Buffer;
 }
 
+/** O certificado vem de arquivo (modo playwright), e não da lista do Chrome? */
+function certificadoEmArquivo(config: Ambiente["config"]): boolean {
+  return Boolean(config.certificado.pfx || config.certificado.pasta);
+}
+
 class ConectorEprocTjsp implements Conector {
   readonly chave = "eproc:TJSP";
 
@@ -213,7 +218,11 @@ class ConectorEprocTjsp implements Conector {
     try {
       if (config.eproc.login === "certificado") {
         await pagina.locator(TELA.login.certificado).click();
-        registrar("Login por certificado: o Chrome mostra a lista de certificados. Se ele já lembrar a escolha, o login segue sozinho.");
+        registrar(
+          certificadoEmArquivo(config)
+            ? "Login por certificado em arquivo: o robô apresenta o certificado ao tribunal sozinho."
+            : "Login por certificado: o Chrome mostra a lista de certificados. Se ele já lembrar a escolha, o login segue sozinho."
+        );
       } else if (config.eproc.login === "senha") {
         await pagina.locator(TELA.login.usuario).fill(config.eproc.usuario);
         await pagina.locator(TELA.login.senha).fill(config.eproc.senha);
@@ -236,7 +245,9 @@ class ConectorEprocTjsp implements Conector {
     } else {
       await ambiente.aguardarPessoa(
         "login",
-        config.eproc.login === "certificado"
+        config.eproc.login === "certificado" && certificadoEmArquivo(config)
+          ? `Login do ${SISTEMA} pelo certificado em arquivo não concluiu (certificado vencido, senha trocada ou tela diferente). Conclua o login na janela do robô; confira o certificado no painel de robôs.`
+          : config.eproc.login === "certificado"
           ? `Login do ${SISTEMA}: escolha o certificado do advogado na lista que o Chrome do robô mostra e clique em OK (se o macOS pedir permissão para usar a chave, autorize). O robô segue sozinho depois.`
           : `Conclua o login do ${SISTEMA} na janela do robô (certificado, ou usuário e senha). O robô segue sozinho depois.`,
         dentro

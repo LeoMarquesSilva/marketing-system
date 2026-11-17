@@ -4,3 +4,10 @@ node_modules/
 perfil/
 downloads/
 diagnostico/
+# Certificado digital, senhas e chaves: nunca no repositório (ele é público).
+certificados/
+segredos/
+*.pfx
+*.p12
+*.pem
+*.key

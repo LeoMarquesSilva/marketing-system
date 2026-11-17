@@ -2,7 +2,8 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as dormir } from "node:timers/promises";
 import type { Page } from "playwright";
-import { lerConfig } from "./config.ts";
+import { FalhaDoCertificado, assinaturaDaFonte, diasParaVencer, lerCertificado, type CertificadoCliente } from "./certificado.ts";
+import { lerConfig, type Config } from "./config.ts";
 import { conectoresEproc } from "./conectores/eproc.ts";
 import { conectoresEsaj } from "./conectores/esaj.ts";
 import { lerCnj, nomeDoPdf, tribunalEsajDoCnj } from "./conectores/esaj-urls.ts";
@@ -23,7 +24,20 @@ import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
  */
 
 /** Um conector por sistema e tribunal ("esaj:TJSP", "eproc:TJSP"…). Os próximos (PJe, Projudi) entram aqui. */
-const CONECTORES: Conector[] = [...conectoresEsaj, ...conectoresEproc];
+const TODOS_OS_CONECTORES: Conector[] = [...conectoresEsaj, ...conectoresEproc];
+
+/**
+ * Os conectores que este robô atende (ROBO_CONECTORES): a chave inteira ("esaj:TJCE") ou só o sistema ("eproc").
+ * Serve para dividir o trabalho entre dois robôs, ex.: o eproc no servidor e o e-SAJ no Mac (Web Signer).
+ */
+function conectoresDoRobo(config: Config): Conector[] {
+  if (!config.conectores.length) return TODOS_OS_CONECTORES;
+  const escolhidos = TODOS_OS_CONECTORES.filter((conector) => config.conectores.some((item) => conector.chave.toLowerCase() === item || conector.chave.toLowerCase().startsWith(`${item}:`)));
+  if (!escolhidos.length) throw new Error(`ROBO_CONECTORES não corresponde a nenhum conector. Existem: ${TODOS_OS_CONECTORES.map((item) => item.chave).join(", ")}.`);
+  return escolhidos;
+}
+
+let CONECTORES: Conector[] = TODOS_OS_CONECTORES;
 
 /**
  * O conector pedido na linha de comando: sistema "eproc" ou e-SAJ (padrão), e o tribunal ("TJCE") ou o do
@@ -51,22 +65,63 @@ function mensagemLimpa(erro: unknown): string {
   return `Falha inesperada no robô: ${texto.split("\n")[0].slice(0, 300)}`;
 }
 
+/** Carrega o certificado em arquivo, se houver, e avisa do vencimento. Não registra nada do conteúdo. */
+async function carregarCertificado(config: Config): Promise<CertificadoCliente | null> {
+  const certificado = await lerCertificado(config.certificado);
+  if (!certificado) return null;
+  const dias = diasParaVencer(certificado.validoAte);
+  registrar(`Certificado em arquivo carregado (${certificado.origem}), apresentado só a ${certificado.origens.join(", ")}.`);
+  if (dias !== null && dias < 0) registrar(`ATENÇÃO: o certificado venceu em ${certificado.validoAte.slice(0, 10)}. Envie o novo pelo painel.`);
+  else if (dias !== null && dias <= 30) registrar(`ATENÇÃO: o certificado vence em ${dias} dia${dias === 1 ? "" : "s"} (${certificado.validoAte.slice(0, 10)}).`);
+  return certificado;
+}
+
 async function principal(): Promise<void> {
   const config = lerConfig();
+  CONECTORES = conectoresDoRobo(config);
   const fila = new Fila(config);
-  const { contexto, pagina, fechar } = await abrirNavegador(config);
+  // Sem certificado válido (o painel ainda não enviou, ou a senha não abre), o robô sobe assim mesmo: o login por
+  // certificado fica com a pessoa e ele adota o certificado quando um válido chegar.
+  let certificado = await carregarCertificado(config).catch((erro) => {
+    if (!(erro instanceof FalhaDoCertificado)) throw erro;
+    registrar(`Certificado em arquivo indisponível: ${erro.message} O robô segue sem ele.`);
+    return null;
+  });
+  let assinaturaDoCertificado = certificado?.assinatura ?? (await assinaturaDaFonte(config.certificado));
+  let navegador = await abrirNavegador(config, certificado);
   let encerrando = false;
   const encerrar = async () => {
     if (encerrando) return;
     encerrando = true;
     registrar("Encerrando o robô.");
-    await fechar();
+    await navegador.fechar();
     process.exit(0);
   };
+
+  /**
+   * O painel trocou o certificado? Confere entre um pedido e outro (é só ler um arquivo pequeno). Com um
+   * certificado novo e válido, o robô fecha o navegador e reabre com ele; com um inválido, segue com o anterior.
+   */
+  async function conferirTrocaDoCertificado(): Promise<void> {
+    if (!config.certificado.pfx && !config.certificado.pasta) return;
+    const assinatura = await assinaturaDaFonte(config.certificado).catch(() => assinaturaDoCertificado);
+    if (assinatura === assinaturaDoCertificado) return;
+    assinaturaDoCertificado = assinatura;
+    try {
+      const novo = await carregarCertificado(config);
+      registrar("Certificado novo: reabrindo o navegador com ele.");
+      await navegador.fechar();
+      certificado = novo;
+      navegador = await abrirNavegador(config, certificado);
+    } catch (erro) {
+      registrar(`O certificado novo não foi aceito (${erro instanceof FalhaDoCertificado ? erro.message : mensagemLimpa(erro)}). O robô segue com o anterior.`);
+    }
+  }
   process.on("SIGINT", () => void encerrar());
   process.on("SIGTERM", () => void encerrar());
 
   function ambientePara(pedido: Pedido | null): Ambiente {
+    const { contexto, pagina } = navegador;
     return {
       config,
       contexto,
@@ -75,6 +130,8 @@ async function principal(): Promise<void> {
       diagnostico: (alvo: Page, etapa: string) => guardarDiagnostico(config, alvo, etapa),
       async aguardarPessoa(motivo, instrucao, resolvido) {
         registrar(`>>> PRECISA DE UMA PESSOA: ${instrucao}`);
+        if (config.telaRemotaUrl) registrar(`Tela do robô: ${config.telaRemotaUrl}`);
+        if (config.navegadorHeadless) registrar("O navegador está sem janela (NAVEGADOR_HEADLESS=sim): ninguém consegue resolver por aqui. O pedido fica aguardando pessoa.");
         process.stdout.write("\u0007");
         if (pedido) await fila.aguardarPessoa(pedido.id, motivo);
         const limite = Date.now() + config.esperaPessoaMs;
@@ -100,7 +157,7 @@ async function principal(): Promise<void> {
   if (modo === "login") {
     await conectorDaLinhaDeComando().entrar(ambientePara(null));
     registrar("Sessão do tribunal aberta e guardada no perfil do robô.");
-    await fechar();
+    await navegador.fechar();
     return;
   }
 
@@ -110,7 +167,7 @@ async function principal(): Promise<void> {
     try {
       await conectorDaLinhaDeComando(cnj).inspecionar?.(ambientePara(null), cnj);
     } finally {
-      await fechar();
+      await navegador.fechar();
     }
     return;
   }
@@ -140,6 +197,7 @@ async function principal(): Promise<void> {
   }
 
   while (!encerrando) {
+    await conferirTrocaDoCertificado();
     let pedido: Pedido | null = null;
     try {
       pedido = await fila.proximo(CONECTORES.map((conector) => conector.chave));
@@ -184,7 +242,7 @@ async function principal(): Promise<void> {
     }
     if (!encerrando) await dormir(config.pausaEntrePedidosMs);
   }
-  await fechar();
+  await navegador.fechar();
 }
 
 principal().catch((erro) => {

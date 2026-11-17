@@ -1,0 +1,16 @@
+# Só o código entra na imagem. Credenciais, sessão do tribunal e PDFs nunca.
+node_modules
+.env
+.env.*
+perfil
+downloads
+diagnostico
+certificados
+segredos
+*.pfx
+*.p12
+*.pem
+*.key
+docs
+Dockerfile
+.dockerignore

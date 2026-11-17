@@ -1,5 +1,7 @@
 import { hostname } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { certificadoConfigurado, type ConfigCertificado } from "./certificado.ts";
 
 /**
  * Configuração do robô, toda por variável de ambiente (arquivo .env nesta pasta, fora do repositório).
@@ -9,12 +11,31 @@ import { fileURLToPath } from "node:url";
 
 export type ModoDeLogin = "certificado" | "senha" | "manual";
 
+/**
+ * Como o robô abre o navegador:
+ * - comum: abre o Chrome como um navegador comum e se conecta a ele (permite instalar a extensão Web Signer);
+ * - playwright: o Playwright abre o navegador. É o modo do servidor (contêiner) e o único que aceita o
+ *   certificado em arquivo (CERTIFICADO_PFX ou CERTIFICADO_PASTA). Não instala extensão da Chrome Web Store.
+ */
+export type ModoDoNavegador = "comum" | "playwright";
+
 export interface Config {
   orqestraiUrl: string;
   token: string;
   nome: string;
   navegadorCanal: string;
   navegadorExecutavel: string;
+  navegadorModo: ModoDoNavegador;
+  /** Sem janela (NAVEGADOR_HEADLESS=sim, só no modo playwright): ninguém consegue resolver login, código ou CAPTCHA. */
+  navegadorHeadless: boolean;
+  /** Argumentos extras do navegador (NAVEGADOR_ARGS, separados por espaço), ex.: tamanho da janela no contêiner. */
+  navegadorArgs: string[];
+  /** Endereço da tela remota do robô (noVNC), mostrado no log quando ele precisa de uma pessoa. */
+  telaRemotaUrl: string;
+  /** Conectores que este robô atende (ROBO_CONECTORES); vazio = todos. Ex.: "eproc" ou "esaj:TJSP,esaj:TJCE". */
+  conectores: string[];
+  /** Certificado A1 em arquivo (só no modo playwright). */
+  certificado: ConfigCertificado;
   intervaloMs: number;
   pausaEntrePedidosMs: number;
   esperaPessoaMs: number;
@@ -45,7 +66,15 @@ function numero(nome: string, padrao: number): number {
   return Number.isFinite(valor) && valor > 0 ? valor : padrao;
 }
 
-const pasta = (nome: string) => fileURLToPath(new URL(`../${nome}/`, import.meta.url));
+/** Pastas de trabalho: dentro de robos/autos, ou dentro de PASTA_DADOS (o volume, no contêiner). */
+const pasta = (nome: string) => (texto("PASTA_DADOS") ? join(texto("PASTA_DADOS"), nome) : fileURLToPath(new URL(`../${nome}/`, import.meta.url)));
+
+function lista(nome: string): string[] {
+  return texto(nome)
+    .split(/[,\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 export function lerConfig(): Config {
   const orqestraiUrl = texto("ORQESTRAI_URL").replace(/\/+$/, "");
@@ -61,12 +90,35 @@ export function lerConfig(): Config {
   if (loginEproc !== "certificado" && loginEproc !== "senha" && loginEproc !== "manual") throw new Error('EPROC_LOGIN deve ser "certificado", "senha" ou "manual".');
   if (loginEproc === "senha" && (!texto("EPROC_USUARIO") || !texto("EPROC_SENHA"))) throw new Error("No modo senha do eproc, defina EPROC_USUARIO e EPROC_SENHA no .env desta máquina.");
 
+  const certificado: ConfigCertificado = {
+    pfx: texto("CERTIFICADO_PFX"),
+    senha: process.env.CERTIFICADO_SENHA ?? "",
+    senhaArquivo: texto("CERTIFICADO_SENHA_ARQUIVO"),
+    pasta: texto("CERTIFICADO_PASTA"),
+    chavePrivadaArquivo: texto("CERTIFICADO_CHAVE_PRIVADA_ARQUIVO"),
+    origens: (lista("CERTIFICADO_ORIGENS").length ? lista("CERTIFICADO_ORIGENS") : ["https://certificado-sso.tjsp.jus.br"]).map((origem) => origem.replace(/\/+$/, "")),
+  };
+  if (certificado.pfx && certificado.pasta) throw new Error("Use CERTIFICADO_PFX ou CERTIFICADO_PASTA, não os dois.");
+  if (certificado.origens.some((origem) => !/^https:\/\/[^/]+$/.test(origem))) throw new Error("CERTIFICADO_ORIGENS: cada origem é https://host, sem caminho.");
+  const comCertificado = certificadoConfigurado(certificado);
+  const navegadorModo = (texto("NAVEGADOR_MODO") || (comCertificado ? "playwright" : "comum")).toLowerCase();
+  if (navegadorModo !== "comum" && navegadorModo !== "playwright") throw new Error('NAVEGADOR_MODO deve ser "comum" ou "playwright".');
+  if (comCertificado && navegadorModo !== "playwright") throw new Error("O certificado em arquivo (CERTIFICADO_PFX ou CERTIFICADO_PASTA) só funciona com NAVEGADOR_MODO=playwright.");
+  const navegadorHeadless = /^(sim|1|true)$/i.test(texto("NAVEGADOR_HEADLESS"));
+  if (navegadorHeadless && navegadorModo !== "playwright") throw new Error("NAVEGADOR_HEADLESS só vale com NAVEGADOR_MODO=playwright.");
+
   return {
     orqestraiUrl,
     token,
     nome: texto("ROBO_NOME") || hostname(),
     navegadorCanal: (texto("NAVEGADOR_CANAL") || "chrome").toLowerCase(),
     navegadorExecutavel: texto("NAVEGADOR_EXECUTAVEL"),
+    navegadorModo,
+    navegadorHeadless,
+    navegadorArgs: texto("NAVEGADOR_ARGS").split(/\s+/).filter(Boolean),
+    telaRemotaUrl: texto("TELA_REMOTA_URL"),
+    conectores: lista("ROBO_CONECTORES").map((item) => item.toLowerCase()),
+    certificado,
     intervaloMs: numero("INTERVALO_SEGUNDOS", 30) * 1000,
     pausaEntrePedidosMs: numero("PAUSA_ENTRE_PEDIDOS_SEGUNDOS", 20) * 1000,
     esperaPessoaMs: numero("ESPERA_PESSOA_MINUTOS", 15) * 60_000,

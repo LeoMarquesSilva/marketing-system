@@ -1,6 +1,6 @@
 # Robô de autos
 
-Baixa os autos dos processos no tribunal e entrega o PDF ao ORQESTRAI, onde a IA lê e deixa sugestões para uma pessoa aprovar. Roda **fora da Vercel**, numa máquina do escritório, com Node e Playwright.
+Baixa os autos dos processos no tribunal e entrega o PDF ao ORQESTRAI, onde a IA lê e deixa sugestões para uma pessoa aprovar. Roda **fora da Vercel**, numa máquina do escritório, com Node e Playwright, ou num contêiner no servidor (Easypanel): veja [Servidor (Easypanel)](#servidor-easypanel).
 
 Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.ts`; endereços em `TRIBUNAIS_ESAJ`, em `esaj-urls.ts`) e **eproc do TJSP** (`src/conectores/eproc.ts`; instalações em `INSTANCIAS_EPROC_TJSP`, em `eproc-urls.ts`). Os próximos (PJe, Projudi) entram em `src/conectores/`, um por sistema de tribunal.
 
@@ -24,7 +24,7 @@ Na ficha, o botão **Completar capa** (painel Saneamento) faz a mesma consulta p
 
 ## Regras que o robô segue
 
-- **A credencial é do advogado.** Certificado, CPF e senha existem só nesta máquina (arquivo `.env` e pasta `perfil/`, os dois fora do repositório). Nada disso é enviado ao ORQESTRAI, gravado no banco ou escrito em log.
+- **A credencial é do advogado.** Certificado, CPF e senha existem só na máquina do robô (no Mac, arquivo `.env` e pasta `perfil/`; no servidor, as variáveis e montagens do Easypanel), sempre fora do repositório. Nada disso é enviado ao ORQESTRAI, gravado no banco ou escrito em log.
 - **Segundo fator e CAPTCHA não são contornados.** Quando o tribunal pede o código de verificação ou mostra um desafio, o robô para, marca o pedido como "aguardando pessoa" (aparece na ficha), toca um aviso no terminal e espera alguém resolver na janela dele. Depois segue sozinho.
 - **Segredo de justiça não é baixado sem liberação.** Se o cadastro ou a página do tribunal marcam o processo como segredo de justiça, o pedido fica parado até alguém clicar em "Liberar o download" na ficha. A liberação fica no histórico, com o nome de quem liberou.
 - **Sem senha de processo.** Se o e-SAJ pedir a senha do processo para abrir os autos (o advogado não está habilitado), o pedido volta com erro e o PDF é anexado à mão.
@@ -56,6 +56,9 @@ Edite o `.env`:
 | `ESAJ_USUARIO`, `ESAJ_SENHA` | Só no modo `senha`. |
 | `EPROC_LOGIN` | Login no eproc do TJSP: `certificado`, `senha` ou `manual`. Sem ela, vale o `ESAJ_LOGIN`. |
 | `EPROC_USUARIO`, `EPROC_SENHA` | Só no modo `senha` do eproc. |
+| `ROBO_CONECTORES` | Opcional. Conectores que este robô atende (`eproc`, `esaj`, `esaj:TJCE`…); vazio = todos. Serve para dividir o trabalho entre o robô do Mac e o do servidor. |
+
+As variáveis do servidor (`NAVEGADOR_MODO`, `PASTA_DADOS`, `CERTIFICADO_*`, `VNC_SENHA`…) estão no `.env.example` e em [docs/easypanel.md](docs/easypanel.md). Sem elas, o robô funciona como descrito aqui.
 
 ### Modos de login no e-SAJ
 
@@ -70,6 +73,7 @@ A sessão do e-SAJ vale enquanto o Chrome do robô estiver aberto: o tribunal us
 O eproc do TJSP tem uma instalação por competência (1º grau cível; execução fiscal e Fazenda Pública; 2º grau), todas atrás do mesmo login, o SSO do tribunal. O robô procura o processo nessa ordem (o número com origem `0000` começa pelo 2º grau) e entra pela pesquisa rápida da capa.
 
 - **Login com certificado:** o robô clica em "Certificado digital" e o Chrome mostra a **lista de certificados dele** (janela do próprio navegador, que o robô não toca). A pessoa escolhe o certificado do advogado e clica em OK. Enquanto o Chrome do robô ficar aberto, a sessão vale para todas as instalações.
+- **Login com certificado em arquivo** (servidor): com `NAVEGADOR_MODO=playwright` e o `.pfx` em `CERTIFICADO_PFX` ou `CERTIFICADO_PASTA`, o próprio robô apresenta o certificado ao SSO (`certificado-sso.tjsp.jus.br`), sem a lista do Chrome. Depois vem o código de 2 fatores, pelo webhook ou pela pessoa. Detalhes em [docs/easypanel.md](docs/easypanel.md).
 - **Login com senha:** o robô preenche usuário e senha e para no código de verificação, se o tribunal pedir.
 - **Os autos:** o eproc não tem botão para baixar o processo inteiro. O robô baixa cada documento da tabela de eventos com a sessão do advogado e monta um PDF único, do evento mais antigo para o mais novo, com um índice na primeira página (evento, documento e página onde começa). Documento que não é PDF nem imagem (vídeo, áudio, página) vira uma página de aviso no lugar.
 - **Acesso à íntegra:** quando o advogado não representa nenhuma parte, o eproc só libera os documentos pela "Acesso à íntegra do processo", que é uma declaração de interesse (Res. CNJ 121/2010) com CAPTCHA. O robô não faz essa declaração: o pedido volta com erro e o PDF é anexado à mão.
@@ -121,6 +125,10 @@ Na ficha do processo, o painel **Autos** mostra a situação do pedido: na fila,
 
 `diagnostico/` guarda capturas e HTML das telas do tribunal, que podem conter dados de processos. A pasta fica só na máquina do robô e fora do repositório; apague o que não for mais útil.
 
+## Servidor (Easypanel)
+
+O robô também roda num contêiner (`Dockerfile` nesta pasta), com o navegador numa tela virtual que a pessoa vê pelo navegador (noVNC) quando precisa resolver login, código ou CAPTCHA. No servidor, o eproc entra com o certificado A1 em arquivo, enviado pelo painel de robôs; o e-SAJ depende do Web Signer, que não tem uso confirmado em Linux, e por isso fica no Mac ou entra por CPF e senha. O estudo completo, o passo a passo no Easypanel e o contrato com o painel de robôs estão em [docs/easypanel.md](docs/easypanel.md).
+
 ## Pastas
 
 | Pasta | Conteúdo | No repositório? |
@@ -130,6 +138,8 @@ Na ficha do processo, o painel **Autos** mostra a situação do pedido: na fila,
 | `downloads/` | PDF em trânsito; é apagado depois de subir ao ORQESTRAI. | Não |
 | `diagnostico/` | Capturas para ajustar o conector. | Não |
 | `.env` | Configuração e, no modo `senha`, a credencial do advogado. | Não |
+| `Dockerfile`, `docker/` | Imagem do servidor, script de início e exemplo de serviço. | Sim |
+| `docs/` | Estudo e guia do servidor (Easypanel). | Sim |
 
 ## Novo conector
 

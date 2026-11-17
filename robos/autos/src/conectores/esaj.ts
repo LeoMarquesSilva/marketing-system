@@ -304,6 +304,8 @@ class ConectorEsaj implements Conector {
       const falha = await arquivo.failure();
       if (falha) throw new FalhaDoConector(`O download do PDF foi interrompido (${falha}).`);
       await arquivo.saveAs(destino);
+      // A cópia temporária do navegador sai já: num robô que fica dias aberto, ela só sumiria ao fechar.
+      await arquivo.delete().catch(() => undefined);
     } catch (erro) {
       if (erro instanceof FalhaDoConector) throw erro;
       const captura = await ambiente.diagnostico(pasta, "baixar o PDF");

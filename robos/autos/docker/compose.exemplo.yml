@@ -1,0 +1,47 @@
+# Exemplo de referência do serviço do robô (o guia passo a passo do Easypanel está em docs/easypanel.md).
+# Serve para conferir o que o serviço precisa: no Easypanel, o mesmo vai em App > Environment, Mounts,
+# Domains e Resources. Nenhum valor aqui é real: troque os <...> no próprio Easypanel, nunca neste arquivo.
+services:
+  robo-autos:
+    build:
+      context: ..            # robos/autos (no Easypanel: Build Path = /robos/autos)
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    shm_size: "1gb"
+    environment:
+      ORQESTRAI_URL: "https://<endereco-do-orqestrai>"
+      ROBO_AUTOS_TOKEN: "<mesmo valor da Vercel>"
+      ROBO_NOME: "servidor-easypanel"
+      # Divisão com o robô do Mac: aqui só o eproc; o e-SAJ (Web Signer) fica no Mac.
+      ROBO_CONECTORES: "eproc"
+      EPROC_LOGIN: "certificado"
+      ESAJ_LOGIN: "manual"
+      # Certificado A1 enviado pelo painel de robôs (contrato em docs/easypanel.md).
+      CERTIFICADO_PASTA: "/certificados"
+      CERTIFICADO_CHAVE_PRIVADA_ARQUIVO: "/segredos/robo-certificado.key"
+      # Código de 2 fatores do eproc pelo webhook do n8n (opcional).
+      ROBO_2FA_WEBHOOK_URL: "<url do webhook>"
+      ROBO_2FA_WEBHOOK_TOKEN: "<token do webhook>"
+      # Tela remota (noVNC) para a pessoa resolver login, código ou CAPTCHA.
+      VNC_SENHA: "<senha da tela remota>"
+      TELA_REMOTA_URL: "https://<dominio-da-tela>/vnc.html"
+      # Só um robô deve completar capas pelo DataJud: se o do Mac já faz, desligue aqui.
+      CAPA_DATAJUD: "nao"
+    volumes:
+      - robo-autos-dados:/dados
+      # Pasta do servidor compartilhada com o painel de robôs; o robô só lê.
+      - /srv/robos/certificados:/certificados:ro
+      # Chave privada do robô (par da chave pública que o painel usa para cifrar a senha).
+      - /srv/robos/segredos/robo-certificado.key:/segredos/robo-certificado.key:ro
+    ports:
+      - "127.0.0.1:6080:6080"   # no Easypanel: domínio HTTPS com Basic Auth apontando para a porta 6080
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 3g
+          cpus: "2"
+
+volumes:
+  robo-autos-dados:

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import type { CertificadoCliente } from "./certificado.ts";
 import type { Config } from "./config.ts";
 
 /**
@@ -13,6 +14,10 @@ import type { Config } from "./config.ts";
  * O robô abre o Chrome como um navegador comum e só depois se conecta a ele (porta de depuração em
  * 127.0.0.1, sorteada a cada execução). Aberto pelo modo de automação do Playwright, o Chrome não deixa
  * instalar extensão da Chrome Web Store, e o login por certificado depende da extensão Web Signer.
+ *
+ * No servidor (contêiner) o modo é outro: NAVEGADOR_MODO=playwright. O Playwright abre o navegador com o mesmo
+ * perfil persistente e, se houver certificado A1 em arquivo, apresenta o certificado ao tribunal sozinho
+ * (opção clientCertificates). A janela aparece numa tela virtual (Xvfb), que a pessoa vê pelo noVNC.
  */
 
 const EXECUTAVEIS: Record<string, Partial<Record<NodeJS.Platform, string[]>>> = {
@@ -35,6 +40,8 @@ function executavel(config: Config): string {
   if (!achado) throw new Error(`Não achei o navegador "${config.navegadorCanal}" nesta máquina. Instale o Google Chrome ou aponte NAVEGADOR_EXECUTAVEL no .env.`);
   return achado;
 }
+
+const ARGUMENTOS = ["--no-first-run", "--no-default-browser-check", "--disable-session-crashed-bubble", "--hide-crash-restore-bubble"];
 
 /** PDF baixa em vez de abrir no visualizador, e sem perguntar onde salvar. */
 async function prepararPreferencias(config: Config): Promise<void> {
@@ -59,8 +66,10 @@ export interface Navegador {
   fechar: () => Promise<void>;
 }
 
-export async function abrirNavegador(config: Config): Promise<Navegador> {
+export async function abrirNavegador(config: Config, certificado: CertificadoCliente | null = null): Promise<Navegador> {
   for (const pasta of Object.values(config.pastas)) await mkdir(pasta, { recursive: true });
+  if (config.navegadorModo === "playwright") return abrirPeloPlaywright(config, certificado);
+  if (certificado) throw new Error("O certificado em arquivo só funciona com NAVEGADOR_MODO=playwright.");
   // O Chrome escreve aqui a porta que sorteou. Se o navegador do robô ficou aberto de uma execução anterior
   // (robô interrompido), a porta ainda responde: o robô se conecta a ele e aproveita a sessão do tribunal.
   const arquivoDaPorta = join(config.pastas.perfil, "DevToolsActivePort");
@@ -73,7 +82,7 @@ export async function abrirNavegador(config: Config): Promise<Navegador> {
     await rm(arquivoDaPorta, { force: true });
     processo = spawn(
       executavel(config),
-      [`--user-data-dir=${config.pastas.perfil.replace(/[\\/]+$/, "")}`, "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check", "--disable-session-crashed-bubble", "--hide-crash-restore-bubble", "about:blank"],
+      [`--user-data-dir=${config.pastas.perfil.replace(/[\\/]+$/, "")}`, "--remote-debugging-port=0", ...ARGUMENTOS, ...config.navegadorArgs, "about:blank"],
       { stdio: "ignore" }
     );
     processo.on("error", (erro) => console.error(`Não consegui abrir o navegador: ${erro.message}`));
@@ -106,6 +115,36 @@ export async function abrirNavegador(config: Config): Promise<Navegador> {
         processo?.kill();
       }
       await new Promise((resolver) => setTimeout(resolver, 1_000));
+    },
+  };
+}
+
+/**
+ * Modo playwright: o Playwright abre o navegador com o perfil persistente. Com certificado, ele passa o tráfego
+ * por um intermediário local que apresenta o .pfx só às origens de CERTIFICADO_ORIGENS (as outras passam direto)
+ * e confere o certificado do servidor do tribunal. O Chrome não mostra a lista de certificados.
+ */
+async function abrirPeloPlaywright(config: Config, certificado: CertificadoCliente | null): Promise<Navegador> {
+  await prepararPreferencias(config);
+  const navegador =
+    config.navegadorExecutavel ? { executablePath: config.navegadorExecutavel } : config.navegadorCanal === "chromium" ? {} : { channel: config.navegadorCanal };
+  const contexto = await chromium.launchPersistentContext(config.pastas.perfil.replace(/[\\/]+$/, ""), {
+    ...navegador,
+    headless: config.navegadorHeadless,
+    // A página usa o tamanho da janela (NAVEGADOR_ARGS --window-size no contêiner), não um viewport fixo.
+    viewport: null,
+    acceptDownloads: true,
+    args: [...ARGUMENTOS, ...config.navegadorArgs],
+    clientCertificates: certificado?.origens.map((origin) => ({ origin, pfx: certificado.pfx, passphrase: certificado.senha })),
+  });
+  contexto.setDefaultTimeout(30_000);
+  contexto.setDefaultNavigationTimeout(60_000);
+  const pagina = contexto.pages()[0] ?? (await contexto.newPage());
+  return {
+    contexto,
+    pagina,
+    async fechar() {
+      await contexto.close().catch(() => undefined);
     },
   };
 }
