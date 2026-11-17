@@ -115,6 +115,33 @@ async function lerJson<T>(resposta: Response, padrao: string): Promise<T> {
 }
 
 /**
+ * Listas do VIOS da capa (usuários, matérias, sistemas, clientes, ações e etiquetas): iguais para toda publicação. Pede
+ * uma vez por página e o navegador guarda a resposta por 30 min; montar as de clientes custa caro no servidor.
+ */
+const LISTAS_MS = 30 * 60 * 1000;
+const LISTAS_VAZIAS: ListasDoVios = { usuarios: [], materias: [], sistemas: [], clientes: [], acoes: [], etiquetas: [] };
+let listasGuardadas: { em: number; promessa: Promise<ListasDoVios> } | null = null;
+
+function carregarListasDaCapa(): Promise<ListasDoVios> {
+  if (listasGuardadas && Date.now() - listasGuardadas.em < LISTAS_MS) return listasGuardadas.promessa;
+  const promessa = authFetch("/api/operacoes-legais/vistagem/capa-listas", { cache: "default" })
+    .then((resposta) => lerJson<{ listas: ListasDoVios }>(resposta, "Falha ao carregar as listas do VIOS"))
+    .then((corpo) => corpo.listas)
+    .catch(() => {
+      // Sem as listas, os campos ficam em texto livre (como quando o SIOE não respondia); a próxima capa pede de novo.
+      listasGuardadas = null;
+      return LISTAS_VAZIAS;
+    });
+  listasGuardadas = { em: Date.now(), promessa };
+  return promessa;
+}
+
+/** Capa de cada publicação nesta página por 5 min: andar pela fila e voltar não monta de novo. "Buscar de novo" refaz. */
+const CAPA_MS = 5 * 60 * 1000;
+type CapaSemListas = Omit<CapaParaAbertura, "listas">;
+const capasGuardadas = new Map<string, { em: number; capa: CapaSemListas }>();
+
+/**
  * Sem pasta (possível abertura): o resumo da capa que o Orquestra montaria para abrir a pasta no VIOS e, num diálogo,
  * a capa inteira para conferir e editar (lápis). As edições ficam gravadas na publicação; nada vai para o VIOS ainda.
  */
@@ -186,8 +213,13 @@ export function CapaParaAberturaDePasta({
     }
   }
 
+  /** "Buscar de novo": a próxima leitura consulta o DJEN, o e-SAJ e o DataJud na hora, sem o que estiver guardado. */
+  const fresco = useRef(false);
+
   // A tela monta um destes por publicação (key): o estado começa vazio; "Buscar de novo" zera antes de recarregar.
   function buscarDeNovo() {
+    fresco.current = true;
+    capasGuardadas.delete(publicacaoId);
     setCapa(null);
     setErro("");
     setDatajud({ carregando: true });
@@ -196,15 +228,27 @@ export function CapaParaAberturaDePasta({
 
   useEffect(() => {
     let cancelado = false;
-    authFetch(url)
-      .then((resposta) => lerJson<CapaParaAbertura>(resposta, "Falha ao montar a capa"))
-      .then((corpo) => {
-        if (!cancelado) setCapa(corpo);
+    const agora = fresco.current;
+    fresco.current = false;
+    const guardada = agora ? undefined : capasGuardadas.get(publicacaoId);
+    const daCapa: Promise<CapaSemListas> =
+      guardada && Date.now() - guardada.em < CAPA_MS
+        ? Promise.resolve(guardada.capa)
+        : authFetch(agora ? `${url}?fresco=1` : url)
+            .then((resposta) => lerJson<CapaSemListas>(resposta, "Falha ao montar a capa"))
+            .then((corpo) => {
+              capasGuardadas.set(publicacaoId, { em: Date.now(), capa: corpo });
+              return corpo;
+            });
+    Promise.all([daCapa, carregarListasDaCapa()])
+      .then(([corpo, listas]) => {
+        if (!cancelado) setCapa({ ...corpo, listas });
       })
       .catch((e: unknown) => {
         if (!cancelado) setErro(e instanceof Error ? e.message : "Falha ao montar a capa.");
       });
-    authFetch(`${url}/datajud`)
+    // O navegador guarda a resposta do DataJud pela validade que o servidor manda (12 h achado, 2 h não indexado).
+    authFetch(`${url}/datajud`, agora ? { cache: "reload", headers: { "X-Fresco": "1" } } : { cache: "default" })
       .then((resposta) => lerJson<{ datajud: CapaDoDataJud & { ms: number } }>(resposta, "Falha ao consultar o DataJud"))
       .then((corpo) => {
         if (!cancelado) setDatajud({ carregando: false, resultado: corpo.datajud, erro: null });
@@ -215,7 +259,7 @@ export function CapaParaAberturaDePasta({
     return () => {
       cancelado = true;
     };
-  }, [url, recarga]);
+  }, [url, recarga, publicacaoId]);
 
   const editar: AoEditarCampo = async (chave, edicao) => {
     try {
@@ -226,6 +270,9 @@ export function CapaParaAberturaDePasta({
       });
       const corpo = await lerJson<{ ajustes: CapaParaAbertura["ajustes"] }>(resposta, "Falha ao gravar a edição");
       setCapa((atual) => (atual ? { ...atual, ajustes: corpo.ajustes } : atual));
+      // A capa guardada nesta página também passa a ter a edição (reabrir a publicação mostra o que foi gravado).
+      const guardada = capasGuardadas.get(publicacaoId);
+      if (guardada) capasGuardadas.set(publicacaoId, { ...guardada, capa: { ...guardada.capa, ajustes: corpo.ajustes } });
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : "Falha ao gravar a edição.";

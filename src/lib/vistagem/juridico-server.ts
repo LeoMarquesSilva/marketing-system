@@ -43,7 +43,7 @@ import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsisten
 import { linhasParaFila, modoDaPublicacao, podeTerGravadoNoVios, type TarefaNoVios } from "./fila-vios";
 import { avisarErrosDoRobo } from "./aviso-erro-robo-server";
 import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria, precisaDeSistema, sistemaDaLista } from "./dados-processo";
-import { buscarPastaPorCi, buscarSinteseDaPasta, cadastroDaPasta, semMateria, semSistema, type CadastroDaPasta } from "./sioe";
+import { buscarPastaPorCi, cadastroDaPasta, semMateria, semSistema, sinteseECadastroDaPasta, type CadastroDaPasta } from "./sioe";
 import { ESCRITORIOS, type PastaSioe, type Pendencia } from "./triagem";
 import { montarHistorico, type HistoricoPublicacao } from "./historico";
 import {
@@ -331,7 +331,7 @@ export async function obterVistagem(
   }
   let fluxosErro: string | null = null;
   let sinteseErro: string | null = null;
-  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas, estagiarios, cadastro, materiasVios, sistemasVios] = await Promise.all([
+  const [inconsistencias, feriados, pastaVios, arvore, daPasta, sintesesPedidas, estagiarios, materiasVios, sistemasVios] = await Promise.all([
     inconsistenciasPorPublicacao([id]),
     carregarFeriados().catch(() => [] as string[]),
     publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
@@ -339,9 +339,12 @@ export async function obterVistagem(
       fluxosErro = erro instanceof Error ? erro.message : String(erro);
       return null;
     }),
+    // Síntese e, fora da prévia, a Matéria e o Sistema do Tribunal atuais (para mostrar e decidir o que "Atualizar
+    // cadastro no VIOS" exige), numa leitura só do SIOE. Sem resposta, segue sem exigir, e quem recusa é o VIOS.
     publicacao.pasta_ci
-      ? buscarSinteseDaPasta(publicacao.pasta_ci).catch((erro: unknown) => {
+      ? sinteseECadastroDaPasta(publicacao.pasta_ci).catch((erro: unknown) => {
           sinteseErro = erro instanceof Error ? erro.message : String(erro);
+          console.error("[vistagem] síntese e cadastro da pasta", sinteseErro);
           return null;
         })
       : Promise.resolve(null),
@@ -353,14 +356,6 @@ export async function obterVistagem(
         })
       : Promise.resolve([] as SintesePedida[]),
     catalogo && ehReestruturacao(publicacao.escritorio_responsavel ?? catalogo.area) ? estagiariosNoVios() : Promise.resolve(new Set<string>()),
-    // Matéria e Sistema do Tribunal atuais, para mostrar e decidir o que "Atualizar cadastro no VIOS" exige: sem
-    // resposta do SIOE, segue sem exigir, e quem recusa é o VIOS.
-    publicacao.pasta_ci && !previa
-      ? cadastroDaPasta(publicacao.pasta_ci).catch((erro: unknown): CadastroDaPasta | null => {
-          console.error("[vistagem] cadastro da pasta", erro instanceof Error ? erro.message : erro);
-          return null;
-        })
-      : Promise.resolve(null),
     // As listas do VIOS para escolher: sem elas, o campo some e o resto do pedido segue.
     publicacao.pasta_ci && !previa
       ? carregarMateriasVios().catch((erro: unknown) => {
@@ -375,6 +370,8 @@ export async function obterVistagem(
         })
       : Promise.resolve([] as MateriaVios[]),
   ]);
+  const sintese = daPasta?.sintese ?? null;
+  const cadastro: CadastroDaPasta | null = previa ? null : daPasta?.cadastro ?? null;
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
   const revisor = catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null;

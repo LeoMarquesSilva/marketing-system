@@ -82,6 +82,37 @@ export async function buscarPastasPorCnj(digitos: string[]): Promise<Map<string,
   return resultado;
 }
 
+/**
+ * Padrão do `ilike` que acha o texto sem olhar acento nem maiúscula: vogal, "c" e qualquer letra fora do ASCII viram
+ * "_" (um caractere qualquer) e os espaços viram "%". Pega a mais (quem chama compara de novo pelo nome), nunca a menos.
+ */
+export function padraoSemAcento(texto: string): string {
+  const esqueleto = texto
+    .replace(/[​-‍⁠﻿]/g, "")
+    .trim()
+    .split(/\s+/)
+    .map((palavra) => palavra.replace(/[^bdf-hj-np-tv-zBDF-HJ-NP-TV-Z0-9]/g, "_"))
+    .join("%");
+  return `%${esqueleto}%`;
+}
+
+/**
+ * Pastas do SIOE de um grupo de clientes, sem carregar as ~35 mil (a capa da abertura fazia isso a cada instância nova
+ * da Vercel: ~700 ms de CPU). Traz a mais pelo `padraoSemAcento`; quem chama filtra pelo nome do grupo.
+ */
+export async function buscarPastasDoGrupo(grupo: string): Promise<PastaSioe[]> {
+  const db = sioe();
+  const padrao = padraoSemAcento(grupo);
+  const pastas: PastaSioe[] = [];
+  for (let inicio = 0; ; inicio += 1000) {
+    const { data, error } = await db.from("processos_completo").select(COLUNAS).ilike("grupo_cliente", padrao).order("ci").range(inicio, inicio + 999);
+    if (error) throw new VistagemError(`Falha ao consultar as pastas do grupo no SIOE: ${error.message}`, 502);
+    pastas.push(...((data ?? []) as ProcessoRow[]).map(paraPasta));
+    if (!data || data.length < 1000) break;
+  }
+  return pastas;
+}
+
 let cacheTodas: { carregadoEm: number; pastas: PastaSioe[] } | null = null;
 
 /**
@@ -157,20 +188,38 @@ async function baseComSistema(): Promise<boolean> {
 }
 
 export async function cadastroDaPasta(ci: string): Promise<CadastroDaPasta> {
+  return (await lerCadastroDaPasta(ci, false)).cadastro;
+}
+
+/**
+ * Síntese e cadastro (Matéria e Sistema do Tribunal) da pasta numa leitura só: abrir a publicação no jurídico lia a
+ * mesma linha do SIOE duas vezes (cada consulta custa CPU na Vercel).
+ */
+export async function sinteseECadastroDaPasta(ci: string): Promise<{ sintese: string | null; cadastro: CadastroDaPasta }> {
+  return lerCadastroDaPasta(ci, true);
+}
+
+async function lerCadastroDaPasta(ci: string, comSintese: boolean): Promise<{ sintese: string | null; cadastro: CadastroDaPasta }> {
   const numero = ci.replace(/\D/g, "");
   const vazio: CadastroDaPasta = { naBase: false, materia: null, sistemaTribunal: null, temSistema: false };
-  if (!numero) return vazio;
-  const consulta = (colunas: string) => sioe().from("processos_completo").select(colunas).eq("ci", numero).limit(1);
+  if (!numero) return { sintese: null, cadastro: vazio };
+  const consulta = (colunas: string) =>
+    sioe()
+      .from("processos_completo")
+      .select(comSintese ? `observacoes, ${colunas}` : colunas)
+      .eq("ci", numero)
+      .limit(1);
   // Sem a coluna sistema_tribunal ainda (SQL do SIOE), lê só a Matéria.
   const comSistema = await consulta("materia, sistema_tribunal");
   const temColuna = !comSistema.error;
   const { data, error } = temColuna ? comSistema : await consulta("materia");
   if (error) throw new VistagemError(`Falha ao consultar a matéria do processo no SIOE: ${error.message}`, 502);
-  const [row] = (data ?? []) as unknown as { materia: string | null; sistema_tribunal?: string | null }[];
+  const [row] = (data ?? []) as unknown as { observacoes?: string | null; materia: string | null; sistema_tribunal?: string | null }[];
+  const sintese = row?.observacoes?.trim() || null;
   const sistemaTribunal = row?.sistema_tribunal?.trim() || null;
   const temSistema = temColuna && (Boolean(sistemaTribunal) || (await baseComSistema()));
-  if (!row) return { ...vazio, temSistema };
-  return { naBase: true, materia: row.materia?.trim() || null, sistemaTribunal, temSistema };
+  if (!row) return { sintese, cadastro: { ...vazio, temSistema } };
+  return { sintese, cadastro: { naBase: true, materia: row.materia?.trim() || null, sistemaTribunal, temSistema } };
 }
 
 /** Na base do SIOE e sem Matéria: a síntese pede a Matéria. */
