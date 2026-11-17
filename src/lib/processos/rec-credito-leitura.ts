@@ -141,7 +141,9 @@ export function tipoDaLista(tipo: (typeof TIPOS_TITULO_LIDOS)[number], descricao
   };
   const padrao = alvo[tipo];
   const achado = padrao ? lista.find((item) => padrao.test(chaveTexto(item))) : undefined;
-  return achado ?? (texto(descricao, 80) || "Outro");
+  // Fora da lista: o nome padrão do tipo (casa quando a equipe incluir o tipo em Cadastros); só "outro" usa a peça.
+  const PADRAO: Record<string, string> = { nota_promissoria: "Nota promissória", duplicata: "Duplicata", ccb: "CCB (Cédula de Crédito Bancário)", cheque: "Cheque", contrato: "Contrato" };
+  return achado ?? PADRAO[tipo] ?? (texto(descricao, 80) || "Outro");
 }
 
 /** Chaves dos itens já lançados: a leitura não propõe de novo o que a ficha já tem. */

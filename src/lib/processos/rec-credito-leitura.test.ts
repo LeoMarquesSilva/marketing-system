@@ -16,7 +16,9 @@ describe("tipo do título", () => {
   it("casa com a lista de Cadastros pelo texto", () => {
     expect(tipoDaLista("nota_promissoria", "Nota promissória", TIPOS)).toBe("Nota promissória");
     expect(tipoDaLista("ccb", "Cédula de Crédito Bancário", TIPOS)).toBe("CCB (Cédula de Crédito Bancário)");
-    expect(tipoDaLista("cheque", "Cheque pré-datado", TIPOS)).toBe("Cheque pré-datado");
+    expect(tipoDaLista("cheque", "Cheque série AAA", TIPOS)).toBe("Cheque");
+    expect(tipoDaLista("cheque", "Cheque", [...TIPOS, "Cheque"])).toBe("Cheque");
+    expect(tipoDaLista("outro", "Confissão de dívida", TIPOS)).toBe("Confissão de dívida");
   });
 });
 
