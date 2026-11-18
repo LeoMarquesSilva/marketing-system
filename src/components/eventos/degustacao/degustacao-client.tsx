@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Camera,
   Check,
+  ChevronDown,
   ExternalLink,
   ImagePlus,
   Loader2,
@@ -90,6 +91,7 @@ export function DegustacaoClient({ tastingId }: { tastingId: string }) {
   const [drinkForm, setDrinkForm] = useState<{ drink: TastingDrink | null } | null>(null);
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [photoBusyId, setPhotoBusyId] = useState<string | null>(null);
+  const [openTastings, setOpenTastings] = useState<string[]>([]);
   const eventIdRef = useRef<string | null>(null);
   const mutationSeq = useRef(0);
   const reloadTimer = useRef<number | null>(null);
@@ -449,9 +451,7 @@ export function DegustacaoClient({ tastingId }: { tastingId: string }) {
               <h2 className="text-base font-semibold text-foreground">Notas completas · {tasting.vendorName}</h2>
               <p className="text-xs text-muted-foreground">Ao vivo: muda sozinha quando alguém vota.</p>
             </div>
-            {drinks.length > 0 && <OverallRankingList tastings={[tasting]} drinks={drinks} votes={votes} showTasting={false} />}
-            <h3 className="pt-2 text-sm font-semibold text-foreground">Nota de cada pessoa</h3>
-            <TastingScoreTable tasting={tasting} drinks={drinks} votes={votes} faces={data.faces} />
+            <TastingScoreTable tasting={tasting} drinks={drinks} votes={votes} faces={data.faces} layout="cards" />
           </section>
         )}
 
@@ -464,20 +464,37 @@ export function DegustacaoClient({ tastingId }: { tastingId: string }) {
               </div>
               <OverallRankingList tastings={data.tastings} drinks={data.drinks} votes={[...data.votes.filter((entry) => entry.tastingId !== tastingId), ...votes]} />
             </section>
-            {others.map((other) => (
-              <section key={other.id} aria-label={`Notas de ${other.vendorName}`} className="space-y-2">
-                <h2 className="text-base font-semibold text-foreground">
-                  {other.vendorName}
-                  {other.tastingDate ? <span className="font-normal text-muted-foreground"> · {shortDate(other.tastingDate)}</span> : null}
-                </h2>
-                <TastingScoreTable
-                  tasting={other}
-                  drinks={data.drinks.filter((drink) => drink.tastingId === other.id)}
-                  votes={data.votes.filter((entry) => entry.tastingId === other.id)}
-                  faces={data.faces}
-                />
-              </section>
-            ))}
+            {others.map((other) => {
+              const open = openTastings.includes(other.id);
+              return (
+                <section key={other.id} aria-label={`Notas de ${other.vendorName}`} className="space-y-2">
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => setOpenTastings((list) => (open ? list.filter((id) => id !== other.id) : [...list, other.id]))}
+                    className={cn(CARD, "flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/50")}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-foreground">
+                        Nota de cada pessoa · {other.vendorName}
+                        {other.tastingDate ? <span className="font-normal text-muted-foreground"> · {shortDate(other.tastingDate)}</span> : null}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">{other.participants.map((person) => firstName(person.name)).join(", ")}</span>
+                    </span>
+                    <ChevronDown className={cn("size-5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} aria-hidden />
+                  </button>
+                  {open && (
+                    <TastingScoreTable
+                      tasting={other}
+                      drinks={data.drinks.filter((drink) => drink.tastingId === other.id)}
+                      votes={data.votes.filter((entry) => entry.tastingId === other.id)}
+                      faces={data.faces}
+                      layout="cards"
+                    />
+                  )}
+                </section>
+              );
+            })}
           </div>
         )}
       </main>
