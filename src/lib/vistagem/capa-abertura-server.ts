@@ -46,7 +46,7 @@ import { lerConfiguracoes } from "./configuracoes-server";
 import { criarCalendario } from "./dias-uteis";
 import { carregarFeriados } from "./feriados";
 import { admin, falhou, hojeEmSaoPaulo } from "./server";
-import { buscarPastasDoGrupo, buscarPastasPorCnj, carregarTodasAsPastas } from "./sioe";
+import { buscarPastasDoGrupo, buscarPastasPorCnj, carregarTodasAsPastas, documentoDoCliente } from "./sioe";
 import { escritorioDaAreaDoProcesso, pastaAtiva } from "./triagem";
 import type { SugestaoTriagem } from "./sugestao-triagem";
 
@@ -483,15 +483,22 @@ export async function pedirAberturaDaPasta(
     const situacao = situacaoDaAberturaReal(anteriores, { conferidoNoVios });
     if (!situacao.pode) throw new VistagemError(situacao.motivo, 409);
   }
-  const [{ data: usuario }, tipo, feriados] = await Promise.all([
+  const [{ data: usuario }, tipo, feriados, clienteCpfCnpj] = await Promise.all([
     admin().from("users").select("name").eq("auth_id", authUserId).maybeSingle(),
     tipoDeTarefaPorNome(TAREFA_DA_PASTA_NOVA),
     carregarFeriados().catch(() => [] as string[]),
+    // Sem o SIOE, o pedido segue só com o nome: o robô diz se houver homônimo.
+    paraOVios.cliente
+      ? documentoDoCliente(paraOVios.cliente).catch((erro) => {
+          console.error("[vistagem] CPF/CNPJ do cliente no SIOE:", erro instanceof Error ? erro.message : erro);
+          return null;
+        })
+      : Promise.resolve(null),
   ]);
   const hoje = hojeEmSaoPaulo();
   await enfileirarAberturaDePasta({
     publicacaoId: id,
-    capa: paraOVios,
+    capa: clienteCpfCnpj ? { ...paraOVios, clienteCpfCnpj } : paraOVios,
     autor: (usuario?.name as string | null) ?? "Controladoria",
     data: paraDataVios(hoje),
     simular: modo !== "abrir",

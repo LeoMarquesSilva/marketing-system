@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSioeClient } from "@/lib/sioe-sync-server";
+import { documentoDoClienteEntre } from "./capa-abertura";
 import { VistagemError } from "./errors";
 import { mascararCnj } from "./processo";
 import { chavePessoa, type PastaSioe } from "./triagem";
@@ -111,6 +112,32 @@ export async function buscarPastasDoGrupo(grupo: string): Promise<PastaSioe[]> {
     if (!data || data.length < 1000) break;
   }
   return pastas;
+}
+
+/**
+ * Abertura de pasta: o CPF/CNPJ do cliente no cadastro de pessoas do VIOS (SIOE `pessoas`), para o robô escolher a
+ * pessoa quando há mais de uma com o mesmo nome (18/11/2026: a AXPR tem matriz e filial com o mesmo nome, e o robô
+ * parou em "não achou nas listas do VIOS: cliente"). Com homônimos, vale a pessoa que as pastas do cliente usam
+ * (`documentoDoClienteEntre`). Null quando não acha ou não dá para escolher: o robô continua pelo nome.
+ */
+export async function documentoDoCliente(nome: string): Promise<string | null> {
+  const db = sioe();
+  const { data, error } = await db.from("pessoas").select("id, nome, cpf_cnpj").ilike("nome", padraoSemAcento(nome)).limit(50);
+  if (error) throw new VistagemError(`Falha ao consultar o cliente no SIOE: ${error.message}`, 502);
+  const pessoas = ((data ?? []) as { id: string; nome: string | null; cpf_cnpj: string | null }[]).filter(
+    (pessoa) => chavePessoa(pessoa.nome) === chavePessoa(nome)
+  );
+  const pastasPorPessoa = new Map<string, number>();
+  if (pessoas.length > 1) {
+    const { data: pastas, error: erroPastas } = await db
+      .from("processos_completo")
+      .select("pessoa_id")
+      .in("pessoa_id", pessoas.map((pessoa) => pessoa.id))
+      .limit(5000);
+    if (erroPastas) throw new VistagemError(`Falha ao consultar as pastas do cliente no SIOE: ${erroPastas.message}`, 502);
+    for (const { pessoa_id: id } of (pastas ?? []) as { pessoa_id: string }[]) pastasPorPessoa.set(id, (pastasPorPessoa.get(id) ?? 0) + 1);
+  }
+  return documentoDoClienteEntre(pessoas, pastasPorPessoa);
 }
 
 let cacheTodas: { carregadoEm: number; pastas: PastaSioe[] } | null = null;
