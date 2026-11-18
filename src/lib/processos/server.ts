@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { requireAuthenticatedUser, requireOperacoesLegaisAccess } from "@/lib/api-auth";
+import { requireAuthenticatedUser, requireProcessosAccess } from "@/lib/api-auth";
 import { ProcessosError } from "./errors";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -27,10 +27,10 @@ export interface Ator {
   nome: string | null;
 }
 
-/** Por enquanto o módulo é de quem tem acesso a Operações Legais (hoje, só admin). */
+/** Processos e Pessoas: admin ou quem tem a liberação de Processos em Usuários. */
 export async function exigirAcessoProcessos(): Promise<Ator> {
   const user = await requireAuthenticatedUser();
-  await requireOperacoesLegaisAccess(user.id);
+  await requireProcessosAccess(user.id);
   const { data } = await db().from("users").select("name").eq("auth_id", user.id).maybeSingle();
   return { authUserId: user.id, nome: (data?.name as string | null) ?? null };
 }

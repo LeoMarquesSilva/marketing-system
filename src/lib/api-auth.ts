@@ -4,6 +4,7 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
+  hasProcessosAccess,
   papelVistagem,
   type PapelVistagem,
 } from "@/lib/access-control";
@@ -118,6 +119,17 @@ export async function requireOperacoesLegaisAccess(authUserId: string) {
     })
   ) {
     throw new Error("Sem permissão para Operações Legais.");
+  }
+}
+
+/** Processos e Pessoas: admin ou liberação manual (chave /operacoes-legais/processos em Usuários). */
+export async function requireProcessosAccess(authUserId: string) {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase.from("users").select("role, permissions, is_active").eq("auth_id", authUserId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || data.is_active === false) throw new Error("Usuário inativo.");
+  if (!hasProcessosAccess({ role: data.role, permissions: (data.permissions as string[] | null) ?? null })) {
+    throw new Error("Sem permissão para Processos.");
   }
 }
 

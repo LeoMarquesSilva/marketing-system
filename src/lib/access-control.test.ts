@@ -9,6 +9,7 @@ import {
   firstAllowedPath,
   hasCafeCulturaAccess,
   hasIcpAccess,
+  hasProcessosAccess,
   canEditPe27,
   hasOperacoesLegaisAccess,
   hasPe27Access,
@@ -285,6 +286,25 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(colaborador, "/rh/bp-awards")).toBe(false);
     expect(canAccessPath(colaborador, "/rh/bp-awards/revelacao")).toBe(false);
     expect(canAccessPath({ role: null, permissions: ["/rh"] }, "/rh/bp-awards/revelacao")).toBe(true);
+  });
+});
+
+describe("processos e pessoas", () => {
+  const liberado = { role: null, permissions: ["/meus-clientes", "/operacoes-legais/vistagem", "/operacoes-legais/processos"] };
+  it("admin ou liberação manual; a liberação de Operações Legais não basta", () => {
+    expect(hasProcessosAccess({ role: "admin" })).toBe(true);
+    expect(hasProcessosAccess(liberado)).toBe(true);
+    expect(hasProcessosAccess({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toBe(false);
+    expect(hasProcessosAccess({ role: null, permissions: ["/operacoes-legais"] })).toBe(false);
+  });
+
+  it("abre Processos e Pessoas, e nada mais de Operações Legais", () => {
+    for (const rota of ["/operacoes-legais/processos", "/operacoes-legais/processos/carteira", "/operacoes-legais/pessoas/abc"]) {
+      expect(canAccessPath(liberado, rota)).toBe(true);
+      expect(canAccessPath({ role: null, permissions: ["/operacoes-legais/vistagem"] }, rota)).toBe(false);
+    }
+    expect(canAccessPath(liberado, "/operacoes-legais")).toBe(false);
+    expect(canAccessPath(liberado, "/operacoes-legais/pesquisas")).toBe(false);
   });
 });
 

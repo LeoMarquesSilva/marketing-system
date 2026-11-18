@@ -4,13 +4,13 @@ import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { LoaderCircle } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { hasOperacoesLegaisAccess } from "@/lib/access-control";
+import { hasProcessosAccess } from "@/lib/access-control";
 
-/** Telas de Processos: por enquanto, só quem tem acesso a Operações Legais (admin). As rotas conferem de novo. */
+/** Telas de Processos e Pessoas: admin ou liberação de Processos em Usuários. As rotas conferem de novo. */
 export function AcessoProcessos({ children }: { children: ReactNode }) {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
-  const permitido = Boolean(user) && hasOperacoesLegaisAccess(profile);
+  const permitido = Boolean(user) && hasProcessosAccess(profile);
 
   useEffect(() => {
     if (!loading && !permitido) router.replace("/");

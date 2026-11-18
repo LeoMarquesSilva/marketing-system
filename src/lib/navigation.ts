@@ -67,6 +67,8 @@ import {
   hasFacilitiesAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
+  hasProcessosAccess,
+  isProcessosPath,
   canSeeVistagemPath,
   entradaDaVistagem,
   isAdminRole,
@@ -401,7 +403,7 @@ export const NAV_FRONTS: NavFront[] = [
         entrada: entradaDaVistagem,
       },
       {
-        // Cadastro de processos do ORQESTRAI (1º módulo do sistema que substitui o VIOS). Só admin por enquanto.
+        // Cadastro de processos do ORQESTRAI (1º módulo do sistema que substitui o VIOS). Admin ou liberação em Usuários.
         id: "processos",
         label: "Processos",
         shortLabel: "Processos",
@@ -551,6 +553,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
       if (isPe27Path(href)) return hasPe27Access(profile);
+      if (isProcessosPath(href)) return hasProcessosAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
       if (href === "/conteudo/gustavo") return gustavo;
@@ -579,6 +582,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
     if (isPe27Path(href)) return hasPe27Access(profile);
+    if (isProcessosPath(href)) return hasProcessosAccess(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
       case "/conteudo/inicio":

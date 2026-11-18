@@ -39,6 +39,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/vios-tarefas", label: "Planner (tarefas do VIOS)" },
   { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
   { key: "/operacoes-legais/vistagem", label: "Vistagem de Publicações BP", manualOnly: true },
+  { key: "/operacoes-legais/processos", label: "Processos e Pessoas (cadastro, autos, Rec. Crédito)", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
   { key: "/facilities", label: "Fornecedores e contratos (Facilities)", manualOnly: true },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
@@ -64,6 +65,9 @@ export const MEUS_CLIENTES_KEY = "/meus-clientes";
 export const CAFE_CULTURA_KEY = "/cafe-cultura";
 export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
 export const VISTAGEM_KEY = "/operacoes-legais/vistagem";
+export const PROCESSOS_KEY = "/operacoes-legais/processos";
+/** Cadastro de pessoas: parte do módulo de Processos (mesma liberação). */
+export const PESSOAS_PATH = "/operacoes-legais/pessoas";
 export const TEAM_SURVEYS_KEY = "/operacoes-legais/pesquisas";
 export const ICP_KEY = "/icp";
 export const FACILITIES_KEY = "/facilities";
@@ -261,6 +265,17 @@ export function isPe27OnlyProfile(profile: AccessProfile | null | undefined): bo
 /** Fora do módulo, o perfil só-PE27 abre apenas a troca de senha. */
 const PE27_ONLY_EXTRA_PATHS = ["/alterar-senha"];
 
+/** Processos e Pessoas (substituto do VIOS): admin ou liberação manual em Usuários. */
+export function hasProcessosAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(PROCESSOS_KEY));
+}
+
+export function isProcessosPath(pathname: string): boolean {
+  return [PROCESSOS_KEY, PESSOAS_PATH].some((base) => pathname === base || pathname.startsWith(`${base}/`));
+}
+
 /** Painel de Vistagem e agendamento: admin ou liberação manual em Usuários. */
 export function hasVistagemAccess(profile: AccessProfile | null | undefined): boolean {
   if (!profile) return false;
@@ -382,6 +397,10 @@ export function canAccessPath(
 
   if (isTeamSurveysPath(pathname)) {
     return hasTeamSurveysAccess(profile);
+  }
+
+  if (isProcessosPath(pathname)) {
+    return hasProcessosAccess(profile);
   }
 
   if (isPe27Path(pathname)) {
