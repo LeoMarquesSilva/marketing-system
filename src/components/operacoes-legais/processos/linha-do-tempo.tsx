@@ -20,7 +20,7 @@ const VISUAL: Record<FonteAndamento, { icone: LucideIcon; ponto: string; selo: s
 };
 
 export interface CapaConsultada {
-  capa: { achou: boolean; sugestoes: number; andamentos?: number; aviso: string | null };
+  capa: { achou: boolean; sugestoes: number; aplicadas?: number; andamentos?: number; aviso: string | null };
   autos: AutosDoProcesso;
 }
 
@@ -76,7 +76,7 @@ export function LinhaDoTempo({ processoId, onConsultado }: { processoId: string;
       const novos = resposta.capa.andamentos ?? 0;
       setAviso(
         resposta.capa.achou
-          ? `${novos ? `${novos} andamento${novos === 1 ? " novo" : "s novos"} do tribunal.` : "Nenhum andamento novo no DataJud."}${resposta.capa.sugestoes ? ` ${resposta.capa.sugestoes} sugest${resposta.capa.sugestoes === 1 ? "ão" : "ões"} de capa para conferir.` : ""}`
+          ? `${novos ? `${novos} andamento${novos === 1 ? " novo" : "s novos"} do tribunal.` : "Nenhum andamento novo no DataJud."}${resposta.capa.aplicadas ? ` ${resposta.capa.aplicadas} dado${resposta.capa.aplicadas === 1 ? "" : "s"} da capa gravado${resposta.capa.aplicadas === 1 ? "" : "s"}.` : ""}${resposta.capa.sugestoes ? ` ${resposta.capa.sugestoes} ficaram para conferir.` : ""}`
           : (resposta.capa.aviso ?? "O DataJud não trouxe este processo."),
       );
       onConsultado?.(resposta);

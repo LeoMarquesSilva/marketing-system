@@ -4,10 +4,11 @@ import type { SugestaoNova } from "./autos-types";
 import { andamentosDoDataJud, indiceDoDataJud, lerCnjDaCapa, registroAtual, sugestoesDaCapa, type RegistroDataJud } from "./capa";
 import { ProcessosError } from "./errors";
 import { detalharProcesso } from "./processos-server";
-import { db, falhou } from "./server";
+import { db, falhou, type Ator } from "./server";
+import { decidirSugestao } from "./sugestoes-server";
 
 /**
- * Completa a capa do processo com o número CNJ e o DataJud, como sugestões para uma pessoa aprovar.
+ * Completa a capa do processo com o número CNJ e o DataJud, gravando direto no cadastro (fonte oficial).
  * O DataJud é lento e às vezes recusa por excesso (429): falha não trava nada, fica anotada no processo.
  */
 
@@ -48,11 +49,11 @@ async function municipioDoIbge(codigo: number | null | undefined): Promise<strin
 }
 
 /** Troca as sugestões de capa ainda pendentes do processo pelas novas. Proposta já recusada não volta (mesma chave). */
-async function gravar(processoId: string, sugestoes: SugestaoNova[]): Promise<number> {
+async function gravar(processoId: string, sugestoes: SugestaoNova[]): Promise<string[]> {
   const banco = db();
   const { error: erroLimpeza } = await banco.from("proc_sugestoes").delete().eq("processo_id", processoId).in("fonte", ["datajud", "cnj"]).eq("situacao", "pendente");
   if (erroLimpeza) falhou("limpar as sugestões de capa anteriores", erroLimpeza);
-  if (!sugestoes.length) return 0;
+  if (!sugestoes.length) return [];
   const { data, error } = await banco
     .from("proc_sugestoes")
     .upsert(
@@ -76,13 +77,37 @@ async function gravar(processoId: string, sugestoes: SugestaoNova[]): Promise<nu
     )
     .select("id");
   if (error) falhou("gravar as sugestões de capa", error);
-  return data?.length ?? 0;
+  return (data ?? []).map((linha) => linha.id as string);
+}
+
+/** Quem grava a capa das fontes oficiais: o próprio sistema (no histórico, sem pessoa). */
+const ATOR_DA_CAPA: Ator = { authUserId: null as unknown as string, nome: "DataJud (automático)" };
+
+/**
+ * A capa das fontes oficiais (DataJud e número CNJ) entra direto no cadastro, sem esperar aprovação: cada
+ * sugestão é aprovada pelo sistema, pelo mesmo caminho da tela (histórico com a fonte, fila do VIOS). A que não
+ * puder ser gravada (valor fora da lista de Cadastros, por exemplo) fica na fila para uma pessoa decidir.
+ */
+export async function aplicarCapa(ids: string[]): Promise<{ aplicadas: number; pendentes: number }> {
+  let aplicadas = 0;
+  for (const id of ids) {
+    try {
+      await decidirSugestao(id, { acao: "aprovar" }, ATOR_DA_CAPA);
+      aplicadas += 1;
+    } catch (erro) {
+      console.error("[processos] gravar a capa do DataJud:", erro instanceof Error ? erro.message : erro);
+    }
+  }
+  return { aplicadas, pendentes: ids.length - aplicadas };
 }
 
 export interface ResultadoDaCapa {
   /** O DataJud tinha o processo. */
   achou: boolean;
+  /** Sugestões que ficaram na fila (não deu para gravar direto). */
   sugestoes: number;
+  /** Dados da capa gravados direto no cadastro. */
+  aplicadas: number;
   /** Andamentos novos na linha do tempo. */
   andamentos: number;
   /** Por que não veio nada do DataJud (as regras do número valem mesmo assim). */
@@ -111,13 +136,14 @@ export async function completarCapa(processoId: string): Promise<ResultadoDaCapa
   const municipio = await municipioDoIbge(registroAtual(registros)?.orgaoJulgador?.codigoMunicipioIBGE);
   const sugestoes = sugestoesDaCapa({ valores: processo.valores, datajud: registros, municipio, consultadoEm: agora.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) });
   const gravadas = await gravar(processoId, sugestoes);
+  const { pendentes } = await aplicarCapa(gravadas);
   const andamentos = await guardarAndamentos(processoId, registros);
   const { error } = await db()
     .from("proc_processos")
     .update({ datajud_consultado_em: agora.toISOString(), datajud_erro: registros.length ? null : aviso })
     .eq("id", processoId);
   if (error) console.error("[processos] registrar a consulta ao DataJud:", error.message);
-  return { achou: registros.length > 0, sugestoes: gravadas, andamentos, aviso };
+  return { achou: registros.length > 0, sugestoes: pendentes, aplicadas: gravadas.length - pendentes, andamentos, aviso };
 }
 
 /**

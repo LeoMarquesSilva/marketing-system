@@ -253,17 +253,18 @@ function Ficha({ id }: { id: string }) {
     return () => window.clearInterval(relogio);
   }, [emAndamento, carregarAutos]);
 
-  /** Consulta o DataJud: a capa que falta vira sugestão na ficha (nada é gravado sem aprovação). */
+  /** Consulta o DataJud: a capa que falta é gravada direto (fonte oficial); o que não couber fica na fila. */
   async function completarCapa() {
     setOcupado("capa");
     setErro("");
     try {
-      const resposta = await processosApi.post<{ capa: { achou: boolean; sugestoes: number; andamentos?: number; aviso: string | null }; autos: AutosDoProcesso }>(`/${id}/capa`);
+      const resposta = await processosApi.post<{ capa: { achou: boolean; sugestoes: number; aplicadas?: number; andamentos?: number; aviso: string | null }; autos: AutosDoProcesso }>(`/${id}/capa`);
       setAutos(resposta.autos);
-      const { sugestoes, aviso } = resposta.capa;
+      const { sugestoes, aplicadas = 0, aviso } = resposta.capa;
       setFeito(
-        `${sugestoes ? `${sugestoes} sugest${sugestoes === 1 ? "ão" : "ões"} de capa para conferir (DataJud e número CNJ).` : "Nada novo para a capa: o que o DataJud tem já está no cadastro."}${aviso ? ` ${aviso}` : ""}`
+        `${aplicadas ? `${aplicadas} dado${aplicadas === 1 ? "" : "s"} da capa gravado${aplicadas === 1 ? "" : "s"} pelo DataJud e número CNJ.` : "Nada novo para a capa: o que o DataJud tem já está no cadastro."}${sugestoes ? ` ${sugestoes} ficaram para conferir.` : ""}${aviso ? ` ${aviso}` : ""}`
       );
+      void carregar();
     } catch (falha) {
       setErro(mensagemDeErro(falha));
     } finally {

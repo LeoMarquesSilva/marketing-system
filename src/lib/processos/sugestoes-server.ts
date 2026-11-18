@@ -9,6 +9,7 @@ import type { ItemSugerido } from "./rec-credito-leitura";
 import { incluirItem } from "./rec-credito-server";
 import { db, falhou, type Ator } from "./server";
 import { aplicarNaParte, entradaDaPessoa } from "./sugestoes";
+import { campoPorChave, textoDoValor } from "./campos";
 import type { OrigemAlteracao, ProcessoDetalhe } from "./types";
 
 /** No histórico: "ia" para o que veio dos autos; "datajud" ou "cnj" para a capa das fontes oficiais. */
@@ -96,4 +97,32 @@ export async function decidirSugestao(id: string, entrada: Record<string, unknow
   // Era a última sugestão a conferir neste PDF: ele sai do armazenamento (ficam a página e o trecho).
   if (sugestao.documentoId) await descartarSeConcluido(sugestao.documentoId);
   return { processo, autos: await carregarAutos(sugestao.processoId) };
+}
+
+/**
+ * Tira da fila as sugestões pendentes que o cadastro já tem (o mesmo valor chegou depois por outra via, como a
+ * importação do VIOS): campo com o mesmo valor, CPF/CNPJ ou OAB de parte que já tem o mesmo número.
+ */
+export async function limparSugestoesJaNoCadastro(processoId: string): Promise<number> {
+  const { data, error } = await db().from("proc_sugestoes").select("id, tipo, campo, parte_id, valor").eq("processo_id", processoId).eq("situacao", "pendente").in("tipo", ["campo", "parte_documento", "parte_oab"]);
+  if (error) falhou("carregar as sugestões", error);
+  if (!data?.length) return 0;
+  const processo = await detalharProcesso(processoId);
+  const digitos = (texto: unknown) => String(texto ?? "").replace(/\D/g, "");
+  const iguais = data.filter((sugestao) => {
+    if (sugestao.tipo === "campo" && sugestao.campo) {
+      const item = campoPorChave(sugestao.campo as string);
+      const proposto = (sugestao.valor as ValorDeCampo).valor;
+      const atual = processo.valores[sugestao.campo as string];
+      return Boolean(item) && textoDoValor(item, atual) !== "" && textoDoValor(item, atual) === textoDoValor(item, proposto);
+    }
+    const parte = processo.partes.find((item) => item.id === sugestao.parte_id);
+    if (!parte) return false;
+    if (sugestao.tipo === "parte_documento") return digitos(parte.documento) !== "" && digitos(parte.documento) === digitos((sugestao.valor as { documento: string }).documento);
+    return digitos(parte.oab) !== "" && digitos(parte.oab) === digitos((sugestao.valor as { oab: string }).oab);
+  });
+  if (!iguais.length) return 0;
+  const { error: erro } = await db().from("proc_sugestoes").delete().in("id", iguais.map((item) => item.id as string)).eq("situacao", "pendente");
+  if (erro) falhou("tirar as sugestões que o cadastro já tem", erro);
+  return iguais.length;
 }
