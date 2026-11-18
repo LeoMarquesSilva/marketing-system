@@ -150,6 +150,7 @@ describe("capa pelo Jus.br", () => {
   it("vira registro do DataJud, com a cidade da ficha", () => {
     const { registros, municipio } = registrosDoJusbr(capa);
     expect(municipio).toBe("Vila Modelo");
+    expect(registrosDoJusbr({ ...capa, tramitacoes: [{ ...capa.tramitacoes[0], cidade: "Comarca de Vila Modelo" }] }).municipio).toBe("Vila Modelo");
     expect(registros[0]).toMatchObject({ grau: "G1", dataAjuizamento: "2024-03-15T10:30:00", classe: { nome: "Monitória" }, nivelSigilo: 0 });
     expect(registros[0].movimentos?.[0]).toEqual({ codigo: null, nome: "Conclusos para despacho", dataHora: "2026-09-01T10:00:00", complementosTabelados: [{ nome: "urgente" }] });
   });

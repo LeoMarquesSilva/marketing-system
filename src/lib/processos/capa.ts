@@ -330,5 +330,7 @@ export function registrosDoJusbr(capa: CapaDoJusbr): { registros: RegistroDataJu
   }));
   const atual = registroAtual(registros);
   const indice = atual ? registros.indexOf(atual) : -1;
-  return { registros, municipio: (indice >= 0 ? capa.tramitacoes[indice].cidade : capa.tramitacoes[0]?.cidade) ?? null };
+  const cidade = (indice >= 0 ? capa.tramitacoes[indice].cidade : capa.tramitacoes[0]?.cidade) ?? null;
+  // A jurisdição do Jus.br vem como "Comarca de Cidade Exemplo" / "Foro de …": o cadastro quer só o nome da cidade.
+  return { registros, municipio: cidade?.replace(/^\s*(comarca|foro|foro regional)\s+(de|da|do|das|dos)\s+/i, "").trim() || null };
 }
