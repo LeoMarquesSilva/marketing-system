@@ -66,6 +66,39 @@ async function tokenGraphReaproveitado(): Promise<string> {
   return valor;
 }
 
+const caixaPorEndereco = new Map<string, string>();
+
+/**
+ * O Graph só acha a caixa pelo endereço principal (UPN). Quem usa @bismarchipires como apelido de uma
+ * caixa @bpplaw (ex.: daniel@bismarchipires.com.br → daniel@bpplaw.com.br) é procurado pelos apelidos.
+ * O e-mail sai pelo endereço principal da caixa.
+ */
+async function resolverCaixa(endereco: string, token: string): Promise<string> {
+  const chave = endereco.toLowerCase();
+  const emCache = caixaPorEndereco.get(chave);
+  if (emCache) return emCache;
+  const direto = await fetch(`${GRAPH}/users/${encodeURIComponent(endereco)}?$select=userPrincipalName`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (direto.ok) {
+    const corpo = (await direto.json()) as { userPrincipalName: string };
+    caixaPorEndereco.set(chave, corpo.userPrincipalName);
+    return corpo.userPrincipalName;
+  }
+  const filtro = `proxyAddresses/any(x:x eq 'smtp:${chave.replace(/'/g, "''")}')`;
+  const busca = await fetch(
+    `${GRAPH}/users?$filter=${encodeURIComponent(filtro).replace(/'/g, "%27")}&$select=userPrincipalName`,
+    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+  );
+  const achados = busca.ok ? ((await busca.json()) as { value: { userPrincipalName: string }[] }).value : [];
+  if (achados.length !== 1) {
+    throw new MicrosoftMailError(`A caixa ${endereco} não foi encontrada no Microsoft 365.`, 404, "MailboxNotFound");
+  }
+  caixaPorEndereco.set(chave, achados[0].userPrincipalName);
+  return achados[0].userPrincipalName;
+}
+
 export async function enviarEmailMicrosoft(params: {
   para: string;
   assunto: string;
@@ -77,8 +110,11 @@ export async function enviarEmailMicrosoft(params: {
   /** Guarda a cópia nos Itens Enviados do remetente (campanhas: sim, para ele ver o que saiu). */
   salvarEmEnviados?: boolean;
 }): Promise<void> {
-  const remetente = params.remetente?.trim() || process.env.MICROSOFT_MAIL_SENDER?.trim() || DEFAULT_SENDER;
   const token = await tokenGraphReaproveitado();
+  // O remetente da campanha pode vir pelo apelido @bismarchipires; o padrão (Controladoria) já funciona direto.
+  const remetente = params.remetente?.trim()
+    ? await resolverCaixa(params.remetente.trim(), token)
+    : process.env.MICROSOFT_MAIL_SENDER?.trim() || DEFAULT_SENDER;
   const responderPara = params.responderPara?.trim();
   const resposta = await fetch(`${GRAPH}/users/${encodeURIComponent(remetente)}/sendMail`, {
     method: "POST",
