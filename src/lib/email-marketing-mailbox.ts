@@ -87,6 +87,8 @@ function buildPersonalMessage(campaign: CampaignRow, row: MailboxRecipientRow) {
     companyName: company?.name ?? null,
     customFields: contact.custom_fields,
   });
+  // {{destinatario}} identifica a pessoa em links próprios (ex.: formulário do e-book já preenchido).
+  ctx.destinatario = row.id;
   const body = applyMergeTags(stripEditorMarker(campaign.html_body), ctx);
   const html = wrapCampaignHtml(
     body,
@@ -229,7 +231,7 @@ export async function advanceMailboxCampaign(
 export async function sendMailboxTest(campaignId: string, testEmail: string): Promise<void> {
   const campaign = await loadCampaign(campaignId);
   if (!campaign.from_email?.trim()) throw new Error("Informe o e-mail do remetente (a caixa que vai enviar).");
-  const ctx = { ...SAMPLE_MERGE_CONTEXT, email: testEmail };
+  const ctx = { ...SAMPLE_MERGE_CONTEXT, email: testEmail, destinatario: "teste" };
   const html = wrapCampaignHtml(
     applyMergeTags(stripEditorMarker(campaign.html_body), ctx),
     `${trackingBaseUrl()}/api/email-marketing/unsubscribe?token=teste`,
@@ -307,5 +309,8 @@ export async function resolveTrackedLink(recipientId: string, url: string): Prom
   const join = (data as { email_campaigns?: { html_body: string } | { html_body: string }[] | null } | null)
     ?.email_campaigns;
   const html = (Array.isArray(join) ? join[0]?.html_body : join?.html_body) ?? "";
-  return html.includes(url) || html.includes(url.replace(/&/g, "&amp;")) ? url : null;
+  // O corpo guarda {{destinatario}} no lugar do ID de cada pessoa.
+  const candidates = [url, url.split(recipientId).join("{{destinatario}}")];
+  const found = candidates.some((c) => html.includes(c) || html.includes(c.replace(/&/g, "&amp;")));
+  return found ? url : null;
 }
