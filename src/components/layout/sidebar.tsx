@@ -17,6 +17,7 @@ import { NavBadgePill, sumBadges, useNavBadges } from "@/components/layout/nav-b
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HrNotificationsBell } from "@/components/rh/hr-notifications-bell";
 import { ContentScheduleNotificationsBell } from "@/components/conteudo/content-schedule-notifications-bell";
+import { ContentFollowupBell } from "@/components/conteudo/followup-alerts";
 import { InstrucoesInstalacaoDialog, useInstalarApp } from "@/components/layout/instalar-app";
 
 type SidebarProps = {
@@ -350,9 +351,11 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
           </nav>
 
           <div className="relative border-t border-white/[0.08] p-3">
-            <div className={cn("mb-1 flex gap-1", expanded ? "justify-start pl-1" : "justify-center")}>
+            {/* Na barra fechada (72 px) os sinos empilham: três lado a lado não cabem. */}
+            <div className={cn("mb-1 flex gap-1", expanded ? "justify-start pl-1" : "flex-col items-center")}>
               <HrNotificationsBell />
               <ContentScheduleNotificationsBell />
+              <ContentFollowupBell />
             </div>
             <div ref={profileMenuRef} className="relative" data-tour="profile-menu">
               {profile && (

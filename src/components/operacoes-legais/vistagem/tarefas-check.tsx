@@ -12,7 +12,17 @@ import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import type { AgendamentoResumo } from "@/lib/vistagem/types";
 import { formatarData } from "./publicacao-ui";
 import { AvatarPessoa } from "./combobox-busca";
-import { AgendaNoVios, DiaNaAgenda, ESTILO_CLASSE, ICONE_CLASSE, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
+import {
+  AgendaNoVios,
+  AjustesDaTarefa,
+  DiaNaAgenda,
+  ESTILO_CLASSE,
+  ICONE_CLASSE,
+  LinkVios,
+  SeloOrigemDaFatal,
+  corDoTextoDoEnvio,
+  envioDaTarefa,
+} from "./tarefas-conferencia";
 import { Selo, TOM_CLASSE } from "./ui";
 
 /**
@@ -384,6 +394,7 @@ export function CartoesCheck({
                     {item.diasPrazo && item.contagemPrazo ? <span>· {item.diasPrazo} {ROTULO_CONTAGEM[item.contagemPrazo]} após a publicação</span> : null}
                   </p>
                 ) : null}
+                <SeloOrigemDaFatal item={item} />
                 {item.observacao ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.observacao}</p> : null}
                 {simulada ? <p className="text-xs text-muted-foreground">Preenchida no VIOS, não gravada.</p> : null}
                 {item.envioErro ? <p className={cn("whitespace-pre-wrap break-words text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</p> : null}
@@ -391,6 +402,8 @@ export function CartoesCheck({
             </header>
 
             <div className="space-y-3 px-4 py-3.5">
+              {/* Alterada na Conferência (data, horário, responsável): o "Pedido" abaixo já é o ajustado (pedido de 18/11/2026). */}
+              {item.ajustes?.length ? <AjustesDaTarefa ajustes={item.ajustes} /> : null}
               {!comparacao.gravada ? (
                 <p className="flex items-start gap-1.5 rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-2 text-xs text-muted-foreground">
                   <Info className="mt-0.5 size-3.5 shrink-0 text-[#3e84a8]" aria-hidden />

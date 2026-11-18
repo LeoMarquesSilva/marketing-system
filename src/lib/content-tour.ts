@@ -86,8 +86,8 @@ export const CONTENT_TOUR_STEPS: ContentTourStep[] = [
     id: "roteiros-tabs",
     route: "/conteudo/roteiros",
     target: '[data-tour="roteiros-tabs"]',
-    title: "Abas e filtros",
-    body: "Recentes traz novidades dos últimos dias. A validar lista o que precisa da sua ação agora.",
+    title: "Etapas e filtros",
+    body: "Cada etapa mostra onde as matérias estão: Disponíveis para escolher, com o gestor, aprovadas e enviadas ao Marketing. Clique numa etapa para ver só ela.",
   },
   {
     id: "roteiros-list",
@@ -114,7 +114,7 @@ export const CONTENT_TOUR_STEPS: ContentTourStep[] = [
     id: "demo-approve-review",
     route: "/conteudo/roteiros",
     target: '[data-tour="demo-approve-review"]',
-    title: "Aprovar e enviar p/ revisão",
+    title: "Escolher e enviar ao gestor",
     body: "Com o texto ok, clique aqui para registrar no sistema que o post está em revisão. Em seguida, envie o material ao seu gestor pelo VIOS ou e-mail — conforme o processo da sua área. O gestor não acessa este sistema.",
   },
   {

@@ -5,6 +5,7 @@ const dbFactory = vi.hoisted(() => vi.fn());
 const updateStatus = vi.hoisted(() => vi.fn());
 const autoLink = vi.hoisted(() => vi.fn());
 const sendMkt = vi.hoisted(() => vi.fn());
+const reject = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/content-access", () => ({
   getAuthenticatedContentUser: auth,
@@ -13,6 +14,12 @@ vi.mock("@/lib/content-access", () => ({
 vi.mock("@/lib/users-server", () => ({ getServerDb: dbFactory }));
 vi.mock("@/lib/content-areas", () => ({ canSeeContentRoteiro: () => true }));
 vi.mock("@/lib/content-schedule/server", () => ({ autoLinkContentSchedule: autoLink }));
+const resolveAlerts = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("@/lib/content-generator/server", () => ({
+  regenerateRoteiroPost: vi.fn(),
+  hasFollowupAlert: vi.fn(async () => false),
+  resolveFollowupAlerts: resolveAlerts,
+}));
 vi.mock("@/lib/content-roteiros", () => ({
   fetchContentRoteiros: vi.fn(),
   updateRoteiroStatus: updateStatus,
@@ -20,6 +27,7 @@ vi.mock("@/lib/content-roteiros", () => ({
   sendRoteiroToMarketing: sendMkt,
   linkRoteiroViosTask: vi.fn(),
   updateRoteiroBoletimScore: vi.fn(),
+  rejectRoteiro: reject,
 }));
 
 import { PATCH } from "./route";
@@ -106,6 +114,25 @@ describe("PATCH content-roteiros approval scheduling", () => {
       scheduleLink: null,
       scheduleWarning: expect.stringContaining("aprovação foi salva"),
     });
+  });
+
+  it("escolher a matéria fecha os avisos de desdobramento dela", async () => {
+    await PATCH(request({ id: "content-1", status: "em_revisao" }));
+    expect(resolveAlerts).toHaveBeenCalledWith("content-1", "feito");
+  });
+
+  it("descarte registra quem descartou, sem mexer na aprovação nem no cronograma", async () => {
+    reject.mockResolvedValue({
+      rejected_by_id: "approver-2",
+      rejected_by_name: "Segundo",
+      rejected_at: "2026-11-17T12:00:00.000Z",
+    });
+    const response = await PATCH(request({ id: "content-1", status: "rejeitado" }));
+    expect(response.status).toBe(200);
+    expect(reject).toHaveBeenCalledWith("content-1", { id: "approver-2", name: "Segundo" });
+    await expect(response.json()).resolves.toMatchObject({ rejected_by_name: "Segundo" });
+    expect(updateStatus).not.toHaveBeenCalled();
+    expect(autoLink).not.toHaveBeenCalled();
   });
 
   it("mantém o fluxo send_mkt sem atualizar aprovação nem agendar novamente", async () => {

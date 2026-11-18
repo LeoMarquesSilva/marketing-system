@@ -7,8 +7,7 @@ import { LayoutGroup, motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
-import { isAdminRole } from "@/lib/access-control";
-import { buildNav, resolveHeaderContext, type NavPage } from "@/lib/navigation";
+import { buildNav, canSeeModuleSettings, resolveHeaderContext, type NavPage } from "@/lib/navigation";
 import { NavBadgePill, useNavBadges, type NavBadge } from "@/components/layout/nav-badges";
 import { GuiaDaVistagem } from "@/components/operacoes-legais/vistagem/guia-vistagem";
 import { moduloDaRota } from "@/lib/vistagem/guia";
@@ -26,8 +25,8 @@ export function Header() {
   const contexto = resolveHeaderContext(pathname, nav);
   const { eyebrow, title, icon: Icon, tabs, activeHref } = contexto;
   const comAbas = tabs.length > 1;
-  // Configurações do módulo: só para admin.
-  const configuracoes = contexto.configuracoes && isAdminRole(profile) ? contexto.configuracoes : null;
+  // Configurações do módulo: só admin, salvo quando o módulo libera para outros (ex.: Marketing no Gerador de conteúdo).
+  const configuracoes = canSeeModuleSettings(contexto.configuracoes, profile) ? contexto.configuracoes ?? null : null;
   // Sem abas (a funcionalidade com uma página só liberada), o número da página vai ao lado do título.
   const badgeDaPagina = !comAbas && activeHref ? badgeFor(activeHref) : null;
   const resumo = badgeDaPagina?.soNoCabecalho && badgeDaPagina.value > 0 ? badgeDaPagina : null;

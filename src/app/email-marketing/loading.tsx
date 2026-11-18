@@ -1,19 +1,14 @@
-import { Card, CardContent } from "@/components/ui/card";
-
 export default function EmailMarketingLoading() {
   return (
-    <div className="space-y-6">
-      <div className="h-10 w-56 animate-pulse rounded-lg bg-muted" />
-      <div className="flex gap-2 overflow-x-auto pb-2">
+    <div className="space-y-4" aria-busy="true" aria-label="Carregando e-mail marketing">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-9 w-28 shrink-0 animate-pulse rounded-lg bg-muted" />
+          <div key={i} className="h-[88px] animate-pulse rounded-lg border border-[#dce9eb] bg-white" />
         ))}
       </div>
-      <Card className="rounded-xl">
-        <CardContent className="flex min-h-[400px] items-center justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        </CardContent>
-      </Card>
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="h-28 animate-pulse rounded-lg border border-[#dce9eb] bg-white" />
+      ))}
     </div>
   );
 }

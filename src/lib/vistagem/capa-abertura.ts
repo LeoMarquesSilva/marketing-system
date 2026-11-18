@@ -308,9 +308,13 @@ export function faseDoVios(cnj: Cnj | null, classe: string | null | undefined, a
   return { fase: "Conhecimento", certa: false };
 }
 
-/** "2ª Câmara Reservada de Direito Empresarial" → { vara: "2ª", tipo: "Câmara Reservada de Direito Empresarial" }. */
+/**
+ * "2ª Câmara Reservada de Direito Empresarial" → { vara: "2ª", tipo: "Câmara Reservada de Direito Empresarial" }. O
+ * DJEN do eproc (TJSP, 2º grau) põe o gabinete na frente, "Gab. 06 - 23ª Câmara de Direito Privado": o gabinete não é
+ * vara nem tipo no VIOS e sai (18/11/2026, três agravos pararam em "não achou nas listas do VIOS: vara, tipoVara").
+ */
 export function separarVara(orgao: string | null | undefined): { vara: string | null; tipo: string | null } {
-  const texto = orgao?.trim();
+  const texto = orgao?.trim().replace(/^Gab(?:inete)?\.?\s*\d+\s*-\s*/i, "");
   if (!texto) return { vara: null, tipo: null };
   const achado = texto.match(/^0*(\d{1,3})\s*[ªºa°]\s+(.+)$/i);
   return achado ? { vara: `${achado[1]}ª`, tipo: achado[2].trim() } : { vara: null, tipo: texto };
@@ -788,8 +792,15 @@ export function resumoDaCapa(campos: CampoDaCapa[]) {
   };
 }
 
-/** A capa no formato da fila do robô (vios_agendamentos.abertura.capa): texto por campo; etiquetas e matérias em lista. */
-export type CapaDoVios = Record<Exclude<ChaveDaCapa, "etiqueta" | "materias">, string | null> & { etiquetas: string[]; materias: string[] };
+/**
+ * A capa no formato da fila do robô (vios_agendamentos.abertura.capa): texto por campo; etiquetas e matérias em lista.
+ * `clienteCpfCnpj` (do SIOE, na hora do pedido): com duas pessoas do mesmo nome no VIOS, o robô escolhe por ele.
+ */
+export type CapaDoVios = Record<Exclude<ChaveDaCapa, "etiqueta" | "materias">, string | null> & {
+  etiquetas: string[];
+  materias: string[];
+  clienteCpfCnpj?: string | null;
+};
 
 const emLista = (valor: string | null) => (valor ?? "").split(";").map((item) => item.trim()).filter(Boolean);
 
@@ -808,6 +819,22 @@ export function problemasParaOVios(capa: CapaDoVios): string[] {
   if (capa.dataAcao && !/^\d{2}\/\d{2}\/\d{4}$/.test(capa.dataAcao)) problemas.push("Data da ação: escreva como DD/MM/AAAA");
   if (capa.cnj && !/^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.test(capa.cnj)) problemas.push("N.º CNJ fora do formato");
   return problemas;
+}
+
+/**
+ * O CPF/CNPJ do cliente entre as pessoas do VIOS com o nome dele: a única, ou, com homônimos (matriz e filial da AXPR,
+ * 18/11/2026), a que tem mais pastas. Empate ou nenhuma pasta: null (o robô não chuta; diz quais achou).
+ */
+export function documentoDoClienteEntre(
+  pessoas: { id: string; cpf_cnpj: string | null }[],
+  pastasPorPessoa: ReadonlyMap<string, number>
+): string | null {
+  const comDocumento = pessoas.filter((pessoa) => pessoa.cpf_cnpj?.replace(/\D/g, ""));
+  if (comDocumento.length <= 1) return comDocumento[0]?.cpf_cnpj?.trim() ?? null;
+  const [primeira, segunda] = comDocumento
+    .map((pessoa) => ({ pessoa, pastas: pastasPorPessoa.get(pessoa.id) ?? 0 }))
+    .sort((a, b) => b.pastas - a.pastas);
+  return primeira.pastas > 0 && primeira.pastas > segunda.pastas ? primeira.pessoa.cpf_cnpj!.trim() : null;
 }
 
 /** Um pedido de abertura ao robô (linha operacao abrir_pasta da fila do SAMA). */

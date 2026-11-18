@@ -87,7 +87,7 @@ export function AdvogadoOverridesCard() {
   };
 
   return (
-    <Card className="rounded-xl">
+    <Card className="rounded-lg border-[#dce9eb] shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base">Vincular responsáveis (advogados não casados)</CardTitle>
         <Button variant="ghost" size="icon-sm" onClick={load} disabled={loading}>

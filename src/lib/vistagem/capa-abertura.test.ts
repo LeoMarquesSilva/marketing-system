@@ -4,6 +4,7 @@ import {
   capaDoDjen,
   capaParaOVios,
   cidadeDoOrgao,
+  documentoDoClienteEntre,
   lerCapaDoEsaj,
   faseDoVios,
   lerCnj,
@@ -115,9 +116,26 @@ describe("regras", () => {
   it("vara, tipo e cidade pelo nome do órgão", () => {
     expect(separarVara("2ª Câmara Reservada de Direito Empresarial")).toEqual({ vara: "2ª", tipo: "Câmara Reservada de Direito Empresarial" });
     expect(separarVara("EXE3 - Jundiaí")).toEqual({ vara: null, tipo: "EXE3 - Jundiaí" });
+    // Órgão do DJEN no eproc do TJSP (agravos de 18/11/2026): o gabinete sai.
+    expect(separarVara("Gab. 06 - 23ª Câmara de Direito Privado")).toEqual({ vara: "23ª", tipo: "Câmara de Direito Privado" });
+    expect(separarVara("Gab. 03 - 1ª Câmara Reservada de Direito Empresarial")).toEqual({ vara: "1ª", tipo: "Câmara Reservada de Direito Empresarial" });
+    expect(separarVara("Gabinete 12 - Câmara Especial")).toEqual({ vara: null, tipo: "Câmara Especial" });
     expect(cidadeDoOrgao("1ª Vara do Trabalho de Carapicuíba")).toBe("Carapicuíba");
     expect(cidadeDoOrgao("UPJ da 5ª a 8ª Varas Cíveis da Comarca de Campinas")).toBe("Campinas");
     expect(cidadeDoOrgao("EXE3 - Jundiaí")).toBe("Jundiaí");
+  });
+
+  it("CPF/CNPJ do cliente: o único com o nome; com homônimos, o que tem mais pastas (AXPR, 18/11/2026)", () => {
+    const matriz = { id: "61490a05", cpf_cnpj: "36.243.599/0001-31" };
+    const filial = { id: "deacbb81", cpf_cnpj: "36.243.599/0002-12" };
+    expect(documentoDoClienteEntre([matriz], new Map())).toBe("36.243.599/0001-31");
+    expect(documentoDoClienteEntre([matriz, filial], new Map([["61490a05", 74]]))).toBe("36.243.599/0001-31");
+    expect(documentoDoClienteEntre([matriz, filial], new Map([["deacbb81", 2]]))).toBe("36.243.599/0002-12");
+    // Sem pasta de nenhuma, ou empate: não escolhe.
+    expect(documentoDoClienteEntre([matriz, filial], new Map())).toBeNull();
+    expect(documentoDoClienteEntre([matriz, filial], new Map([["61490a05", 3], ["deacbb81", 3]]))).toBeNull();
+    expect(documentoDoClienteEntre([], new Map())).toBeNull();
+    expect(documentoDoClienteEntre([{ id: "x", cpf_cnpj: " " }, matriz], new Map())).toBe("36.243.599/0001-31");
   });
 
   it("sistema: o do DataJud; sem ele, o provável (TJSP com número 4… é eproc)", () => {
