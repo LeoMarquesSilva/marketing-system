@@ -250,7 +250,7 @@ O robô exige `formato` e `sistemas`, e de cada sistema só `segredo_cifrado`. O
 
 O que o painel tem (o código está no repositório do painel, fora deste):
 
-- **Acesso:** só usuários com papel de administrador do robô de autos. Os demais não veem a tela nem as rotas (conferir no servidor, não só esconder o menu).
+- **Acesso:** só quem administra o robô de autos: a senha do painel (que hoje só o administrador tem) ou, com `PAINEL_ADMINS`, o login próprio de cada administrador. Conferido no servidor, não só escondendo o menu.
 - **Certificado A1:** upload do `.pfx`/`.p12` e campo de senha (`type=password`, `autocomplete=off`); botão "Validar e salvar" ([validação](#validação-no-servidor-do-painel-antes-de-gravar)). Mostra titular, emissor, validade, quem enviou e quando. Nunca mostra a senha.
 - **Segredo do 2FA, um bloco por sistema** (eproc TJSP, eproc TJRJ): campo do segredo (`type=password`, `autocomplete=off`, sem botão de "mostrar"), campo do código atual do aplicativo (conferência), botões "Salvar" e "Remover". Mostra só "configurado em … por …" ou "não configurado".
 - **Registro de alterações:** cada troca grava quem, quando e o quê ("certificado trocado", "segredo do eproc-tjrj trocado", "segredo do eproc removido"), sem valor nenhum, nem hash. Fica visível na própria tela.
@@ -372,10 +372,10 @@ A tela de configuração está no repositório do painel (`painel/config.js` e `
 2. **Variáveis:**
    - `ROBO_AUTOS_PASTA=/robos-autos`;
    - `ROBO_CERTIFICADO_CHAVE_PUBLICA`: o conteúdo de `robo-certificado.pub` (não é segredo), ou o mesmo em base64 (`base64 < robo-certificado.pub | tr -d '\n'`), que cabe numa linha;
-   - `PAINEL_ADMINS`: quem pode trocar certificado e segredos, cada um como `usuario=scrypt:…`, separados por vírgula. A linha de cada pessoa sai de `node painel/senha-admin.js <usuario>`, rodado por ela no próprio computador (a senha não aparece na tela e não fica em lugar nenhum; só o hash vai para a variável).
-3. Deploy do painel. Sem as três variáveis, `/config` responde que a área está desligada e o painel de leitura segue igual.
+   - opcional, `PAINEL_ADMINS`: só se a configuração não deve abrir com a senha do painel (por exemplo, quando mais gente passar a ver o painel). Quem pode trocar certificado e segredos, cada um como `usuario=scrypt:…`, separados por vírgula. A linha de cada pessoa sai de `node painel/senha-admin.js <usuario>`, rodado por ela no próprio computador (a senha não aparece na tela e não fica em lugar nenhum; só o hash vai para a variável).
+3. Deploy do painel. Sem as duas primeiras variáveis, `/config` responde que a área está desligada e o painel de leitura segue igual.
 
-A área usa um login próprio (o de `PAINEL_ADMINS`, não o do painel de leitura), e é esse usuário que fica no registro de alterações.
+Decisão do usuário (18/11/2026): só quem administra os robôs tem a senha do painel, então a `/config` abre com essa mesma senha e o registro de alterações mostra o usuário do painel. Com `PAINEL_ADMINS`, a área passa a exigir login próprio por pessoa, e é esse usuário que fica no registro.
 
 ### 5. Certificado e segredos pelo painel
 
