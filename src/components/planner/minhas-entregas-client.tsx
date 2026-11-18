@@ -166,10 +166,10 @@ export function MinhasEntregasClient() {
 
       {others.length > 0 || type !== "todos" ? (
         <section className="space-y-3" aria-label="Entregas anteriores">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-2">
             <h2 className="text-sm font-semibold text-slate-900">{fresh.length ? "Anteriores" : "Suas entregas"}</h2>
             {types.length > 1 ? (
-              <div className="flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="Tipo">
+              <div className="flex gap-1.5 overflow-x-auto" role="group" aria-label="Tipo" style={{ scrollbarWidth: "none" }}>
                 <TypeChip label="Todos" active={type === "todos"} onClick={() => setType("todos")} />
                 {types.map(([name, count]) => (
                   <TypeChip key={name} label={name} count={count} iconType={name} active={type === name} onClick={() => setType(name)} />
@@ -325,8 +325,15 @@ function DeliveryTile({ delivery, onOpen }: { delivery: MyDelivery; onOpen: () =
           // eslint-disable-next-line @next/next/no-img-element
           <img src={cover.url} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
         ) : (
-          <span className="absolute inset-0 flex items-center justify-center">
-            <TypeIcon type={delivery.requestType} className="size-8 text-slate-300" />
+          // Sem arquivo de arte no sistema (pedidos antigos, entregues por link): capa da marca, não caixa vazia.
+          <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-[#04202f] to-[#1a2f44] px-4 text-center">
+            <span className="flex size-12 items-center justify-center rounded-full bg-white/10 text-[#47cdd0]">
+              <TypeIcon type={delivery.requestType} className="size-6" />
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white/85">
+              {delivery.artLink ? <Link2 className="size-3.5" aria-hidden /> : null}
+              {delivery.artLink ? "Arte em link" : "Sem arte no sistema"}
+            </span>
           </span>
         )}
         {delivery.files.length > 1 ? (
