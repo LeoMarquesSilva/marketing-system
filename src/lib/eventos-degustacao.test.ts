@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   columnLabels,
+  drinkSuggestions,
   formatAverage,
   missingVoters,
   overallRanking,
@@ -79,6 +80,20 @@ describe("splitLocation", () => {
     expect(splitLocation("Rua Álvaro Müller, 160 https://maps.app.goo.gl/abc")).toEqual({ address: "Rua Álvaro Müller, 160", mapUrl: "https://maps.app.goo.gl/abc" });
     expect(splitLocation("Endereço: Av. Dr. Heitor Penteado, 725 - Jardim https://g.co/kgs/x")).toEqual({ address: "Av. Dr. Heitor Penteado, 725 - Jardim", mapUrl: "https://g.co/kgs/x" });
     expect(splitLocation(null)).toEqual({ address: null, mapUrl: null });
+  });
+});
+
+describe("drinkSuggestions", () => {
+  it("põe na frente os clássicos já provados, sem os autorais de outra casa nem o que já entrou", () => {
+    const list = drinkSuggestions("", ["Olhar 43", "Fitzgerald", "Negroni", "Confuse"], ["negroni"], 4);
+    expect(list).toEqual(["Fitzgerald", "Aperol Spritz", "Gin Tônica", "Moscow Mule"]);
+  });
+
+  it("filtra sem acento e põe quem começa com o texto antes", () => {
+    expect(drinkSuggestions("gin", ["Gin G"], [], 5)).toEqual(["Gin Tônica", "Gin Basil Smash"]);
+    expect(drinkSuggestions("spritz", [], [], 5)).toEqual(["Aperol Spritz", "Limoncello Spritz", "Hugo Spritz"]);
+    expect(drinkSuggestions("pina", [], [], 5)).toEqual(["Piña Colada"]);
+    expect(drinkSuggestions("tonica", [], [], 5)).toEqual(["Gin Tônica"]);
   });
 });
 

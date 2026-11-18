@@ -25,8 +25,10 @@ import { OverallRankingList, TastingScoreTable, faceOf } from "@/components/even
 import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/utils/supabase/client";
 import {
+  drinkSuggestions,
   formatAverage,
   missingVoters,
+  overallRanking,
   participantKey,
   scoreTable,
   SCORES,
@@ -517,6 +519,8 @@ export function DegustacaoClient({ tastingId }: { tastingId: string }) {
           }}
           nextSort={nextSort}
           createdBy={profile?.id ?? null}
+          previousNames={overallRanking(others, data.drinks, data.votes).map((row) => row.drink.name)}
+          takenNames={drinks.filter((drink) => drink.id !== drinkForm.drink?.id).map((drink) => drink.name)}
         />
       )}
 
@@ -730,6 +734,8 @@ function DrinkDialog({
   canShortlist,
   nextSort,
   createdBy,
+  previousNames,
+  takenNames,
   onClose,
   onSaved,
   onDeleted,
@@ -739,6 +745,10 @@ function DrinkDialog({
   canShortlist: boolean;
   nextSort: number;
   createdBy: string | null;
+  /** Drinks das outras degustações (melhor média primeiro), sugeridos antes dos clássicos. */
+  previousNames: string[];
+  /** Nomes que já entraram nesta degustação (não aparecem como sugestão). */
+  takenNames: string[];
   onClose: () => void;
   onSaved: (drink: TastingDrink, created: boolean) => void;
   onDeleted: (drink: TastingDrink) => void;
@@ -775,6 +785,10 @@ function DrinkDialog({
 
   const currentPhoto = photo?.preview ?? (removePhoto ? null : drink?.photoUrl ?? null);
   const busy = stage !== "idle";
+  const typed = name.trim();
+  const matches = drinkSuggestions(typed, previousNames, takenNames, 12);
+  // Nome já escolhido: some a lista para não sobrar um botão repetindo o campo.
+  const suggestions = matches.length === 1 && matches[0].toLowerCase() === typed.toLowerCase() ? [] : matches;
 
   const save = async () => {
     const clean = name.trim().replace(/\s+/g, " ");
@@ -876,6 +890,35 @@ function DrinkDialog({
               className="h-12 w-full rounded-md border border-input bg-white px-3 text-base outline-none focus-visible:border-[#47cdd0] focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30"
             />
           </label>
+          {suggestions.length > 0 && (
+            <div className="-mt-2 space-y-1.5">
+              <p className="text-xs text-muted-foreground">{typed ? "Toque para usar" : "Toque em um nome ou escreva acima"}</p>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Sugestões de nome">
+                {suggestions.map((suggestion) => {
+                  const active = suggestion.toLowerCase() === typed.toLowerCase();
+                  return (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => {
+                        setName(suggestion);
+                        setError(null);
+                      }}
+                      className={cn(
+                        "inline-flex min-h-10 items-center gap-1.5 rounded-md border px-3 text-sm font-medium outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/40",
+                        active
+                          ? "border-[#347796] bg-[#347796] text-white"
+                          : "border-[#cfe0e4] bg-white text-[#285f7a] hover:border-[#47cdd0] hover:bg-[#f3fafb]"
+                      )}
+                    >
+                      {suggestion}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <label className="block space-y-1.5">
             <span className="text-sm font-medium text-foreground">
               Ingredientes ou observação <span className="font-normal text-muted-foreground">(opcional)</span>

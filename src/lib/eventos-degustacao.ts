@@ -174,6 +174,64 @@ export function splitLocation(location: string | null): { address: string | null
   return { address: address || null, mapUrl: match ? match[0] : null };
 }
 
+/** Clássicos de bar para tocar em vez de digitar (o nome continua livre). */
+export const CLASSIC_DRINKS = [
+  "Negroni",
+  "Aperol Spritz",
+  "Gin Tônica",
+  "Moscow Mule",
+  "Caipirinha",
+  "Caipiroska",
+  "Mojito",
+  "Old Fashioned",
+  "Whisky Sour",
+  "Penicillin",
+  "Espresso Martini",
+  "Margarita",
+  "Cosmopolitan",
+  "Bramble",
+  "Gin Basil Smash",
+  "Fitzgerald",
+  "Clover Club",
+  "Daiquiri",
+  "Boulevardier",
+  "Dry Martini",
+  "Pisco Sour",
+  "Paloma",
+  "Tom Collins",
+  "Pornstar Martini",
+  "Limoncello Spritz",
+  "Hugo Spritz",
+  "Mai Tai",
+  "Piña Colada",
+  "Bloody Mary",
+  "Cuba Libre",
+  "Drink sem álcool",
+];
+
+/**
+ * Sugestões de nome: os clássicos, com os que o grupo já provou nas outras degustações na frente
+ * (para comparar a mesma receita entre as casas). Drinks autorais de outra casa não entram.
+ * Filtra pelo que foi digitado (sem acento) e tira o que já entrou nesta degustação.
+ */
+export function drinkSuggestions(query: string, previous: string[], taken: string[], limit: number): string[] {
+  const wanted = normalize(query);
+  const used = new Set(taken.map(normalize));
+  const classics = new Set(CLASSIC_DRINKS.map(normalize));
+  const seen = new Set<string>();
+  const list: string[] = [];
+  for (const name of [...previous.filter((entry) => classics.has(normalize(entry))), ...CLASSIC_DRINKS]) {
+    const key = normalize(name);
+    if (!key || seen.has(key) || used.has(key)) continue;
+    seen.add(key);
+    if (wanted && !key.includes(wanted)) continue;
+    list.push(name.trim());
+  }
+  // Quem começa com o que foi digitado vem antes de quem só contém.
+  if (wanted) list.sort((a, b) => Number(!normalize(a).startsWith(wanted)) - Number(!normalize(b).startsWith(wanted)));
+  return list.slice(0, limit);
+}
+
 /** Quem ainda não votou neste drink (na ordem da lista). */
 export function missingVoters(drinkId: string, votes: TastingVote[], participants: TastingParticipant[]): TastingParticipant[] {
   const voted = new Set(votes.filter((vote) => vote.drinkId === drinkId).map((vote) => vote.participantKey));
