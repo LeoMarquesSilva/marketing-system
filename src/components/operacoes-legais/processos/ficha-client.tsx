@@ -36,6 +36,7 @@ import { Celula } from "../vistagem/ficha-pasta";
 import { Aviso, Carregando, Painel, PainelTopo, Selo, Vazio, type TomSelo } from "../vistagem/ui";
 import { AcessoProcessos } from "./acesso-processos";
 import { CabecalhoDoProcesso } from "./cabecalho-processo";
+import { PainelAcordos } from "./acordos-painel";
 import { PainelAutos } from "./autos-painel";
 import { EditarCampos } from "./editar-campos";
 import { EditarParte } from "./editar-parte";
@@ -461,6 +462,19 @@ function Ficha({ id, de }: { id: string; de: string | null }) {
               setErro("");
               setFeito(mensagem);
               // O lançamento entra no histórico da ficha.
+              void carregar();
+            }}
+          />
+
+          <PainelAcordos
+            processoId={processo.id}
+            atualizacao={versaoRec}
+            onErro={setErro}
+            onFeito={(mensagem) => {
+              setErro("");
+              setFeito(mensagem);
+              // A parcela paga muda o recuperado e o valor atualizado; a mudança entra no histórico da ficha.
+              setVersaoRec((atual) => atual + 1);
               void carregar();
             }}
           />

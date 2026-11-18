@@ -18,9 +18,11 @@ import {
   type LinhaCarteira,
   type SituacaoCitacao,
 } from "@/lib/processos/rec-credito";
+import { ROTULO_SITUACAO_ACORDO, rotuloDaParcela } from "@/lib/processos/acordos";
 import { LogoGrupo } from "../vistagem/marcas";
 import { Seletor, SeletorBusca, type OpcaoSeletor } from "../vistagem/seletor";
 import { Aviso, BarraAba, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, type TomSelo } from "../vistagem/ui";
+import { TOM_SITUACAO_ACORDO } from "./acordos-painel";
 import { AcessoProcessos } from "./acesso-processos";
 import { mensagemDeErro, processosApi } from "./processos-api";
 
@@ -39,6 +41,13 @@ const SITUACOES: OpcaoSeletor[] = [
 ];
 const ATUALIZACOES: OpcaoSeletor[] = SITUACOES_DA_ATUALIZACAO.map((item) => ({ valor: item.valor, rotulo: item.rotulo }));
 type Valor = string | number | null;
+/** Ordem da coluna Acordo: o que pede atenção primeiro (descumprido, em atraso), depois em dia, cumprido, cancelado. */
+const ORDEM_ACORDO: Record<string, string> = { descumprido: "0", em_atraso: "1", em_dia: "2", cumprido: "3", cancelado: "4" };
+const FILTROS_ACORDO: OpcaoSeletor[] = [
+  { valor: "com", rotulo: "Com acordo" },
+  { valor: "atencao", rotulo: "Acordo em atraso ou descumprido" },
+  { valor: "sem", rotulo: "Sem acordo" },
+];
 /** Colunas da tabela e o valor pelo qual cada uma ordena a lista. */
 const COLUNAS: { titulo: string; valor: (linha: LinhaCarteira) => Valor }[] = [
   { titulo: "Processo", valor: (linha) => linha.cnj ?? linha.ci },
@@ -51,6 +60,7 @@ const COLUNAS: { titulo: string; valor: (linha: LinhaCarteira) => Valor }[] = [
   { titulo: "Citação", valor: (linha) => ROTULO_SITUACAO_CITACAO[linha.citacao] },
   { titulo: "Endereços pleiteados", valor: (linha) => linha.enderecosTentados.length || null },
   { titulo: "Passos e pedidos de execução", valor: (linha) => linha.pedidos.length || null },
+  { titulo: "Acordo", valor: (linha) => (linha.acordo ? `${ORDEM_ACORDO[linha.acordo.resumo.situacao]} ${String(linha.acordo.resumo.diasDeAtraso).padStart(5, "0")}` : null) },
   { titulo: "Guias pagas", valor: (linha) => linha.guiasPagas || null },
   { titulo: "Recuperado", valor: (linha) => linha.valorRecuperado || null },
   { titulo: "Saving", valor: (linha) => linha.saving },
@@ -77,6 +87,7 @@ function Carteira() {
   const [grupo, setGrupo] = useState("");
   const [situacao, setSituacao] = useState("");
   const [atualizacao, setAtualizacao] = useState("");
+  const [filtroAcordo, setFiltroAcordo] = useState("");
   const [ordem, setOrdem] = useState<{ coluna: string; sentido: 1 | -1 } | null>(null);
   const [baixando, setBaixando] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
@@ -121,11 +132,14 @@ function Carteira() {
       if (situacao === "ativos" && linha.encerrado) return false;
       if (situacao === "encerrados" && !linha.encerrado) return false;
       if (atualizacao && situacaoDaAtualizacao(linha.autos, hoje) !== atualizacao) return false;
+      if (filtroAcordo === "com" && !linha.acordo) return false;
+      if (filtroAcordo === "sem" && linha.acordo) return false;
+      if (filtroAcordo === "atencao" && !(linha.acordo && ["em_atraso", "descumprido"].includes(linha.acordo.resumo.situacao))) return false;
       if (!termo) return true;
       if (digitos.length >= 4 && ((linha.cnj ?? "").replace(/\D/g, "").includes(digitos) || (linha.ci ?? "").includes(digitos))) return true;
       return [linha.devedor, linha.cliente].some((campo) => campo?.toLowerCase().includes(termo));
     });
-  }, [todas, busca, grupo, situacao, atualizacao, hoje]);
+  }, [todas, busca, grupo, situacao, atualizacao, filtroAcordo, hoje]);
 
   const ordenadas = useMemo(() => {
     const coluna = ordem ? COLUNAS.find((item) => item.titulo === ordem.coluna) : null;
@@ -175,7 +189,7 @@ function Carteira() {
   async function baixar() {
     setBaixando(true);
     try {
-      const filtrado = Boolean(busca || grupo || situacao || atualizacao);
+      const filtrado = Boolean(busca || grupo || situacao || atualizacao || filtroAcordo);
       await processosApi.baixarCarteira(filtrado ? filtradas.map((linha) => linha.id) : null);
     } catch (falha) {
       setErro(mensagemDeErro(falha));
@@ -227,6 +241,7 @@ function Carteira() {
         <SeletorBusca valor={grupo} onChange={setGrupo} opcoes={opcoesGrupo} todos={{ rotulo: "Todos os grupos" }} rotulo="Grupo do cliente" className="sm:w-52" />
         <Seletor valor={situacao} onChange={setSituacao} opcoes={SITUACOES} todos={{ rotulo: "Ativos e encerrados" }} rotulo="Situação" className="sm:w-48" />
         <Seletor valor={atualizacao} onChange={setAtualizacao} opcoes={ATUALIZACOES} todos={{ rotulo: "Toda atualização" }} rotulo="Atualização dos autos" className="sm:w-56" />
+        <Seletor valor={filtroAcordo} onChange={setFiltroAcordo} opcoes={FILTROS_ACORDO} todos={{ rotulo: "Com e sem acordo" }} rotulo="Acordo" className="sm:w-56" />
         <Button
           variant="outline"
           onClick={() => void atualizarAutos()}
@@ -330,6 +345,28 @@ function Carteira() {
                             </li>
                           ))}
                         </ul>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-xs">
+                      {linha.acordo ? (
+                        <div className="space-y-1">
+                          <Selo tom={TOM_SITUACAO_ACORDO[linha.acordo.resumo.situacao]}>{ROTULO_SITUACAO_ACORDO[linha.acordo.resumo.situacao]}</Selo>
+                          <p className="tabular-nums text-muted-foreground">
+                            {formatarReal(linha.acordo.valorTotal)} · {linha.acordo.resumo.pagas} de {linha.acordo.resumo.parcelas} paga{linha.acordo.resumo.parcelas === 1 ? "" : "s"}
+                          </p>
+                          {linha.acordo.resumo.vencidas && linha.acordo.resumo.situacao !== "cancelado" ? (
+                            <p className="tabular-nums text-amber-700">
+                              {linha.acordo.resumo.vencidas} vencida{linha.acordo.resumo.vencidas === 1 ? "" : "s"} · {linha.acordo.resumo.diasDeAtraso} dia{linha.acordo.resumo.diasDeAtraso === 1 ? "" : "s"} de atraso
+                            </p>
+                          ) : linha.acordo.resumo.proxima && linha.acordo.resumo.situacao === "em_dia" ? (
+                            <p className="tabular-nums text-muted-foreground">
+                              próxima: {rotuloDaParcela(linha.acordo.resumo.proxima.numero).toLowerCase()}, {formatarData(linha.acordo.resumo.proxima.vencimento)}
+                            </p>
+                          ) : null}
+                          {linha.acordo.quantidade > 1 ? <p className="text-muted-foreground">{linha.acordo.quantidade} acordos no processo</p> : null}
+                        </div>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

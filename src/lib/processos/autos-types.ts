@@ -1,3 +1,4 @@
+import type { AcordoSugerido } from "./acordos-leitura";
 import type { ItemSugerido } from "./rec-credito-leitura";
 import type { RoboDoProcesso } from "./tribunais";
 import type { PapelParte, PoloParte, TipoContato } from "./types";
@@ -62,8 +63,11 @@ export interface DocumentoAutos {
 
 /* -------------------------------------------------------------- sugestões */
 
-/** rec_credito: título, citação, pedido ou lançamento da Rec. Crédito lido nos autos (`campo` diz qual). */
-export const TIPOS_SUGESTAO = ["campo", "parte_nova", "parte_documento", "parte_oab", "parte_endereco", "parte_contato", "rec_credito"] as const;
+/**
+ * rec_credito: título, citação, pedido ou lançamento da Rec. Crédito lido nos autos (`campo` diz qual).
+ * acordo: acordo, pagamento de parcela ou descumprimento lido nos autos (`campo` diz qual).
+ */
+export const TIPOS_SUGESTAO = ["campo", "parte_nova", "parte_documento", "parte_oab", "parte_endereco", "parte_contato", "rec_credito", "acordo"] as const;
 export type TipoSugestao = (typeof TIPOS_SUGESTAO)[number];
 export type Confianca = "alta" | "media" | "baixa";
 export type SituacaoSugestao = "pendente" | "aprovada" | "recusada";
@@ -112,7 +116,8 @@ export type ValorSugestao =
   | { oab: string }
   | EnderecoSugerido
   | ContatoSugerido
-  | ItemSugerido;
+  | ItemSugerido
+  | AcordoSugerido;
 
 /** Sugestão pronta para gravar em proc_sugestoes (ainda sem id nem decisão). */
 /** De onde veio a sugestão: IA lendo os autos, DataJud (API pública do CNJ) ou o próprio número CNJ. */

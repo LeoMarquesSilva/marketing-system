@@ -1,4 +1,5 @@
 import { ProcessosError } from "./errors";
+import type { AcordoNaCarteira } from "./acordos";
 import { IndiceAusente, atualizarCredito, atualizarTitulo, duracaoDoProcesso, percentualRecuperado, type CreditoAtualizado, type TabelaTjsp } from "./calculo-tjsp";
 
 /**
@@ -101,6 +102,8 @@ export interface CalculoDoCredito {
 /** Ficha da Rec. Crédito de um processo: os itens lançados e o cálculo. */
 export interface RecCreditoDoProcesso extends ItensRecCredito {
   calculo: CalculoDoCredito;
+  /** Parcelas pagas dos acordos em que o cliente recebe: entram no recuperado. */
+  recebidoEmAcordos: number;
   dataAjuizamento: string | null;
   dataFinal: string;
   indicesAte: string | null;
@@ -110,7 +113,7 @@ export interface RecCreditoDoProcesso extends ItensRecCredito {
 
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
 
-function textoOpcional(bruto: unknown, limite: number): string | null {
+export function textoOpcional(bruto: unknown, limite: number): string | null {
   if (bruto === null || bruto === undefined) return null;
   if (typeof bruto !== "string") throw new ProcessosError("Valor de texto inválido.", 400);
   const texto = bruto.trim();
@@ -118,19 +121,19 @@ function textoOpcional(bruto: unknown, limite: number): string | null {
   return texto || null;
 }
 
-function textoObrigatorio(bruto: unknown, rotulo: string, limite: number): string {
+export function textoObrigatorio(bruto: unknown, rotulo: string, limite: number): string {
   const texto = textoOpcional(bruto, limite);
   if (!texto) throw new ProcessosError(`Informe ${rotulo}.`, 400);
   return texto;
 }
 
-function dataOpcional(bruto: unknown, rotulo: string): string | null {
+export function dataOpcional(bruto: unknown, rotulo: string): string | null {
   if (bruto === null || bruto === undefined || bruto === "") return null;
   if (typeof bruto !== "string" || !DATA.test(bruto) || Number.isNaN(Date.parse(`${bruto}T00:00:00Z`))) throw new ProcessosError(`Data inválida em ${rotulo}.`, 400);
   return bruto;
 }
 
-function dataObrigatoria(bruto: unknown, rotulo: string): string {
+export function dataObrigatoria(bruto: unknown, rotulo: string): string {
   const data = dataOpcional(bruto, rotulo);
   if (!data) throw new ProcessosError(`Informe ${rotulo}.`, 400);
   return data;
@@ -146,7 +149,7 @@ export function lerValor(bruto: unknown): number | null {
   return /^-?\d+(\.\d+)?$/.test(normal) ? Number(normal) : NaN;
 }
 
-function valorPositivo(bruto: unknown, rotulo: string, obrigatorio: boolean): number | null {
+export function valorPositivo(bruto: unknown, rotulo: string, obrigatorio: boolean): number | null {
   const valor = lerValor(bruto);
   if (valor === null) {
     if (obrigatorio) throw new ProcessosError(`Informe ${rotulo}.`, 400);
@@ -156,7 +159,7 @@ function valorPositivo(bruto: unknown, rotulo: string, obrigatorio: boolean): nu
   return Math.round(valor * 100) / 100;
 }
 
-function umaDas<T extends string>(bruto: unknown, lista: readonly { valor: T }[], rotulo: string, padrao?: T): T {
+export function umaDas<T extends string>(bruto: unknown, lista: readonly { valor: T }[], rotulo: string, padrao?: T): T {
   if ((bruto === undefined || bruto === null || bruto === "") && padrao) return padrao;
   const achado = lista.find((item) => item.valor === bruto);
   if (!achado) throw new ProcessosError(`Escolha uma opção válida em ${rotulo}.`, 400);
@@ -331,6 +334,7 @@ export interface LinhaCarteira extends DadosDoProcessoNaCarteira {
   duracao: { meses: number; rotulo: string; desde: "distribuicao" | "cadastro" } | null;
   avisos: string[];
   autos: AtualizacaoDosAutos;
+  acordo: AcordoNaCarteira | null;
 }
 
 /** O que o pedido mais recente ao robô está fazendo agora, quando ainda não terminou ou falhou. */
@@ -416,7 +420,9 @@ export function linhaDaCarteira(
   tabela: TabelaTjsp | null,
   hoje: string,
   indicesAte: string | null,
-  autos: AtualizacaoDosAutos = SEM_ATUALIZACAO
+  autos: AtualizacaoDosAutos = SEM_ATUALIZACAO,
+  /** O acordo em destaque e o que já foi recebido pelos acordos (parcelas pagas). */
+  acordos: { destaque: AcordoNaCarteira | null; recebido: number } = { destaque: null, recebido: 0 }
 ): LinhaCarteira {
   const encerrado = processoEncerrado(dados);
   const dataFinal = encerrado && dados.dataEncerramento ? dados.dataEncerramento : hoje;
@@ -428,7 +434,7 @@ export function linhaDaCarteira(
 
   const somaTitulos = itens.titulos.reduce((soma, titulo) => soma + titulo.valor, 0);
   const guiasPagas = itens.lancamentos.filter((item) => item.tipo === "guia_paga").reduce((soma, item) => soma + item.valor, 0);
-  const valorRecuperado = itens.lancamentos.filter((item) => item.tipo === "levantamento").reduce((soma, item) => soma + item.valor, 0);
+  const valorRecuperado = itens.lancamentos.filter((item) => item.tipo === "levantamento").reduce((soma, item) => soma + item.valor, 0) + acordos.recebido;
   const base = calculo.atual?.total ?? null;
   const inicioDuracao = dados.dataDistribuicao ?? dados.dataCadastro;
   const duracao = duracaoDoProcesso(inicioDuracao, dataFinal);
@@ -456,6 +462,7 @@ export function linhaDaCarteira(
     duracao: duracao ? { ...duracao, desde: dados.dataDistribuicao ? "distribuicao" : "cadastro" } : null,
     avisos,
     autos,
+    acordo: acordos.destaque,
   };
 }
 
@@ -576,7 +583,10 @@ export function memoriaDoValorDaAcao(
   if (!acao) return null;
   linhas.push(acao);
   const validos = [...lancamentos].sort((a, b) => a.data.localeCompare(b.data)).filter((item) => DATA.test(item.data) && item.data <= ate && item.valor > 0);
-  const descrever = (item: Lancamentos[number]) => `${item.tipo === "guia_paga" ? "Guia paga" : "Valor levantado"}${item.descricao ? `: ${item.descricao}` : ""}`;
+  const descrever = (item: Lancamentos[number]) =>
+    item.tipo === "levantamento" && /do acordo$/.test(item.descricao ?? "")
+      ? `Recebido no acordo: ${item.descricao}`
+      : `${item.tipo === "guia_paga" ? "Guia paga" : "Valor levantado"}${item.descricao ? `: ${item.descricao}` : ""}`;
   // Dívida: ação atualizada menos os levantamentos; sobre ela, a multa e os honorários.
   for (const item of validos.filter((lancamento) => lancamento.tipo === "levantamento")) {
     const calculada = linha("levantamento", descrever(item), item.data, item.valor, true);
