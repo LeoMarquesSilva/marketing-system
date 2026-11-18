@@ -12,6 +12,7 @@ import { lerCnj, nomeDoPdf, tribunalEsajDoCnj } from "./conectores/esaj-urls.ts"
 import { navegadorDoRoboAberto } from "./conectores/mapeamento.ts";
 import { lerPedidoDeMapa } from "./conectores/mapeamento-urls.ts";
 import { ConectorPjeTjrj, mapearPje } from "./conectores/pje.ts";
+import { ConectorJusbr } from "./conectores/jusbr.ts";
 import { EsperaEsgotada, FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from "./conectores/tipos.ts";
 import { Fila, PedidoEncerrado, type Pedido } from "./fila.ts";
 import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
@@ -56,6 +57,8 @@ let CONECTORES: Conector[] = TODOS_OS_CONECTORES;
  * ou o do número do processo; TJSP se nada disser.
  */
 function conectorDaLinhaDeComando(cnj?: string): Conector {
+  // Protótipo do Jus.br: só pela linha de comando, fora da fila.
+  if (argumentos.some((item) => item.toLowerCase() === "jusbr")) return new ConectorJusbr();
   const doTjrj = argumentos.map((item) => item.toLowerCase()).find((item) => item === "dcp" || item === "pje");
   if (doTjrj) {
     const conector = CONECTORES.find((item) => item.chave === `${doTjrj}:TJRJ`);
@@ -73,7 +76,9 @@ function conectorDaLinhaDeComando(cnj?: string): Conector {
 const argumentos = process.argv.slice(2);
 const modo = argumentos.includes("--login")
   ? "login"
-  : argumentos.includes("--inspecionar")
+  : argumentos.includes("--provar")
+    ? "provar"
+    : argumentos.includes("--inspecionar")
     ? "inspecionar"
     : argumentos.includes("--mapear")
       ? "mapear"
@@ -194,6 +199,21 @@ async function principal(): Promise<void> {
     registrar("Sessão do tribunal aberta e guardada no perfil do robô.");
     await navegador.fechar();
     return;
+  }
+
+  if (modo === "provar") {
+    // Baixa os autos de um processo para downloads/prova-<número>.pdf, sem a fila e sem entregar ao ORQESTRAI.
+    // O navegador fica aberto (a sessão do tribunal continua valendo).
+    const cnj = argumentos.find((item) => lerCnj(item));
+    if (!cnj) throw new Error("Informe o número do processo: npm run provar -- jusbr 0000000-00.0000.8.26.0000");
+    const conector = conectorDaLinhaDeComando(cnj);
+    const destino = join(config.pastas.downloads, `prova-${cnj.replace(/\D/g, "")}.pdf`);
+    const pedido: Pedido = { id: "prova", processoId: "prova", cnj, sistema: conector.chave.split(":")[0], tribunal: conector.chave.split(":")[1], status: "em_andamento", segredoLiberado: false, tentativas: 1, pecasBaixadas: [] };
+    const inicio = Date.now();
+    const resultado = await conector.baixar(ambientePara(null), pedido, destino);
+    registrar(`Prova concluída em ${Math.round((Date.now() - inicio) / 1000)} s: ${resultado?.semNovidades ? "nada novo" : `${resultado?.pecas?.length ?? 0} peças em ${destino}`}.`);
+    // Sai sem fechar o navegador: a conexão com o Chrome mantinha o processo vivo.
+    process.exit(0);
   }
 
   if (modo === "inspecionar") {
