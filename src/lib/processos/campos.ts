@@ -163,6 +163,9 @@ export const CAMPOS: CampoProcesso[] = [
   campo("valor_acordo", "Valor do acordo", "credito", "valor", "novo", { tabela: "credito", naLista: true }),
   // Fora da lista do saneamento: é acompanhamento, não cadastro. Aparece na carteira de Rec. Crédito.
   campo("proximos_passos", "Próximos passos", "credito", "texto_longo", "novo", { tabela: "credito" }),
+  // Cálculo do valor atualizado; vazios, valem os padrões pela ação (CPC arts. 523, §1º e 827).
+  campo("honorarios_percentual", "Honorários da execução (%)", "credito", "percentual", "novo", { tabela: "credito" }),
+  campo("multa_percentual", "Multa do art. 523 (%)", "credito", "percentual", "novo", { tabela: "credito" }),
 
   // Síntese e andamento
   campo("objeto", "Objeto", "andamento", "texto_longo", "vios", { colunasVios: ["Objeto"] }),

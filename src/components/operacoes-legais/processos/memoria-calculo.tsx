@@ -93,7 +93,7 @@ export function ValorAtualizado({ memoria, vios, rotulo, className }: { memoria:
             </div>
             {memoria.avisos.length ? <Aviso tom="alerta">{memoria.avisos.join("\n")}</Aviso> : null}
             <p className="text-xs text-muted-foreground">
-              Honorários de {memoria.encargos.honorarios.toLocaleString("pt-BR")}% e multa de {memoria.encargos.multa.toLocaleString("pt-BR")}%: {memoria.encargos.origem}. Se o devedor pagou no prazo ou o juiz fixou outro percentual, a conta ainda não tem onde ajustar.
+              Honorários de {memoria.encargos.honorarios.toLocaleString("pt-BR")}% e multa de {memoria.encargos.multa.toLocaleString("pt-BR")}%: {memoria.encargos.origem}. Se o devedor pagou no prazo ou o juiz fixou outro percentual, ajuste “Honorários da execução (%)” e “Multa do art. 523 (%)” no bloco Crédito da ficha.
             </p>
             {vios ? <p className="text-xs text-muted-foreground">No VIOS, o valor da ação atualizado está em {vios}.</p> : null}
             <div>
