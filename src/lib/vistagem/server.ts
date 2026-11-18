@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { montarPublicacoes } from "./captura";
 import { VistagemError } from "./errors";
+import { listaDeEtiquetas } from "./etiquetas";
 import { MAX_TEXTO_COLADO, lerPublicacoesColadas, type TrechoIgnorado } from "./importacao-texto";
 import { KurierArquivoInvalidoError, lerNomeArquivoKurier, lerPlanilhaKurier } from "./kurier-arquivo";
 import { baixarArquivoSharePoint, listarArquivosKurierSharePoint } from "./sharepoint";
@@ -61,7 +62,6 @@ function emLotes<T>(itens: T[], tamanho = LOTE_INSERCAO): T[][] {
 export function hojeEmSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 }
-
 // ---------------------------------------------------------------------------
 // Mapeamento banco → tela
 // ---------------------------------------------------------------------------
@@ -94,7 +94,7 @@ function arquivoResumo(row: ArquivoRow): ArquivoKurierResumo {
 }
 
 export const COLUNAS_PUBLICACAO =
-  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, pasta_vinculo, cliente, grupo_cliente, advogado_responsavel, situacao_processo, acao_processo, fase_processual, valor_acao, valor_acao_atualizado, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, devolvido_por, revistado_por, revistado_em, checado_em, check_nota, transferido_de, transferido_em, transferencia_motivo, publicacao_esocial, central_item_id, central_enviada_em, central_erro, sugestao_triagem, teor, arquivo:vistagem_kurier_arquivos(data_arquivo, origem)";
+  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, pasta_vinculo, cliente, grupo_cliente, advogado_responsavel, situacao_processo, acao_processo, fase_processual, valor_acao, valor_acao_atualizado, escritorio_responsavel, demanda_risco, etiquetas, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, devolvido_por, revistado_por, revistado_em, reaberta_em, checado_em, check_nota, transferido_de, transferido_em, transferencia_motivo, publicacao_esocial, central_item_id, central_enviada_em, central_erro, sugestao_triagem, teor, arquivo:vistagem_kurier_arquivos(data_arquivo, origem)";
 
 /** Lote de onde a publicação veio: o dia do arquivo e se foi da Kurier (SharePoint/envio) ou colada (e-mail, Teams). */
 export type ArquivoDaPublicacao = { data_arquivo: string | null; origem?: "sharepoint" | "upload" | "colado" | null };
@@ -113,11 +113,11 @@ export type PublicacaoRow = {
   pasta_ci: string | null; pasta_vinculo: string | null; cliente: string | null; grupo_cliente: string | null; advogado_responsavel: string | null;
   situacao_processo: string | null; acao_processo: string | null; fase_processual: string | null;
   valor_acao: number | string | null; valor_acao_atualizado: number | string | null;
-  escritorio_responsavel: string | null; demanda_risco: boolean | null;
+  escritorio_responsavel: string | null; demanda_risco: boolean | null; etiquetas?: string | null;
   pendencia: Pendencia | null; pastas_candidatas: PastaSioe[] | null; triada_em: string | null;
   observacao_vistagem: string | null; vistado_por: string | null; vistado_em: string | null; conferido_por: string | null;
   conferido_em: string | null; devolucao_motivo: string | null; devolvido_em: string | null;
-  devolvido_por: string | null; revistado_por: string | null; revistado_em: string | null;
+  devolvido_por: string | null; revistado_por: string | null; revistado_em: string | null; reaberta_em?: string | null;
   checado_em: string | null; check_nota: string | null;
   transferido_de: string | null; transferido_em: string | null; transferencia_motivo: string | null;
   publicacao_esocial: string | null; central_item_id: string | null; central_enviada_em: string | null; central_erro: string | null;
@@ -160,6 +160,7 @@ export function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null =
     valorAcaoAtualizado: row.valor_acao_atualizado === null ? null : Number(row.valor_acao_atualizado),
     escritorioResponsavel: row.escritorio_responsavel,
     demandaRisco: row.demanda_risco,
+    etiquetas: listaDeEtiquetas(row.etiquetas),
     pendencia: row.pendencia,
     pastasCandidatas: row.pastas_candidatas ?? [],
     triadaEm: row.triada_em,
@@ -169,6 +170,7 @@ export function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null =
     devolucaoMotivo: row.devolucao_motivo,
     devolvidoEm: row.devolvido_em,
     revistadoEm: row.revistado_em ?? null,
+    reabertaEm: row.reaberta_em ?? null,
     checadoEm: row.checado_em,
     checkNota: row.check_nota,
     transferidoDe: row.transferido_de,
@@ -700,23 +702,26 @@ function camposDaTriagem(resultado: ReturnType<typeof triar>) {
 /**
  * Cruza as publicações captadas com a base de processos do SIOE: uma pasta só (ou uma só ativa entre várias)
  * vai para "juridico_vistar" no escritório do advogado responsável; sem pasta ou com mais de uma ativa fica em
- * "triagem_pendente" para a controladoria. Com `incluirSemPasta`, as pendentes sem pasta e com várias pastas
- * são triadas de novo (a pasta pode ter sido aberta ou encerrada).
+ * "triagem_pendente" para a controladoria. Com `incluirSemPasta`, as pendentes sem pasta, com várias pastas, sem
+ * área e sem grupo são triadas de novo (a pasta pode ter sido aberta, encerrada ou corrigida no VIOS).
  */
 export async function triarPublicacoes(
   filtro: { ids?: string[]; arquivoId?: string; incluirSemPasta?: boolean } = {}
 ): Promise<TriagemResumo> {
   const db = admin();
-  let consulta = db.from("vistagem_publicacoes").select("id, processo_digitos, teor").limit(2000);
+  let consulta = db.from("vistagem_publicacoes").select("id, processo_digitos, teor, status, pendencia, pasta_ci").limit(2000);
   consulta = filtro.incluirSemPasta
-    ? consulta.or("status.eq.captada,and(status.eq.triagem_pendente,pendencia.in.(sem_pasta,varias_pastas))")
+    ? consulta.or("status.eq.captada,and(status.eq.triagem_pendente,pendencia.in.(sem_pasta,varias_pastas,sem_area,sem_grupo))")
     : consulta.eq("status", "captada");
   if (filtro.ids?.length) consulta = consulta.in("id", filtro.ids);
   if (filtro.arquivoId) consulta = consulta.eq("kurier_arquivo_id", filtro.arquivoId);
   const { data, error } = await consulta;
   if (error) falhou("carregar as publicações para a triagem", error);
 
-  const alvos = (data ?? []) as { id: string; processo_digitos: string | null; teor: string }[];
+  // Sem pasta, mas com a CI que o robô abriu (Fase 3): espera a responsável conferir e liberar. A triagem não mexe,
+  // senão apagaria a CI até o SIOE copiar a pasta nova (de madrugada).
+  type Alvo = { id: string; processo_digitos: string | null; teor: string; status: string; pendencia: string | null; pasta_ci: string | null };
+  const alvos = ((data ?? []) as Alvo[]).filter((alvo) => !(alvo.status === "triagem_pendente" && alvo.pendencia === "sem_pasta" && alvo.pasta_ci));
   const resumo: TriagemResumo = { triadas: 0, juridico: 0, pendentes: 0, descartadas: 0, porEscritorio: {} };
   if (alvos.length === 0) return resumo;
   // Ex-cliente sem o escritório: a lista BKP registrava em Operações Legais, sem tipo; vai para o BKP do SIOE no fim (desligado até a troca).

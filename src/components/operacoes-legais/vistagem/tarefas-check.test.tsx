@@ -22,6 +22,7 @@ function agendamento(campos: Partial<AgendamentoResumo>): AgendamentoResumo {
     dataFatal: null,
     diasPrazo: null,
     contagemPrazo: null,
+    origemPrazo: null,
     hora: "13:30",
     horaFim: "14:30",
     dataLimite: null,

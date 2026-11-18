@@ -17,6 +17,7 @@ import {
   CalendarClock,
   CalendarRange,
   Camera,
+  ChartNoAxesColumn,
   ClipboardList,
   Clapperboard,
   Coffee,
@@ -24,6 +25,7 @@ import {
   Compass,
   Contact,
   Crosshair,
+  Film,
   Heart,
   House,
   IdCard,
@@ -43,6 +45,7 @@ import {
   BookUser,
   Settings,
   Sparkles,
+  Sprout,
   Ticket,
   TrendingUp,
   Trophy,
@@ -54,6 +57,9 @@ import {
   Wand2,
 } from "lucide-react";
 import {
+  HOME_PATH,
+  MARKETING_DASHBOARD_PATH,
+  canSeeHome,
   TEAM_POSTS_PATH,
   canSeeTeamPosts,
   TEAM_SURVEYS_KEY,
@@ -61,6 +67,9 @@ import {
   isTeamSurveysPath,
   PE27_KEY,
   hasPe27Access,
+  DOCUMENTARIO_KEY,
+  hasDocumentarioAccess,
+  isDocumentarioPath,
   isPe27Path,
   isPe27OnlyProfile,
   hasCafeCulturaAccess,
@@ -72,6 +81,8 @@ import {
   canSeeVistagemPath,
   entradaDaVistagem,
   isAdminRole,
+  isPdiPath,
+  PDI_ADMIN_ONLY,
   isFacilitiesPath,
   isVistagemPath,
   isCollaboratorPhotosManager,
@@ -80,7 +91,12 @@ import {
 } from "@/lib/access-control";
 import { isContentCollaborator } from "@/lib/content-areas";
 import { canAccessGustavoContent } from "@/lib/gustavo-content/access";
-import { FACILITIES_CONTRACTS_PATH, FACILITIES_SUPPLIERS_PATH } from "@/lib/facilities/types";
+import {
+  FACILITIES_ASSETS_PATH,
+  FACILITIES_CONTRACTS_PATH,
+  FACILITIES_MAINTENANCE_PATH,
+  FACILITIES_SUPPLIERS_PATH,
+} from "@/lib/facilities/types";
 import { hasHrAccess } from "@/lib/rh/access";
 import { REELS_APPROVAL_HREF } from "@/hooks/use-reel-deliveries-pending";
 
@@ -129,17 +145,11 @@ export const NAV_FRONTS: NavFront[] = [
     untitled: true,
     features: [
       {
-        id: "dashboard",
-        label: "Dashboard",
-        icon: LayoutDashboard,
-        pages: [{ href: "/", label: "Dashboard" }],
-      },
-      {
+        // Tela inicial de todo mundo: a pessoa, as pendências dela, atalhos e a equipe.
         id: "inicio",
         label: "Início",
-        title: "Meu desempenho",
         icon: House,
-        pages: [{ href: "/conteudo/inicio", label: "Início" }],
+        pages: [{ href: HOME_PATH, label: "Início" }],
       },
     ],
   },
@@ -169,6 +179,22 @@ export const NAV_FRONTS: NavFront[] = [
     label: "Marketing",
     features: [
       {
+        // Números do Planner (solicitações, SLA, timesheet): era a rota "/" até 10/11/2026.
+        id: "dashboard",
+        label: "Dashboard",
+        title: "Dashboard de marketing",
+        icon: LayoutDashboard,
+        pages: [{ href: MARKETING_DASHBOARD_PATH, label: "Dashboard" }],
+      },
+      {
+        // Desempenho no Instagram dos posts que a pessoa pediu (colaborador de conteúdo).
+        id: "meu-desempenho",
+        label: "Meu desempenho",
+        shortLabel: "Desempenho",
+        icon: ChartNoAxesColumn,
+        pages: [{ href: "/conteudo/inicio", label: "Meu desempenho" }],
+      },
+      {
         id: "planner",
         label: "Planner",
         icon: Columns3,
@@ -195,6 +221,22 @@ export const NAV_FRONTS: NavFront[] = [
         shortLabel: "Estúdio",
         icon: Wand2,
         pages: [{ href: "/conteudo/estudio", label: "Estúdio de peças" }],
+      },
+      {
+        // Minidocumentário dos 10 anos ("O que construímos juntos"): projeto, aprovação dos sócios,
+        // gravações, roteiro do dia e acervo histórico. Só admin e quem tiver a chave /documentario.
+        id: "documentario",
+        label: "Minidocumentário 10 anos",
+        title: "Minidocumentário · O que construímos juntos",
+        shortLabel: "Documentário",
+        icon: Film,
+        pages: [
+          { href: DOCUMENTARIO_KEY, label: "Projeto" },
+          { href: `${DOCUMENTARIO_KEY}/aprovacao`, label: "Aprovação dos sócios" },
+          { href: `${DOCUMENTARIO_KEY}/gravacoes`, label: "Gravações" },
+          { href: `${DOCUMENTARIO_KEY}/dia`, label: "Dia da gravação" },
+          { href: `${DOCUMENTARIO_KEY}/acervo`, label: "Acervo" },
+        ],
       },
       {
         // Item próprio: é onde o colaborador aprova o vídeo que gravou, com contador de pendências.
@@ -316,6 +358,17 @@ export const NAV_FRONTS: NavFront[] = [
     id: "pessoas",
     label: "Pessoas e Cultura",
     features: [
+      {
+        // Plano de Desenvolvimento Individual (substitui o PDI do Feedz): todos veem o
+        // próprio plano e o da equipe que lideram; a gestão é do RH.
+        id: "pdi",
+        label: "PDI",
+        icon: Sprout,
+        pages: [
+          { href: "/pdi", label: "Meu PDI" },
+          { href: "/rh/pdi", label: "Gestão" },
+        ],
+      },
       {
         id: "ferias",
         label: "Gestão de férias",
@@ -449,13 +502,17 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [{ href: "/eventos", label: "Eventos" }],
       },
       {
-        // Cadastro único de fornecedores (o mesmo dos eventos) + contratos com datas-chave.
+        // Módulo do gestor de Facilities (10/11/2026), com os três cadastros na ordem dele:
+        // fornecedores (quem presta), ativos e instalações (o que recebe manutenção) e
+        // plano de manutenção (o que, por quem, com qual periodicidade e quando). Contratos junto.
         id: "fornecedores",
-        label: "Fornecedores e contratos",
+        label: "Gestão de Fornecedores e Prestadores de Serviços",
         shortLabel: "Fornecedores",
         icon: Truck,
         pages: [
           { href: FACILITIES_SUPPLIERS_PATH, label: "Fornecedores" },
+          { href: FACILITIES_ASSETS_PATH, label: "Ativos e instalações" },
+          { href: FACILITIES_MAINTENANCE_PATH, label: "Plano de manutenção" },
           { href: FACILITIES_CONTRACTS_PATH, label: "Contratos" },
         ],
       },
@@ -503,6 +560,7 @@ const EXTRA_HEADERS: Array<{ href: string; eyebrow: string; title: string; icon:
 export type NavProfile = AccessProfile & { department?: string | null };
 
 const ALWAYS_VISIBLE = new Set([
+  "/pdi",
   "/minhas-fotos",
   "/fotos-eventos",
   "/meus-clientes",
@@ -512,6 +570,7 @@ const ALWAYS_VISIBLE = new Set([
 ]);
 
 const RH_RESTRICTED = new Set([
+  "/rh/pdi",
   "/rh/fichas-cadastrais",
   "/rh/organograma",
   "/rh/boas-praticas",
@@ -534,6 +593,12 @@ const COLLABORATOR_PAGES = new Set([
  * permissões explícitas, colaborador de conteúdo (sem permissões) e legado/admin.
  */
 export function createNavVisibility(profile: NavProfile | null | undefined): (href: string) => boolean {
+  const base = createBaseNavVisibility(profile);
+  // PDI em teste: só admin enxerga o módulo inteiro (trava em access-control).
+  return (href) => (PDI_ADMIN_ONLY && isPdiPath(href) ? isAdminRole(profile) : base(href));
+}
+
+function createBaseNavVisibility(profile: NavProfile | null | undefined): (href: string) => boolean {
   // Consultores externos liberados só no PE27 não veem nem as telas abertas a todos.
   if (isPe27OnlyProfile(profile)) return (href) => isPe27Path(href);
   const feriasView =
@@ -547,6 +612,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     const rhFull = allowed.includes("/rh");
     const contentAccess = allowed.some((key) => key.startsWith("/conteudo"));
     return (href) => {
+      if (href === HOME_PATH) return canSeeHome(profile);
       if (ALWAYS_VISIBLE.has(href)) return true;
       if (href === "/fotos-colaboradores") return isCollaboratorPhotosManager(profile);
       if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
@@ -554,6 +620,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
       if (isPe27Path(href)) return hasPe27Access(profile);
       if (isProcessosPath(href)) return hasProcessosAccess(profile);
+      if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
       if (href === "/conteudo/gustavo") return gustavo;
@@ -567,8 +634,10 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
 
   if (isContentCollaborator(profile)) {
     return (href) => {
+      if (href === HOME_PATH) return canSeeHome(profile);
       if (COLLABORATOR_PAGES.has(href)) return true;
       if (isPe27Path(href)) return hasPe27Access(profile);
+      if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
       if (href === "/rh/ferias") return feriasView;
       if (href === "/conteudo/gustavo") return gustavo;
       if (href === TEAM_POSTS_PATH) return teamPosts;
@@ -583,8 +652,11 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
     if (isPe27Path(href)) return hasPe27Access(profile);
     if (isProcessosPath(href)) return hasProcessosAccess(profile);
+    if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
+      case HOME_PATH:
+        return canSeeHome(profile);
       case "/conteudo/inicio":
         return false;
       case "/nfc":

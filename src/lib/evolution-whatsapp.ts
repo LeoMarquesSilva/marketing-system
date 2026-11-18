@@ -29,6 +29,13 @@ import {
   WHATSAPP_MEDIA_BUCKET,
   whatsappDocumentDownloadName,
 } from "@/lib/whatsapp-media-storage";
+import {
+  conversationPatchAfterDelete,
+  whatsappMessageDeleteBlock,
+  WHATSAPP_DELETED_TEXT,
+  WHATSAPP_DELETED_TYPE,
+  type ConversationDeletePatch,
+} from "@/lib/whatsapp-message-delete";
 
 export { formatConversationLabel, formatPhoneDisplay, jidToPhone } from "@/lib/evolution-display";
 export { normalizeWhatsappTags, WHATSAPP_TAG_PRESETS } from "@/lib/evolution-tags";
@@ -1463,6 +1470,7 @@ export interface WhatsappMessage {
   media_storage_path?: string | null;
   media_mimetype?: string | null;
   media_expired_at?: string | null;
+  deleted_at?: string | null;
 }
 
 export async function fetchWhatsappUnreadSummary(): Promise<{
@@ -1786,6 +1794,9 @@ export async function withWhatsappMediaUrls(
   }));
 }
 
+const WHATSAPP_MESSAGE_FIELDS =
+  "id, wa_message_id, from_me, message_type, body, message_timestamp, audio_transcript, wa_status, reaction_emoji, quoted_wa_message_id, quoted_body, participant_name, participant_phone, media_storage_path, media_mimetype, media_expired_at, deleted_at";
+
 export async function fetchWhatsappMessages(
   conversationId: string,
   limit = 200
@@ -1793,9 +1804,7 @@ export async function fetchWhatsappMessages(
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("whatsapp_messages")
-    .select(
-      "id, wa_message_id, from_me, message_type, body, message_timestamp, audio_transcript, wa_status, reaction_emoji, quoted_wa_message_id, quoted_body, participant_name, participant_phone, media_storage_path, media_mimetype, media_expired_at"
-    )
+    .select(WHATSAPP_MESSAGE_FIELDS)
     .eq("conversation_id", conversationId)
     .order("message_timestamp", { ascending: false })
     .limit(limit);
@@ -1963,6 +1972,122 @@ export async function sendEvolutionReaction(
       reaction: trimmed,
     },
   });
+}
+
+/** A mensagem não pode ser apagada (recebida, já apagada, fora do prazo). */
+export class WhatsappMessageNotDeletableError extends Error {}
+
+/**
+ * Apaga para todos no WhatsApp e tira o conteúdo do painel. A linha fica no banco:
+ * a Evolution só marca como apagada e segue devolvendo o texto em findMessages, então
+ * sem a linha a sincronização ao abrir a conversa inseriria a mensagem de novo.
+ */
+export async function deleteEvolutionMessageForEveryone(
+  dbMessageId: string,
+  deletedBy: string | null
+): Promise<{ message: WhatsappMessage; conversation: ConversationDeletePatch }> {
+  const config = getEvolutionConfig();
+  if (!config) throw new Error("Evolution API não configurada.");
+
+  const supabase = getAdminClient();
+  const { data: msg, error } = await supabase
+    .from("whatsapp_messages")
+    .select(
+      "id, conversation_id, wa_message_id, remote_jid, from_me, message_timestamp, instance_name, media_storage_path, raw_payload, deleted_at"
+    )
+    .eq("id", dbMessageId)
+    .maybeSingle();
+  if (error || !msg) throw new Error("Mensagem não encontrada.");
+
+  const blocked = whatsappMessageDeleteBlock(msg as Parameters<typeof whatsappMessageDeleteBlock>[0]);
+  if (blocked) throw new WhatsappMessageNotDeletableError(blocked);
+
+  const conversationId = msg.conversation_id as string;
+  const waMessageId = msg.wa_message_id as string;
+  const rawKey = (msg.raw_payload as { key?: { remoteJid?: string } } | null)?.key;
+  const remoteJid = rawKey?.remoteJid ?? (msg.remote_jid as string);
+  const instanceName = (msg.instance_name as string | null) ?? config.instanceName;
+
+  try {
+    await evolutionFetch(`/chat/deleteMessageForEveryone/${encodeURIComponent(instanceName)}`, {
+      method: "DELETE",
+      body: { id: waMessageId, remoteJid, fromMe: true },
+    });
+  } catch (err) {
+    console.error("[evolution] deleteMessageForEveryone:", err);
+    throw new Error("O WhatsApp não aceitou o pedido, e a mensagem continua lá. Tente de novo.");
+  }
+
+  const mediaPath = msg.media_storage_path as string | null;
+  if (mediaPath) {
+    const { error: removeError } = await supabase.storage
+      .from(WHATSAPP_MEDIA_BUCKET)
+      .remove([mediaPath]);
+    if (removeError) console.error("[evolution] remover mídia apagada:", removeError.message);
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("whatsapp_messages")
+    .update({
+      body: WHATSAPP_DELETED_TEXT,
+      message_type: WHATSAPP_DELETED_TYPE,
+      deleted_at: new Date().toISOString(),
+      deleted_by: deletedBy,
+      raw_payload: { key: { id: waMessageId, remoteJid, fromMe: true } },
+      audio_transcript: null,
+      reaction_emoji: null,
+      quoted_wa_message_id: null,
+      quoted_body: null,
+      media_storage_path: null,
+      media_mimetype: null,
+      media_expired_at: null,
+    })
+    .eq("id", dbMessageId)
+    .select(WHATSAPP_MESSAGE_FIELDS)
+    .single();
+  if (updateError || !updated) {
+    console.error("[evolution] marcar mensagem apagada:", updateError?.message);
+    throw new Error("A mensagem foi apagada no WhatsApp, mas o painel não atualizou. Tente de novo.");
+  }
+
+  // Respostas a essa mensagem guardam uma cópia do texto na citação.
+  await supabase
+    .from("whatsapp_messages")
+    .update({ quoted_body: WHATSAPP_DELETED_TEXT })
+    .eq("conversation_id", conversationId)
+    .eq("quoted_wa_message_id", waMessageId);
+
+  const [{ data: conversation }, { data: lastOutbound }] = await Promise.all([
+    supabase
+      .from("whatsapp_conversations")
+      .select("last_message_at, last_inbound_at, last_outbound_at, attendance_status")
+      .eq("id", conversationId)
+      .maybeSingle(),
+    supabase
+      .from("whatsapp_messages")
+      .select("message_timestamp")
+      .eq("conversation_id", conversationId)
+      .eq("from_me", true)
+      .is("deleted_at", null)
+      .order("message_timestamp", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const patch = conversationPatchAfterDelete(
+    conversation ?? {},
+    msg.message_timestamp as string,
+    (lastOutbound?.message_timestamp as string | undefined) ?? null
+  );
+  const { error: conversationError } = await supabase
+    .from("whatsapp_conversations")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", conversationId);
+  if (conversationError) {
+    console.error("[evolution] atualizar conversa após apagar:", conversationError.message);
+  }
+
+  return { message: updated as unknown as WhatsappMessage, conversation: patch };
 }
 
 export async function sendEvolutionAudioMessage(

@@ -102,14 +102,17 @@ export function pastaAtiva(pasta: PastaSioe): boolean {
   return !/encerrad|arquivad|baixad|extint/.test(normalizar(pasta.situacao));
 }
 
-/** Etiquetas da pasta no VIOS que fazem a publicação ser demanda de risco (o admin muda em Configurações). */
-export const ETIQUETAS_DE_RISCO_PADRAO = ["Demanda de risco", "Crítico"];
+/**
+ * Etiquetas da pasta no VIOS que fazem a publicação ser demanda de risco (o admin muda em Configurações).
+ * Só "Demanda de risco": "Crítico" deixou de contar em 16/11/2026 (na Cível | Insolvência, 46 viravam risco só por ele).
+ */
+export const ETIQUETAS_DE_RISCO_PADRAO = ["Demanda de risco"];
 
 const escaparRegex = (texto: string) => texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Demanda de risco: a pasta tem uma das etiquetas de risco (sem diferença de acento e maiúscula, como palavra
- * inteira: "Crítico" pega "Carteira X | CRITICO", mas não "Autocrítica").
+ * inteira: "Demanda de risco" pega "Carteira X | DEMANDA DE RISCO"; uma etiqueta "Crítico" pegaria "CRITICO", mas não "Autocrítica").
  */
 export function temDemandaDeRisco(pasta: PastaSioe, etiquetasDeRisco: string[] = ETIQUETAS_DE_RISCO_PADRAO): boolean {
   const etiquetas = normalizar(pasta.etiquetas);

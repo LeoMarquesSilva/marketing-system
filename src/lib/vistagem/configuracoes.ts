@@ -24,6 +24,7 @@ export const ESQUEMAS = {
   horaArquivoEsperado: z.number().int().min(7).max(9),
   iaSugestaoTarefa: z.boolean(),
   iaSugestaoTriagem: z.boolean(),
+  aberturaPastaReal: z.boolean(),
 } as const;
 
 export type ChaveConfiguracao = keyof typeof ESQUEMAS;
@@ -37,6 +38,11 @@ export interface ConfiguracoesVistagem {
   iaSugestaoTarefa: boolean;
   /** Passo da IA na sugestão de pasta das publicações sem pasta (as buscas por número e por parte continuam). */
   iaSugestaoTriagem: boolean;
+  /**
+   * Abertura de pasta pelo robô (Fase 3, 16/11/2026): ligada, a Triagem Manual mostra "Abrir a pasta no VIOS" depois de
+   * uma simulação sem pendência, e o robô grava de verdade. Desligada, só simula.
+   */
+  aberturaPastaReal: boolean;
 }
 
 export const CONFIGURACOES_PADRAO: ConfiguracoesVistagem = {
@@ -45,6 +51,7 @@ export const CONFIGURACOES_PADRAO: ConfiguracoesVistagem = {
   horaArquivoEsperado: HORA_ARQUIVO_PADRAO,
   iaSugestaoTarefa: true,
   iaSugestaoTriagem: true,
+  aberturaPastaReal: false,
 };
 
 /** Valor guardado no banco que passou na validação; inválido ou ausente fica com o padrão. */
@@ -63,6 +70,7 @@ export function montarConfiguracoes(linhas: { chave: string; valor: unknown }[])
     horaArquivoEsperado: lerValor("horaArquivoEsperado", porChave.get("horaArquivoEsperado")),
     iaSugestaoTarefa: lerValor("iaSugestaoTarefa", porChave.get("iaSugestaoTarefa")),
     iaSugestaoTriagem: lerValor("iaSugestaoTriagem", porChave.get("iaSugestaoTriagem")),
+    aberturaPastaReal: lerValor("aberturaPastaReal", porChave.get("aberturaPastaReal")),
   };
 }
 

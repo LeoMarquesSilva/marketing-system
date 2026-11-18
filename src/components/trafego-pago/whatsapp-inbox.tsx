@@ -21,6 +21,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { LeadList } from "@/components/trafego-pago/lead-list";
 import { ConversationHeader } from "@/components/trafego-pago/conversation-header";
 import { LeadForwardDialog } from "@/components/trafego-pago/lead-forward-dialog";
+import { DeleteMessageDialog } from "@/components/trafego-pago/delete-message-dialog";
 import { MessageBubble } from "@/components/trafego-pago/message-bubble";
 import { ChatInput } from "@/components/trafego-pago/chat-input";
 import { LeadDetailsContent, LeadDetailsPanel } from "@/components/trafego-pago/lead-details-panel";
@@ -207,6 +208,7 @@ export function WhatsappInbox() {
   const [savingTags, setSavingTags] = useState(false);
   const [draftMessage, setDraftMessage] = useState("");
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Message | null>(null);
   const presenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPreviewRef = useRef<string>("");
   const [sending, setSending] = useState(false);
@@ -508,6 +510,16 @@ export function WhatsappInbox() {
     (message: Message, emoji: string) => void sendReaction(message, emoji),
     [sendReaction]
   );
+
+  const handleDeleteRequest = useCallback((message: Message) => setDeleteTarget(message), []);
+
+  const handleDeleted = useCallback((message: Message, patch: Partial<Conversation>) => {
+    const conversationId = selectedIdRef.current;
+    setMessages((prev) => mergeMessages(prev, message));
+    setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, ...patch } : c)));
+    setReplyTo((current) => (current?.waMessageId === message.wa_message_id ? null : current));
+    setDeleteTarget(null);
+  }, []);
 
   const handleTranscript = useCallback((messageId: string, text: string) => {
     setMessages((prev) =>
@@ -968,6 +980,7 @@ export function WhatsappInbox() {
                           reaction={messageReactions[message.id]}
                           onReply={handleReply}
                           onReaction={handleReaction}
+                          onDelete={handleDeleteRequest}
                           onTranscript={handleTranscript}
                         />
                       </div>
@@ -1053,6 +1066,13 @@ export function WhatsappInbox() {
           onOpenChange={setForwardOpen}
         />
       )}
+
+      <DeleteMessageDialog
+        message={deleteTarget}
+        leadName={selected ? leadDisplayName(selected) : "contato"}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={handleDeleted}
+      />
 
       <Dialog open={detailsOpen && Boolean(selected)} onOpenChange={setDetailsOpen}>
         <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-md">

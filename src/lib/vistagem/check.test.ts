@@ -36,6 +36,7 @@ function agendamento(campos: Partial<AgendamentoResumo>): AgendamentoResumo {
     dataFatal: "2026-11-12",
     diasPrazo: 8,
     contagemPrazo: "uteis",
+    origemPrazo: null,
     hora: null,
     horaFim: null,
     dataLimite: null,
@@ -62,6 +63,23 @@ describe("revisorEstaNaTarefa", () => {
     // O VIOS não garante a ordem (como no 3. PROTOCOLAR: "Samuel Willian Silva, Lorena Lourenço Miranda").
     expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Vanessa Lanza Sellani, Lorena Lourenço Miranda" })] }))).toBe(true);
     expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Lorena Lourenço Miranda" })] }))).toBe(false);
+  });
+
+  it("audiência do Trabalhista: também procura o revisor (adv. auxiliar) na tarefa; em outra área, não", () => {
+    // 0012645-71 (12/11/2026): a AUDIÊNCIA UNA/INICIAL ficou só com a Pamela, sem a Lorena.
+    const audiencia = agendamento({
+      etiqueta: "COMPROMISSO",
+      tarefa: "AUDIÊNCIA UNA/INICIAL",
+      responsavel: "Pamela Klava Senna Patricio",
+      revisor: "Lorena Lourenço Miranda",
+      viosTarefas: [gravada({ responsaveis: "Pamela Klava Senna Patricio" })],
+    });
+    expect(revisorEstaNaTarefa(audiencia, "Trabalhista")).toBe(false);
+    expect(
+      revisorEstaNaTarefa({ ...audiencia, viosTarefas: [gravada({ responsaveis: "Pamela Klava Senna Patricio, Lorena Lourenço Miranda" })] }, "Trabalhista")
+    ).toBe(true);
+    expect(revisorEstaNaTarefa(audiencia, "Cível")).toBeNull();
+    expect(revisorEstaNaTarefa(audiencia)).toBeNull();
   });
 
   it("não responde quando não se aplica ou quando o robô não devolveu os responsáveis", () => {

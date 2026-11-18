@@ -603,7 +603,7 @@ export function FeedbackForm({
             onChange={(event) => set("description", event.target.value)}
           />
         </Field>
-        {photoSlot && <Field label="Fotos da ocorrência">{photoSlot}</Field>}
+        {photoSlot && <Field label="Fotos e vídeos da ocorrência">{photoSlot}</Field>}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Data da ocorrência" htmlFor="fb-occurred">
             <DatePickerField id="fb-occurred" value={form.occurred_on} onChange={(value) => set("occurred_on", value)} />

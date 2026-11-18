@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fluxoCriaCiencia } from "./ciencia-agendamentos";
-import { criarCalendario, dataDaTarefaSemPrazo } from "./dias-uteis";
+import { criarCalendario, dataDaTarefaSemPrazo, datasDoPrazo } from "./dias-uteis";
 import { arvoreDaArea, cadeiaDoFluxo, diasDoPrazo, montarFluxo, papelNoFluxo, semPrazoProprio, type TipoNaArvore } from "./fluxo-vios";
 
 // Recorte da árvore do VIOS (processos-etapas-tree.php) em 15/10/2026.
@@ -154,5 +154,59 @@ describe("classe das tarefas do fluxo", () => {
       ["INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", "PROVIDENCIA"],
       ["2. REVISAR", null],
     ]);
+  });
+});
+
+describe("regra da insolvência: Enviar e Revisar 2 dias úteis antes (pedido de 11/11/2026)", () => {
+  // Tipos como no catálogo do SAMA em 11/11/2026: prazo do tipo no VIOS e o 3. PROTOCOLAR do fluxo.
+  const ARVORE_INS = new Map<number, TipoNaArvore>([
+    [5, { nome: "CONTESTAÇÃO", prazo: "12 dias", criacao: [321, 314, 313], conclusao: [] }],
+    [238, { nome: "CUMPRIMENTO DE SENTENÇA", prazo: null, criacao: [321, 314, 313], conclusao: [], regraPrazo: { dias: 17, negativo: false, corridos: false } }],
+    [452, { nome: "COMPROVAR PAGAMENTO", prazo: "2 dias", criacao: [321, 314, 313], conclusao: [] }],
+    [473, { nome: "MANDADO DE SEGURANÇA", prazo: null, criacao: [321, 314, 313], conclusao: [] }],
+    [462, { nome: "EMBARGOS DE DECLARAÇÃO", prazo: null, criacao: [314, 313], conclusao: [], regraPrazo: { dias: 12, negativo: true, corridos: false } }],
+    [612, { nome: "MANIFESTAÇÃO - FLUXO D5", prazo: null, criacao: [321, 314, 482], conclusao: [] }],
+    [622, { nome: "AGRAVO DE INSTRUMENTO", prazo: "10 dias", criacao: [321, 314, 482], conclusao: [] }],
+    [321, { nome: "1. CIÊNCIA DOS AGENDAMENTOS", prazo: null, criacao: [], conclusao: [] }],
+    [314, { nome: "2. REVISAR", prazo: "1 dia", criacao: [], conclusao: [] }],
+    [313, { nome: "3. PROTOCOLAR", prazo: "2 dias", criacao: [], conclusao: [] }],
+    [482, { nome: "3. PROTOCOLAR", prazo: "4 dias", criacao: [], conclusao: [] }],
+  ]);
+  const todos = [...ARVORE_INS.keys()];
+  const cadeia = (id: string, area: string | null) => cadeiaDoFluxo(montarFluxo(id, arvoreDaArea(ARVORE_INS, todos, area)));
+  // Consciência Negra (20/11/2026).
+  const ehDiaUtil = criarCalendario(["2026-11-20"]);
+
+  it("na Insolvência e na Cível | Insolvência, a tarefa compartilhada de 10+ dias fica como a MANIFESTAÇÃO - FLUXO D5", () => {
+    expect(cadeia("5", "Insolvência")).toEqual({ revisar: 1, protocolar: 4, antecipada: 2 });
+    expect(cadeia("5", "Cível | Insolvência")).toEqual({ revisar: 1, protocolar: 4, antecipada: 2 });
+    // O prazo lido da aba Prazos vale como o do texto da árvore.
+    expect(cadeia("238", "Insolvência")).toEqual({ revisar: 1, protocolar: 4, antecipada: 2 });
+    expect(cadeia("612", "Insolvência")).toEqual({ revisar: 1, protocolar: 4 });
+  });
+
+  it("exemplo do pedido: fatal 23/11 → Enviar 13/11, Revisar 16/11, Protocolar 19/11 (no Cível, 17, 18 e 19/11)", () => {
+    const pick = (datas: ReturnType<typeof datasDoPrazo>) => [datas.enviar, datas.revisar, datas.protocolar];
+    expect(pick(datasDoPrazo("2026-11-23", ehDiaUtil, cadeia("5", "Insolvência"), "2026-11-11"))).toEqual(["2026-11-13", "2026-11-16", "2026-11-19"]);
+    expect(pick(datasDoPrazo("2026-11-23", ehDiaUtil, cadeia("612", "Insolvência"), "2026-11-11"))).toEqual(["2026-11-13", "2026-11-16", "2026-11-19"]);
+    expect(pick(datasDoPrazo("2026-11-23", ehDiaUtil, cadeia("5", "Cível"), "2026-11-11"))).toEqual(["2026-11-17", "2026-11-18", "2026-11-19"]);
+  });
+
+  it("nas outras áreas, ou sem a área, fica como o VIOS cria", () => {
+    expect(cadeia("5", "Cível")).toEqual({ revisar: 1, protocolar: 2 });
+    expect(cadeia("5", "Trabalhista")).toEqual({ revisar: 1, protocolar: 2 });
+    expect(cadeia("5", null)).toEqual({ revisar: 1, protocolar: 2 });
+    expect(cadeiaDoFluxo(montarFluxo("5", arvoreDaArea(ARVORE_INS, null, "Insolvência")))).toEqual({ revisar: 1, protocolar: 2 });
+  });
+
+  it("não vale para prazo do VIOS menor que 10 dias, sem prazo ou negativo", () => {
+    expect(cadeia("452", "Insolvência")).toEqual({ revisar: 1, protocolar: 2 });
+    expect(cadeia("473", "Insolvência")).toEqual({ revisar: 1, protocolar: 2 });
+    expect(cadeia("462", "Insolvência")).toEqual({ revisar: 1, protocolar: 2 });
+  });
+
+  it("o tipo que já tem o Protocolar 4 dias depois do Enviar não antecipa de novo", () => {
+    expect(cadeia("622", "Insolvência")).toEqual({ revisar: 1, protocolar: 4 });
+    expect(montarFluxo("622", arvoreDaArea(ARVORE_INS, todos, "Insolvência"))?.antecipaEnviar).toBeUndefined();
   });
 });

@@ -59,6 +59,8 @@ export interface WhatsappMessage {
   media_url?: string | null;
   /** Arquivo perdido (link do WhatsApp vencido antes de guardar). */
   media_expired_at?: string | null;
+  /** Apagada para todos: a bolha mostra só o aviso. */
+  deleted_at?: string | null;
 }
 
 /** Pessoa da equipe que pode ser responsável por uma conversa. */

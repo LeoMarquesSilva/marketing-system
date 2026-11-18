@@ -183,12 +183,16 @@ function startSharedSubscription(userId: string) {
   document.addEventListener("visibilitychange", refreshIfStale);
 }
 
-export function useWhatsappUnreadCount() {
+/**
+ * Não lidas do WhatsApp. `ativo` falso: nem assina nem consulta (ex.: quem não tem o Tráfego pago no menu, onde o
+ * número aparece; eram 66 pessoas consultando para 5 que veem, em 12/11/2026).
+ */
+export function useWhatsappUnreadCount(ativo = true) {
   const { user } = useAuth();
   const [totalUnread, setTotalUnread] = useState(sharedTotalUnread);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !ativo) return;
 
     const listener: CountListener = setTotalUnread;
     listeners.add(listener);
@@ -198,7 +202,7 @@ export function useWhatsappUnreadCount() {
       listeners.delete(listener);
       if (listeners.size === 0) stopSharedSubscription();
     };
-  }, [user?.id]);
+  }, [user?.id, ativo]);
 
-  return user ? totalUnread : 0;
+  return user && ativo ? totalUnread : 0;
 }

@@ -13,6 +13,7 @@ function agendamento(campos: Partial<AgendamentoResumo>): AgendamentoResumo {
     dataFatal: null,
     diasPrazo: null,
     contagemPrazo: null,
+    origemPrazo: null,
     hora: "10:27",
     horaFim: null,
     dataLimite: null,
@@ -96,6 +97,28 @@ describe("agendaNoVios", () => {
       agendamento({ data: "2026-11-04", fluxoPrevisto: [prevista({ data: null }), prevista({ nome: "MESMO DIA", caminho: ["MESMO DIA"] })] })
     );
     expect(agenda.linhas.map((linha) => linha.nome)).toEqual(["LEILÃO", "MESMO DIA", "1. CIÊNCIA DOS AGENDAMENTOS"]);
+  });
+});
+
+describe("agendaNoVios: prazo apertado", () => {
+  // 4001306-33 (11/11/2026): vistado com o Enviar em 10/11; validado no dia seguinte, o robô lança hoje.
+  it("a tarefa pedida aparece com o Enviar de hoje e a nota do vistado", () => {
+    const agenda = agendaNoVios(
+      agendamento({
+        tarefa: "MANIFESTAÇÃO - FLUXO D5",
+        data: "2026-11-10",
+        enviarHoje: "2026-11-11",
+        fluxoPrevisto: [prevista({ nome: "2. REVISAR", caminho: ["2. REVISAR"], data: "2026-11-12" })],
+      })
+    );
+    const pedida = agenda.linhas.find((linha) => linha.principal);
+    expect(pedida).toMatchObject({ data: "2026-11-11", nota: "vistado para 10/11/2026, que já passou: vai hoje" });
+    expect(agenda.linhas.map((linha) => linha.nome)).toEqual(["MANIFESTAÇÃO - FLUXO D5", "2. REVISAR"]);
+  });
+
+  it("sem aperto, vai a data vistada e não há nota", () => {
+    const pedida = agendaNoVios(agendamento({ data: "2026-11-12", enviarHoje: null, fluxoPrevisto: [prevista({})] })).linhas.find((linha) => linha.principal);
+    expect(pedida).toMatchObject({ data: "2026-11-12", nota: null });
   });
 });
 

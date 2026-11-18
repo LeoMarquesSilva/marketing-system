@@ -241,7 +241,7 @@ describe("grupos de clientes", () => {
   });
 });
 
-describe("recorte do jurídico (áreas e demandas de risco)", () => {
+describe("recorte do jurídico (só as áreas; o risco não muda o que se vê)", () => {
   const aberta = (area: string | null, status: AbertaDaVisao["status"], risco: boolean, data: string, duplicidadePendente = false): AbertaDaVisao => ({
     status,
     area,
@@ -290,15 +290,13 @@ describe("recorte do jurídico (áreas e demandas de risco)", () => {
     },
   };
 
-  it("estaNoEscopo: só as áreas da pessoa e, sem risco, só as demandas normais", () => {
-    expect(estaNoEscopo(ESCOPO_COMPLETO, { area: null, risco: true })).toBe(true);
-    const juridico = { areas: ["Trabalhista"], veRisco: false };
-    expect(estaNoEscopo(juridico, { area: "Trabalhista", risco: false })).toBe(true);
+  it("estaNoEscopo: só as áreas da pessoa", () => {
+    expect(estaNoEscopo(ESCOPO_COMPLETO, { area: null })).toBe(true);
+    const juridico = { areas: ["Trabalhista"] };
     expect(estaNoEscopo(juridico, { area: "Trabalhista" })).toBe(true);
-    expect(estaNoEscopo(juridico, { area: "Trabalhista", risco: true })).toBe(false);
-    expect(estaNoEscopo(juridico, { area: "Cível", risco: false })).toBe(false);
+    expect(estaNoEscopo(juridico, { area: "Cível" })).toBe(false);
     expect(estaNoEscopo(juridico, { area: null })).toBe(false);
-    expect(estaNoEscopo({ areas: [], veRisco: true }, { area: "Trabalhista" })).toBe(false);
+    expect(estaNoEscopo({ areas: [] }, { area: "Trabalhista" })).toBe(false);
   });
 
   it("a controladoria continua vendo tudo, com o escopo completo", () => {
@@ -311,9 +309,9 @@ describe("recorte do jurídico (áreas e demandas de risco)", () => {
     expect(visao.areas.map((area) => area.area)).toEqual(expect.arrayContaining(["Trabalhista", "Cível", "Tributário"]));
   });
 
-  it("jurídico que vista risco: só as áreas dele, sem Triagem, Duplicidades nem o arquivo da Kurier", () => {
-    const visao = montarVisaoGeral({ ...entrada, escopo: { areas: ["Trabalhista"], veRisco: true } });
-    expect(visao.escopo).toEqual({ areas: ["Trabalhista"], veRisco: true });
+  it("jurídico: só as áreas dele, sem Triagem, Duplicidades nem o arquivo da Kurier", () => {
+    const visao = montarVisaoGeral({ ...entrada, escopo: { areas: ["Trabalhista"] } });
+    expect(visao.escopo).toEqual({ areas: ["Trabalhista"] });
     // Etapas: só o que é da Trabalhista; Triagem e Duplicidades (abas da controladoria) zeradas.
     expect(visao.etapas).toEqual({ triagem: 0, duplicidades: 0, vistagem: 2, conferencia: 1, envio: 1, check: 1 });
     expect(visao.aguardandoTriagem).toBe(0);
@@ -335,33 +333,34 @@ describe("recorte do jurídico (áreas e demandas de risco)", () => {
     ]);
   });
 
-  it("jurídico que não vista risco: sem as demandas de risco em nenhum painel", () => {
-    const visao = montarVisaoGeral({ ...entrada, escopo: { areas: ["Trabalhista", "Cível"], veRisco: false } });
-    expect(visao.etapas).toEqual({ triagem: 0, duplicidades: 0, vistagem: 2, conferencia: 1, envio: 0, check: 1 });
+  it("as demandas de risco das áreas do jurídico aparecem em todos os painéis (ver não depende de vistar risco)", () => {
+    const visao = montarVisaoGeral({ ...entrada, escopo: { areas: ["Trabalhista", "Cível"] } });
+    expect(visao.etapas).toEqual({ triagem: 0, duplicidades: 0, vistagem: 4, conferencia: 1, envio: 1, check: 1 });
     const trabalhista = visao.areas.find((area) => area.area === "Trabalhista");
-    // A mais antiga para vistar ignora a de risco (01/11).
-    expect(trabalhista).toMatchObject({ vistagem: 1, maisAntigaParaVistar: "2026-11-04" });
+    // A mais antiga para vistar é a de risco (01/11).
+    expect(trabalhista).toMatchObject({ vistagem: 2, maisAntigaParaVistar: "2026-11-01" });
     expect(visao.areas.map((area) => area.area)).not.toContain("Tributário");
-    // Nenhuma linha de risco: Trabalhista só nas normais; Cível (sem vistador) vira "normais" com o vistador a definir.
+    // Trabalhista com as duas linhas (normais e de risco); Cível (sem vistador) numa linha só, com as de risco juntas.
     expect(visao.vistadores).toEqual([
       { area: "Trabalhista", tipo: "normal", nome: "Ana Souza", pessoas: [{ nome: "Ana Souza", foto: null }], total: 1, risco: 0, maisAntiga: "2026-11-04", foto: null },
-      { area: "Cível", tipo: "normal", nome: null, pessoas: [], total: 1, risco: 0, maisAntiga: "2026-11-05", foto: null },
+      { area: "Trabalhista", tipo: "risco", nome: "Carla Dias", pessoas: [{ nome: "Carla Dias", foto: null }], total: 1, risco: 1, maisAntiga: "2026-11-01", foto: null },
+      { area: "Cível", tipo: null, nome: null, pessoas: [], total: 2, risco: 1, maisAntiga: "2026-10-30", foto: null },
     ]);
-    expect(visao.vistadoresDeTodas).toEqual([{ tipo: "normal", pessoas: [{ nome: "Ricardo Pires", foto: null }] }]);
+    expect(visao.vistadoresDeTodas.map((grupo) => grupo.tipo)).toEqual(["normal", "risco"]);
     expect(visao.grupos).toEqual([
-      { grupo: "Grupo Mazda", total: 2, naTriagem: 0, paraVistar: 2, vistadas: 0 },
+      { grupo: "Grupo Mazda", total: 3, naTriagem: 0, paraVistar: 3, vistadas: 0 },
       { grupo: "Grupo Gaspec", total: 1, naTriagem: 0, paraVistar: 0, vistadas: 1 },
     ]);
   });
 
   it("área do jurídico sem vistador e em dia aparece; sem área cadastrada, nada", () => {
-    const emDia = montarVisaoGeral({ ...entrada, abertas: [], escopo: { areas: ["Societário"], veRisco: true } });
+    const emDia = montarVisaoGeral({ ...entrada, abertas: [], escopo: { areas: ["Societário"] } });
     expect(emDia.areas).toEqual([
       { area: "Societário", chegaram: 0, vistagem: 0, conferencia: 0, envio: 0, check: 0, checadas: 0, maisAntigaParaVistar: null },
     ]);
     expect(emDia.vistadores).toEqual([]);
 
-    const semAreas = montarVisaoGeral({ ...entrada, escopo: { areas: [], veRisco: true } });
+    const semAreas = montarVisaoGeral({ ...entrada, escopo: { areas: [] } });
     expect(semAreas.areas).toEqual([]);
     expect(semAreas.vistadores).toEqual([]);
     expect(semAreas.grupos).toEqual([]);

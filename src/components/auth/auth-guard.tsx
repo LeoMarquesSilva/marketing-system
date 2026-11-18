@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
-import { resolveAllowedSections, canAccessPath, isTeamPostsPath } from "@/lib/access-control";
+import { ALWAYS_ALLOWED_PATHS, resolveAllowedSections, canAccessPath, isTeamPostsPath } from "@/lib/access-control";
 import {
   canAccessGustavoContent,
   isGustavoContentPath,
@@ -16,7 +16,7 @@ import {
 } from "@/lib/post-login-path";
 import { isQualificationPending } from "@/lib/qualification-requirement";
 
-const PUBLIC_PATHS = ["/login", "/redefinir-senha", "/primeiro-acesso", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral", "/dress-code", "/convite"];
+const PUBLIC_PATHS = ["/login", "/redefinir-senha", "/primeiro-acesso", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral", "/dress-code", "/convite", "/galeria"];
 
 /** Perfil profissional público NFC: /perfil/<slug> e /perfil/<slug>/contato. */
 function isPublicProfessionalProfilePath(pathname: string): boolean {
@@ -59,9 +59,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
   const isGustavoContentRoute = isGustavoContentPath(pathname);
+  // Telas de toda a equipe (confirmação da festa, votação, pesquisas): valem também
+  // para o colaborador de conteúdo sem permissões marcadas.
+  const isAlwaysAllowed = ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
   const isCollaboratorRoute =
     !isGustavoContentRoute &&
-    COLLABORATOR_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+    (isAlwaysAllowed || COLLABORATOR_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/")));
   const isFeriasRoute =
     pathname === "/rh" ||
     pathname === "/rh/ferias" ||
@@ -134,9 +137,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return null;
     }
 
-    // Comportamento legado (colaborador de conteúdo).
-    if (profile && isContentCollaborator(profile) && !isPublic && !isCollaboratorRoute) {
-      return "/conteudo/inicio";
+    // Comportamento legado (colaborador de conteúdo): fora das telas dele, volta para a tela inicial.
+    const naTelaInicial = pathname === "/" && canAccessPath(profile, pathname);
+    if (profile && isContentCollaborator(profile) && !isPublic && !isCollaboratorRoute && !naTelaInicial) {
+      return resolvePostLoginPathFromProfile(profile);
+    }
+
+    // Tela inicial: por enquanto só para quem a enxerga (mesmo no modo legado).
+    if (profile && pathname === "/" && !canAccessPath(profile, pathname)) {
+      return resolvePostLoginPathFromProfile(profile);
     }
 
     // Fotos colaboradores: só usuários autorizados (mesmo no modo legado).

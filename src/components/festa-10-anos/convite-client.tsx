@@ -46,7 +46,7 @@ import {
   requestJson,
 } from "./festa-ui";
 
-const FIELD =
+export const FIELD =
   "mt-2 h-12 w-full rounded-2xl border border-[#e6d8bc] bg-white px-4 text-[15px] text-[#0d1e2e] outline-none transition placeholder:text-[#9aa0a6] focus:border-[#c49a52] focus:shadow-[0_0_0_1px_#c49a52]";
 
 /** Quatro referências da página de dress code (duas de cada galeria) para dar o tom. */
@@ -152,7 +152,7 @@ function DressCode() {
 }
 
 /** Restrição alimentar em botões: "Nenhuma" já vem marcada; alergia, religiosa e outra pedem o detalhe. */
-function DietaryPicker({
+export function DietaryPicker({
   legend,
   value,
   onChange,
@@ -214,7 +214,7 @@ function DietaryPicker({
   );
 }
 
-function dietaryReady(choice: DietaryChoice): boolean {
+export function dietaryReady(choice: DietaryChoice): boolean {
   return !dietaryNeedsDetail(choice) || (choice.notes ?? "").trim().length >= 2;
 }
 

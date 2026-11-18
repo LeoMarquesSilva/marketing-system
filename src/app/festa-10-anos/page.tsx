@@ -22,8 +22,12 @@ export const metadata: Metadata = {
   },
 };
 
-/** Confirmação da equipe (login exigido pelo AuthGuard e pela API). ?previa=1: vê o formulário sem gravar. */
-export default async function Festa10AnosPage({ searchParams }: { searchParams: Promise<{ previa?: string }> }) {
+/**
+ * Confirmação da equipe (login exigido pelo AuthGuard e pela API). ?previa=1: vê o formulário sem gravar;
+ * com &acompanhante=1, a prévia mostra também a pergunta do acompanhante (dos sócios de área).
+ */
+export default async function Festa10AnosPage({ searchParams }: { searchParams: Promise<{ previa?: string; acompanhante?: string }> }) {
   const query = await searchParams;
-  return <ConfirmarPresencaClient preview={query.previa === "1"} />;
+  const preview = query.previa === "1";
+  return <ConfirmarPresencaClient preview={preview} previewCompanion={preview && query.acompanhante === "1"} />;
 }

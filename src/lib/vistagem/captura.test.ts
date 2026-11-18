@@ -59,6 +59,67 @@ describe("lerComunicacaoDjen", () => {
   });
 });
 
+/**
+ * Formato da Kurier desde 10/11/2026: os campos vêm sem espaço entre eles e a data como 17-11-2026 (ou 09/11/2026).
+ * Como na 0011915-78.2026.5.15.0006 (17/11/2026): uma notificação de audiência por parte intimada, com o
+ * destinatário no meio do texto.
+ */
+function comunicacaoGrudada(opcoes: { destinatario: string; id: number; data?: string }) {
+  return (
+    `PROCESSO:${CNJ}ORGÃO:CON1 - ExemploDATA DE DISPONIBILIZAÇÃO:${opcoes.data ?? "17-11-2026"}TIPO DE COMUNICAÇÃO:Intimação` +
+    "MEIO:Diário de Justiça Eletrônico NacionalAçãO TRABALHISTA - RITO SUMARíSSIMOTEXTO:PODER JUDICIÁRIO JUSTIÇA DO TRABALHO " +
+    `PROCESSO: ATSum ${CNJ} AUTOR: ANA EXEMPLO RÉU: EMPRESA FICTICIA LTDA NOTIFICAÇÃO AUDIÊNCIA UNA TELEPRESENCIAL ` +
+    `DESTINATÁRIO: ${opcoes.destinatario} ENDEREÇO: Expediente enviado por outro meio Pela presente, fica V. Sa. notificado(a) a ` +
+    `comparecer à audiência UNA designada para 29/03/2027 11:20 horas. . Intimado(s) / Citado(s) - ${opcoes.destinatario}` +
+    `PARTESNOME:ANA EXEMPLOPOLO:AID COMUNICAÇÃO:${opcoes.id}NOME:EMPRESA FICTICIA LTDAPOLO:PID COMUNICAÇÃO:${opcoes.id}` +
+    "ADVOGADOSNOME:ADVOGADO EXEMPLONº OAB:123456UF:SPNOME:OUTRO ADVOGADONº OAB:654321UF:RJ"
+  );
+}
+
+describe("lerComunicacaoDjen: formato da Kurier desde 10/11/2026 (campos grudados)", () => {
+  it("lê cabeçalho, partes, advogados e intimado", () => {
+    const djen = lerComunicacaoDjen(comunicacaoGrudada({ destinatario: "EMPRESA FICTICIA LTDA", id: 789975438 }));
+    expect(djen).toMatchObject({
+      idComunicacao: 789975438,
+      orgao: "CON1 - Exemplo",
+      dataDisponibilizacao: "2026-11-17",
+      tipoComunicacao: "Intimação",
+      intimados: ["EMPRESA FICTICIA LTDA"],
+      partes: [
+        { nome: "ANA EXEMPLO", polo: "A", idComunicacao: 789975438 },
+        { nome: "EMPRESA FICTICIA LTDA", polo: "P", idComunicacao: 789975438 },
+      ],
+      advogados: [
+        { nome: "ADVOGADO EXEMPLO", oab: "123456", uf: "SP" },
+        { nome: "OUTRO ADVOGADO", oab: "654321", uf: "RJ" },
+      ],
+    });
+    expect(djen?.corpo).toMatch(/^PODER JUDICIÁRIO .* designada para 29\/03\/2027 11:20 horas\. \.$/);
+  });
+
+  it("a data também vem como 09/11/2026", () => {
+    expect(lerComunicacaoDjen(comunicacaoGrudada({ destinatario: "ANA EXEMPLO", id: 1, data: "09/11/2026" }))?.dataDisponibilizacao).toBe("2026-11-09");
+  });
+
+  it("as cópias por parte intimada viram duplicidade, mesmo com o destinatário no meio do texto", () => {
+    const publicacoes = montarPublicacoes([
+      linha(165, comunicacaoGrudada({ destinatario: "ANA EXEMPLO", id: 789975433 }), { dataDivulgacao: "2026-11-17" }),
+      linha(166, comunicacaoGrudada({ destinatario: "EMPRESA FICTICIA LTDA", id: 789975438 }), { dataDivulgacao: "2026-11-17" }),
+    ]);
+    expect(publicacoes.map((p) => [p.status, p.duplicidadeDeLinha, p.duplicidadeCriterio])).toEqual([
+      ["captada", null, null],
+      ["duplicidade", 165, "texto"],
+    ]);
+  });
+
+  it("no formato antigo, com espaço entre os campos, nada muda", () => {
+    const antigo = comunicacao({ intimado: "EMPRESA FICTICIA LTDA", id: 900 });
+    const djen = lerComunicacaoDjen(antigo);
+    expect(djen?.orgao).toBe("1ª Vara do Trabalho de Exemplo");
+    expect(djen?.corpo).toBe("AUTOR: ANA EXEMPLO RÉU: EMPRESA FICTICIA LTDA Fica V. Sa. intimado para ciência da sentença.");
+  });
+});
+
 describe("montarPublicacoes", () => {
   it("marca como duplicidade o mesmo despacho enviado para cada parte", () => {
     const resultado = montarPublicacoes([

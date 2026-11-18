@@ -35,7 +35,7 @@ import {
 import { useAuth } from "@/contexts/auth-context";
 import { canDeleteMarketingRequests } from "@/lib/access-control";
 import { useTimer } from "@/contexts/timer-context";
-import { useStopwatch } from "@/hooks/use-stopwatch";
+import { useStopwatchState } from "@/hooks/use-stopwatch";
 import { fetchActivityLog, type ActivityLogEntry } from "@/lib/activity-log";
 import type { User } from "@/lib/users";
 import {
@@ -45,7 +45,7 @@ import {
   deleteComment,
   type RequestComment,
 } from "@/lib/request-comments";
-import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw, Video, Download, Image as ImageIcon, Paperclip } from "lucide-react";
+import { Play, Pause, Square, AlarmClock, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw, Video, Download, Image as ImageIcon, Paperclip } from "lucide-react";
 import { ReelCoverArtField } from "@/components/planner/reel-cover-art-field";
 import { RequestFilesField } from "@/components/planner/request-files-field";
 import { downloadContentRoteiroWord, parseContentRoteiroWordId } from "@/lib/content-word";
@@ -192,7 +192,9 @@ export function KanbanCardDetail({
     timer.activeEntry?.request_id === request?.id ? timer.activeEntry : null;
 
   // Live stopwatch for the modal's timesheet section
-  const liveElapsed = useStopwatch(activeEntry?.started_at ?? null);
+  const { display: liveElapsed, warning: timerWarning } = useStopwatchState(
+    activeEntry?.started_at ?? null
+  );
 
   useEffect(() => {
     if (!open || !request) {
@@ -225,29 +227,31 @@ export function KanbanCardDetail({
     if (!request) return;
     const { data } = await timer.start(request.id, request.title);
     if (data) {
-      setTimeEntries((prev) => [data, ...prev]);
+      setTimeEntries((prev) => [
+        { ...data, user_name: profile?.name ?? null, user_avatar_url: profile?.avatar_url ?? null },
+        ...prev,
+      ]);
     }
   };
 
+  // O contexto devolve o fim gravado (pode ser o horário que a pessoa informou) ou null se cancelou.
   const handlePause = async () => {
     if (!activeEntry) return;
     const entryId = activeEntry.id;
-    await timer.pause(liveElapsed);
+    const endedAt = await timer.pause();
+    if (!endedAt) return;
     setTimeEntries((prev) =>
-      prev.map((e) =>
-        e.id === entryId ? { ...e, ended_at: new Date().toISOString() } : e
-      )
+      prev.map((e) => (e.id === entryId ? { ...e, ended_at: endedAt } : e))
     );
   };
 
   const handleEnd = async () => {
     if (!activeEntry) return;
     const entryId = activeEntry.id;
-    await timer.stop();
+    const endedAt = await timer.stop();
+    if (!endedAt) return;
     setTimeEntries((prev) =>
-      prev.map((e) =>
-        e.id === entryId ? { ...e, ended_at: new Date().toISOString() } : e
-      )
+      prev.map((e) => (e.id === entryId ? { ...e, ended_at: endedAt } : e))
     );
   };
 
@@ -1188,6 +1192,12 @@ export function KanbanCardDetail({
                         </p>
                       </div>
                     </div>
+                    {timerWarning && (
+                      <p className="flex items-center gap-2 rounded-lg bg-amber-100/80 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                        <AlarmClock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        {timerWarning}
+                      </p>
+                    )}
                     {/* Controls — own dedicated row */}
                     {canStartTimer && (
                       <div className="flex gap-2 pt-1 border-t border-emerald-200/50 dark:border-emerald-800/30">

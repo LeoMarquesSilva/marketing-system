@@ -14,6 +14,7 @@ import {
   Hourglass,
   Link2,
   RefreshCw,
+  UserPlus,
   UserRoundX,
   UsersRound,
   UtensilsCrossed,
@@ -68,7 +69,7 @@ function formatDateTime(iso: string | null): string {
 
 async function exportExcel(people: RsvpPerson[], fileName: string) {
   const XLSX = await import("xlsx");
-  const header = ["Nome", "Área", "Resposta", "Micro-ônibus", "Ida no ônibus", "Volta no ônibus", "Restrição alimentar", "Respondido em"];
+  const header = ["Nome", "Área", "Resposta", "Micro-ônibus", "Ida no ônibus", "Volta no ônibus", "Restrição alimentar", "Acompanhante", "Restrição do acompanhante", "Respondido em"];
   const rows = people.map((person) => [
     person.name,
     person.department ?? "",
@@ -77,12 +78,18 @@ async function exportExcel(people: RsvpPerson[], fileName: string) {
     usesOutbound(person.transport) && person.status === "confirmado" ? "Sim" : "",
     usesReturn(person.transport) && person.status === "confirmado" ? "Sim" : "",
     person.dietary ?? "",
+    person.plusOneName ?? "",
+    person.plusOneDietary ?? "",
     formatDateTime(person.respondedAt),
   ]);
   const going = people.filter((person) => person.status === "confirmado");
+  // O acompanhante segue a escolha de quem o leva: entra na mesma lista do ônibus.
   const leg = (pick: (person: RsvpPerson) => boolean) => [
     ["Nome", "Área"],
-    ...going.filter(pick).map((person) => [person.name, person.department ?? ""]),
+    ...going.filter(pick).flatMap((person) => [
+      [person.name, person.department ?? ""],
+      ...(person.plusOneName ? [[person.plusOneName, `Acompanhante de ${person.shortName}`]] : []),
+    ]),
   ];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([header, ...rows]), "Respostas");
@@ -185,7 +192,7 @@ export function EventoRsvpPanel({ eventId, refreshKey }: { eventId: string; refr
   const answered = counts.confirmed + counts.declined;
   const percent = total ? Math.round((answered / total) * 100) : 0;
   const pageUrl = data.pagePath && typeof window !== "undefined" ? `${window.location.origin}${data.pagePath}` : null;
-  const busRiders = counts.confirmed ? people.filter((p) => p.status === "confirmado" && (usesOutbound(p.transport) || usesReturn(p.transport))).length : 0;
+  const busRiders = counts.riders;
 
   const copy = async (text: string, kind: "link" | "nomes") => {
     try {
@@ -245,7 +252,15 @@ export function EventoRsvpPanel({ eventId, refreshKey }: { eventId: string; refr
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat icon={UsersRound} label="Vão" value={counts.confirmed} detail={`${percent}% responderam`} active={filter === "confirmado"} onClick={() => setFilter("confirmado")} tone="bg-emerald-50 text-emerald-700" />
+        <Stat
+          icon={UsersRound}
+          label="Vão"
+          value={counts.headcount}
+          detail={counts.companions ? `${counts.confirmed} + ${counts.companions} ${counts.companions === 1 ? "acompanhante" : "acompanhantes"}` : `${percent}% responderam`}
+          active={filter === "confirmado"}
+          onClick={() => setFilter("confirmado")}
+          tone="bg-emerald-50 text-emerald-700"
+        />
         <Stat icon={Bus} label="Micro-ônibus" value={busRiders} detail={`ida ${counts.outbound} · volta ${counts.returning}`} active={filter === "onibus"} onClick={() => setFilter("onibus")} tone="bg-amber-50 text-amber-700" />
         <Stat icon={Hourglass} label="Sem resposta" value={counts.pending} active={filter === "sem_resposta"} onClick={() => setFilter("sem_resposta")} tone="bg-slate-100 text-slate-600" />
         <Stat icon={UserRoundX} label="Não vão" value={counts.declined} active={filter === "recusado"} onClick={() => setFilter("recusado")} tone="bg-rose-50 text-rose-700" />
@@ -299,6 +314,16 @@ export function EventoRsvpPanel({ eventId, refreshKey }: { eventId: string; refr
                     <p className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-amber-700" title={person.dietary}>
                       <UtensilsCrossed className="size-3 shrink-0" aria-hidden />
                       {person.dietary}
+                    </p>
+                  )}
+                  {person.plusOneName && (
+                    <p
+                      className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-foreground/75"
+                      title={person.plusOneDietary ? `${person.plusOneName} · ${person.plusOneDietary}` : person.plusOneName}
+                    >
+                      <UserPlus className="size-3 shrink-0" aria-hidden />
+                      {person.plusOneName}
+                      {person.plusOneDietary ? <span className="text-amber-700"> · {person.plusOneDietary}</span> : null}
                     </p>
                   )}
                 </div>

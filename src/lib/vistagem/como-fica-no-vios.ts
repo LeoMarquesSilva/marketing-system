@@ -1,4 +1,5 @@
-import { revisorFicaNaTarefa, separarNomes } from "./agendamento";
+import { paraDataVios, revisorFicaNaTarefa, separarNomes } from "./agendamento";
+import { repetidaDoCaminho, type Repetida } from "./ciencia-agendamentos";
 import type { AgendamentoResumo } from "./types";
 
 /** Uma linha do "Fluxo das tarefas" (como fica no VIOS): a tarefa pedida ou uma que o fluxo cria junto com ela. */
@@ -18,6 +19,13 @@ export interface LinhaNoVios {
   /** O jurídico mudou a data que o VIOS daria. */
   editada: boolean;
   dataVios: string | null;
+  /** Prazo apertado: a tarefa pedida vai com o Enviar de hoje; a nota diz qual era o vistado. */
+  nota: string | null;
+  /**
+   * Repetida na vistagem (a 1. CIÊNCIA DOS AGENDAMENTOS, o EMBARGOS DE DECLARAÇÃO ou uma que ele cria): o VIOS cria,
+   * mas só a da primeira tarefa fica e o robô cancela as outras. null: fica.
+   */
+  repetida: Repetida | null;
 }
 
 export interface AgendaNoVios {
@@ -54,7 +62,9 @@ function ordenar(a: LinhaNoVios, b: LinhaNoVios): number {
  * Como a tarefa fica no VIOS, em ordem de data: a pedida (Enviar, no Prazo) e as que o fluxo cria junto. Depois do
  * robô, são as tarefas gravadas, com o CI; antes, a previsão do fluxo com as datas e quem fica em cada uma.
  */
-export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
+export function agendaNoVios(
+  item: Pick<AgendamentoResumo, "id" | "tarefa" | "data" | "hora" | "responsavel" | "revisor" | "enviarHoje" | "fluxoPrevisto" | "viosTarefas">
+): AgendaNoVios {
   const aoConcluir = (item.fluxoPrevisto ?? []).filter((tarefa) => tarefa.quando === "conclusao").map((tarefa) => tarefa.nome);
   const gravadas = item.viosTarefas ?? [];
   if (gravadas.length) {
@@ -73,6 +83,8 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
           ci: tarefa.ci,
           editada: false,
           dataVios: null,
+          nota: null,
+          repetida: null,
         }))
         .sort(ordenar),
     };
@@ -80,7 +92,8 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
   const pedida: LinhaNoVios = {
     chave: `pedida-${item.id}`,
     nome: item.tarefa,
-    data: item.data || null,
+    // Prazo apertado: o robô lança com o Enviar de hoje (o vistado já passou).
+    data: item.enviarHoje ?? (item.data || null),
     hora: item.hora,
     responsaveis: revisorFicaNaTarefa(item.tarefa) && item.revisor ? separarNomes(`${item.responsavel},${item.revisor}`).join(", ") : item.responsavel,
     principal: true,
@@ -88,6 +101,8 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
     ci: null,
     editada: false,
     dataVios: null,
+    nota: item.enviarHoje && item.data ? `vistado para ${paraDataVios(item.data)}, que já passou: vai hoje` : null,
+    repetida: null,
   };
   const doFluxo: LinhaNoVios[] = (item.fluxoPrevisto ?? [])
     .filter((tarefa) => tarefa.quando === "criacao")
@@ -102,6 +117,8 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
       ci: null,
       editada: tarefa.editada,
       dataVios: tarefa.dataVios,
+      nota: null,
+      repetida: tarefa.repetida ? repetidaDoCaminho(tarefa.caminho) : null,
     }));
   return { gravada: false, aoConcluir, linhas: [pedida, ...doFluxo].sort(ordenar) };
 }

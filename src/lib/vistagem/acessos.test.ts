@@ -61,7 +61,7 @@ describe("avisos do acesso", () => {
       })
     ).toEqual([
       "Vistador em Trabalhista, mas essa área não está marcada.",
-      "Vistador de demandas de risco, mas não vê as demandas de risco.",
+      "Vistador de demandas de risco, mas está marcado para não vistar as de risco.",
     ]);
   });
 

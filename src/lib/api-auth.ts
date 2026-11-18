@@ -20,7 +20,12 @@ function getAdminClient() {
   return createServiceClient(supabaseUrl, supabaseServiceKey);
 }
 
-export async function requireAuthenticatedUser() {
+/**
+ * Usuário da sessão (cookie), com o token validado localmente (`createClient` do servidor: ver
+ * utils/supabase/usuario-da-sessao.ts). Não confere se está ativo: use quando a próxima consulta já lê `users` e
+ * barra o inativo (ex.: `requireVistagemAccess`, `requireAdminUser`), para não ler a mesma linha duas vezes.
+ */
+export async function requireSessionUser() {
   const supabase = await createPublicClient();
   const {
     data: { user },
@@ -28,6 +33,11 @@ export async function requireAuthenticatedUser() {
   if (!user) {
     throw new Error("Não autenticado.");
   }
+  return user;
+}
+
+export async function requireAuthenticatedUser() {
+  const user = await requireSessionUser();
 
   const admin = getAdminClient();
   const { data: profile, error } = await admin
@@ -139,7 +149,7 @@ export async function requireProcessosAccess(authUserId: string) {
  */
 export async function requireVistagemAccess(
   authUserId: string
-): Promise<{ papel: PapelVistagem; areas: string[] | null; veRisco: boolean }> {
+): Promise<{ papel: PapelVistagem; areas: string[] | null; veRisco: boolean; admin: boolean }> {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("users")
@@ -163,5 +173,6 @@ export async function requireVistagemAccess(
     papel,
     areas: juridico ? ((data.vistagem_areas as string[] | null) ?? []) : null,
     veRisco: !juridico || data.vistagem_risco !== false,
+    admin: (data.role as string | null | undefined)?.toLowerCase() === "admin",
   };
 }

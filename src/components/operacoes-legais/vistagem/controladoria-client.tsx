@@ -32,6 +32,7 @@ import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { authFetch } from "@/lib/auth-fetch";
+import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
 import { cn } from "@/lib/utils";
 import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { clienteNoTexto, pastaSugerida, verificacoesSemPasta, type SituacaoVerificacao } from "@/lib/vistagem/controladoria";
@@ -43,6 +44,7 @@ import { linkPastaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { SeloAberturaDePasta } from "./abertura-pasta";
 import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
+import { CapaParaAberturaDePasta } from "./capa-abertura-ui";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { EditorVistagem } from "./juridico-client";
 import { LeitorPublicacao } from "./leitor-publicacao";
@@ -66,8 +68,9 @@ import {
 } from "./ui";
 
 /**
- * As abas seguem o que chega da triagem: sem pasta (possível abertura), mais de uma pasta e, quando houver, dados
- * faltando. Os ex-clientes não aparecem aqui: a controladoria os vista na fila Operações Legais do Jurídico.
+ * As abas seguem o que chega da triagem: sem pasta (possível abertura), mais de uma pasta e dados faltando (sem área
+ * ou grupo). Aparecem sempre, mesmo vazias (pedido de 11/11/2026). Os ex-clientes não aparecem aqui: a controladoria
+ * os vista na fila Operações Legais do Jurídico.
  */
 type Aba = "sem_pasta" | "varias_pastas" | "dados";
 
@@ -704,6 +707,15 @@ function DetalhePendencia({
         {/* A coluna da resolução tem o fundo até o fim, como a das tarefas na Conferência. */}
         <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-l @4xl:border-t-0">
           {publicacao.pendencia === "sem_pasta" ? <VerificacaoSemPasta publicacao={publicacao} /> : null}
+          {/* Abertura automática de pasta: o resumo da capa que iria para o VIOS; a capa inteira abre num diálogo, com o lápis. */}
+          {publicacao.pendencia === "sem_pasta" ? (
+            <CapaParaAberturaDePasta
+              key={`capa-${publicacao.id}`}
+              publicacaoId={publicacao.id}
+              // Pasta aberta pelo robô: a publicação continua aqui com a CI nova; "Para onde vai" libera com ela.
+              onPastaAberta={(ci) => setPublicacao((atual) => (atual.pastaCi === ci ? atual : { ...atual, pastaCi: ci }))}
+            />
+          ) : null}
           <Resolucao key={publicacao.id} publicacao={publicacao} onResolvida={resolvida} onAgendar={agendar} />
         </div>
       </div>
@@ -903,7 +915,6 @@ function Controladoria() {
 
   // Sem escolha, abre a primeira aba que tem pendência.
   const abaAtiva: Aba = aba ?? ABAS.find((item) => porAba[item.valor] > 0)?.valor ?? "sem_pasta";
-  const abasVisiveis = ABAS.filter((item) => item.valor !== "dados" || porAba.dados > 0 || abaAtiva === "dados");
 
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
   const camposDeBusca = useMemo(() => new Map((dados?.pendentes ?? []).map((p) => [p.id, camposDaPublicacao(p)])), [dados]);
@@ -971,6 +982,7 @@ function Controladoria() {
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
     setDados((atual) => (atual ? { ...atual, pendentes: atual.pendentes.filter((p) => p.id !== id) } : atual));
     setAviso({ tom: "sucesso", texto: `${publicacao ? numeroProcesso(publicacao) : "Publicação"} ${resultado}.` });
+    avisarContagensVistagem();
   }
 
   // "Agendar Direto": abre a vistagem com a pendência ainda na triagem; nada muda até as tarefas serem enviadas.
@@ -1011,7 +1023,7 @@ function Controladoria() {
             <Segmented
               label="Tipo de pendência"
               value={abaAtiva}
-              options={abasVisiveis.map((item) => ({
+              options={ABAS.map((item) => ({
                 value: item.valor,
                 label: dados ? `${item.rotulo} ${porAba[item.valor]}` : item.rotulo,
                 icon: ICONE_ABA[item.valor],

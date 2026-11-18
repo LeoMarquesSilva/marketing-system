@@ -76,6 +76,30 @@ export async function getActiveTimeEntryForUser(userId: string): Promise<{
   };
 }
 
+/** Todos os cronômetros ligados da pessoa, em qualquer solicitação (o mais antigo primeiro). */
+export async function fetchOpenTimeEntriesForUser(userId: string): Promise<
+  Array<{ entry: TimeEntry; requestTitle: string }>
+> {
+  const { data, error } = await supabase
+    .from("time_entries")
+    .select("*, marketing_requests(title)")
+    .eq("user_id", userId)
+    .is("ended_at", null)
+    .order("started_at", { ascending: true });
+
+  if (error) {
+    console.error("Erro ao buscar cronômetros ligados:", error);
+    return [];
+  }
+
+  return ((data ?? []) as unknown as Array<
+    TimeEntry & { marketing_requests: { title: string } | null }
+  >).map(({ marketing_requests, ...entry }) => ({
+    entry: entry as TimeEntry,
+    requestTitle: marketing_requests?.title ?? "Tarefa",
+  }));
+}
+
 export async function startTimeEntry(
   requestId: string,
   userId: string
@@ -100,12 +124,14 @@ export async function startTimeEntry(
   return { data: data as TimeEntry, error: null };
 }
 
+/** Fecha o registro agora ou no horário informado (quando a pessoa diz até que horas trabalhou). */
 export async function pauseTimeEntry(
-  entryId: string
+  entryId: string,
+  endedAt: string = new Date().toISOString()
 ): Promise<{ error: string | null }> {
   const { error } = await supabase
     .from("time_entries")
-    .update({ ended_at: new Date().toISOString() })
+    .update({ ended_at: endedAt })
     .eq("id", entryId);
 
   if (error) return { error: error.message };
@@ -113,9 +139,10 @@ export async function pauseTimeEntry(
 }
 
 export async function endTimeEntry(
-  entryId: string
+  entryId: string,
+  endedAt?: string
 ): Promise<{ error: string | null }> {
-  return pauseTimeEntry(entryId);
+  return pauseTimeEntry(entryId, endedAt);
 }
 
 export function formatDuration(startedAt: string, endedAt: string | null): string {

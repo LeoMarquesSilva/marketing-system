@@ -65,11 +65,11 @@ function RecordRow({ item, today, onOpen }: { item: GoodPracticeFeedback; today:
             {item.photo_count > 0 && (
               <span
                 className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-[#eef3f5] px-1.5 py-0.5 text-muted-foreground"
-                title={`${item.photo_count} ${item.photo_count === 1 ? "foto" : "fotos"}`}
+                title={`${item.photo_count} ${item.photo_count === 1 ? "foto ou vídeo" : "fotos e vídeos"}`}
               >
                 <Camera className="size-3" aria-hidden />
                 <span className="tabular-nums">{item.photo_count}</span>
-                <span className="sr-only">{item.photo_count === 1 ? "foto" : "fotos"}</span>
+                <span className="sr-only">{item.photo_count === 1 ? "foto ou vídeo" : "fotos e vídeos"}</span>
               </span>
             )}
           </span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -35,7 +35,7 @@ import { DialogHeaderIcon, DialogSectionHeading } from "@/components/eventos/dia
 import {
   SUPPLIER_CATEGORIES,
   SUPPLIER_CATEGORY_LABEL,
-  upsertSupplier,
+  saveSupplier,
   type EventSupplier,
 } from "@/lib/eventos";
 import { cn } from "@/lib/utils";
@@ -77,7 +77,8 @@ interface EventoSupplierDialogProps {
   onOpenChange: (open: boolean) => void;
   supplier?: EventSupplier | null;
   initialName?: string;
-  onSuccess?: (supplier: EventSupplier) => void;
+  /** `reused`: o nome já existia no cadastro e o existente foi usado no lugar de um novo. */
+  onSuccess?: (supplier: EventSupplier, info: { reused: boolean }) => void;
 }
 
 function LinkField({
@@ -105,9 +106,14 @@ export function EventoSupplierDialog({
     resolver: zodResolver(schema),
     defaultValues: EMPTY_VALUES,
   });
+  // Cliques repetidos enquanto a gravação não volta não podem virar cadastros repetidos.
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setSaveError(null);
     if (supplier) {
       form.reset({
         name: supplier.name,
@@ -129,25 +135,37 @@ export function EventoSupplierDialog({
   }, [open, supplier, initialName, form]);
 
   async function onSubmit(values: FormValues) {
-    const saved = await upsertSupplier({
-      id: supplier?.id,
-      name: values.name.trim(),
-      category: values.category,
-      contactName: values.contact_name?.trim() || undefined,
-      phone: values.phone?.trim() || undefined,
-      email: values.email?.trim() || undefined,
-      rating: values.rating ? Number(values.rating) : null,
-      notes: values.notes?.trim() || undefined,
-      active: values.active === "true",
-      websiteLink: values.website_link?.trim() || null,
-      instagramLink: values.instagram_link?.trim() || null,
-      portfolioLink: values.portfolio_link?.trim() || null,
-      whatsappLink: values.whatsapp_link?.trim() || null,
-    });
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const saved = await saveSupplier({
+        id: supplier?.id,
+        name: values.name.trim(),
+        category: values.category,
+        contactName: values.contact_name?.trim() || undefined,
+        phone: values.phone?.trim() || undefined,
+        email: values.email?.trim() || undefined,
+        rating: values.rating ? Number(values.rating) : null,
+        notes: values.notes?.trim() || undefined,
+        active: values.active === "true",
+        websiteLink: values.website_link?.trim() || null,
+        instagramLink: values.instagram_link?.trim() || null,
+        portfolioLink: values.portfolio_link?.trim() || null,
+        whatsappLink: values.whatsapp_link?.trim() || null,
+      });
 
-    if (saved) {
+      if (!saved.ok) {
+        if (saved.field === "name") form.setError("name", { message: saved.message }, { shouldFocus: true });
+        else setSaveError(saved.message);
+        return;
+      }
       onOpenChange(false);
-      onSuccess?.(saved);
+      onSuccess?.(saved.supplier, { reused: saved.reused });
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   }
 
@@ -279,9 +297,16 @@ export function EventoSupplierDialog({
               )} />
             </div>
 
+            {!isEdit && (
+              <p className="text-xs text-muted-foreground">
+                Se já existir um cadastro com este nome, ele será usado no lugar de um novo.
+              </p>
+            )}
+            {saveError && <p className="text-sm text-destructive" role="alert">{saveError}</p>}
+
             <div className="sticky bottom-0 -mx-1 -mb-1 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 flex justify-end gap-2 px-1 pb-1 pt-3">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-              <Button type="submit">Salvar</Button>
+              <Button type="submit" disabled={saving}>{saving ? "Salvando…" : "Salvar"}</Button>
             </div>
           </form>
         </Form>

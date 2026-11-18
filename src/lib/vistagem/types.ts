@@ -1,3 +1,5 @@
+import type { OrigemPrazo } from "./agendamento";
+import type { AlteracaoDaVistagem } from "./alterar-vistagem";
 import type { ContagemPrazo } from "./dias-uteis";
 import type { TarefaNoVios } from "./fila-vios";
 import type { FluxoDaTarefa } from "./fluxo-vios";
@@ -140,6 +142,8 @@ export interface PublicacaoResumo {
   valorAcaoAtualizado: number | null;
   escritorioResponsavel: string | null;
   demandaRisco: boolean | null;
+  /** Etiquetas da pasta no VIOS (retrato da triagem, pelo SIOE), ex.: "RC-Insolvência". */
+  etiquetas: string[];
   pendencia: Pendencia | null;
   pastasCandidatas: PastaSioe[];
   triadaEm: string | null;
@@ -151,6 +155,8 @@ export interface PublicacaoResumo {
   devolvidoEm: string | null;
   /** Vistada de novo depois da devolução (vistadoEm continua sendo a primeira vistagem). */
   revistadoEm: string | null;
+  /** Reaberta por quem vistou para alterar antes da Conferência (pedido de 11/11/2026). */
+  reabertaEm?: string | null;
   checadoEm: string | null;
   checkNota: string | null;
   /** Última transferência para a fila de outra área (escritório de origem, quando e por quê). */
@@ -267,10 +273,14 @@ export interface TarefaPrevista {
   editada: boolean;
   /**
    * O Orquestra mudou a data que o VIOS daria, e o robô grava no VIOS: "fatal", Revisar/Protocolar apertado para
-   * caber antes da fatal (prazo curto a partir de hoje); "hoje", a regra do VIOS dava antes de hoje.
+   * caber antes da fatal (prazo curto a partir de hoje); "hoje", a regra do VIOS dava antes de hoje; "antecipada",
+   * regra da insolvência (o Enviar e o Revisar vão 2 dias úteis antes e o Protocolar fica 1 dia útil antes da fatal).
    */
-  ajustada?: "fatal" | "hoje";
-  /** 1. CIÊNCIA DOS AGENDAMENTOS repetida na vistagem: o robô cancela no VIOS (fica a da primeira tarefa). */
+  ajustada?: "fatal" | "hoje" | "antecipada";
+  /**
+   * Repetida na vistagem: a 1. CIÊNCIA DOS AGENDAMENTOS, o EMBARGOS DE DECLARAÇÃO ou uma que ele cria (2. REVISAR,
+   * 3. PROTOCOLAR). O robô cancela no VIOS; fica a da primeira tarefa (`repetidasNaVistagem`).
+   */
   repetida?: boolean;
   responsaveis: string;
   /** O jurídico escolheu quem fica (no lugar da regra do robô); os nomes vão para o robô. */
@@ -309,6 +319,8 @@ export interface AgendamentoResumo {
   diasPrazo: number | null;
   /** Contagem do atalho de dias (úteis/corridos); null sem atalho. */
   contagemPrazo: ContagemPrazo | null;
+  /** Prazo: de onde vieram os dias ou a fatal (botões, calendário…); null nas antigas e fora do Prazo. */
+  origemPrazo: OrigemPrazo | null;
   /** COMPROMISSO: horário HH:MM. */
   hora: string | null;
   /** COMPROMISSO: Hora final HH:MM (null nos antigos: o robô pôs 1 hora depois, ou 00:00 antes de 05/11/2026). */
@@ -324,6 +336,11 @@ export interface AgendamentoResumo {
   fluxoDatas: DataDoFluxo[];
   /** O que o fluxo do VIOS vai criar junto e ao concluir (só a lista da Conferência traz). */
   fluxoPrevisto?: TarefaPrevista[];
+  /**
+   * Prazo apertado (só a lista da Conferência traz): o Enviar vistado já passou (ou é hoje e o prazo é curto) e o robô
+   * lança com este, o de hoje, apertando o Revisar e o Protocolar antes da fatal. Null quando vai o Enviar vistado.
+   */
+  enviarHoje?: string | null;
   /** Ajustes feitos na Conferência; sem nenhum, a tarefa está como o jurídico vistou. */
   ajustes?: AjusteNaTarefa[];
   envioStatus: EnvioStatus;
@@ -456,6 +473,8 @@ export interface ConferenciaItem {
   auxiliar?: string | null;
   /** Sugestão da IA que o jurídico tinha na vistagem e o que fez com ela (só a conferência traz; null sem sugestão). */
   sugestaoIa?: SugestaoNaVistagem | null;
+  /** Só na visão Vistado do jurídico, antes da Conferência: se quem vê pode reabrir a vistagem para alterar e, se não, por quê. */
+  alteracao?: AlteracaoDaVistagem;
 }
 
 export interface SugestaoNaVistagem {
@@ -502,11 +521,24 @@ export interface InconsistenciaItem {
 export interface CheckResposta {
   aChecar: ConferenciaItem[];
   revisar: ConferenciaItem[];
+  /** Só as checadas de um dia de importação (`importacao`); as outras se acham pela busca. */
   checadas: ConferenciaItem[];
+  /** Dia de importação das checadas (AAAA-MM-DD): hoje, se a tela não pediu outro. */
+  importacao: string;
+  /** Dias que tiveram importação, do mais recente para o mais antigo, para escolher nas Checadas. */
+  importacoes: string[];
   /** Foto de quem vistou, conferiu e checou, do advogado, do auxiliar e das pessoas das tarefas, pela chave do nome. */
   fotos: Record<string, string>;
   /** AAAA-MM-DD em São Paulo, para a régua de datas. */
   hoje: string;
+}
+
+/** Busca nas checadas de qualquer dia. */
+export interface CheckBuscaResposta {
+  itens: ConferenciaItem[];
+  fotos: Record<string, string>;
+  /** Achou mais do que a busca traz: só vieram as mais recentes. */
+  maisResultados: boolean;
 }
 
 /** Visão "Agendadas" do jurídico: o que foi vistado nos últimos `dias` e onde está cada tarefa. */

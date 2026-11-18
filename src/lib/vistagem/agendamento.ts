@@ -1,5 +1,6 @@
-import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, type ContagemPrazo } from "./dias-uteis";
+import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, somarDiasUteis, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
+import { pedeDiasCorridos } from "./etiquetas";
 import type { DataDoFluxo } from "./types";
 
 /**
@@ -58,6 +59,8 @@ export interface AgendamentoEntrada {
   diasPrazo?: number | null;
   /** PRAZO com atalho: dias úteis ou corridos, escolhido no modal. */
   contagemPrazo?: ContagemPrazo | null;
+  /** PRAZO: de onde vieram os dias ou a fatal (botões, calendário, prazo legal, publicação, IA). */
+  origemPrazo?: string | null;
   /** COMPROMISSO: HH:MM da audiência, perícia, sessão… (obrigatório). */
   hora?: string | null;
   /** COMPROMISSO: HH:MM em que termina (Hora final no VIOS); sem ela, 1 hora depois da inicial. */
@@ -81,6 +84,8 @@ export interface AgendamentoValidado {
   diasPrazo: number | null;
   /** Só com diasPrazo; sem atalho (fatal no calendário), null. */
   contagemPrazo: ContagemPrazo | null;
+  /** Só no Prazo com fatal; sem saber de onde veio, null. */
+  origemPrazo: OrigemPrazo | null;
   /** COMPROMISSO: HH:MM; nas outras classes, null. */
   hora: string | null;
   /** COMPROMISSO: Hora final no VIOS (HH:MM, depois da inicial); nas outras classes, null. */
@@ -93,6 +98,32 @@ export interface AgendamentoValidado {
   revisorId: string | null;
   observacao: string | null;
   fluxoDatas: DataDoFluxo[];
+}
+
+/**
+ * De onde vieram os dias ou a data fatal do Prazo, para a Conferência saber (pedido de 11/11/2026): os botões de dias,
+ * a data no calendário, o prazo legal que a tarefa traz sozinha, o "Usar N dias" do leitor da publicação ou a sugestão
+ * da IA.
+ */
+export const ORIGENS_PRAZO = ["atalho", "calendario", "tarefa", "publicacao", "sugestao_ia"] as const;
+export type OrigemPrazo = (typeof ORIGENS_PRAZO)[number];
+
+export const ROTULO_ORIGEM_PRAZO: Record<OrigemPrazo, string> = {
+  atalho: "Escolhido nos botões de dias",
+  calendario: "Data fatal escolhida no calendário",
+  tarefa: "Prazo legal da tarefa, preenchido sozinho",
+  publicacao: "Dias lidos na publicação",
+  sugestao_ia: "Da sugestão da IA",
+};
+
+/** Origens que só existem com os dias marcados: sem eles, a fatal foi mudada no calendário depois. */
+const ORIGENS_COM_DIAS: readonly OrigemPrazo[] = ["atalho", "tarefa", "publicacao"];
+
+/** A origem que vale gravar: só as conhecidas, e as de dias só com os dias marcados. */
+export function origemDoPrazo(origem: unknown, diasPrazo: number | null): OrigemPrazo | null {
+  const valida = ORIGENS_PRAZO.find((item) => item === origem) ?? null;
+  if (!valida) return null;
+  return ORIGENS_COM_DIAS.includes(valida) && !diasPrazo ? null : valida;
 }
 
 export const MAX_AGENDAMENTOS = 10;
@@ -255,11 +286,17 @@ export function mesmasPessoas(a: string[], b: string[]): boolean {
 }
 
 /**
- * SESSÃO DE JULGAMENTO: o fluxo dela não tem "2. REVISAR", então o revisor fica na própria tarefa, junto com o
- * responsável. É a regra do robô no lançamento (sama-rpa regras-fluxo.js, responsaveisDaTarefaLancada).
+ * O revisor fica na própria tarefa, junto com o responsável:
+ * - SESSÃO DE JULGAMENTO: o fluxo dela não tem "2. REVISAR";
+ * - audiência no Trabalhista (AUDIÊNCIA UNA/INICIAL, AUDIÊNCIA DE JULGAMENTO…): o advogado auxiliar vai à audiência
+ *   (pedido de 12/11/2026: na 0012645-71 o robô deixou só a Pamela, sem a Lorena).
+ * O Orquestra manda a decisão ao robô em `revisor_na_tarefa` (fila-vios.ts); o robô junta o revisor
+ * (sama-rpa regras-fluxo.js, responsaveisDaTarefaLancada).
  */
-export function revisorFicaNaTarefa(tarefa: string | null | undefined): boolean {
-  return chaveNome(tarefa) === "SESSAO DE JULGAMENTO";
+export function revisorFicaNaTarefa(tarefa: string | null | undefined, area: string | null | undefined = null): boolean {
+  const tipo = chaveNome(tarefa);
+  if (tipo === "SESSAO DE JULGAMENTO") return true;
+  return chaveNome(area) === "TRABALHISTA" && /^AUDIENCIA\b/.test(tipo);
 }
 
 /** Área do catálogo do SAMA para a pasta: a área do processo no VIOS ou, sem ela, a do escritório. */
@@ -279,6 +316,14 @@ export function areaDoCatalogo(areaProcesso: string | null, escritorio: string |
  */
 export function contagemPadraoDaArea(area: string | null | undefined): ContagemPrazo {
   return chaveNome(area) === "INSOLVENCIA" ? "corridos" : "uteis";
+}
+
+/**
+ * Como o Prazo começa marcado na publicação: a contagem da área (`contagemPadraoDaArea`) ou, se a pasta tiver uma
+ * etiqueta de dias corridos (RC-Insolvência), dias corridos em qualquer área. O jurídico pode trocar na tarefa.
+ */
+export function contagemPadraoDaPublicacao(area: string | null | undefined, etiquetas?: readonly string[] | null): ContagemPrazo {
+  return pedeDiasCorridos(etiquetas) ? "corridos" : contagemPadraoDaArea(area);
 }
 
 /** Responsável sugerido: o advogado responsável da pasta, se for usuário do VIOS. */
@@ -313,6 +358,29 @@ export function paraDataVios(iso: string): string {
   return `${dia}/${mes}/${ano}`;
 }
 
+/** A partir desta hora (Brasília), nenhuma tarefa da vistagem fica para hoje: vai a partir do dia útil seguinte. */
+export const HORA_LIMITE_DO_DIA = 18;
+
+/** Hora de agora em São Paulo (0 a 23), no servidor e no navegador. */
+export function horaEmSaoPaulo(agora: Date = new Date()): number {
+  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", hourCycle: "h23" }).format(agora));
+}
+
+/**
+ * Primeiro dia que uma tarefa da vistagem pode ter (pedido de 13/11/2026): hoje; às 18h ou depois, o dia útil
+ * seguinte. Depois do expediente ninguém faz mais nada no dia, e a Conferência só manda ao robô no próximo dia de
+ * trabalho. Vale para as datas que o jurídico escolhe (a da tarefa e as do fluxo) e para o Enviar do Prazo; a data
+ * fatal, que é do processo, não muda.
+ */
+export function primeiroDiaDaTarefa(hoje: string, hora: number, ehDiaUtil: (iso: string) => boolean): string {
+  return hora >= HORA_LIMITE_DO_DIA ? somarDiasUteis(hoje, 1, ehDiaUtil) : hoje;
+}
+
+/** O aviso de quando já passou das 18h: as datas vão a partir do dia útil seguinte. */
+export function avisoDepoisDoHorario(primeiroDia: string): string {
+  return `Já passou das ${HORA_LIMITE_DO_DIA}h: a data tem de ser a partir de ${paraDataVios(primeiroDia)} (próximo dia útil).`;
+}
+
 /** Avisos (não bloqueiam) sobre a data escolhida. */
 export function avisosDaData(iso: string, hoje: string): string[] {
   if (!dataValida(iso)) return [];
@@ -329,6 +397,15 @@ export function avisosDaData(iso: string, hoje: string): string[] {
  */
 export function observacaoObrigatoria(nomeDaTarefa: string | null | undefined): boolean {
   return chaveNome(nomeDaTarefa) === "CIENCIA NF";
+}
+
+/**
+ * Data que o tipo de tarefa já traz ao ser escolhido. A CIÊNCIA NF vai para o dia útil seguinte ao da vistagem
+ * (pedido de 11/11/2026; era o que o jurídico preenchia à mão), como o Inserir E-social. Os outros tipos começam
+ * vazios (null). Recebe o nome como está no VIOS.
+ */
+export function dataPadraoDaTarefa(nomeDaTarefa: string | null | undefined, hoje: string, ehDiaUtil: (iso: string) => boolean): string | null {
+  return chaveNome(nomeDaTarefa) === "CIENCIA NF" ? somarDiasUteis(hoje, 1, ehDiaUtil) : null;
 }
 
 /**
@@ -358,14 +435,22 @@ export function validarAgendamentos(
     tarefas: Record<EtiquetaAgendamento, OpcaoTarefa[]>;
     usuarios: OpcaoVios[];
     ehDiaUtil: (iso: string) => boolean;
-    /** Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). */
-    cadeiaDaTarefa: (tarefaId: string) => CadeiaDoPrazo | null;
+    /**
+     * Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). Recebe o prazo marcado: a regra
+     * da insolvência só antecipa o Enviar com 10 dias ou mais (`fluxoDoPrazo`).
+     */
+    cadeiaDaTarefa: (tarefaId: string, prazo: { dataFatal: string | null; diasPrazo: number | null }) => CadeiaDoPrazo | null;
     /** Tarefas que o fluxo do tipo cria junto (chaveDoCaminho), para aceitar só datas delas. */
     caminhosDaTarefa?: (tarefaId: string) => Set<string>;
     /** Tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA): vai com a data dela, sem fatal. */
     semPrazoProprio?: (tarefaId: string) => boolean;
     /** Dia da vistagem: o Enviar do Prazo nunca fica antes dele (prazo curto aperta a cadeia). */
     hoje?: string;
+    /**
+     * Já passou das 18h: as datas que o jurídico escolhe (a da tarefa e as do fluxo) têm de ser a partir deste dia, o
+     * útil seguinte (`primeiroDiaDaTarefa`). Só a vistagem do jurídico passa; a Conferência ajusta sem essa trava.
+     */
+    depoisDoHorario?: string | null;
     /**
      * Exige a Observação nos tipos que pedem (CIÊNCIA NF). Padrão: sim. A Conferência desliga: ali só se ajusta data
      * e pessoas, e uma tarefa vistada antes da regra não pode ficar sem ajuste.
@@ -399,11 +484,22 @@ export function validarAgendamentos(
     const data =
       prazo && !(semFatal && entrada.data)
         ? fatalPedida && tarefa
-          ? datasDoPrazo(fatalPedida, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id), contexto.hoje ?? null).enviar
+          ? datasDoPrazo(
+              fatalPedida,
+              contexto.ehDiaUtil,
+              contexto.cadeiaDaTarefa(tarefa.id, {
+                dataFatal: fatalPedida,
+                diasPrazo: Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null,
+              }),
+              contexto.hoje ?? null
+            ).enviar
           : ""
         : entrada.data;
     if (prazo && !semFatal && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
     if ((!prazo || semFatal) && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
+    // Depois das 18h, a data escolhida não fica para hoje (o Enviar do Prazo já vem do `hoje`, que é o dia seguinte).
+    const depois = contexto.depoisDoHorario;
+    if (depois && (!prazo || semFatal) && dataValida(data) && data < depois) erros.push(`${n}: ${avisoDepoisDoHorario(depois)}`);
     // Audiência, perícia, sessão…: o horário vai junto para o VIOS.
     const compromisso = entrada.etiqueta === "COMPROMISSO";
     const hora = compromisso && horaValida(entrada.hora?.trim()) ? (entrada.hora as string).trim() : null;
@@ -439,6 +535,7 @@ export function validarAgendamentos(
     const diasPrazo = prazo && !semFatal && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
     if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
+    const origemPrazo = fatal ? origemDoPrazo(entrada.origemPrazo, diasPrazo) : null;
     // O que a pessoa mudou no fluxo do VIOS: só de tarefas que o fluxo do tipo cria, com data válida e/ou
     // responsáveis da lista de usuários do VIOS (com o nome como está no VIOS, que o robô procura).
     let pessoaForaDoVios = false;
@@ -469,6 +566,9 @@ export function validarAgendamentos(
         ];
       });
     if (pessoaForaDoVios) erros.push(`${n}: escolha os responsáveis das tarefas do fluxo na lista de usuários do VIOS.`);
+    if (depois && fluxoDatas.some((item) => item.data && item.data < depois)) {
+      erros.push(`${n}, Fluxo das tarefas: ${avisoDepoisDoHorario(depois)}`);
+    }
     const caminhos = tarefa && contexto.caminhosDaTarefa ? contexto.caminhosDaTarefa(tarefa.id) : null;
     if (caminhos && fluxoDatas.some((item) => !caminhos.has(chaveDoCaminho(item.caminho)))) {
       erros.push(`${n}: há data ou responsável de tarefa do fluxo que esse tipo não cria no VIOS; confira o Fluxo das tarefas.`);
@@ -492,6 +592,7 @@ export function validarAgendamentos(
       dataFatal: fatal,
       diasPrazo,
       contagemPrazo,
+      origemPrazo,
       hora,
       horaFim,
       dataLimite,

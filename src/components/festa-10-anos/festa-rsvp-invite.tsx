@@ -6,6 +6,7 @@ import { ArrowRight, CalendarDays, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/auth-context";
+import { conviteConferidoHaPouco, marcarConviteConferido } from "@/lib/convite-conferido";
 import { FESTA_10_ANOS_PATH, formatRsvpDeadline } from "@/lib/event-rsvp";
 
 const CHECKED_KEY = "festa-10-anos:convite-conferido";
@@ -15,17 +16,17 @@ function today(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
-function readStorage(storage: "local" | "session", key: string): string | null {
+function readStorage(key: string): string | null {
   try {
-    return (storage === "local" ? window.localStorage : window.sessionStorage).getItem(key);
+    return window.localStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
-function writeStorage(storage: "local" | "session", key: string, value: string) {
+function writeStorage(key: string, value: string) {
   try {
-    (storage === "local" ? window.localStorage : window.sessionStorage).setItem(key, value);
+    window.localStorage.setItem(key, value);
   } catch {
     // Navegador sem armazenamento: o aviso só volta a aparecer.
   }
@@ -34,21 +35,23 @@ function writeStorage(storage: "local" | "session", key: string, value: string) 
 /**
  * Aviso da festa de 10 anos: enquanto a confirmação está aberta e a pessoa da
  * equipe não respondeu, aparece uma vez por dia ao entrar no sistema.
- * Confere uma vez por sessão do navegador (cada chamada conta CPU na Vercel).
+ * Confere no servidor no máximo a cada 2 horas, em todas as abas (cada chamada
+ * conta CPU na Vercel; ver convite-conferido.ts).
  */
 export function FestaRsvpInvite() {
   const router = useRouter();
   const pathname = usePathname();
   const { profile } = useAuth();
+  const profileId = profile?.id ?? null;
   const [closesAt, setClosesAt] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profileId) return;
     if (pathname.startsWith(FESTA_10_ANOS_PATH)) return;
-    if (readStorage("local", DISMISSED_KEY) === today()) return;
-    const sessionKey = `${CHECKED_KEY}:${profile.id}`;
-    if (readStorage("session", sessionKey)) return;
+    if (readStorage(DISMISSED_KEY) === today()) return;
+    const checkedKey = `${CHECKED_KEY}:${profileId}`;
+    if (conviteConferidoHaPouco(checkedKey)) return;
     let cancelled = false;
     let timer: number | undefined;
     // Outro aviso aberto (pesquisa, BP Awards, RH): espera ele fechar para não empilhar modais.
@@ -64,7 +67,7 @@ export function FestaRsvpInvite() {
       .then((response) => (response.ok ? (response.json() as Promise<{ pending: boolean; closesAt: string | null }>) : null))
       .then((data) => {
         if (cancelled || !data) return;
-        writeStorage("session", sessionKey, "1");
+        marcarConviteConferido(checkedKey);
         if (data.pending) {
           setClosesAt(data.closesAt);
           timer = window.setTimeout(showWhenFree, 1000);
@@ -75,12 +78,12 @@ export function FestaRsvpInvite() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-    // Só na entrada: trocar de página não dispara de novo.
+    // Só na entrada (pelo id: o perfil é recriado ao renovar a sessão): trocar de página não dispara de novo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile]);
+  }, [profileId]);
 
   const postpone = () => {
-    writeStorage("local", DISMISSED_KEY, today());
+    writeStorage(DISMISSED_KEY, today());
     setOpen(false);
   };
 

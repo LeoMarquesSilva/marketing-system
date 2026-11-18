@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CircleAlert, ExternalLink, FolderPlus, LoaderCircle, RotateCcw, ShieldAlert } from "lucide-react";
+import { ChevronRight, CircleAlert, ExternalLink, FolderPlus, LoaderCircle, RotateCcw, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
 import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
@@ -62,18 +62,33 @@ function resumoDasTarefas(item: ConferenciaItem): string {
     .join(" · ");
 }
 
-function LinhaAbertura({ item, onTentar, ocupado }: { item: ConferenciaItem; onTentar: () => void; ocupado: boolean }) {
+function LinhaAbertura({ item, onAbrir, onTentar, ocupado }: { item: ConferenciaItem; onAbrir: () => void; onTentar: () => void; ocupado: boolean }) {
   const { publicacao } = item;
   const processo = publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal;
   const grupo = publicacao.grupoCliente ?? publicacao.cliente;
   const naoChegou = !publicacao.centralItemId;
+  const idProcesso = `abertura-${publicacao.id}-processo`;
   return (
-    <li className="grid gap-x-6 gap-y-2 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-center">
+    // A linha toda abre o detalhe (o botão do número cobre a linha); o link da Central e o "Tentar de novo" ficam por cima.
+    <li
+      aria-labelledby={idProcesso}
+      className="group relative grid gap-x-6 gap-y-2 px-4 py-3 transition-colors hover:bg-[#f7fbfc] has-[[data-abrir]:focus-visible]:ring-[3px] has-[[data-abrir]:focus-visible]:ring-inset has-[[data-abrir]:focus-visible]:ring-[#47cdd0]/40 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-center"
+    >
       <div className="flex min-w-0 items-start gap-3">
         <LogoGrupo grupo={publicacao.grupoCliente} tamanho="md" className="mt-0.5" />
-        <div className="min-w-0 space-y-1">
+        <div className="min-w-0 flex-1 space-y-1">
           <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <span className="text-sm font-semibold tabular-nums text-[#10293a]">{processo}</span>
+            <button
+              type="button"
+              data-abrir
+              id={idProcesso}
+              onClick={onAbrir}
+              title="Ver as tarefas, o fluxo, as datas e os responsáveis"
+              className="rounded-sm text-sm font-semibold tabular-nums text-[#10293a] underline-offset-4 outline-none after:absolute after:inset-0 after:content-[''] group-hover:underline"
+            >
+              {processo}
+              <span className="sr-only"> · ver as tarefas agendadas</span>
+            </button>
             {publicacao.tribunal ? (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground" title={descricaoDoTribunal(publicacao.tribunal) ?? undefined}>
                 <IconeTribunal sigla={publicacao.tribunal} />
@@ -104,8 +119,9 @@ function LinhaAbertura({ item, onTentar, ocupado }: { item: ConferenciaItem; onT
           <p className="text-xs text-muted-foreground">{resumoDasTarefas(item)}</p>
           {naoChegou && publicacao.centralErro ? <p className="whitespace-pre-wrap break-words text-xs text-red-700">{publicacao.centralErro}</p> : null}
         </div>
+        <ChevronRight className="mt-1 size-4 shrink-0 text-[#9fb8c2] transition-colors group-hover:text-[#347796] lg:hidden" aria-hidden />
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 lg:justify-end">
+      <div className="relative z-10 flex flex-wrap items-center gap-x-3 gap-y-1.5 lg:justify-end">
         <SituacaoNaCentral publicacao={publicacao} />
         {naoChegou ? (
           <Button type="button" variant="outline" size="sm" onClick={onTentar} disabled={ocupado}>
@@ -113,6 +129,7 @@ function LinhaAbertura({ item, onTentar, ocupado }: { item: ConferenciaItem; onT
             Tentar de novo
           </Button>
         ) : null}
+        <ChevronRight className="hidden size-4 shrink-0 text-[#9fb8c2] transition-colors group-hover:text-[#347796] lg:block" aria-hidden />
       </div>
     </li>
   );
@@ -120,14 +137,18 @@ function LinhaAbertura({ item, onTentar, ocupado }: { item: ConferenciaItem; onT
 
 /**
  * Publicações sem pasta no VIOS que a controladoria validou na conferência: não vão para o robô, viram pedido de abertura
- * de pasta na Central do SharePoint. Aqui a controladoria vê o que foi e tenta de novo o que não chegou.
+ * de pasta na Central do SharePoint. Aqui a controladoria vê o que foi, abre cada uma (as tarefas com a árvore do fluxo,
+ * datas e responsáveis) e tenta de novo o que não chegou.
  */
 export function PainelAberturaDePasta({
   itens,
+  onAbrir,
   onTentado,
   onErro,
 }: {
   itens: ConferenciaItem[];
+  /** Abre o detalhe da publicação. */
+  onAbrir: (id: string) => void;
   /** A Central aceitou: recarrega a lista. */
   onTentado: (texto: string) => void;
   onErro: (texto: string) => void;
@@ -163,10 +184,19 @@ export function PainelAberturaDePasta({
   }
   return (
     <Painel>
-      <PainelTopo titulo="Enviadas à Central do SharePoint" descricao="Sem pasta no VIOS: a controladoria agenda pela Central depois de abrir a pasta." />
+      <PainelTopo
+        titulo="Enviadas à Central do SharePoint"
+        descricao="Sem pasta no VIOS: a controladoria agenda pela Central depois de abrir a pasta. Clique numa publicação para ver as tarefas, o fluxo, as datas e os responsáveis."
+      />
       <ul aria-label="Pedidos de abertura de pasta" className="divide-y divide-[#eef3f5] border-t border-[#e6eef0]">
         {itens.map((item) => (
-          <LinhaAbertura key={item.publicacao.id} item={item} ocupado={ocupada === item.publicacao.id} onTentar={() => void tentar(item.publicacao.id)} />
+          <LinhaAbertura
+            key={item.publicacao.id}
+            item={item}
+            ocupado={ocupada === item.publicacao.id}
+            onAbrir={() => onAbrir(item.publicacao.id)}
+            onTentar={() => void tentar(item.publicacao.id)}
+          />
         ))}
       </ul>
     </Painel>

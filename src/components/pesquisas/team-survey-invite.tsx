@@ -6,6 +6,7 @@ import { ArrowRight, ClipboardList, Clock3, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/auth-context";
+import { conviteConferidoHaPouco, marcarConviteConferido } from "@/lib/convite-conferido";
 import { ANSWER_PATH_PREFIX, SURVEY_BRAND_LOGOS, answerPath, formatSurveyDate, type SurveyBrand } from "@/lib/pesquisas/types";
 
 const CHECKED_KEY = "pesquisas:convite-conferido";
@@ -43,21 +44,23 @@ function writeStorage(storage: "local" | "session", key: string, value: string) 
 /**
  * Convite das pesquisas com a equipe: enquanto uma pesquisa está aberta para a
  * área da pessoa e ela não respondeu, aparece uma vez por dia ao entrar.
- * Confere uma vez por sessão do navegador (cada chamada conta CPU na Vercel).
+ * Confere no servidor no máximo a cada 2 horas, em todas as abas (cada chamada
+ * conta CPU na Vercel; ver convite-conferido.ts).
  */
 export function TeamSurveyInvite() {
   const router = useRouter();
   const pathname = usePathname();
   const { profile } = useAuth();
+  const profileId = profile?.id ?? null;
   const [survey, setSurvey] = useState<PendingSurvey | null>(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profileId) return;
     if (pathname.startsWith(`${ANSWER_PATH_PREFIX}/`)) return;
     if (readStorage("local", DISMISSED_KEY) === today()) return;
-    const sessionKey = `${CHECKED_KEY}:${profile.id}`;
-    if (readStorage("session", sessionKey)) return;
+    const sessionKey = `${CHECKED_KEY}:${profileId}`;
+    if (conviteConferidoHaPouco(sessionKey)) return;
     let cancelled = false;
     let timer: number | undefined;
     // Outro aviso aberto (BP Awards, RH): espera ele fechar para não empilhar modais.
@@ -73,7 +76,7 @@ export function TeamSurveyInvite() {
       .then((response) => (response.ok ? (response.json() as Promise<{ surveys: PendingSurvey[] }>) : null))
       .then((data) => {
         if (cancelled || !data) return;
-        writeStorage("session", sessionKey, "1");
+        marcarConviteConferido(sessionKey);
         const first = data.surveys[0];
         if (first) {
           setSurvey(first);
@@ -85,9 +88,9 @@ export function TeamSurveyInvite() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-    // Só na entrada: trocar de página não dispara de novo.
+    // Só na entrada (pelo id: o perfil é recriado ao renovar a sessão): trocar de página não dispara de novo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile]);
+  }, [profileId]);
 
   if (!survey) return null;
 

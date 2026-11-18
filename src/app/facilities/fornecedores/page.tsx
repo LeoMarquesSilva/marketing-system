@@ -7,5 +7,12 @@ export const dynamic = "force-dynamic";
 export default async function FornecedoresPage({ searchParams }: { searchParams: Promise<{ fornecedor?: string }> }) {
   const [data, params] = await Promise.all([loadFacilitiesPageData(), searchParams]);
   if (data.forbidden) return <FacilitiesAcessoNegado />;
-  return <FornecedoresClient initialSuppliers={data.suppliers} people={data.people} initialSupplierId={params.fornecedor} />;
+  return (
+    <FornecedoresClient
+      initialSuppliers={data.suppliers}
+      people={data.people}
+      opexSyncedAt={data.opexSyncedAt}
+      initialSupplierId={params.fornecedor}
+    />
+  );
 }

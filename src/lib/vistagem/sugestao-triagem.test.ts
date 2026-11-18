@@ -49,6 +49,12 @@ describe("sugestaoPorNumero", () => {
     expect(sugestao.motivo).toContain("1004427-73.2023.8.26.0048");
   });
 
+  it("Crítico só vale como demanda de risco quando está nas etiquetas configuradas", () => {
+    const pastas = [pasta({ etiquetas: "Carteira X | Crítico" })];
+    expect(sugestaoPorNumero("10044277320238260048", pastas, area).demandaRisco).toBe(false);
+    expect(sugestaoPorNumero("10044277320238260048", pastas, area, ["Demanda de risco", "Crítico"]).demandaRisco).toBe(true);
+  });
+
   it("pasta de ex-cliente vai para Operações Legais", () => {
     const sugestao = sugestaoPorNumero("10044277320238260048", [pasta({ grupoCliente: "Grupo Ex-Cliente", situacao: "Encerrado - Ex-Cliente" })], area);
     expect(sugestao.escritorio).toBe("Operações Legais");
