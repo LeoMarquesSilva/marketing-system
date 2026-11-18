@@ -91,7 +91,15 @@ export function paraSugestao(linha: Linha): Sugestao {
   };
 }
 
-/** Dias de guarda do PDF enquanto houver sugestão a conferir. */
+/**
+ * O PDF dos autos sai do ORQESTRAI depois de conferido ou vencido? Desligado por padrão desde 18/11/2026: os autos
+ * ficam todos guardados no Supabase. PROCESSOS_AUTOS_DESCARTE=ligado volta a descartar (por conferência e por prazo).
+ */
+export function descarteDeAutosLigado(): boolean {
+  return process.env.PROCESSOS_AUTOS_DESCARTE?.trim().toLowerCase() === "ligado";
+}
+
+/** Dias de guarda do PDF enquanto houver sugestão a conferir (só vale com o descarte ligado). */
 export function diasDeGuarda(): number {
   const dias = Number(process.env.PROCESSOS_AUTOS_DIAS);
   return Number.isFinite(dias) && dias > 0 ? dias : DIAS_DE_GUARDA_PADRAO;
@@ -132,6 +140,7 @@ export async function carregarAutos(processoId: string): Promise<AutosDoProcesso
       .sort((a, b) => (a.pagina ?? Infinity) - (b.pagina ?? Infinity) || a.criadoEm.localeCompare(b.criadoEm) || a.resumo.localeCompare(b.resumo)),
     iaConfigurada: iaConfigurada(),
     diasDeGuarda: diasDeGuarda(),
+    descarteLigado: descarteDeAutosLigado(),
   };
 }
 
@@ -416,7 +425,7 @@ export async function pedirContinuacaoNoEproc(documentoId: string, migracao: { p
   return `O processo migrou para o eproc (p. ${migracao.pagina}): os autos de lá foram pedidos ao robô.`;
 }
 
-/* ------------------------------------------------- o PDF é temporário */
+/* ------------------------------------- descarte do PDF (desligado por padrão) */
 
 /** Exclui o PDF do bucket e marca o documento. O registro e as sugestões (com página e trecho) continuam. */
 async function descartarArquivo(documento: { id: string; caminho: string }): Promise<void> {
@@ -432,6 +441,7 @@ async function descartarArquivo(documento: { id: string; caminho: string }): Pro
  * prazo (descartarVencidos) recolhe o que sobrar.
  */
 export async function descartarSeConcluido(documentoId: string): Promise<boolean> {
+  if (!descarteDeAutosLigado()) return false;
   try {
     const documento = await carregarDocumento(documentoId);
     if (documento.arquivoRemovidoEm || documento.leitura !== "lida") return false;
@@ -447,7 +457,8 @@ export async function descartarSeConcluido(documentoId: string): Promise<boolean
 }
 
 /** Descarta os PDFs com o prazo de guarda vencido (cron diário), tenham ou não sugestões pendentes. */
-export async function descartarVencidos(): Promise<{ descartados: number; falhas: number }> {
+export async function descartarVencidos(): Promise<{ descartados: number; falhas: number; desligado?: boolean }> {
+  if (!descarteDeAutosLigado()) return { descartados: 0, falhas: 0, desligado: true };
   const limite = new Date(Date.now() - diasDeGuarda() * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await db().from("proc_documentos").select("id, storage_path").is("arquivo_removido_em", null).neq("leitura_status", "lendo").lt("criado_em", limite).limit(500);
   if (error) falhou("listar os PDFs vencidos", error);

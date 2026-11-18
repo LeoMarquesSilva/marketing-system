@@ -272,7 +272,9 @@ export function PainelAutos({
         <p className="px-4 py-4 text-sm text-muted-foreground">Nenhum PDF ainda. {robo.disponivel ? "Peça ao robô ou anexe o arquivo." : "Anexe o arquivo dos autos."}</p>
       )}
       <p className="border-t border-[#e6eef0] px-4 py-2.5 text-xs text-muted-foreground">
-        O PDF é temporário: sai do ORQESTRAI quando a última sugestão dele é decidida ou depois de {autos.diasDeGuarda} dias. Ficam as sugestões, com página e trecho.
+        {autos.descarteLigado
+          ? `O PDF é temporário: sai do ORQESTRAI quando a última sugestão dele é decidida ou depois de ${autos.diasDeGuarda} dias. Ficam as sugestões, com página e trecho.`
+          : "O PDF fica guardado no ORQESTRAI, junto com as sugestões (página e trecho)."}
       </p>
       {!autos.iaConfigurada ? <p className="border-t border-[#e6eef0] px-4 py-2.5 text-xs text-amber-800">A leitura pela IA está desligada: falta a chave da OpenAI no servidor.</p> : null}
 

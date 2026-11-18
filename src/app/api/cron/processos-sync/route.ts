@@ -12,7 +12,8 @@ export const maxDuration = 300;
  * Traz os processos do VIOS para o cadastro do ORQESTRAI: "Processos Lista" do SharePoint da Controladoria
  * (atualizado ~8h) + processos_completo do SIOE, e em seguida as pessoas (Cadastros > Pessoas, pelo SIOE).
  * Roda às 12h UTC (9h em Brasília), depois dos dois.
- * Na mesma passada, exclui os PDFs de autos com o prazo de guarda vencido.
+ * Na mesma passada, exclui os PDFs de autos com o prazo de guarda vencido, se o descarte estiver ligado
+ * (PROCESSOS_AUTOS_DESCARTE=ligado; desligado por padrão, os autos ficam guardados).
  */
 export async function GET(request: Request) {
   if (!isAuthorizedCronRequest(request)) {
