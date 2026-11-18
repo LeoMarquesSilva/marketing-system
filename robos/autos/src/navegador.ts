@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import type { CertificadoCliente } from "./certificado.ts";
 import type { Config } from "./config.ts";
+import { instalarPjeOffice } from "./pje-office.ts";
 
 /**
  * O navegador do robô: sempre com janela (a pessoa precisa ver para concluir login, código ou CAPTCHA) e
@@ -139,6 +140,12 @@ async function abrirPeloPlaywright(config: Config, certificado: CertificadoClien
   });
   contexto.setDefaultTimeout(30_000);
   contexto.setDefaultNavigationTimeout(60_000);
+  // Login por certificado no jus.br (PDPJ, PJe): o robô faz o papel do PJe Office com o mesmo A1 (src/pje-office.ts).
+  if (certificado && config.pjeOffice) {
+    if (await instalarPjeOffice(contexto, certificado, { registrar: (m) => console.log(`[${new Date().toLocaleTimeString("pt-BR")}] ${m}`) })) {
+      console.log(`[${new Date().toLocaleTimeString("pt-BR")}] PJe Office do robô ligado para o login por certificado no jus.br (PDPJ).`);
+    }
+  }
   const pagina = contexto.pages()[0] ?? (await contexto.newPage());
   return {
     contexto,

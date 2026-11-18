@@ -7,7 +7,7 @@ Estudo de 17/11/2026 (2 fatores pelo painel em 18/11/2026) sobre rodar o robô d
 **Decisão do usuário (18/11/2026): o servidor atende todos os sistemas e o Mac é desligado, mas só depois de tudo funcionar no Easypanel.** A troca é feita sistema por sistema ([Migração](#migração-do-mac-para-o-servidor)).
 
 - **eproc do TJSP e do TJRJ:** rodam inteiros no servidor. O Playwright apresenta o certificado A1 (.pfx) ao SSO do tribunal sozinho, sem a lista de certificados do Chrome. Depois do certificado vem o código de 2 fatores, que o robô gera sozinho com o segredo do TOTP cadastrado no painel de robôs (sem ele, busca no webhook do n8n; sem os dois, uma pessoa digita pela tela remota). Testado localmente com um servidor que exige certificado de cliente; falta o teste com o certificado e os tribunais de verdade.
-- **PJe do TJRJ:** no servidor não há PJe Office (o certificado do PJe passa por ele). A pessoa entra pela tela remota com CPF e senha e o código do Microsoft Authenticator do advogado. Depois (fase 2), o robô pode entrar sozinho com senha e segredo do código guardados no painel.
+- **PJe do TJRJ (1º grau, login pelo jus.br/PDPJ):** o botão "CERTIFICADO DIGITAL" do jus.br chama o PJe Office, programa que não existe no servidor. O robô faz o papel dele (`src/pje-office.ts`): intercepta o pedido da página ao PJe Office dentro do próprio navegador, assina o desafio com o A1 do painel e entrega ao SSO, como o programa faria. Depois vem o código de 2 fatores, que o robô gera com o segredo `pdpj` do painel (o CNJ exige 2 fatores no jus.br desde 03/11/2025, mesmo com certificado). Testado com um SSO de teste que confere a assinatura; **não testado no jus.br de verdade**. O 2º grau tem login próprio e fica com a pessoa.
 - **DCP do TJRJ:** a pessoa entra pela tela remota. O login por certificado do tribunal (`www7.tjrj.jus.br`) pede o certificado de cliente numa renegociação TLS; se o Playwright apresentar o A1 ali (a testar), o certificado deixa de depender da pessoa. O duplo fator vem por e-mail, ou pelo Microsoft Authenticator se o advogado trocar (aí o robô pode gerar o código).
 - **e-SAJ (TJSP, TJCE, TJAL, TJMS):** o login por certificado depende do Web Signer da Softplan, sem uso confirmado em Linux. No servidor o login é feito pela pessoa, pela tela remota, com CPF e senha (`ESAJ_LOGIN=manual`); no TJSP o tribunal manda um código por e-mail a cada login, que a pessoa digita. Automatizar a leitura desse código ou testar o Web Signer em Linux são decisões para depois.
 - **Pessoa no circuito:** quando o robô precisa de alguém (login, código, CAPTCHA), a pessoa abre a tela do robô no navegador (noVNC), protegida por HTTPS e senha no Easypanel. É o mesmo que acontecia na janela do Mac, só que pelo navegador. O robô continua sem resolver CAPTCHA sozinho.
@@ -198,7 +198,7 @@ O robô exige `formato`, `arquivo` (só o nome, na mesma pasta), `sha256` e `sen
 |---|---|
 | `eproc` | eproc do TJSP |
 | `eproc-tjrj` | eproc do TJRJ (cadastro e segredo próprios) |
-| `pdpj` | SSO nacional da PDPJ (jus.br), usado pelo PJe do TJRJ no 1º grau: o robô digita o código quando a tela pedir; CPF e senha continuam com a pessoa |
+| `pdpj` | SSO nacional da PDPJ (jus.br), usado pelo PJe do TJRJ no 1º grau: depois do certificado (PJe Office do robô), o robô digita o código |
 
 Se o 2FA já foi ligado e ninguém guardou o código, ele não aparece de novo: é preciso desativar e ativar o 2FA no eproc ("Autenticação em 2 fatores", na tela inicial), cadastrar o QR code novo no celular do advogado e o código no painel, no mesmo momento. O registro antigo do celular deixa de valer.
 
@@ -285,7 +285,7 @@ O servidor roda o robô em três serviços, do mesmo código e da mesma imagem, 
 | Serviço | `ROBO_NOME` | `ROBO_CONECTORES` no fim | Login |
 |---|---|---|---|
 | `robo-autos-eproc-tjsp` | `servidor-eproc-tjsp` | `eproc:TJSP` | Sozinho: certificado A1 e código do segredo do painel |
-| `robo-autos-tjrj` | `servidor-tjrj` | `eproc:TJRJ,dcp,pje` | eproc sozinho; DCP e PJe pela pessoa, pela tela remota |
+| `robo-autos-tjrj` | `servidor-tjrj` | `eproc:TJRJ,dcp,pje` | eproc e PJe (1º grau) sozinhos: certificado (no PJe, pelo PJe Office do robô) e código do painel; DCP pela pessoa, pela tela remota |
 | `robo-autos-esaj` | `servidor-esaj` | `esaj` (TJSP, TJCE, TJAL, TJMS) | Pela pessoa: CPF, senha e código do e-mail |
 
 - **TJRJ num serviço só:** o DCP devolve ao eproc do TJRJ o processo já migrado e usa a sessão do eproc. Separados, seriam dois logins do mesmo advogado no eproc do TJRJ.
@@ -429,6 +429,7 @@ Enquanto o Mac não foi desligado: volte para ele o sistema com problema (ou tod
 | `TELA_REMOTA_URL` | — | Endereço da tela remota, mostrado no log. |
 | `CERTIFICADO_PFX`, `CERTIFICADO_SENHA`, `CERTIFICADO_SENHA_ARQUIVO` | — | Certificado em arquivo, fonte simples. |
 | `CERTIFICADO_PASTA`, `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO` | — | Certificado enviado pelo painel. |
+| `PJE_OFFICE` | ligado com certificado no modo playwright | `nao` desliga o PJe Office do robô (o login por certificado no jus.br volta para a pessoa). |
 | `ROBO_2FA_PASTA` | `CERTIFICADO_PASTA` | Onde está o `segundo-fator.json` gravado pelo painel (segredo do TOTP, decifrado com `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO`). |
 | `CERTIFICADO_ORIGENS` | `https://certificado-sso.tjsp.jus.br` | Onde o certificado é apresentado. |
 | `VNC_SENHA`, `VNC_SENHA_ARQUIVO` | — | Senha da tela remota (só no contêiner). |

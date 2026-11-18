@@ -65,6 +65,11 @@ export interface Config {
    * Vem antes do webhook: com ele, o robô gera o código sozinho. Pasta: ROBO_2FA_PASTA ou, sem ela, CERTIFICADO_PASTA.
    */
   segundoFator: ConfigSegundoFator;
+  /**
+   * O robô faz o papel do PJe Office no login por certificado do jus.br (PDPJ), com o mesmo A1 (src/pje-office.ts).
+   * Só no modo playwright com certificado; PJE_OFFICE=nao desliga (aí o login no jus.br fica com a pessoa).
+   */
+  pjeOffice: boolean;
   pastas: { perfil: string; downloads: string; diagnostico: string };
 }
 
@@ -146,6 +151,7 @@ export function lerConfig(): Config {
     eproc: { login: loginEproc, usuario: texto("EPROC_USUARIO"), senha: texto("EPROC_SENHA") },
     eprocTjrj: { login: loginEprocTjrj, usuario: texto("EPROC_TJRJ_USUARIO"), senha: texto("EPROC_TJRJ_SENHA") },
     webhook2fa: { url: texto("ROBO_2FA_WEBHOOK_URL"), header: texto("ROBO_2FA_WEBHOOK_HEADER") || "x-robo-token", token: texto("ROBO_2FA_WEBHOOK_TOKEN") },
+    pjeOffice: comCertificado && navegadorModo === "playwright" && !/^(nao|não|0|false)$/i.test(texto("PJE_OFFICE")),
     segundoFator: { pasta: texto("ROBO_2FA_PASTA") || certificado.pasta, chavePrivadaArquivo: certificado.chavePrivadaArquivo },
     pastas: { perfil: pasta("perfil"), downloads: pasta("downloads"), diagnostico: pasta("diagnostico") },
   };

@@ -81,6 +81,11 @@ export interface OpcoesDeLogin {
   sistema2fa?: string;
   /** Digita o código na tela do segundo fator e confirma. */
   digitarCodigo?: (pagina: Page, codigo: string) => Promise<void>;
+  /**
+   * Uma tentativa de entrar sem a pessoa na tela de login (ex.: o certificado pelo PJe Office do robô). Devolve se
+   * fez algo; o robô espera a tela mudar e, se não entrou, chama a pessoa como sempre.
+   */
+  entrarSozinho?: (pagina: Page) => Promise<boolean>;
   /** Chamado uma vez em cada tela nova do login (o mapear registra a tela). */
   aoVerTela?: (pagina: Page, tela: "login" | "codigo") => Promise<void>;
   /** Confirmação manual (Enter no terminal), para quando o critério observável falhar. */
@@ -109,6 +114,7 @@ export async function entrarComAPessoa(ambiente: Ambiente, opcoes: OpcoesDeLogin
   await opcoes.aoVerTela?.(pagina, "login");
   let codigoVisto = false;
   let tentouPainel = false;
+  let tentouSozinho = false;
   while (!(await dentro())) {
     // O login pode abrir outra aba (certificado, gov.br): acompanha a mais recente.
     const abertas = contexto.pages().filter((aba) => !aba.isClosed());
@@ -145,6 +151,18 @@ export async function entrarComAPessoa(ambiente: Ambiente, opcoes: OpcoesDeLogin
         async () => (await dentro()) || !(await opcoes.pedeCodigo!(pagina).catch(() => false))
       );
       continue;
+    }
+    if (opcoes.entrarSozinho && !tentouSozinho) {
+      tentouSozinho = true;
+      if (await opcoes.entrarSozinho(pagina).catch(() => false)) {
+        registrar(`${opcoes.sistema}: entrando pelo certificado, sem a pessoa.`);
+        // Espera sair da tela de login (área logada ou tela do código); se não sair, a pessoa assume abaixo.
+        for (const limite = Date.now() + 30_000; Date.now() < limite; ) {
+          if ((await dentro()) || (opcoes.pedeCodigo && (await opcoes.pedeCodigo(pagina).catch(() => false)))) break;
+          await pagina.waitForTimeout(1_000).catch(() => undefined);
+        }
+        continue;
+      }
     }
     await ambiente.aguardarPessoa(
       "login",
