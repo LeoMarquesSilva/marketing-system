@@ -2,7 +2,7 @@
 
 Baixa os autos dos processos no tribunal e entrega o PDF ao ORQESTRAI, onde a IA lê e deixa sugestões para uma pessoa aprovar. Roda **fora da Vercel**, numa máquina do escritório, com Node e Playwright, ou num contêiner no servidor (Easypanel): veja [Servidor (Easypanel)](#servidor-easypanel).
 
-Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.ts`; endereços em `TRIBUNAIS_ESAJ`, em `esaj-urls.ts`) e **eproc do TJSP** (`src/conectores/eproc.ts`; instalações em `INSTANCIAS_EPROC_TJSP`, em `eproc-urls.ts`). Os próximos (PJe, Projudi) entram em `src/conectores/`, um por sistema de tribunal.
+Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.ts`; endereços em `TRIBUNAIS_ESAJ`, em `esaj-urls.ts`) e **eproc do TJSP e do TJRJ** (`src/conectores/eproc.ts`; instalações e SSO em `TRIBUNAIS_EPROC`, em `eproc-urls.ts`). Os próximos (PJe, Projudi) entram em `src/conectores/`, um por sistema de tribunal.
 
 ## Como funciona
 
@@ -56,6 +56,8 @@ Edite o `.env`:
 | `ESAJ_USUARIO`, `ESAJ_SENHA` | Só no modo `senha`. |
 | `EPROC_LOGIN` | Login no eproc do TJSP: `certificado`, `senha` ou `manual`. Sem ela, vale o `ESAJ_LOGIN`. |
 | `EPROC_USUARIO`, `EPROC_SENHA` | Só no modo `senha` do eproc. |
+| `EPROC_TJRJ_LOGIN` | Login no eproc do TJRJ: `certificado`, `senha` ou `manual`. Sem ela, vale o `EPROC_LOGIN` (e `senha` sem usuário e senha do TJRJ vira `manual`). |
+| `EPROC_TJRJ_USUARIO`, `EPROC_TJRJ_SENHA` | Só no modo `senha` do eproc do TJRJ (o cadastro do advogado no TJRJ é outro, com senha própria). |
 | `ROBO_CONECTORES` | Opcional. Conectores que este robô atende (`eproc`, `esaj`, `esaj:TJCE`…); vazio = todos. Serve para dividir o trabalho entre o robô do Mac e o do servidor. |
 
 As variáveis do servidor (`NAVEGADOR_MODO`, `PASTA_DADOS`, `CERTIFICADO_*`, `VNC_SENHA`…) estão no `.env.example` e em [docs/easypanel.md](docs/easypanel.md). Sem elas, o robô funciona como descrito aqui.
@@ -79,6 +81,23 @@ O eproc do TJSP tem uma instalação por competência (1º grau cível; execuç�
 - **Acesso à íntegra:** quando o advogado não representa nenhuma parte, o eproc só libera os documentos pela "Acesso à íntegra do processo", que é uma declaração de interesse (Res. CNJ 121/2010) com CAPTCHA. O robô não faz essa declaração: o pedido volta com erro e o PDF é anexado à mão.
 
 Para conferir a tela antes de baixar: `npm run inspecionar -- eproc 0000000-00.0000.8.26.0000`. Para abrir só a sessão: `npm run login -- eproc`.
+
+### TJRJ (eproc)
+
+O TJRJ tem três sistemas, e o mesmo número CNJ (`…8.19.…`) pode estar em qualquer um deles:
+
+- **DCP**, o sistema próprio, operado pelo advogado no **Portal de Serviços** (`www3.tjrj.jus.br/portalservicos`; login no `idserverjus` com usuário e senha mais duplo fator, ou certificado). É o "Próprio" do cadastro do VIOS.
+- **PJe** (`tjrj.pje.jus.br`, login pelo SSO nacional da PDPJ), usado nas varas cíveis e juizados de 2019 a 2026.
+- **eproc** (`eproc1g.tjrj.jus.br` e `eproc2g.tjrj.jus.br`, login em `eproc-sso.tjrj.jus.br`): desde maio de 2026 recebe todo processo cível novo, e o tribunal está migrando para ele o acervo do DCP e do PJe, com o mesmo número CNJ (1,3 milhão de processos migrados em 18/11/2026). Os juizados cíveis entram de 10/12/2026 a 2027.
+
+Por isso o ORQESTRAI manda todo processo do TJRJ (cadastrado como "Próprio", PJe ou eproc) para o conector `eproc:TJRJ`. Se o processo ainda não migrou, a pesquisa do eproc não o acha e o pedido volta com erro dizendo que ele continua no DCP ou no PJe: anexe o PDF à mão. O robô ainda não entra no Portal de Serviços nem no PJe.
+
+- **Login:** o mesmo desenho do TJSP (SSO Keycloak com usuário e senha, ou "Certificado Digital"), com cadastro e senha próprios do advogado no TJRJ (`EPROC_TJRJ_*`). No caminho, o navegador passa pelo SSO nacional da PDPJ (`sso.cloud.pje.jus.br`), que redireciona sozinho para o SSO do TJRJ.
+- **2 fatores:** o eproc do TJRJ tem autenticação em dois fatores, como o do TJSP. Com o webhook configurado, o robô pede o código com `?sistema=eproc-tjrj` (o segredo do TOTP do TJRJ é outro); sem ele, ou se o webhook não conhecer esse sistema, a pessoa digita o código.
+- **Certificado em arquivo (servidor):** o endereço que pede o certificado no login do TJRJ não foi conferido. Ache-o no primeiro teste (a captura do `diagnostico/` mostra o endereço) e acrescente a origem em `CERTIFICADO_ORIGENS`, junto com a do TJSP.
+- **Consulta pública:** existe, mas tem CAPTCHA (Cloudflare Turnstile). O robô não usa: entra sempre com a sessão do advogado.
+
+Para conferir: `npm run inspecionar -- eproc 0000000-00.0000.8.19.0000`. Para abrir só a sessão: `npm run login -- eproc TJRJ`.
 
 ## Primeiro uso
 
@@ -118,7 +137,7 @@ Na ficha do processo, o painel **Autos** mostra a situação do pedido: na fila,
 | "PRECISA DE UMA PESSOA" no terminal | Resolva o que a mensagem pede (login, código, CAPTCHA) na janela do Chrome do robô. Ele espera `ESPERA_PESSOA_MINUTOS` (15 por padrão); passado o tempo, o pedido continua "aguardando pessoa" e o robô tenta de novo mais tarde. |
 | "O e-SAJ pede a senha do processo" | O advogado do certificado não está habilitado naquele processo. Anexe o PDF à mão na ficha. |
 | "A tela do e-SAJ mudou ou não carregou" | O tribunal mudou a página. A mensagem aponta a captura guardada em `diagnostico/`; ajuste os seletores em `src/conectores/esaj.ts` (constante `TELA`). |
-| "não mostrou o processo" | Número de outro sistema (processos novos do TJSP estão no eproc), segredo de justiça sem acesso do advogado, ou número com mais de um processo. |
+| "não mostrou o processo" | Número de outro sistema (processos novos do TJSP estão no eproc; no TJRJ, processo que ainda não migrou do DCP ou do PJe), segredo de justiça sem acesso do advogado, ou número com mais de um processo. |
 | PDF com mais de 200 MB | Passa do limite do bucket. Baixe em partes e anexe à mão. |
 | "O navegador do robô não respondeu" | Ficou uma janela do Chrome do robô aberta de uma execução anterior. Feche-a e rode de novo. |
 | "ORQESTRAI respondeu 401" ou 503 | `ROBO_AUTOS_TOKEN` diferente do servidor, ou não configurado nele. |

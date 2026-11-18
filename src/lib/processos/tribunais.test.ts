@@ -47,6 +47,18 @@ describe("roboDoProcesso", () => {
     expect(roboDoProcesso("0001234-56.2020.8.12.0001", "E-saj")).toMatchObject({ tribunal: "TJMS", disponivel: true });
   });
 
+  // Números fictícios (dígito verificador inválido de propósito).
+  it("manda o TJRJ para o eproc, inclusive o que o cadastro chama de Próprio (DCP) ou PJe", () => {
+    expect(roboDoProcesso("00123456720198190001", "Próprio")).toMatchObject({ cnj: "0012345-67.2019.8.19.0001", tribunal: "TJRJ", sistema: "eproc", disponivel: true, motivo: null });
+    expect(roboDoProcesso("0801234-56.2024.8.19.0001", "pje")).toMatchObject({ tribunal: "TJRJ", sistema: "eproc", disponivel: true });
+    expect(roboDoProcesso("3001234-56.2026.8.19.0001", "E-PROC")).toMatchObject({ tribunal: "TJRJ", sistema: "eproc", disponivel: true });
+    expect(roboDoProcesso("0012345-67.2019.8.19.0001", null)).toMatchObject({ tribunal: "TJRJ", sistema: "eproc", disponivel: true });
+  });
+
+  it("só o TJRJ troca o sistema antigo pelo eproc", () => {
+    expect(roboDoProcesso("0001234-56.2020.8.13.0024", "Próprio")).toMatchObject({ tribunal: "TJMG", sistema: "outro", disponivel: false });
+  });
+
   it("não atende e-SAJ de tribunal sem conector nem processo sem CNJ", () => {
     expect(roboDoProcesso("0001234-56.2020.8.04.0001", "E-saj").disponivel).toBe(false);
     expect(roboDoProcesso("0001234-56.2020.8.13.0024", "pje").motivo).toContain("PJe do TJMG");

@@ -48,6 +48,11 @@ export interface Config {
   /** eproc (TJSP): login pelo SSO do tribunal. Sem EPROC_LOGIN, vale o modo do e-SAJ. */
   eproc: { login: ModoDeLogin; usuario: string; senha: string };
   /**
+   * eproc do TJRJ: cadastro e senha próprios do tribunal (EPROC_TJRJ_*). Sem EPROC_TJRJ_LOGIN, vale o modo do
+   * eproc do TJSP, menos "senha" sem usuário e senha do TJRJ, que vira "manual".
+   */
+  eprocTjrj: { login: ModoDeLogin; usuario: string; senha: string };
+  /**
    * Fonte do código de 2 fatores, montada pelos donos da conta (ex.: um webhook do n8n que gera o TOTP de cada
    * tribunal). Com `url` preenchida, o robô busca o código ali, por sistema (`?sistema=eproc`, `?sistema=pdpj`…),
    * e digita sozinho; sem ela, espera a pessoa. O segredo do 2FA NÃO fica aqui: fica na fonte. Isto só guarda o
@@ -90,6 +95,12 @@ export function lerConfig(): Config {
   if (loginEproc !== "certificado" && loginEproc !== "senha" && loginEproc !== "manual") throw new Error('EPROC_LOGIN deve ser "certificado", "senha" ou "manual".');
   if (loginEproc === "senha" && (!texto("EPROC_USUARIO") || !texto("EPROC_SENHA"))) throw new Error("No modo senha do eproc, defina EPROC_USUARIO e EPROC_SENHA no .env desta máquina.");
 
+  const loginTjrjInformado = texto("EPROC_TJRJ_LOGIN").toLowerCase();
+  const credenciaisTjrj = Boolean(texto("EPROC_TJRJ_USUARIO") && texto("EPROC_TJRJ_SENHA"));
+  const loginEprocTjrj = loginTjrjInformado || (loginEproc === "senha" && !credenciaisTjrj ? "manual" : loginEproc);
+  if (loginEprocTjrj !== "certificado" && loginEprocTjrj !== "senha" && loginEprocTjrj !== "manual") throw new Error('EPROC_TJRJ_LOGIN deve ser "certificado", "senha" ou "manual".');
+  if (loginEprocTjrj === "senha" && !credenciaisTjrj) throw new Error("No modo senha do eproc do TJRJ, defina EPROC_TJRJ_USUARIO e EPROC_TJRJ_SENHA no .env desta máquina.");
+
   const certificado: ConfigCertificado = {
     pfx: texto("CERTIFICADO_PFX"),
     senha: process.env.CERTIFICADO_SENHA ?? "",
@@ -127,6 +138,7 @@ export function lerConfig(): Config {
     pausaCapaMs: numero("PAUSA_CAPA_SEGUNDOS", 30) * 1000,
     esaj: { login, certificado: texto("ESAJ_CERTIFICADO"), usuario: texto("ESAJ_USUARIO"), senha: texto("ESAJ_SENHA") },
     eproc: { login: loginEproc, usuario: texto("EPROC_USUARIO"), senha: texto("EPROC_SENHA") },
+    eprocTjrj: { login: loginEprocTjrj, usuario: texto("EPROC_TJRJ_USUARIO"), senha: texto("EPROC_TJRJ_SENHA") },
     webhook2fa: { url: texto("ROBO_2FA_WEBHOOK_URL"), header: texto("ROBO_2FA_WEBHOOK_HEADER") || "x-robo-token", token: texto("ROBO_2FA_WEBHOOK_TOKEN") },
     pastas: { perfil: pasta("perfil"), downloads: pasta("downloads"), diagnostico: pasta("diagnostico") },
   };

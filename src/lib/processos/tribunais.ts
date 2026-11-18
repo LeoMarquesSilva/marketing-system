@@ -26,13 +26,24 @@ const SISTEMA_PADRAO: Record<string, SistemaTribunal> = {
   TJRS: "eproc", TJSC: "eproc", TJTO: "eproc",
   TJPR: "projudi", TJGO: "projudi",
   TJMG: "pje", TJMT: "pje", TJMA: "pje", TJBA: "pje", TJES: "pje", TJPE: "pje", TJPA: "pje", TJPI: "pje",
-  TJRN: "pje", TJDFT: "pje", TJPB: "pje", TJRO: "pje", TJRR: "pje", TJAP: "pje", TJRJ: "pje",
+  TJRN: "pje", TJDFT: "pje", TJPB: "pje", TJRO: "pje", TJRR: "pje", TJAP: "pje",
+  // TJRJ: todo processo cível novo vai para o eproc desde maio de 2026 (página "Sistemas Judiciais" do tribunal).
+  TJRJ: "eproc",
+};
+
+/**
+ * Tribunais que migram o acervo dos sistemas antigos para o eproc, com o mesmo número CNJ: o robô procura o
+ * processo no eproc, e o que ainda não migrou volta com erro explicando. No TJRJ, o "Próprio" do cadastro é o
+ * DCP (Portal de Serviços); o DCP e o PJe estão sendo migrados (mais de 1,3 milhão de processos em 18/11/2026).
+ */
+const MIGRA_PARA_EPROC: Partial<Record<string, SistemaTribunal[]>> = {
+  TJRJ: ["outro", "pje"],
 };
 
 /** Conectores do robô que já existem: sistema → tribunais atendidos (robos/autos/src/conectores). */
 export const CONECTORES_DISPONIVEIS: Partial<Record<SistemaTribunal, string[]>> = {
   esaj: ["TJSP", "TJCE", "TJAL", "TJMS"],
-  eproc: ["TJSP"],
+  eproc: ["TJSP", "TJRJ"],
 };
 
 export function digitosDoCnj(cnj: string | null | undefined): string | null {
@@ -86,7 +97,8 @@ export function roboDoProcesso(cnj: string | null | undefined, sistemaDoCadastro
   const mascarado = mascararCnj(digitos);
   const tribunal = tribunalDoCnj(digitos);
   if (!tribunal) return { cnj: mascarado, tribunal: null, sistema: null, disponivel: false, motivo: "Não reconheci o tribunal pelo número: anexe o PDF dos autos." };
-  const sistema = lerSistema(sistemaDoCadastro) ?? SISTEMA_PADRAO[tribunal] ?? null;
+  const doCadastro = lerSistema(sistemaDoCadastro) ?? SISTEMA_PADRAO[tribunal] ?? null;
+  const sistema = doCadastro && MIGRA_PARA_EPROC[tribunal]?.includes(doCadastro) ? "eproc" : doCadastro;
   if (!sistema) return { cnj: mascarado, tribunal, sistema: null, disponivel: false, motivo: `Ainda não há robô para o ${tribunal}: anexe o PDF dos autos.` };
   const disponivel = CONECTORES_DISPONIVEIS[sistema]?.includes(tribunal) ?? false;
   return {

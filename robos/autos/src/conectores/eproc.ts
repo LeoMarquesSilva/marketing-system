@@ -6,7 +6,7 @@ import type { Dialog, Page } from "playwright";
 import type { Pedido } from "../fila.ts";
 import { conferirPdf, controlesDaTela, temCaptcha, visivel } from "./comum.ts";
 import {
-  INSTANCIAS_EPROC_TJSP,
+  TRIBUNAIS_EPROC,
   arquivoEmbutido,
   ehAreaLogada,
   ehCapaDoProcesso,
@@ -21,13 +21,19 @@ import {
   type DocumentoEproc,
   type InstanciaEproc,
   type TipoDeArquivo,
+  type TribunalEproc,
 } from "./eproc-urls.ts";
 import { lerCnj, type NumeroCnj } from "./esaj-urls.ts";
 import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./tipos.ts";
 
 /**
- * Conector do eproc do TJSP. O login é o SSO do tribunal: entrar numa instalação do eproc (1º grau cível,
- * execução fiscal e Fazenda Pública, 2º grau) vale para as outras.
+ * Conector do eproc, um por tribunal (TJSP e TJRJ; instalações e SSO em `TRIBUNAIS_EPROC`, eproc-urls.ts). O
+ * login é o SSO do tribunal: entrar numa instalação do eproc (no TJSP, 1º grau cível, execução fiscal e Fazenda
+ * Pública, 2º grau; no TJRJ, 1º e 2º grau) vale para as outras do mesmo tribunal.
+ *
+ * No TJRJ, o eproc recebe o acervo migrado do DCP (sistema próprio) e do PJe com o mesmo número CNJ. O
+ * ORQESTRAI manda para cá os processos do TJRJ cadastrados como "Próprio" ou PJe; o que ainda não migrou não
+ * aparece na pesquisa e o pedido volta com erro explicando isso.
  *
  * O eproc não tem "baixar o processo inteiro": os autos são os documentos da tabela de eventos da capa.
  * O robô abre o processo pelo campo de pesquisa rápida, baixa cada documento com a sessão do advogado e
@@ -40,8 +46,6 @@ import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type R
  * - não usa "Acesso à íntegra do processo": é a declaração de interesse do advogado (Res. CNJ 121/2010), com
  *   CAPTCHA. Se o advogado não representa uma das partes, o pedido volta com erro.
  */
-
-const SISTEMA = "eproc do TJSP";
 
 const TELA = {
   login: {
@@ -118,8 +122,24 @@ function certificadoEmArquivo(config: Ambiente["config"]): boolean {
   return Boolean(config.certificado.pfx || config.certificado.pasta);
 }
 
-class ConectorEprocTjsp implements Conector {
-  readonly chave = "eproc:TJSP";
+/** Login do advogado no eproc daquele tribunal: cada tribunal tem cadastro e senha próprios. */
+function credenciais(config: Ambiente["config"], sigla: string): Ambiente["config"]["eproc"] {
+  return sigla === "TJRJ" ? config.eprocTjrj : config.eproc;
+}
+
+class ConectorEproc implements Conector {
+  readonly chave: string;
+  /** "eproc do TJSP", nas mensagens. */
+  private readonly sistema: string;
+
+  constructor(private readonly tribunal: TribunalEproc) {
+    this.chave = `eproc:${tribunal.sigla}`;
+    this.sistema = `eproc do ${tribunal.sigla}`;
+  }
+
+  private ehLogin(url: string): boolean {
+    return ehLoginSso(url, this.tribunal);
+  }
 
   /* ------------------------------------------------------------------ login */
 
@@ -130,7 +150,7 @@ class ConectorEprocTjsp implements Conector {
     await pagina.goto(`${instancia.base}/`, { waitUntil: "domcontentloaded" }).catch(() => undefined);
     const limite = Date.now() + 45_000;
     while (Date.now() < limite) {
-      if (ehAreaLogada(pagina.url()) || ehLoginSso(pagina.url()) || (await visivel(pagina, TELA.login.codigo))) break;
+      if (ehAreaLogada(pagina.url()) || this.ehLogin(pagina.url()) || (await visivel(pagina, TELA.login.codigo))) break;
       await pagina.waitForTimeout(1_000);
     }
     await pagina.waitForLoadState("load").catch(() => undefined);
@@ -161,7 +181,7 @@ class ConectorEprocTjsp implements Conector {
     }
     await ambiente.aguardarPessoa(
       "segundo_fator",
-      `O ${SISTEMA} pediu o código de 6 dígitos do aplicativo de autenticação (2FA). O advogado digita o código na janela do robô e clica em Validar. O robô segue sozinho depois.`,
+      `O ${this.sistema} pediu o código de 6 dígitos do aplicativo de autenticação (2FA). O advogado digita o código na janela do robô e clica em Validar. O robô segue sozinho depois.`,
       dentro
     );
     registrar("Login concluído.");
@@ -172,7 +192,7 @@ class ConectorEprocTjsp implements Conector {
     const fonte = config.webhook2fa;
     if (!fonte.url) return null;
     try {
-      const url = `${fonte.url}${fonte.url.includes("?") ? "&" : "?"}sistema=eproc`;
+      const url = `${fonte.url}${fonte.url.includes("?") ? "&" : "?"}sistema=${encodeURIComponent(this.tribunal.sistema2fa)}`;
       const resposta = await fetch(url, { headers: fonte.token ? { [fonte.header]: fonte.token } : {}, signal: AbortSignal.timeout(15_000) });
       if (!resposta.ok) return null;
       const dados = (await resposta.json().catch(() => null)) as { codigo?: unknown; code?: unknown; token?: unknown } | null;
@@ -197,45 +217,47 @@ class ConectorEprocTjsp implements Conector {
     return dentro();
   }
 
-  async entrar(ambiente: Ambiente, instancia: InstanciaEproc = INSTANCIAS_EPROC_TJSP[0]): Promise<void> {
+  async entrar(ambiente: Ambiente, instancia: InstanciaEproc = this.tribunal.instancias[0]): Promise<void> {
     const { pagina, config, registrar } = ambiente;
+    const login = credenciais(config, this.tribunal.sigla);
     if (!ehAreaLogada(pagina.url()) || !pagina.url().startsWith(instancia.base)) await this.irPara(pagina, instancia);
-    const dentro = async () => ehAreaLogada(pagina.url());
+    // Área logada do eproc deste tribunal (com dois tribunais no mesmo navegador, a do outro não conta).
+    const dentro = async () => ehAreaLogada(pagina.url()) && this.tribunal.instancias.some((item) => pagina.url().startsWith(item.base));
     if (await dentro()) return;
     // O certificado já passou e o eproc pede o código do aplicativo de autenticação (2FA): quem informa é a pessoa.
     if (await visivel(pagina, TELA.login.codigo)) {
       await this.aguardarCodigo(ambiente, dentro);
       return;
     }
-    if (!ehLoginSso(pagina.url())) {
-      registrar(`O ${SISTEMA} abriu uma tela de login fora do padrão (diagnóstico em ${await ambiente.diagnostico(pagina, "login eproc")}).`);
-      await ambiente.aguardarPessoa("login", `Conclua o login do ${SISTEMA} na janela do robô. O robô segue sozinho depois.`, dentro);
+    if (!this.ehLogin(pagina.url())) {
+      registrar(`O ${this.sistema} abriu uma tela de login fora do padrão (diagnóstico em ${await ambiente.diagnostico(pagina, "login eproc")}).`);
+      await ambiente.aguardarPessoa("login", `Conclua o login do ${this.sistema} na janela do robô. O robô segue sozinho depois.`, dentro);
       return;
     }
 
-    registrar(`Sessão do ${SISTEMA} fechada: iniciando o login (${config.eproc.login}).`);
+    registrar(`Sessão do ${this.sistema} fechada: iniciando o login (${login.login}).`);
     if (await temCaptcha(pagina)) {
-      await ambiente.aguardarPessoa("captcha", `O ${SISTEMA} mostrou um CAPTCHA no login. Resolva o desafio e conclua o login na janela do robô.`, dentro);
+      await ambiente.aguardarPessoa("captcha", `O ${this.sistema} mostrou um CAPTCHA no login. Resolva o desafio e conclua o login na janela do robô.`, dentro);
       return;
     }
     try {
-      if (config.eproc.login === "certificado") {
+      if (login.login === "certificado") {
         await pagina.locator(TELA.login.certificado).click();
         registrar(
           certificadoEmArquivo(config)
             ? "Login por certificado em arquivo: o robô apresenta o certificado ao tribunal sozinho."
             : "Login por certificado: o Chrome mostra a lista de certificados. Se ele já lembrar a escolha, o login segue sozinho."
         );
-      } else if (config.eproc.login === "senha") {
-        await pagina.locator(TELA.login.usuario).fill(config.eproc.usuario);
-        await pagina.locator(TELA.login.senha).fill(config.eproc.senha);
+      } else if (login.login === "senha") {
+        await pagina.locator(TELA.login.usuario).fill(login.usuario);
+        await pagina.locator(TELA.login.senha).fill(login.senha);
         await pagina.locator(TELA.login.entrar).click();
       }
     } catch {
       // A mensagem original do Playwright pode citar o que foi digitado: não vai para log nem para a ficha.
-      registrar(`Não consegui iniciar o login do ${SISTEMA} sozinho; fica com a pessoa.`);
+      registrar(`Não consegui iniciar o login do ${this.sistema} sozinho; fica com a pessoa.`);
     }
-    if (config.eproc.login !== "manual") await pagina.waitForURL((url) => ehAreaLogada(url.toString()), { timeout: 20_000 }).catch(() => undefined);
+    if (login.login !== "manual") await pagina.waitForURL((url) => ehAreaLogada(url.toString()), { timeout: 20_000 }).catch(() => undefined);
     if (await dentro()) {
       registrar("Login concluído.");
       return;
@@ -244,15 +266,15 @@ class ConectorEprocTjsp implements Conector {
       await this.aguardarCodigo(ambiente, dentro);
       return;
     } else if (await temCaptcha(pagina)) {
-      await ambiente.aguardarPessoa("captcha", `O ${SISTEMA} mostrou um CAPTCHA. Resolva o desafio e conclua o login na janela do robô.`, dentro);
+      await ambiente.aguardarPessoa("captcha", `O ${this.sistema} mostrou um CAPTCHA. Resolva o desafio e conclua o login na janela do robô.`, dentro);
     } else {
       await ambiente.aguardarPessoa(
         "login",
-        config.eproc.login === "certificado" && certificadoEmArquivo(config)
-          ? `Login do ${SISTEMA} pelo certificado em arquivo não concluiu (certificado vencido, senha trocada ou tela diferente). Conclua o login na janela do robô; confira o certificado no painel de robôs.`
-          : config.eproc.login === "certificado"
-          ? `Login do ${SISTEMA}: escolha o certificado do advogado na lista que o Chrome do robô mostra e clique em OK (se o macOS pedir permissão para usar a chave, autorize). O robô segue sozinho depois.`
-          : `Conclua o login do ${SISTEMA} na janela do robô (certificado, ou usuário e senha). O robô segue sozinho depois.`,
+        login.login === "certificado" && certificadoEmArquivo(config)
+          ? `Login do ${this.sistema} pelo certificado em arquivo não concluiu (certificado vencido, senha trocada ou tela diferente). Conclua o login na janela do robô; confira o certificado no painel de robôs.`
+          : login.login === "certificado"
+          ? `Login do ${this.sistema}: escolha o certificado do advogado na lista que o Chrome do robô mostra e clique em OK (se o macOS pedir permissão para usar a chave, autorize). O robô segue sozinho depois.`
+          : `Conclua o login do ${this.sistema} na janela do robô (certificado, ou usuário e senha). O robô segue sozinho depois.`,
         dentro
       );
     }
@@ -265,13 +287,13 @@ class ConectorEprocTjsp implements Conector {
   private async procurarEm(ambiente: Ambiente, instancia: InstanciaEproc, cnj: NumeroCnj): Promise<string | null> {
     const { pagina } = ambiente;
     await this.irPara(pagina, instancia);
-    if (ehLoginSso(pagina.url())) await this.entrar(ambiente, instancia);
+    if (this.ehLogin(pagina.url())) await this.entrar(ambiente, instancia);
     const campo = pagina.locator(TELA.pesquisa).first();
     if (!(await campo.isVisible().catch(() => false))) {
       // Depois do login o eproc pode pedir o perfil (advogado, procurador…): quem escolhe é a pessoa.
       await campo.waitFor({ state: "visible", timeout: 20_000 }).catch(() => undefined);
       if (!(await campo.isVisible().catch(() => false))) {
-        await ambiente.aguardarPessoa("login", `O ${SISTEMA} (${instancia.rotulo}) não mostrou a pesquisa de processo: se pediu para escolher o perfil, escolha o de advogado na janela do robô.`, () => campo.isVisible());
+        await ambiente.aguardarPessoa("login", `O ${this.sistema} (${instancia.rotulo}) não mostrou a pesquisa de processo: se pediu para escolher o perfil, escolha o de advogado na janela do robô.`, () => campo.isVisible());
       }
     }
 
@@ -287,7 +309,7 @@ class ConectorEprocTjsp implements Conector {
       const limite = Date.now() + 45_000;
       while (Date.now() < limite) {
         await pagina.waitForLoadState("domcontentloaded").catch(() => undefined);
-        if (ehLoginSso(pagina.url())) throw new FalhaDoConector(`A sessão do ${SISTEMA} caiu no meio do pedido. O robô faz o login de novo na próxima tentativa.`);
+        if (this.ehLogin(pagina.url())) throw new FalhaDoConector(`A sessão do ${this.sistema} caiu no meio do pedido. O robô faz o login de novo na próxima tentativa.`);
         const texto = await pagina
           .locator(TELA.capa)
           .first()
@@ -320,15 +342,15 @@ class ConectorEprocTjsp implements Conector {
 
   private async abrirProcesso(ambiente: Ambiente, cnj: NumeroCnj): Promise<InstanciaEproc> {
     const motivos: string[] = [];
-    for (const instancia of instanciasDoCnj(cnj)) {
+    for (const instancia of instanciasDoCnj(cnj, this.tribunal.instancias)) {
       const motivo = await this.procurarEm(ambiente, instancia, cnj);
       if (!motivo) {
-        ambiente.registrar(`Processo aberto no ${SISTEMA}, ${instancia.rotulo}.`);
+        ambiente.registrar(`Processo aberto no ${this.sistema}, ${instancia.rotulo}.`);
         return instancia;
       }
       motivos.push(`${instancia.rotulo}: "${motivo}"`);
     }
-    throw new FalhaDoConector(`O ${SISTEMA} não mostrou o processo ${cnj.mascarado} (${motivos.join("; ")}). Pode estar no e-SAJ, ser criminal, ou estar em segredo de justiça sem acesso do advogado.`);
+    throw new FalhaDoConector(`O ${this.sistema} não mostrou o processo ${cnj.mascarado} (${motivos.join("; ")}). ${this.tribunal.foraDoEproc}`);
   }
 
   private async emSegredo(pagina: Page): Promise<boolean> {
@@ -370,7 +392,7 @@ class ConectorEprocTjsp implements Conector {
   /** Baixa um documento com a sessão do navegador. A página que embute o arquivo é seguida (até duas vezes). */
   private async baixarDocumento(ambiente: Ambiente, url: string, profundidade = 0): Promise<Arquivo> {
     const resposta = await ambiente.contexto.request.get(url, { timeout: 180_000, maxRedirects: 5 });
-    if (ehLoginSso(resposta.url())) throw new FalhaDoConector(`A sessão do ${SISTEMA} caiu no meio do download. O robô faz o login de novo na próxima tentativa.`);
+    if (this.ehLogin(resposta.url())) throw new FalhaDoConector(`A sessão do ${this.sistema} caiu no meio do download. O robô faz o login de novo na próxima tentativa.`);
     const corpo = await resposta.body();
     if (!resposta.ok()) return { tipo: "outro", corpo: Buffer.alloc(0) };
     const tipo = tipoDoArquivo(resposta.headers()["content-type"] ?? "", new Uint8Array(corpo.subarray(0, 8)));
@@ -428,7 +450,7 @@ class ConectorEprocTjsp implements Conector {
     }
     if (!aproveitados) {
       const captura = await ambiente.diagnostico(ambiente.pagina, "documentos eproc");
-      throw new FalhaDoConector(`Nenhum documento do processo veio como PDF do ${SISTEMA} (o advogado pode não ter acesso aos autos). Diagnóstico guardado em ${captura}.`);
+      throw new FalhaDoConector(`Nenhum documento do processo veio como PDF do ${this.sistema} (o advogado pode não ter acesso aos autos). Diagnóstico guardado em ${captura}.`);
     }
 
     // Índice na frente: evento, documento, data e página onde começa no PDF.
@@ -436,7 +458,7 @@ class ConectorEprocTjsp implements Conector {
       const pagina = final.insertPage(parte, [595, 842]);
       let y = 790;
       if (parte === 0) {
-        escrever(pagina, negrito, `Autos do processo ${cnj.mascarado} (eproc do TJSP)`, 50, y, 14);
+        escrever(pagina, negrito, `Autos do processo ${cnj.mascarado} (${this.sistema})`, 50, y, 14);
         y -= 18;
         escrever(
           pagina,
@@ -472,11 +494,11 @@ class ConectorEprocTjsp implements Conector {
     if (!documentos.length) {
       if (await existeTexto(ambiente.pagina, TEXTO.acessoIntegra)) {
         throw new FalhaDoConector(
-          `O ${SISTEMA} só mostra os documentos com "Acesso à íntegra do processo", que é a declaração de interesse do advogado (com CAPTCHA): o advogado do certificado não representa as partes. O robô não declara interesse; anexe o PDF à mão.`
+          `O ${this.sistema} só mostra os documentos com "Acesso à íntegra do processo", que é a declaração de interesse do advogado (com CAPTCHA): o advogado do certificado não representa as partes. O robô não declara interesse; anexe o PDF à mão.`
         );
       }
       const captura = await ambiente.diagnostico(ambiente.pagina, "capa eproc");
-      throw new FalhaDoConector(`O processo não tem documentos na tabela de eventos do ${SISTEMA}. Diagnóstico guardado em ${captura}.`);
+      throw new FalhaDoConector(`O processo não tem documentos na tabela de eventos do ${this.sistema}. Diagnóstico guardado em ${captura}.`);
     }
     // Download incremental: só as peças que ainda não vieram em pedidos anteriores deste processo.
     const novos = pecasNovas(documentos, pedido.pecasBaixadas);
@@ -498,8 +520,8 @@ class ConectorEprocTjsp implements Conector {
     await this.entrar(ambiente);
     await this.abrirProcesso(ambiente, cnj);
     registrar(`Segredo de justiça pela capa: ${(await this.emSegredo(pagina)) ? "sim" : "não"}. Área da capa encontrada: ${(await pagina.locator(TELA.capa).count()) ? "sim" : "não"}.`);
-    registrar(`Capa: ${await ambiente.diagnostico(pagina, "inspecao-capa-eproc")}`);
-    const relatorio = join(config.pastas.diagnostico, "inspecao-eproc-controles.json");
+    registrar(`Capa: ${await ambiente.diagnostico(pagina, `inspecao-capa-${this.chave.replace(":", "-")}`)}`);
+    const relatorio = join(config.pastas.diagnostico, `inspecao-${this.chave.replace(":", "-")}-controles.json`);
     const documentos = await this.documentos(ambiente);
     const resumo: Record<string, unknown> = {
       url: pagina.url().replace(/([?&](hash|key)=)[^&]+/gi, "$1…"),
@@ -522,7 +544,7 @@ class ConectorEprocTjsp implements Conector {
         await arvore.waitForLoadState("load").catch(() => undefined);
         await arvore.waitForTimeout(3_000);
         resumo.controlesDaArvore = await controlesDaTela(arvore);
-        registrar(`Árvore: ${await ambiente.diagnostico(arvore, "inspecao-arvore-eproc")}`);
+        registrar(`Árvore: ${await ambiente.diagnostico(arvore, `inspecao-arvore-${this.chave.replace(":", "-")}`)}`);
         await arvore.close().catch(() => undefined);
       }
     }
@@ -535,4 +557,4 @@ function escrever(pagina: PDFPage, fonte: PDFFont, texto: string, x: number, y: 
   pagina.drawText(paraPdf(texto), { x, y, size: tamanho, font: fonte, color: rgb(0.1, 0.1, 0.1), maxWidth: 545 - (x - 25) });
 }
 
-export const conectoresEproc: Conector[] = [new ConectorEprocTjsp()];
+export const conectoresEproc: Conector[] = TRIBUNAIS_EPROC.map((tribunal) => new ConectorEproc(tribunal));

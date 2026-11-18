@@ -5,6 +5,7 @@ import type { Page } from "playwright";
 import { FalhaDoCertificado, assinaturaDaFonte, diasParaVencer, lerCertificado, type CertificadoCliente } from "./certificado.ts";
 import { lerConfig, type Config } from "./config.ts";
 import { conectoresEproc } from "./conectores/eproc.ts";
+import { tribunalEprocDoCnj } from "./conectores/eproc-urls.ts";
 import { conectoresEsaj } from "./conectores/esaj.ts";
 import { lerCnj, nomeDoPdf, tribunalEsajDoCnj } from "./conectores/esaj-urls.ts";
 import { EsperaEsgotada, FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from "./conectores/tipos.ts";
@@ -19,11 +20,12 @@ import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
  *   npm run robo          fica rodando e atende a fila
  *   npm run uma-vez       atende o que estiver na fila e sai
  *   npm run login [-- TJCE]        só abre a sessão do tribunal (TJSP se não disser qual)
- *   npm run login -- eproc         só abre a sessão do eproc do TJSP
- *   npm run inspecionar -- <CNJ>   abre o processo e descreve a tela, sem baixar (com "eproc" antes do número, no eproc)
+ *   npm run login -- eproc [TJRJ]  só abre a sessão do eproc (TJSP se não disser qual)
+ *   npm run inspecionar -- <CNJ>   abre o processo e descreve a tela, sem baixar (com "eproc" antes do número, no eproc;
+ *                                  o tribunal sai do número: 8.26 é o TJSP, 8.19 o TJRJ)
  */
 
-/** Um conector por sistema e tribunal ("esaj:TJSP", "eproc:TJSP"…). Os próximos (PJe, Projudi) entram aqui. */
+/** Um conector por sistema e tribunal ("esaj:TJSP", "eproc:TJSP", "eproc:TJRJ"…). Os próximos (PJe, Projudi) entram aqui. */
 const TODOS_OS_CONECTORES: Conector[] = [...conectoresEsaj, ...conectoresEproc];
 
 /**
@@ -45,7 +47,8 @@ let CONECTORES: Conector[] = TODOS_OS_CONECTORES;
  */
 function conectorDaLinhaDeComando(cnj?: string): Conector {
   const sistema = argumentos.some((item) => item.toLowerCase() === "eproc") ? "eproc" : "esaj";
-  const sigla = (cnj ? tribunalEsajDoCnj(cnj)?.sigla : undefined) ?? argumentos.find((item) => /^TJ[A-Z]{2,3}$/.test(item)) ?? "TJSP";
+  const doNumero = cnj ? (sistema === "eproc" ? tribunalEprocDoCnj(cnj) : tribunalEsajDoCnj(cnj))?.sigla : undefined;
+  const sigla = doNumero ?? argumentos.find((item) => /^TJ[A-Z]{2,3}$/.test(item)) ?? "TJSP";
   const conector = CONECTORES.find((item) => item.chave === `${sistema}:${sigla}`);
   if (!conector) throw new Error(`Este robô ainda não atende o ${sistema} do ${sigla}. Atende: ${CONECTORES.map((item) => item.chave).join(", ")}.`);
   return conector;

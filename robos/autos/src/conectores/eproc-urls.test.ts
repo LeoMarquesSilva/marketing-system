@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { lerCnj } from "./esaj-urls";
-import { arquivoEmbutido, chaveDaPeca, ehAreaLogada, ehCapaDoProcesso, ehLoginSso, emSegredoPelaCapa, instanciasDoCnj, mensagemDaPesquisa, ordenarDocumentos, pecasNovas, tipoDoArquivo } from "./eproc-urls";
+import {
+  arquivoEmbutido,
+  chaveDaPeca,
+  ehAreaLogada,
+  ehCapaDoProcesso,
+  ehLoginSso,
+  emSegredoPelaCapa,
+  instanciasDoCnj,
+  mensagemDaPesquisa,
+  ordenarDocumentos,
+  pecasNovas,
+  tipoDoArquivo,
+  tribunalEproc,
+  tribunalEprocDoCnj,
+} from "./eproc-urls";
 
 const bytes = (texto: string) => new Uint8Array([...texto].map((letra) => letra.charCodeAt(0)));
 
@@ -10,6 +24,37 @@ describe("instâncias do eproc do TJSP", () => {
     const recurso = instanciasDoCnj(lerCnj("2001234-56.2025.8.26.0000")!);
     expect(recurso[0].base).toBe("https://eproc2g.tjsp.jus.br/eproc");
     expect(recurso).toHaveLength(3);
+  });
+});
+
+// Números fictícios (dígito verificador inválido de propósito).
+describe("eproc do TJRJ", () => {
+  const tjrj = tribunalEproc("TJRJ");
+
+  it("acha o tribunal do eproc pelo J.TR", () => {
+    expect(tribunalEprocDoCnj("0012345-67.2019.8.19.0001")?.sigla).toBe("TJRJ");
+    expect(tribunalEprocDoCnj("1012345-67.2025.8.26.0100")?.sigla).toBe("TJSP");
+    expect(tribunalEprocDoCnj("0001234-56.2020.8.06.0001")).toBeNull();
+    expect(tribunalEprocDoCnj("0001234-56.2020.5.01.0001")).toBeNull();
+    expect(tribunalEprocDoCnj("123")).toBeNull();
+  });
+
+  it("procura no 1º grau e, com origem 0000, começa pelo 2º grau", () => {
+    expect(instanciasDoCnj(lerCnj("0801234-56.2024.8.19.0001")!, tjrj.instancias).map((item) => item.base)).toEqual(["https://eproc1g.tjrj.jus.br/eproc", "https://eproc2g.tjrj.jus.br/eproc"]);
+    expect(instanciasDoCnj(lerCnj("0001234-56.2025.8.19.0000")!, tjrj.instancias)[0].base).toBe("https://eproc2g.tjrj.jus.br/eproc");
+  });
+
+  it("reconhece o login do SSO do TJRJ, e não o de outro tribunal nem a passagem pela PDPJ", () => {
+    expect(ehLoginSso("https://eproc-sso.tjrj.jus.br/realms/eproc/protocol/openid-connect/auth?x=1", tjrj)).toBe(true);
+    expect(ehLoginSso("https://sso.cloud.pje.jus.br/auth/realms/pje/broker/eproc-tjrj/endpoint", tjrj)).toBe(false);
+    expect(ehLoginSso("https://sso.tjsp.jus.br/realms/eproc/protocol/openid-connect/auth", tjrj)).toBe(false);
+    expect(ehLoginSso("https://eproc-sso.tjrj.jus.br/realms/eproc/protocol/openid-connect/auth")).toBe(false);
+    expect(ehAreaLogada("https://eproc1g.tjrj.jus.br/eproc/controlador.php?acao=principal&hash=1")).toBe(true);
+  });
+
+  it("tem fonte própria do código de 2 fatores", () => {
+    expect(tjrj.sistema2fa).toBe("eproc-tjrj");
+    expect(tribunalEproc("TJSP").sistema2fa).toBe("eproc");
   });
 });
 

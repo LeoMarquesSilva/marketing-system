@@ -1,10 +1,18 @@
 import type { NumeroCnj } from "./esaj-urls.ts";
 
 /**
- * eproc do TJSP, sem navegador (o que dá para testar sozinho). O TJSP tem uma instalação do eproc por
- * competência, todas atrás do mesmo login (SSO do tribunal, Keycloak): entrar numa vale para as outras.
- * O número do processo não diz em qual instalação ele está; o robô procura na ordem de `instanciasDoCnj`.
- * Endereços conferidos na página pública em 12/11/2026.
+ * eproc, sem navegador (o que dá para testar sozinho). O eproc é o mesmo sistema (o nacional, do TRF4) em
+ * vários tribunais: mudam os endereços das instalações e o SSO (Keycloak) de cada um.
+ *
+ * - TJSP: uma instalação por competência (1º grau cível; execução fiscal e Fazenda Pública; 2º grau), todas
+ *   atrás do mesmo login (sso.tjsp.jus.br). Endereços conferidos na página pública em 12/11/2026.
+ * - TJRJ: 1º e 2º grau (eproc1g e eproc2g.tjrj.jus.br), login em eproc-sso.tjrj.jus.br, que passa pelo SSO
+ *   nacional da PDPJ (sso.cloud.pje.jus.br). Desde maio de 2026 todo processo cível novo é distribuído no eproc,
+ *   e o tribunal migra para ele, com o mesmo número CNJ, o acervo do DCP (sistema próprio, Portal de Serviços)
+ *   e do PJe. Conferido na página pública e na tela de login em 18/11/2026.
+ *
+ * Entrar numa instalação vale para as outras do mesmo tribunal. O número do processo não diz em qual instalação
+ * ele está; o robô procura na ordem de `instanciasDoCnj`.
  */
 
 export interface InstanciaEproc {
@@ -20,6 +28,55 @@ export const INSTANCIAS_EPROC_TJSP: InstanciaEproc[] = [
   { rotulo: "2º grau", base: "https://eproc2g.tjsp.jus.br/eproc" },
 ];
 
+export const INSTANCIAS_EPROC_TJRJ: InstanciaEproc[] = [
+  { rotulo: "1º grau", base: "https://eproc1g.tjrj.jus.br/eproc" },
+  { rotulo: "2º grau", base: "https://eproc2g.tjrj.jus.br/eproc" },
+];
+
+export interface TribunalEproc {
+  sigla: string;
+  instancias: InstanciaEproc[];
+  /** Telas de login do SSO do tribunal (usuário e senha, código ou certificado). */
+  sso: RegExp;
+  /** Valor de `?sistema=` na fonte do código de 2 fatores: cada tribunal tem o seu segredo de TOTP. */
+  sistema2fa: string;
+  /** Onde o processo pode estar quando não aparece no eproc (vai na mensagem de erro). */
+  foraDoEproc: string;
+}
+
+export const TRIBUNAIS_EPROC: TribunalEproc[] = [
+  {
+    sigla: "TJSP",
+    instancias: INSTANCIAS_EPROC_TJSP,
+    sso: /^https:\/\/(certificado-)?sso\.tjsp\.jus\.br\//i,
+    sistema2fa: "eproc",
+    foraDoEproc: "Pode estar no e-SAJ, ser criminal, ou estar em segredo de justiça sem acesso do advogado.",
+  },
+  {
+    sigla: "TJRJ",
+    instancias: INSTANCIAS_EPROC_TJRJ,
+    // O endereço do login por certificado não foi conferido: vale o mesmo host, com ou sem "certificado-" na frente.
+    sso: /^https:\/\/(certificado-)?eproc-sso\.tjrj\.jus\.br\//i,
+    sistema2fa: "eproc-tjrj",
+    foraDoEproc:
+      "Processo do TJRJ que ainda não migrou para o eproc continua no DCP (Portal de Serviços, o sistema próprio) ou no PJe, que o robô ainda não atende: anexe o PDF à mão. Também pode ser criminal, ou estar em segredo de justiça sem acesso do advogado.",
+  },
+];
+
+export function tribunalEproc(sigla: string): TribunalEproc {
+  const tribunal = TRIBUNAIS_EPROC.find((item) => item.sigla === sigla);
+  if (!tribunal) throw new Error(`Tribunal sem eproc mapeado: ${sigla}.`);
+  return tribunal;
+}
+
+/** O tribunal estadual pelo J.TR do CNJ (8.26 → TJSP, 8.19 → TJRJ), só para os que têm eproc mapeado. */
+export function tribunalEprocDoCnj(cnj: string): TribunalEproc | null {
+  const digitos = cnj.replace(/\D/g, "");
+  if (digitos.length !== 20 || digitos[13] !== "8") return null;
+  const sigla = ({ "26": "TJSP", "19": "TJRJ" } as Record<string, string>)[digitos.slice(14, 16)];
+  return sigla ? tribunalEproc(sigla) : null;
+}
+
 /** Onde procurar o processo: número com origem 0000 (recurso ou ação do próprio tribunal) começa pelo 2º grau. */
 export function instanciasDoCnj(cnj: NumeroCnj, instancias: InstanciaEproc[] = INSTANCIAS_EPROC_TJSP): InstanciaEproc[] {
   if (!cnj.segundoGrau) return instancias;
@@ -27,9 +84,9 @@ export function instanciasDoCnj(cnj: NumeroCnj, instancias: InstanciaEproc[] = I
   return [...segundo, ...instancias.filter((instancia) => !segundo.includes(instancia))];
 }
 
-/** Tela de login do SSO do tribunal (usuário e senha, código ou certificado). */
-export function ehLoginSso(url: string): boolean {
-  return /^https:\/\/(certificado-)?sso\.tjsp\.jus\.br\//i.test(url);
+/** Tela de login do SSO do tribunal (usuário e senha, código ou certificado). Sem tribunal, o do TJSP. */
+export function ehLoginSso(url: string, tribunal: TribunalEproc = TRIBUNAIS_EPROC[0]): boolean {
+  return tribunal.sso.test(url);
 }
 
 /** Área logada do eproc: controlador.php. A área pública é externo_controlador.php. */
