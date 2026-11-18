@@ -15,6 +15,8 @@ import {
   CornerDownRight,
   FileCheck2,
   FileText,
+  FolderCheck,
+  FolderPlus,
   ListPlus,
   MessageSquareText,
   Pencil,
@@ -93,7 +95,7 @@ import { ROTULO_AJUSTE, emOrdemDeArvore, fluxoDoPrazo, fluxoPrevisto } from "@/l
 import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
-import { vaiParaCentral } from "@/lib/vistagem/central";
+import { ehAberturaDePasta, vaiParaCentral } from "@/lib/vistagem/central";
 import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { SeloAberturaDePasta } from "./abertura-pasta";
@@ -2134,6 +2136,9 @@ function CampoVazio({ icone, texto }: { icone: ReactNode; texto: string }) {
 /** Vazio mostra todas; clicar de novo no filtro escolhido volta a mostrar todas. */
 type FiltroRisco = "" | "risco" | "normal";
 
+/** Pelo selo "Abertura de pasta" (sem pasta no VIOS: vai para a Central): só as com o selo, só as com pasta ou todas. */
+type FiltroPasta = "" | "abertura" | "com_pasta";
+
 interface GrupoFila {
   /** Dia do recebimento + grupo: o mesmo grupo pode aparecer em dois dias. */
   chave: string;
@@ -2265,6 +2270,8 @@ function Juridico() {
   const [busca, setBusca] = useState("");
   const [grupo, setGrupo] = useState("");
   const [risco, setRisco] = useState<FiltroRisco>("");
+  /** Selo "Abertura de pasta"; vazio mostra todas. */
+  const [pasta, setPasta] = useState<FiltroPasta>("");
   /** Tribunal; vazio é "Todos os tribunais". */
   const [tribunal, setTribunal] = useState("");
   /** Etiqueta da pasta no VIOS (ex.: RC-Insolvência); vazio é "Todas as etiquetas". */
@@ -2333,10 +2340,13 @@ function Juridico() {
       if (etiquetaAtiva && !(publicacao.etiquetas ?? []).includes(etiquetaAtiva)) return false;
       if (risco === "risco" && !publicacao.demandaRisco) return false;
       if (risco === "normal" && publicacao.demandaRisco) return false;
+      if (pasta === "abertura" && !ehAberturaDePasta(publicacao)) return false;
+      if (pasta === "com_pasta" && ehAberturaDePasta(publicacao)) return false;
       return combinaCampos(camposDeBusca.get(publicacao.id) ?? [], busca);
     });
-  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, etiquetaAtiva, risco, importacaoAtiva, camposDeBusca]);
-  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || etiquetaAtiva || risco || importacaoAtiva);
+  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, etiquetaAtiva, risco, pasta, importacaoAtiva, camposDeBusca]);
+  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || etiquetaAtiva || risco || pasta || importacaoAtiva);
+  const aberturas = useMemo(() => (publicacoes ?? []).filter(ehAberturaDePasta).length, [publicacoes]);
   const grupos = useMemo(() => agruparFila(filtradas), [filtradas]);
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
   const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
@@ -2375,6 +2385,7 @@ function Juridico() {
     setVisao("fila");
     setGrupo("");
     setRisco("");
+    setPasta("");
     setTribunal("");
     setDataImportacao("");
     setAviso("Vistagem reaberta: altere o que precisar e vista de novo para ela voltar à Conferência.");
@@ -2429,6 +2440,7 @@ function Juridico() {
     setTribunal("");
     setEtiqueta("");
     setRisco("");
+    setPasta("");
     setDataImportacao("");
   }
 
@@ -2536,6 +2548,29 @@ function Juridico() {
                 contagem: quantidade,
                 icone: <IconeOpcao icone={Tag} className={etiquetasEmDestaque([nome]).length ? ICONE_ETIQUETA_DESTAQUE : undefined} />,
               }))}
+            />
+            <Seletor
+              rotulo="Abertura de pasta"
+              className={FILTRO_COMPACTO}
+              valor={pasta}
+              onChange={(valor) => setPasta(valor as FiltroPasta)}
+              todos={{ rotulo: "Com e sem pasta", contagem: publicacoes?.length, icone: <IconeOpcao icone={FolderPlus} /> }}
+              rotuloVazio={<CampoVazio icone={<IconeOpcao icone={FolderPlus} />} texto="Abertura de pasta" />}
+              opcoes={[
+                {
+                  valor: "abertura",
+                  rotulo: "Abertura de pasta",
+                  descricao: "Sem pasta no VIOS: vai para a Central",
+                  contagem: aberturas,
+                  icone: <IconeOpcao icone={FolderPlus} />,
+                },
+                {
+                  valor: "com_pasta",
+                  rotulo: "Com pasta no VIOS",
+                  contagem: (publicacoes?.length ?? 0) - aberturas,
+                  icone: <IconeOpcao icone={FolderCheck} />,
+                },
+              ]}
             />
           </>
         ) : null}

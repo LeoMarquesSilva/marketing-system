@@ -17,6 +17,7 @@ import {
   ExternalLink,
   FolderX,
   Folders,
+  Landmark,
   ListChecks,
   LoaderCircle,
   RefreshCw,
@@ -51,9 +52,9 @@ import { LeitorPublicacao } from "./leitor-publicacao";
 import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
 import { FaixaDoProcesso, SetasDaFila } from "./faixa-processo";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
-import { PENDENCIAS, formatarData, formatarDataHora } from "./publicacao-ui";
+import { PENDENCIAS, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import { ReguaDatas } from "./regua-datas";
-import { Seletor, SeletorBusca } from "./seletor";
+import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import {
   Aviso,
   BarraAba,
@@ -840,6 +841,8 @@ function Controladoria() {
   const [dataPublicacao, setDataPublicacao] = useState("");
   /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataImportacao, setDataImportacao] = useState("");
+  /** Tribunal (sigla, como na Vistagem); vazio é "Todos os tribunais". */
+  const [tribunal, setTribunal] = useState("");
   const [aba, setAba] = useState<Aba | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(null);
   /** A fila abre recolhida, como nas outras abas: a pendência ocupa a largura toda. */
@@ -896,12 +899,20 @@ function Controladoria() {
   const dataAtiva = dataNaLista(dataPublicacao, datasDasPendencias);
   const importacoesDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataImportacao), [dados]);
   const importacaoAtiva = dataNaLista(dataImportacao, importacoesDasPendencias);
-  const pendentesNaData = useMemo(
+  const pendentesNasDatas = useMemo(
     () =>
       (dados?.pendentes ?? []).filter(
         (p) => (!dataAtiva || p.dataPublicacao === dataAtiva) && (!importacaoAtiva || p.dataImportacao === importacaoAtiva)
       ),
     [dados, dataAtiva, importacaoAtiva]
+  );
+  // Tribunal: as opções contam as pendências nas datas escolhidas (de todas as abas); o escolhido filtra a fila e a
+  // contagem das abas. Tribunal que sumiu (outra data) deixa de filtrar.
+  const tribunaisDasPendencias = useMemo(() => contarPor(pendentesNasDatas, tribunalDe), [pendentesNasDatas]);
+  const tribunalAtivo = tribunaisDasPendencias.some(([nome]) => nome === tribunal) ? tribunal : "";
+  const pendentesNaData = useMemo(
+    () => (tribunalAtivo ? pendentesNasDatas.filter((p) => tribunalDe(p) === tribunalAtivo) : pendentesNasDatas),
+    [pendentesNasDatas, tribunalAtivo]
   );
 
   const porAba = useMemo(() => {
@@ -1060,6 +1071,29 @@ function Controladoria() {
         />
         <FiltroData rotulo="Data Publicação" datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
         <FiltroData rotulo="Data da importação" datas={importacoesDasPendencias} valor={importacaoAtiva} onChange={setDataImportacao} />
+        <Seletor
+          rotulo="Tribunal"
+          className="sm:w-auto sm:max-w-56"
+          valor={tribunalAtivo}
+          onChange={(valor) => {
+            setTribunal(valor);
+            setSelecionada(null);
+          }}
+          todos={{ rotulo: "Todos os tribunais", contagem: pendentesNasDatas.length, icone: <IconeOpcao icone={Landmark} /> }}
+          rotuloVazio={
+            <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+              <IconeOpcao icone={Landmark} />
+              <span className="truncate">Tribunal</span>
+            </span>
+          }
+          opcoes={tribunaisDasPendencias.map(([nome, quantidade]) => ({
+            valor: nome,
+            rotulo: nome,
+            descricao: descricaoDoTribunal(nome),
+            contagem: quantidade,
+            icone: <IconeTribunal sigla={nome} />,
+          }))}
+        />
         <Button variant="outline" onClick={rodarTriagem} disabled={triando} data-tour="tm-rodar-triagem" title="Tria de novo o que ainda está pendente, com o SIOE">
           {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
           Rodar triagem agora
