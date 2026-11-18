@@ -108,3 +108,24 @@ describe("CartoesCheck: ajustes da Conferência", () => {
     expect(texto(agendamento({}))).not.toContain("Ajustada na conferência");
   });
 });
+
+describe("CartoesCheck: como a fatal foi escolhida (pedido de 18/11/2026)", () => {
+  const texto = (item: AgendamentoResumo) =>
+    renderToStaticMarkup(<CartoesCheck agendamentos={[item]} fotos={{}} hoje="2026-11-09" />)
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ");
+  const prazo = (campos: Partial<AgendamentoResumo>) =>
+    agendamento({ etiqueta: "PRAZO", tarefa: "MANIFESTAÇÃO", tarefaId: "500", hora: null, horaFim: null, revisor: null, dataFatal: "2026-11-24", ...campos });
+
+  it("Prazo pelo botão: o selo diz o botão", () => {
+    expect(texto(prazo({ origemPrazo: "atalho", diasPrazo: 10, contagemPrazo: "uteis" }))).toContain("Fatal: Botão 10 dias úteis");
+  });
+
+  it("Prazo pelo calendário: o selo diz calendário", () => {
+    expect(texto(prazo({ origemPrazo: "calendario" }))).toContain("Fatal: Calendário");
+  });
+
+  it("Compromisso: sem selo de fatal", () => {
+    expect(texto(agendamento({}))).not.toContain("Fatal:");
+  });
+});

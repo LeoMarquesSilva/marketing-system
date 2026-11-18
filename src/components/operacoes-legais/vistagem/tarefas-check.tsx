@@ -12,7 +12,17 @@ import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import type { AgendamentoResumo } from "@/lib/vistagem/types";
 import { formatarData } from "./publicacao-ui";
 import { AvatarPessoa } from "./combobox-busca";
-import { AgendaNoVios, AjustesDaTarefa, DiaNaAgenda, ESTILO_CLASSE, ICONE_CLASSE, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
+import {
+  AgendaNoVios,
+  AjustesDaTarefa,
+  DiaNaAgenda,
+  ESTILO_CLASSE,
+  ICONE_CLASSE,
+  LinkVios,
+  SeloOrigemDaFatal,
+  corDoTextoDoEnvio,
+  envioDaTarefa,
+} from "./tarefas-conferencia";
 import { Selo, TOM_CLASSE } from "./ui";
 
 /**
@@ -384,6 +394,7 @@ export function CartoesCheck({
                     {item.diasPrazo && item.contagemPrazo ? <span>· {item.diasPrazo} {ROTULO_CONTAGEM[item.contagemPrazo]} após a publicação</span> : null}
                   </p>
                 ) : null}
+                <SeloOrigemDaFatal item={item} />
                 {item.observacao ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.observacao}</p> : null}
                 {simulada ? <p className="text-xs text-muted-foreground">Preenchida no VIOS, não gravada.</p> : null}
                 {item.envioErro ? <p className={cn("whitespace-pre-wrap break-words text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</p> : null}

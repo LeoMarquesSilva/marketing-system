@@ -13,6 +13,7 @@ import {
   Copy,
   FileSearch,
   FileText,
+  Flag,
   FolderOpen,
   FolderPlus,
   History,
@@ -44,6 +45,7 @@ import {
 import { AvatarPessoa } from "./combobox-busca";
 import { DialogoAcao } from "./dialogo-acao";
 import { LogoGrupo, SeloArea } from "./marcas";
+import { SeloOrigemDaFatal } from "./tarefas-conferencia";
 import { Selo } from "./ui";
 
 const TOM = {
@@ -128,7 +130,17 @@ function Tarefas({ tarefas, fotos }: { tarefas: TarefaResumida[]; fotos: Record<
               {dataCurta(tarefa.data)}
             </span>
           ) : null}
+          {tarefa.dataFatal ? (
+            <span className="inline-flex items-center gap-1 tabular-nums text-red-700">
+              <Flag className="size-3.5" aria-hidden />
+              fatal {dataCurta(tarefa.dataFatal)}
+            </span>
+          ) : null}
           {tarefa.responsavel ? <Pessoa nome={tarefa.responsavel} fotos={fotos} /> : null}
+          {/* Prazo: se a fatal veio do calendário ou dos botões de dias (pedido de 18/11/2026). */}
+          {tarefa.etiqueta && tarefa.dataFatal ? (
+            <SeloOrigemDaFatal className="basis-full" item={{ ...tarefa, etiqueta: tarefa.etiqueta, dataFatal: tarefa.dataFatal }} />
+          ) : null}
         </li>
       ))}
     </ul>

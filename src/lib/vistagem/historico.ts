@@ -1,3 +1,5 @@
+import type { EtiquetaAgendamento, OrigemPrazo } from "./agendamento";
+import type { ContagemPrazo } from "./dias-uteis";
 import { esperandoOVios } from "./situacao-robo";
 import type { Pendencia } from "./triagem";
 import type { AjusteNaTarefa, DuplicidadeResultado, EnvioStatus, InconsistenciaResumo, PublicacaoStatus } from "./types";
@@ -52,11 +54,23 @@ export interface EventoHistorico {
   mudancas?: { campo: string; de: string; para: string }[];
 }
 
-export interface TarefaResumida {
+/** Prazo: a fatal e como o vistador a escolheu (botão de dias, calendário…), para o selo de todos os históricos. */
+interface FatalDaTarefa {
+  etiqueta?: EtiquetaAgendamento;
+  /** AAAA-MM-DD. */
+  dataFatal?: string | null;
+  diasPrazo?: number | null;
+  contagemPrazo?: ContagemPrazo | null;
+  origemPrazo?: OrigemPrazo | null;
+}
+
+export interface TarefaResumida extends FatalDaTarefa {
   tarefa: string;
   /** AAAA-MM-DD. */
   data: string | null;
   responsavel: string | null;
+  /** Só para saber se a Conferência mudou a fatal depois ("Mudada na conferência" ao lado do selo). */
+  ajustes?: AjusteNaTarefa[];
 }
 
 /** De quem é a publicação, para o topo do histórico. */
@@ -100,7 +114,7 @@ const PENDENCIA: Record<Pendencia, string> = {
 
 type Marca = { por: string | null; em: string };
 
-export interface TarefaNoHistorico {
+export interface TarefaNoHistorico extends FatalDaTarefa {
   tarefa: string;
   data: string | null;
   responsavel: string | null;
@@ -151,9 +165,23 @@ function data(iso: string | null): string | null {
 
 const linhas = (...itens: (string | null | false | undefined)[]): string[] => itens.filter((item): item is string => Boolean(item && item.trim()));
 
-/** Tarefa, data e responsável de cada tarefa, como ficaram. */
+/** Tarefa, data e responsável de cada tarefa, como ficaram; no Prazo, a fatal e como o vistador a escolheu. */
 function resumoDasTarefas(tarefas: TarefaNoHistorico[]): TarefaResumida[] {
-  return tarefas.map((tarefa) => ({ tarefa: tarefa.tarefa, data: tarefa.data, responsavel: tarefa.responsavel }));
+  return tarefas.map((tarefa) => ({
+    tarefa: tarefa.tarefa,
+    data: tarefa.data,
+    responsavel: tarefa.responsavel,
+    ...(tarefa.etiqueta === "PRAZO" && tarefa.dataFatal
+      ? {
+          etiqueta: tarefa.etiqueta,
+          dataFatal: tarefa.dataFatal,
+          diasPrazo: tarefa.diasPrazo ?? null,
+          contagemPrazo: tarefa.contagemPrazo ?? null,
+          origemPrazo: tarefa.origemPrazo ?? null,
+          ajustes: tarefa.ajustes,
+        }
+      : {}),
+  }));
 }
 
 function eventosDoRobo(tarefas: TarefaNoHistorico[]): EventoHistorico[] {

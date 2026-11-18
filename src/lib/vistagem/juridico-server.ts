@@ -757,7 +757,9 @@ type HistoricoRow = {
 };
 
 type TarefaDoHistoricoRow = {
-  tarefa: string; data: string | null; responsavel: string | null; ajustes: AjusteNaTarefa[] | null; envio_status: EnvioStatus;
+  tarefa: string; etiqueta: EtiquetaAgendamento; data: string | null; data_fatal: string | null; dias_prazo: number | null;
+  contagem_prazo: ContagemPrazo | null; origem_prazo: OrigemPrazo | null;
+  responsavel: string | null; ajustes: AjusteNaTarefa[] | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; envio_erro: string | null; enviado_em: string | null; envio_atualizado_em: string | null;
 };
 
@@ -772,7 +774,9 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
     db.from("vistagem_publicacoes").select(COLUNAS_HISTORICO).eq("id", id).maybeSingle(),
     db
       .from("vistagem_agendamentos")
-      .select("tarefa, data, responsavel, ajustes, envio_status, envio_simulado, envio_erro, enviado_em, envio_atualizado_em")
+      .select(
+        "tarefa, etiqueta, data, data_fatal, dias_prazo, contagem_prazo, origem_prazo, responsavel, ajustes, envio_status, envio_simulado, envio_erro, enviado_em, envio_atualizado_em"
+      )
       .eq("publicacao_id", id)
       .order("ordem", { ascending: true }),
     inconsistenciasPorPublicacao([id]),
@@ -822,7 +826,12 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
     check: check ? { ...check, por: check.por ?? (foiCheckAutomatico(row.checado_por, row.check_nota) ? CHECK_AUTOMATICO : null), nota: row.check_nota } : null,
     tarefas: ((tarefas.data ?? []) as unknown as TarefaDoHistoricoRow[]).map((tarefa) => ({
       tarefa: tarefa.tarefa,
+      etiqueta: tarefa.etiqueta,
       data: tarefa.data,
+      dataFatal: tarefa.data_fatal,
+      diasPrazo: tarefa.dias_prazo,
+      contagemPrazo: tarefa.contagem_prazo,
+      origemPrazo: tarefa.origem_prazo ?? null,
       responsavel: tarefa.responsavel,
       ajustes: tarefa.ajustes ?? [],
       envioStatus: tarefa.envio_status,
@@ -1341,7 +1350,9 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
     throw new VistagemError("O jurídico reabriu esta vistagem para alterar. Recarregue a página.", 409);
   }
   const nomes = await nomesDosUsuarios([authUserId]);
-  // Outra fatal: "5 dias úteis após a publicação" não vale mais (como a fatal digitada na vistagem).
+  // Outra fatal: "5 dias úteis após a publicação" não vale mais (como a fatal digitada na vistagem). A origem fica: é
+  // como o vistador escolheu a fatal (botão ou calendário), que todos os históricos mostram (pedido de 18/11/2026); o
+  // ajuste registra a fatal nova.
   const mesmaFatal = item.dataFatal === row.data_fatal;
   const { data: atualizada, error: erroGravar } = await db
     .from("vistagem_agendamentos")
@@ -1350,7 +1361,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       data_fatal: item.dataFatal,
       dias_prazo: mesmaFatal ? row.dias_prazo : null,
       contagem_prazo: mesmaFatal ? row.contagem_prazo : null,
-      origem_prazo: mesmaFatal ? row.origem_prazo : null,
+      origem_prazo: row.origem_prazo,
       hora: item.hora,
       hora_fim: item.horaFim,
       data_limite: item.dataLimite,
