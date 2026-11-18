@@ -2,6 +2,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { certificadoConfigurado, type ConfigCertificado } from "./certificado.ts";
+import type { ConfigSegundoFator } from "./segundo-fator.ts";
 
 /**
  * Configuração do robô, toda por variável de ambiente (arquivo .env nesta pasta, fora do repositório).
@@ -53,12 +54,17 @@ export interface Config {
    */
   eprocTjrj: { login: ModoDeLogin; usuario: string; senha: string };
   /**
-   * Fonte do código de 2 fatores, montada pelos donos da conta (ex.: um webhook do n8n que gera o TOTP de cada
+   * Fonte alternativa do código de 2 fatores, montada pelos donos da conta (ex.: um webhook do n8n que gera o TOTP de cada
    * tribunal). Com `url` preenchida, o robô busca o código ali, por sistema (`?sistema=eproc`, `?sistema=pdpj`…),
    * e digita sozinho; sem ela, espera a pessoa. O segredo do 2FA NÃO fica aqui: fica na fonte. Isto só guarda o
    * endereço e o token de acesso dela.
    */
   webhook2fa: { url: string; header: string; token: string };
+  /**
+   * Segredo do TOTP cadastrado no painel de robôs (`segundo-fator.json`, cifrado com a chave pública do robô).
+   * Vem antes do webhook: com ele, o robô gera o código sozinho. Pasta: ROBO_2FA_PASTA ou, sem ela, CERTIFICADO_PASTA.
+   */
+  segundoFator: ConfigSegundoFator;
   pastas: { perfil: string; downloads: string; diagnostico: string };
 }
 
@@ -140,6 +146,7 @@ export function lerConfig(): Config {
     eproc: { login: loginEproc, usuario: texto("EPROC_USUARIO"), senha: texto("EPROC_SENHA") },
     eprocTjrj: { login: loginEprocTjrj, usuario: texto("EPROC_TJRJ_USUARIO"), senha: texto("EPROC_TJRJ_SENHA") },
     webhook2fa: { url: texto("ROBO_2FA_WEBHOOK_URL"), header: texto("ROBO_2FA_WEBHOOK_HEADER") || "x-robo-token", token: texto("ROBO_2FA_WEBHOOK_TOKEN") },
+    segundoFator: { pasta: texto("ROBO_2FA_PASTA") || certificado.pasta, chavePrivadaArquivo: certificado.chavePrivadaArquivo },
     pastas: { perfil: pasta("perfil"), downloads: pasta("downloads"), diagnostico: pasta("diagnostico") },
   };
 }

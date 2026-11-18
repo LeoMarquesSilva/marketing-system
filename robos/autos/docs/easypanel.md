@@ -1,15 +1,15 @@
 # Robô de autos no servidor (Easypanel)
 
-Estudo de 17/11/2026 sobre rodar o robô de autos num contêiner no Easypanel em vez do Mac, e guia para fazer isso. Nada foi publicado: o código está pronto e testado só localmente.
+Estudo de 17/11/2026 (2 fatores pelo painel em 18/11/2026) sobre rodar o robô de autos num contêiner no Easypanel em vez do Mac, e guia para fazer isso. Nada foi publicado: o código está pronto e testado só localmente.
 
 ## Veredito
 
 **Dá, para o eproc do TJSP. Para o e-SAJ, ainda não com certificado.**
 
-- **eproc do TJSP:** dá para rodar inteiro no servidor. O Playwright apresenta o certificado A1 (.pfx) ao SSO do tribunal sozinho, sem a lista de certificados do Chrome. Depois do certificado vem o código de 2 fatores, que o robô já busca no webhook do n8n (ou uma pessoa digita pela tela remota). Testado localmente com um servidor que exige certificado de cliente; falta o teste com o certificado e o tribunal de verdade.
+- **eproc do TJSP:** dá para rodar inteiro no servidor. O Playwright apresenta o certificado A1 (.pfx) ao SSO do tribunal sozinho, sem a lista de certificados do Chrome. Depois do certificado vem o código de 2 fatores, que o robô gera sozinho com o segredo do TOTP cadastrado no painel de robôs (sem ele, busca no webhook do n8n; sem os dois, uma pessoa digita pela tela remota). Testado localmente com um servidor que exige certificado de cliente; falta o teste com o certificado e o tribunal de verdade.
 - **e-SAJ (TJSP, TJCE, TJAL, TJMS):** o login por certificado depende do Web Signer da Softplan (extensão e aplicativo do computador). Não achei fonte oficial atual de que ele funcione em Linux, e muito menos num contêiner. As saídas são: (1) deixar o e-SAJ no robô do Mac e o eproc no servidor (o robô agora aceita `ROBO_CONECTORES` para dividir o trabalho); (2) entrar no e-SAJ por CPF e senha, com o código que o tribunal manda por e-mail digitado por uma pessoa pela tela remota; (3) testar o Web Signer em Linux num piloto separado.
 - **Pessoa no circuito:** quando o robô precisa de alguém (login, código, CAPTCHA), a pessoa abre a tela do robô no navegador (noVNC), protegida por HTTPS e senha no Easypanel. O robô continua sem resolver CAPTCHA sozinho.
-- **Certificado no servidor:** decidido pelo usuário: a cópia do A1 vai também para o servidor, enviada pelo painel de robôs. O robô está pronto para ler o certificado de uma pasta que o painel grava (contrato na seção [Painel de robôs](#painel-de-robôs-envio-do-certificado)).
+- **Certificado e 2 fatores no servidor:** decidido pelo usuário: a cópia do A1 vai também para o servidor, enviada pelo painel de robôs, e o segredo do TOTP de cada eproc fica configurado no painel. O robô lê os dois de uma pasta que o painel grava (contrato na seção [Painel de robôs](#painel-de-robôs-certificado-e-segredo-do-2fa)).
 - **Depende de outra entrega:** as rotas `/api/robos/autos/*` só existem nesta branch. O robô do servidor só funciona depois que ela estiver em produção no ORQESTRAI.
 
 ## O que foi verificado e o que não foi
@@ -21,6 +21,9 @@ Estudo de 17/11/2026 sobre rodar o robô de autos num contêiner no Easypanel em
 | `certificado-sso.tjsp.jus.br` pede certificado de cliente já no aperto de mão TLS, aceita autoridades da ICP-Brasil, e tem certificado de servidor numa cadeia pública (o Node confia sem configuração extra) | **Verificado** com uma conexão TLS pública ao endereço, sem login. `sso.tjsp.jus.br` e `esaj.tjsp.jus.br` não pedem certificado de cliente. |
 | Senha errada e `.pfx` com cifra antiga (RC2) | **Testado aqui**: o robô recusa com mensagem clara e sem mostrar a senha. Um `.pfx` exportado com RC2 não abre no Node; com AES-256, abre. |
 | Contrato do painel (pasta, `certificado.json`, senha cifrada) e troca do certificado | **Testado aqui** (teste automático em `src/certificado.test.ts` e teste local de ponta a ponta). |
+| Código TOTP gerado pelo robô (RFC 6238) e contrato `segundo-fator.json` | **Testado aqui** com os vetores das RFCs 4226 e 6238 e segredos fictícios (`src/segundo-fator.test.ts`). |
+| Formato do 2FA do eproc: 6 dígitos, novo código a cada 30 s, aplicativos Google/Microsoft Authenticator | **Verificado nos manuais** do TJSP (6 dígitos, conta "eproc TJSP" no aplicativo) e do TJRJ (troca a cada 30 s). O algoritmo (SHA-1, padrão desses aplicativos) é inferência: se o QR code trouxer outro, grave a URI `otpauth://` inteira no painel e o robô usa os parâmetros dela. |
+| Código gerado pelo robô aceito pelo eproc de verdade | **Não verificado** (não foi feito login em nada). |
 | Imagem `mcr.microsoft.com/playwright:v1.65.0-noble` existe e traz Node e o usuário `pwuser` | **Verificado** na lista de tags do registro da Microsoft e no Dockerfile da imagem no repositório do Playwright. |
 | Login real no eproc com o certificado do advogado | **Não verificado** (não foi feito login em nada). |
 | Build da imagem (`docker build`) e funcionamento de Xvfb, x11vnc e noVNC no contêiner | **Não verificado** (Docker não foi usado neste estudo). |
@@ -32,7 +35,7 @@ Estudo de 17/11/2026 sobre rodar o robô de autos num contêiner no Easypanel em
 
 ```
 Easypanel (mesmo servidor)
-├── painel de robôs ──grava──► /srv/robos/certificados (pasta do servidor)
+├── painel de robôs ──grava──► /srv/robos/certificados (certificado.json, .pfx, segundo-fator.json)
 │                                     │ só leitura
 └── robô de autos (contêiner) ◄──────┘
       ├── Chromium numa tela virtual (Xvfb) ──► eproc / e-SAJ
@@ -74,7 +77,7 @@ Por que pesar tanto: quem entra na tela remota vê o navegador **logado como o a
 
 - O SSO do eproc pede o certificado no endereço `certificado-sso.tjsp.jus.br`, já no aperto de mão TLS (conferido). É exatamente o caso do `clientCertificates` do Playwright: ele recebe o `.pfx` e a senha e apresenta o certificado só às origens indicadas. O padrão do robô é `CERTIFICADO_ORIGENS=https://certificado-sso.tjsp.jus.br`; os demais sites passam direto, sem certificado.
 - Como funciona por dentro: o Playwright põe um intermediário local entre o navegador e a internet. Para a origem do certificado, ele abre a conexão com o tribunal apresentando o `.pfx` e confere o certificado do servidor do tribunal. O Chrome não mostra a lista de certificados.
-- Depois do certificado, o eproc pede o código de 2 fatores. O robô já busca o código no webhook do n8n (`ROBO_2FA_WEBHOOK_*`) ou espera a pessoa pela tela remota.
+- Depois do certificado, o eproc pede o código de 2 fatores. O robô gera o código com o segredo do TOTP cadastrado no painel ([contrato](#segredo-do-totp-2-fatores)); sem ele, busca no webhook do n8n (`ROBO_2FA_WEBHOOK_*`); sem os dois, espera a pessoa pela tela remota.
 - **Formato do .pfx:** o Node (OpenSSL 3) não abre `.pfx` exportado com a cifra antiga RC2, comum em exportações antigas. O robô avisa ("cifra antiga"). A correção é exportar de novo com AES-256; o painel pode fazer isso sozinho ao receber o arquivo (ver o contrato).
 
 ### e-SAJ: Web Signer
@@ -103,9 +106,9 @@ A decisão de levar uma cópia do A1 ao servidor é do usuário e já foi tomada
   - O intermediário do Playwright guarda o `.pfx` e a senha na memória do processo do robô enquanto ele roda.
 - **O que reduz o risco:** acesso ao Easypanel só para quem precisa; senha forte e única no painel de robôs; tela remota com Basic Auth; pasta de certificados fora dos backups do volume; registro de quem enviou cada certificado; revogação imediata na autoridade certificadora se houver suspeita.
 
-## Painel de robôs: envio do certificado
+## Painel de robôs: certificado e segredo do 2FA
 
-O painel de robôs (outro app no mesmo Easypanel, código fora deste repositório) passa a receber o certificado. Este é o contrato que ele precisa cumprir para o robô usar o certificado sem reiniciar.
+O painel de robôs (outro app no mesmo Easypanel, código fora deste repositório) passa a receber o certificado e o segredo do TOTP de cada eproc. Este é o contrato que ele precisa cumprir para o robô usar os dois sem reiniciar. O segredo do TOTP segue o mesmo modelo do certificado: mesma pasta, mesma chave do robô, mesma cifra (detalhes em [Segredo do TOTP](#segredo-do-totp-2-fatores)).
 
 ### Como o painel entrega ao robô: opções
 
@@ -183,6 +186,72 @@ O robô exige `formato`, `arquivo` (só o nome, na mesma pasta), `sha256` e `sen
 - Inválido: segue com o anterior e escreve o motivo no log (sem senha nem conteúdo).
 - Sem certificado ainda (painel não enviou): o robô sobe assim mesmo, e o login por certificado fica com a pessoa até chegar um válido.
 
+### Segredo do TOTP (2 fatores)
+
+**O que é.** Quando o advogado liga a autenticação em 2 fatores no eproc, a tela mostra um QR code e, junto, o "código para gerar o OTP" (letras A–Z e dígitos 2–7, em base32). É esse código que vai para o painel. O aplicativo do celular e o robô passam a gerar os mesmos códigos de 6 dígitos a cada 30 s. Um segredo por sistema:
+
+| Sistema no contrato | Tribunal |
+|---|---|
+| `eproc` | eproc do TJSP |
+| `eproc-tjrj` | eproc do TJRJ (cadastro e segredo próprios) |
+
+Se o 2FA já foi ligado e ninguém guardou o código, ele não aparece de novo: é preciso desativar e ativar o 2FA no eproc ("Autenticação em 2 fatores", na tela inicial), cadastrar o QR code novo no celular do advogado e o código no painel, no mesmo momento. O registro antigo do celular deixa de valer.
+
+**Quem guarda o quê.** O segredo gera o código sem o celular: quem tem o segredo e o certificado (ou a senha) entra como o advogado. Por isso ele segue o mesmo caminho da senha do certificado: cifrado com a chave pública do robô, gravado só na pasta compartilhada, nunca no banco do painel, em log, em variável do Easypanel ou no volume `/dados`.
+
+**Cifra.** Igual à da senha do certificado: **RSA-OAEP com SHA-256**, com a chave pública do robô, sobre o texto do segredo em UTF-8, resultado em base64. O texto pode ser o código base32 (com ou sem espaços) ou a URI inteira do QR code (`otpauth://totp/...?secret=...`); com a URI, o robô usa `algorithm`, `digits` e `period` dela. Um segredo cabe de sobra numa chave RSA de 3072 bits.
+
+**Arquivo `segundo-fator.json`**, na mesma pasta do `certificado.json` (o robô lê de `ROBO_2FA_PASTA` ou, sem ela, de `CERTIFICADO_PASTA`):
+
+```json
+{
+  "formato": "orqestrai-segundo-fator/1",
+  "sistemas": {
+    "eproc": {
+      "segredo_cifrado": "<base64>",
+      "enviado_em": "2026-11-18T15:00:00Z",
+      "enviado_por": "<usuário do painel>"
+    },
+    "eproc-tjrj": {
+      "segredo_cifrado": "<base64>",
+      "enviado_em": "2026-11-18T15:05:00Z",
+      "enviado_por": "<usuário do painel>"
+    }
+  }
+}
+```
+
+O robô exige `formato` e `sistemas`, e de cada sistema só `segredo_cifrado`. Os demais campos são para o painel.
+
+**Gravação.**
+
+1. Ler o `segundo-fator.json` atual (se houver) e trocar **só** o item do sistema enviado. Os outros itens continuam como estão: o painel copia o `segredo_cifrado` deles sem decifrar (nem consegue).
+2. Gravar num arquivo temporário na mesma pasta e renomear (atômico), como o `certificado.json`. Permissão `0640`.
+3. Remover um segredo = gravar o arquivo sem aquele item. O robô passa a usar o webhook ou a pessoa.
+
+**Validação no painel, antes de gravar.**
+
+1. Normalizar (tirar espaços e hífens, maiúsculas) e conferir que é base32 com pelo menos 16 caracteres, ou uma URI `otpauth://totp/` com `secret`.
+2. **Conferência recomendada:** pedir também o código de 6 dígitos que o aplicativo do advogado mostra naquele momento e conferir que o segredo gera esse código (aceitando a janela anterior e a seguinte, ±30 s; referência: `conferirCodigo` em `src/segundo-fator.ts`). Isso prova que o segredo é o certo sem tentar login no tribunal. Código diferente: recusar com "O segredo não gera o código do aplicativo".
+3. Depois de cifrar, descartar o segredo da memória da requisição. A resposta mostra só "cadastrado em … por …", nunca o segredo, nem parte dele.
+
+**Como o robô usa.**
+
+- A cada tela de código do eproc, o robô lê o `segundo-fator.json`, decifra o segredo do sistema e gera o código do instante. Trocar o segredo no painel vale no próximo login, sem reiniciar.
+- Se faltam menos de 5 s para o código trocar, ele espera o próximo. Código recusado: tenta mais um, da janela seguinte (nunca repete um código recusado), limpa o campo e passa para o webhook do n8n; se o webhook não existir ou falhar, para a pessoa pela tela remota.
+- Nem o segredo nem o código vão para log, diagnóstico ou captura de tela; o log diz só "código gerado pelo segredo do painel e aceito" ou o motivo de não ter usado (arquivo inválido, chave errada, segredo não aceito).
+- **Relógio:** o TOTP depende da hora certa. VPS costuma ter NTP ligado; se o código for recusado sempre, confira a hora do servidor (`date -u`) antes de suspeitar do segredo.
+
+### Tela de configuração no painel
+
+O que o painel precisa ter (o código do painel está fora deste repositório):
+
+- **Acesso:** só usuários com papel de administrador do robô de autos. Os demais não veem a tela nem as rotas (conferir no servidor, não só esconder o menu).
+- **Certificado A1:** upload do `.pfx`/`.p12` e campo de senha (`type=password`, `autocomplete=off`); botão "Validar e salvar" ([validação](#validação-no-servidor-do-painel-antes-de-gravar)). Mostra titular, emissor, validade, quem enviou e quando. Nunca mostra a senha.
+- **Segredo do 2FA, um bloco por sistema** (eproc TJSP, eproc TJRJ): campo do segredo (`type=password`, `autocomplete=off`, sem botão de "mostrar"), campo do código atual do aplicativo (conferência), botões "Salvar" e "Remover". Mostra só "configurado em … por …" ou "não configurado".
+- **Registro de alterações:** cada troca grava quem, quando e o quê ("certificado trocado", "segredo do eproc-tjrj trocado", "segredo do eproc removido"), sem valor nenhum, nem hash. Fica visível na própria tela.
+- **No servidor do painel:** HTTPS; proteção contra CSRF nos formulários; limite de tentativas; corpo da requisição fora dos logs de acesso; a chave pública do robô numa variável (`ROBO_CERTIFICADO_CHAVE_PUBLICA`); a chave privada **nunca** no painel.
+
 ## Rede e destino
 
 - **`ORQESTRAI_URL`:** o endereço de produção do ORQESTRAI (Vercel). Hoje o robô do Mac aponta para o servidor local de desenvolvimento.
@@ -202,9 +271,35 @@ O robô exige `formato`, `arquivo` (só o nome, na mesma pasta), `sha256` e `sen
 
 ## Passo a passo no Easypanel
 
-Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)).
+Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)). Nenhum valor real vai para o repositório: senhas, token, chave privada, certificado e segredos entram só no Easypanel e no painel.
 
-1. **Serviço App** no projeto dos robôs. Fonte: o repositório no GitHub, branch com o robô; **Build Path** `/robos/autos`; construção por **Dockerfile** (`Dockerfile`).
+### Divisão do trabalho entre o servidor e o Mac
+
+| Robô | `ROBO_CONECTORES` | Por quê |
+|---|---|---|
+| Servidor (Easypanel) | `eproc` (TJSP e TJRJ) | Certificado em arquivo e código de 2 fatores gerado pelo robô: não precisa de ninguém no dia a dia. |
+| Mac | `esaj,dcp,pje` | e-SAJ depende do Web Signer; DCP e PJe do TJRJ entram sempre com a pessoa. |
+
+- A fila reserva cada pedido para um robô; com essa divisão, cada um só pede o que atende.
+- O DCP do TJRJ pode devolver um processo já migrado ao eproc do TJRJ; nesse caso o robô do Mac usa a sessão do eproc do TJRJ dele (login e código pela pessoa ou pelo webhook). O segredo do painel fica só no servidor.
+- `CAPA_DATAJUD` ligado em um só robô (o DataJud recusa consultas em sequência).
+
+### 1. Gerar a chave do robô
+
+Gerada por quem administra o servidor, fora do repositório ([comandos](#chave-do-robô-uma-vez)). A mesma chave serve para a senha do certificado e para os segredos do TOTP.
+
+### 2. Pasta compartilhada no servidor
+
+```bash
+sudo mkdir -p /srv/robos/certificados
+sudo chmod 0750 /srv/robos/certificados
+```
+
+Dono: o usuário com que o painel grava; grupo: um grupo que inclua o `pwuser` do robô (número com `id pwuser` no console do serviço do robô). Arquivos `0640`. Fora dos backups do volume `/dados`.
+
+### 3. Serviço do robô (App)
+
+1. **Fonte:** o repositório no GitHub, branch com o robô; **Build Path** `/robos/autos`; construção por **Dockerfile** (`Dockerfile`).
 2. **Environment** (valores só no Easypanel):
 
    | Variável | Valor |
@@ -212,24 +307,57 @@ Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)).
    | `ORQESTRAI_URL` | endereço de produção do ORQESTRAI |
    | `ROBO_AUTOS_TOKEN` | o mesmo da Vercel |
    | `ROBO_NOME` | ex. `servidor-easypanel` |
-   | `ROBO_CONECTORES` | `eproc` (e-SAJ fica no Mac) |
+   | `ROBO_CONECTORES` | `eproc` |
    | `EPROC_LOGIN` | `certificado` |
+   | `EPROC_TJRJ_LOGIN` | `certificado` (ou `manual`, até a origem do certificado do TJRJ ser conferida) |
+   | `ESAJ_LOGIN` | `manual` (o e-SAJ não roda aqui) |
    | `CERTIFICADO_PASTA` | `/certificados` |
    | `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO` | `/segredos/robo-certificado.key` |
-   | `ROBO_2FA_WEBHOOK_URL`, `ROBO_2FA_WEBHOOK_TOKEN` | os do n8n, se for usar |
+   | `CERTIFICADO_ORIGENS` | padrão (TJSP); acrescente a do TJRJ quando conferida |
+   | `ROBO_2FA_WEBHOOK_URL`, `ROBO_2FA_WEBHOOK_TOKEN` | os do n8n, só se quiser a alternativa ao segredo do painel |
    | `VNC_SENHA` | senha da tela remota |
    | `TELA_REMOTA_URL` | `https://<domínio da tela>/vnc.html` |
    | `CAPA_DATAJUD` | `nao`, se o robô do Mac já completa as capas |
 
-   `NAVEGADOR_MODO`, `NAVEGADOR_CANAL`, `PASTA_DADOS`, `DISPLAY` e `TZ` já vêm do `Dockerfile`.
+   O segredo do TOTP **não** vai em variável: o robô lê o `segundo-fator.json` da mesma pasta do certificado. `ROBO_2FA_PASTA` só é preciso se o painel gravar o segredo em outra pasta. `NAVEGADOR_MODO`, `NAVEGADOR_CANAL`, `PASTA_DADOS`, `DISPLAY` e `TZ` já vêm do `Dockerfile`.
 3. **Mounts:**
-   - Volume `dados` em `/dados`;
-   - Bind da pasta do servidor dos certificados (a mesma do painel) em `/certificados`;
-   - File com o conteúdo de `robo-certificado.key` em `/segredos/robo-certificado.key` (o script de início copia para um arquivo que só o usuário do robô lê).
-4. **Domains:** um domínio para a tela remota, HTTPS, porta **6080**; em Security, **Basic Auth** ligado.
-5. **Resources:** como em [Operação](#operação). **Deploy:** 1 réplica, sem zero-downtime.
-6. **Painel de robôs:** o mesmo Bind da pasta de certificados, com leitura e escrita; a chave pública do robô numa variável dele. Enviar o certificado pelo formulário.
-7. **Primeiro teste:** com um pedido do eproc na fila, acompanhar os logs; abrir a tela remota se aparecer "PRECISA DE UMA PESSOA".
+   - **Volume** `dados` em `/dados` (perfil, PDFs em trânsito, diagnósticos);
+   - **Bind** de `/srv/robos/certificados` em `/certificados`, **só leitura**;
+   - **File** em `/segredos/robo-certificado.key`, com o conteúdo de `robo-certificado.key`. O script de início copia para `/run/robo/certificado.key`, que só o `pwuser` lê, fora do volume.
+4. **Domains:** um domínio para a tela remota, HTTPS, porta **6080**; em Security, **Basic Auth** ligado, com usuário e senha diferentes da `VNC_SENHA`.
+5. **Resources:** 2 vCPU, memória com reserva de 1,5 GB e limite de 3 GB ([Operação](#operação)).
+6. **Deploy:** 1 réplica, **sem** zero-downtime. Faça o deploy.
+
+### 4. Painel de robôs
+
+1. O mesmo **Bind** de `/srv/robos/certificados`, com leitura e escrita, no caminho que o painel usar.
+2. Variável `ROBO_CERTIFICADO_CHAVE_PUBLICA` com o conteúdo de `robo-certificado.pub` (não é segredo).
+3. Deploy da versão do painel com a [tela de configuração](#tela-de-configuração-no-painel).
+
+### 5. Certificado e segredos pelo painel
+
+Quem administra o robô entra no painel e envia:
+
+1. o certificado A1 e a senha;
+2. o segredo do TOTP do eproc do TJSP, com o código atual do aplicativo do advogado para conferência;
+3. o segredo do TOTP do eproc do TJRJ, do mesmo jeito.
+
+O robô adota o certificado em até ~30 s (com a fila vazia) e lê os segredos no próximo login. Nos logs: "Certificado em arquivo carregado (…)", sem conteúdo.
+
+### 6. Robô do Mac
+
+No `.env` do Mac: `ROBO_CONECTORES=esaj,dcp,pje` e, se as capas ficarem no servidor, `CAPA_DATAJUD=nao`. Reinicie o robô do Mac.
+
+### 7. Primeiro teste
+
+1. Com um pedido do eproc do TJSP na fila, acompanhe os logs do serviço. O esperado: "Sessão do eproc … fechada: iniciando o login (certificado)", depois "Código de 2 fatores gerado pelo segredo do painel e aceito. Login concluído."
+2. Se aparecer "PRECISA DE UMA PESSOA", abra a tela remota e resolva; o log diz antes o motivo (certificado não aceito, segredo não aceito, CAPTCHA).
+3. Repita com um pedido do eproc do TJRJ.
+4. Encerre o robô de propósito uma vez e confira se o serviço volta sozinho ([Operação](#operação)).
+
+### Voltar atrás
+
+Pare o serviço do robô no Easypanel e tire `ROBO_CONECTORES` do `.env` do Mac (volta a atender tudo). Um pedido que o servidor tinha reservado quando parou pode precisar ser liberado na ficha do processo.
 
 `docker/compose.exemplo.yml` reúne o mesmo serviço em formato compose, para referência.
 
@@ -238,7 +366,7 @@ Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)).
 1. **e-SAJ:** manter no Mac (dividindo com `ROBO_CONECTORES`), passar para CPF e senha com código por e-mail digitado pela tela remota, ou investir num piloto do Web Signer em Linux.
 2. **Código do e-SAJ por e-mail:** se for automatizar, autorizar o n8n a ler a caixa do advogado (exige ajuste pequeno no robô, não feito).
 3. **Quem acessa a tela remota** e quem guarda as senhas do Basic Auth e do VNC.
-4. **Quem pode enviar ou trocar o certificado no painel**, e o procedimento de revogação se houver suspeita de vazamento.
+4. **Quem pode enviar ou trocar o certificado e os segredos do 2FA no painel**, e o procedimento se houver suspeita de vazamento (revogar o certificado; desativar e reativar o 2FA no eproc, o que troca o segredo).
 5. **Ritmo e piloto:** quantos processos no primeiro teste no servidor, para observar bloqueio ou lentidão do tribunal.
 
 ## Variáveis novas do robô
@@ -253,6 +381,7 @@ Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)).
 | `TELA_REMOTA_URL` | — | Endereço da tela remota, mostrado no log. |
 | `CERTIFICADO_PFX`, `CERTIFICADO_SENHA`, `CERTIFICADO_SENHA_ARQUIVO` | — | Certificado em arquivo, fonte simples. |
 | `CERTIFICADO_PASTA`, `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO` | — | Certificado enviado pelo painel. |
+| `ROBO_2FA_PASTA` | `CERTIFICADO_PASTA` | Onde está o `segundo-fator.json` gravado pelo painel (segredo do TOTP, decifrado com `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO`). |
 | `CERTIFICADO_ORIGENS` | `https://certificado-sso.tjsp.jus.br` | Onde o certificado é apresentado. |
 | `VNC_SENHA`, `VNC_SENHA_ARQUIVO` | — | Senha da tela remota (só no contêiner). |
 | `DIAGNOSTICO_DIAS` | 7 | Idade máxima dos diagnósticos (só no contêiner). |
@@ -268,4 +397,7 @@ Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)).
 - OAB-SP, autenticação em duas etapas no e-SAJ (20/03/2025): https://www.oabsp.org.br/jornaldaadvocacia/25-03-20-1715-acessos-ao-e-saj-e-ao-pje-terao-novos-fatores-de-autenticacao-medidas-reforcam-seguranca-e-alinham-se-as-acoes-da-oab-sp
 - AASP, duplo fator no e-SAJ (certificado não pede código): https://www.aasp.org.br/?p=81735
 - AASP, comunicado da Presidência do TJSP sobre robôs externos (15/07/2019): https://www.aasp.org.br/?p=40632
+- TOTP: RFC 6238 (https://www.rfc-editor.org/rfc/rfc6238) e HOTP: RFC 4226 (https://www.rfc-editor.org/rfc/rfc4226)
+- TJSP, eproc, manual do advogado (primeiros passos, código do aplicativo de autenticação): https://www.tjsp.jus.br/download/EPROC/ManuaisPublicoExterno/1-1-EPROC-ADVOGADO-Primeiros-passos.pdf
+- TJRJ, manual de autenticação em dois fatores do eproc: https://www.tjrj.jus.br/documents/d/guest/manual_do_usuario_autenticacao_de_dois_fatores_2fa_eproc_v1-0_1-1
 - TJSP, atas do Comitê Gestor de TI (2021), citadas pela busca, texto não conferido: https://www.tjsp.jus.br/Download/Portal/PlanejamentoEstrategicoDeTI/PlanejamentoEstrategicoDeTI/ComiteGestaoTI/REGISTROCGesTI09-04-2021v1rev.pdf

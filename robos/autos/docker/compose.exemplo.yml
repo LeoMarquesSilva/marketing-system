@@ -20,7 +20,9 @@ services:
       # Certificado A1 enviado pelo painel de robôs (contrato em docs/easypanel.md).
       CERTIFICADO_PASTA: "/certificados"
       CERTIFICADO_CHAVE_PRIVADA_ARQUIVO: "/segredos/robo-certificado.key"
-      # Código de 2 fatores do eproc pelo webhook do n8n (opcional).
+      # Código de 2 fatores do eproc: o robô gera com o segredo do TOTP que o painel grava em
+      # /certificados/segundo-fator.json (mesma pasta e mesma chave do certificado). O webhook do n8n fica
+      # como alternativa (opcional).
       ROBO_2FA_WEBHOOK_URL: "<url do webhook>"
       ROBO_2FA_WEBHOOK_TOKEN: "<token do webhook>"
       # Tela remota (noVNC) para a pessoa resolver login, código ou CAPTCHA.
