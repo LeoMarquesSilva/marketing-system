@@ -175,6 +175,26 @@ describe("fila do robô", () => {
     expect(linhasParaFila(PUBLICACAO, ITENS, { simular: false, modo: "intimacao" })[0].linha.lancamento).not.toHaveProperty("agendar_na_pasta");
   });
 
+  it("pasta de atendimento informada na Triagem Manual: direto na pasta, com o tipo, sem marcar como colada (18/11/2026)", () => {
+    const [grupo, ...resto] = linhasParaFila(PUBLICACAO, ITENS, { simular: false, modo: "intimacao", tipoPasta: "Atendimento" });
+    expect(resto).toHaveLength(0);
+    expect(grupo.linha).toMatchObject({ ci_pasta: "58866", pasta_tipo: "Atendimento" });
+    expect(grupo.linha.lancamento).toMatchObject({ agendar_na_pasta: true, pasta_informada: { tipo: "Atendimento" } });
+    expect(grupo.linha.lancamento).not.toHaveProperty("publicacao_colada");
+    // Nenhuma base conhece a CI: vale como atendimento (o robô abre a tela que existir).
+    const [desconhecida] = linhasParaFila(PUBLICACAO, ITENS, { simular: false, modo: "intimacao", tipoPasta: "Desconhecido" });
+    expect(desconhecida.linha).toMatchObject({ pasta_tipo: "Atendimento" });
+    expect(desconhecida.linha.lancamento).toMatchObject({ agendar_na_pasta: true, pasta_informada: { tipo: "Desconhecido" } });
+    // Processo (do SIOE ou aberto hoje): continua pela intimação, como antes.
+    const [processo] = linhasParaFila(PUBLICACAO, ITENS, { simular: false, modo: "intimacao", tipoPasta: "Processo" });
+    expect(processo.linha).toMatchObject({ pasta_tipo: "Processo" });
+    expect(processo.linha.lancamento).not.toHaveProperty("agendar_na_pasta");
+    expect(processo.linha.lancamento).not.toHaveProperty("pasta_informada");
+    // Colada e de atendimento: as duas marcas.
+    const [colada] = linhasParaFila(PUBLICACAO, ITENS, { simular: false, modo: "pasta", tipoPasta: "Atendimento" });
+    expect(colada.linha.lancamento).toMatchObject({ agendar_na_pasta: true, publicacao_colada: true, pasta_informada: { tipo: "Atendimento" } });
+  });
+
   it("colada à mão: na CIÊNCIA NF a observação vai na JUSTIFICATIVA NF, não na descrição (0100488-57, 11/11/2026)", () => {
     const ciencia: AgendamentoParaFila = { ...ITENS[1], tarefa: "CIÊNCIA NF", tarefa_id: "316", observacao: "Intimação da reclamada por edital, que não é cliente." };
     const [grupo] = linhasParaFila(PUBLICACAO, [ciencia], { simular: false, modo: "pasta" });

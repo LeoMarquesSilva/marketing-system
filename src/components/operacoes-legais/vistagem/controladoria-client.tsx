@@ -140,14 +140,20 @@ function ProcessoDaPasta({ pasta, publicacao }: { pasta: PastaSioe; publicacao: 
   return (
     <div className="space-y-0.5">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-        <span className="tabular-nums text-foreground">{pasta.cnj || "sem número"}</span>
+        {pasta.tipoPasta && pasta.tipoPasta !== "Processo" ? (
+          <span className="font-medium text-foreground">
+            {pasta.tipoPasta === "Atendimento" ? "Pasta de atendimento" : "Pasta informada (fora da cópia do VIOS)"}
+          </span>
+        ) : (
+          <span className="tabular-nums text-foreground">{pasta.cnj || "sem número"}</span>
+        )}
         {pasta.cnj ? (
           <span className={cn("text-[11px] font-medium", mesmo ? "text-emerald-700" : "text-amber-700")}>
             {mesmo ? "mesmo processo da publicação" : "outro número"}
           </span>
         ) : null}
         <a
-          href={linkPastaVios(pasta.ci)}
+          href={linkPastaVios(pasta.ci, pasta.tipoPasta)}
           target="_blank"
           rel="noopener noreferrer"
           title="Abrir a pasta no VIOS (nova aba)"
@@ -519,9 +525,14 @@ function Resolucao({
     setPrevia(null);
     try {
       const resposta = await authFetch(`/api/operacoes-legais/vistagem/sioe/pasta?ci=${encodeURIComponent(ci)}`);
-      const corpo = await resposta.json();
+      const corpo = (await resposta.json()) as { pasta: PastaSioe; escritorioSugerido: string | null; error?: string };
       if (!resposta.ok) throw new Error(corpo.error ?? "CI não encontrada.");
       setPrevia(corpo);
+      // Pasta informada fora da cópia do SIOE (atendimento): o que se sabe dela preenche o "Para onde vai" vazio.
+      if (corpo.pasta.tipoPasta) {
+        if (!escritorio && corpo.escritorioSugerido) setEscritorio(corpo.escritorioSugerido);
+        if (!grupo && corpo.pasta.grupoCliente) setGrupo(corpo.pasta.grupoCliente);
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : "CI não encontrada.");
     } finally {
@@ -538,7 +549,7 @@ function Resolucao({
   return (
     <>
       {!publicacao.pastaCi && !variasPastas ? (
-        <Secao titulo="Achou a pasta no VIOS?" id={`${base}-ci`}>
+        <Secao titulo="Achou a pasta no VIOS? (processo ou atendimento)" id={`${base}-ci`}>
           <div className="flex items-end gap-2" data-tour="tm-escolher-pasta">
             <Campo rotulo="CI da pasta" className="min-w-0 flex-1">
               <Input
@@ -564,9 +575,25 @@ function Resolucao({
                 publicacao={publicacao}
                 acao={
                   <div className="grid gap-1.5">
-                    <Button size="sm" onClick={() => liberar({ ci: previa.pasta.ci })} disabled={ocupado}>
+                    {/* Pasta informada fora da cópia do SIOE (atendimento): escritório e grupo vêm do "Para onde vai". */}
+                    {previa.pasta.tipoPasta ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        Fora da cópia de processos do VIOS: confira escritório e grupo em “Para onde vai”. As tarefas vão direto nesta pasta.
+                      </p>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        liberar(
+                          previa.pasta.tipoPasta
+                            ? { ci: previa.pasta.ci, escritorio, grupo: grupo.trim() || undefined, demandaRisco }
+                            : { ci: previa.pasta.ci }
+                        )
+                      }
+                      disabled={ocupado || (Boolean(previa.pasta.tipoPasta) && !pronto)}
+                    >
                       <Check />
-                      Usar e liberar · {previa.escritorioSugerido ?? "definir escritório"}
+                      Usar e liberar · {(previa.pasta.tipoPasta ? escritorio : null) || previa.escritorioSugerido || "definir escritório"}
                     </Button>
                     <Button
                       size="sm"
@@ -574,8 +601,8 @@ function Resolucao({
                       onClick={() =>
                         onAgendar({
                           ci: previa.pasta.ci,
-                          escritorio: previa.escritorioSugerido ?? "",
-                          grupo: previa.pasta.grupoCliente ?? "",
+                          escritorio: (previa.pasta.tipoPasta ? escritorio : "") || previa.escritorioSugerido || "",
+                          grupo: (previa.pasta.tipoPasta ? grupo : "") || previa.pasta.grupoCliente || "",
                           demandaRisco: demandaRisco,
                         })
                       }
