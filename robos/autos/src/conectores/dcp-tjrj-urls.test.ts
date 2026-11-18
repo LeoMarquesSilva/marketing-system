@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  CONSULTA_PROCESSUAL_DCP,
   LOGIN_PORTAL_DE_SERVICOS,
+  chaveDoDocumentoDcp,
   cnjDoTjrj,
+  documentosDoIndiceDcp,
+  documentosNovosDcp,
+  ehQuadroDaConsultaDcp,
+  ehVisualizadorDcp,
   ehAreaLogadaDcp,
   emSegredoDcp,
   etapaDoLoginDcp,
@@ -79,5 +85,37 @@ describe("telas do processo", () => {
     expect(visualizadorDoBotao("Processo Eletrônico - Antigo Visualizador")).toBe("antigo");
     expect(visualizadorDoBotao("Processo Eletrônico - clique aqui para visualizar")).toBe("outro");
     expect(visualizadorDoBotao("Peticionar")).toBeNull();
+  });
+});
+
+describe("consulta e visualizador do DCP", () => {
+  it("reconhece o portal, o iframe da consulta e o visualizador", () => {
+    expect(ehAreaLogadaDcp(CONSULTA_PROCESSUAL_DCP)).toBe(true);
+    expect(ehAreaLogadaDcp("https://www3.tjrj.jus.br/portalservicos/#/dashboard")).toBe(true);
+    expect(ehQuadroDaConsultaDcp("https://www3.tjrj.jus.br/consultaprocessual/#/consultar/detalhes-processo?tipoProcesso=1")).toBe(true);
+    expect(ehQuadroDaConsultaDcp("https://www3.tjrj.jus.br/portalservicos/#/consproc/consultaportal")).toBe(false);
+    expect(ehVisualizadorDcp("https://www3.tjrj.jus.br/visproc/#/abc123")).toBe(true);
+    expect(ehVisualizadorDcp("https://www.tjrj.jus.br/")).toBe(false);
+  });
+
+  it("só as peças numeradas do índice viram documentos, com chave estável", () => {
+    expect(chaveDoDocumentoDcp("11 - Procuração")).toBe("dcp:11 - PROCURACAO");
+    expect(chaveDoDocumentoDcp("  90 -  Juntada - Petição - dia 16/10/2026 ")).toBe("dcp:90 - JUNTADA - PETICAO - DIA 16/10/2026");
+    expect(chaveDoDocumentoDcp("Processo: 0000000-00.0000.8.19.0000")).toBeNull();
+    expect(chaveDoDocumentoDcp("Petição Inicial/Doc. de Origem")).toBeNull();
+    const documentos = documentosDoIndiceDcp(["Processo: 0000000-00.0000.8.19.0000", "2 - Distribuição", "Petição Inicial/Doc. de Origem", "3 - Petição Inicial", "11 - Procuração"]);
+    expect(documentos.map((item) => [item.indice, item.chave])).toEqual([
+      [1, "dcp:2 - DISTRIBUICAO"],
+      [3, "dcp:3 - PETICAO INICIAL"],
+      [4, "dcp:11 - PROCURACAO"],
+    ]);
+  });
+
+  it("peças novas: só as que não vieram antes; chaves de outro sistema não contam", () => {
+    const documentos = documentosDoIndiceDcp(["2 - Distribuição", "3 - Petição Inicial", "11 - Procuração"]);
+    expect(documentosNovosDcp(documentos, undefined)).toHaveLength(3);
+    expect(documentosNovosDcp(documentos, ["evento:1 INIC1"])).toHaveLength(3);
+    expect(documentosNovosDcp(documentos, ["dcp:2 - DISTRIBUICAO", "dcp:3 - PETICAO INICIAL"]).map((item) => item.rotulo)).toEqual(["11 - Procuração"]);
+    expect(documentosNovosDcp(documentos, documentos.map((item) => item.chave))).toEqual([]);
   });
 });

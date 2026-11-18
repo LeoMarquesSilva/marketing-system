@@ -4,13 +4,14 @@
  * mais comum daquele tribunal. Um conector por sistema; cada conector diz em quais tribunais já funciona.
  */
 
-export type SistemaTribunal = "esaj" | "pje" | "eproc" | "projudi" | "outro";
+export type SistemaTribunal = "esaj" | "pje" | "eproc" | "projudi" | "dcp" | "outro";
 
 export const ROTULO_SISTEMA: Record<SistemaTribunal, string> = {
   esaj: "e-SAJ",
   pje: "PJe",
   eproc: "eproc",
   projudi: "Projudi",
+  dcp: "DCP (Portal de Serviços)",
   outro: "sistema próprio",
 };
 
@@ -33,17 +34,26 @@ const SISTEMA_PADRAO: Record<string, SistemaTribunal> = {
 
 /**
  * Tribunais que migram o acervo dos sistemas antigos para o eproc, com o mesmo número CNJ: o robô procura o
- * processo no eproc, e o que ainda não migrou volta com erro explicando. No TJRJ, o "Próprio" do cadastro é o
- * DCP (Portal de Serviços); o DCP e o PJe estão sendo migrados (mais de 1,3 milhão de processos em 18/11/2026).
+ * processo no eproc, e o que ainda não migrou volta com erro explicando. O DCP e o PJe do TJRJ estão sendo
+ * migrados (mais de 1,3 milhão de processos em 18/11/2026); o PJe do TJRJ ainda não tem conector e vai ao eproc.
  */
 const MIGRA_PARA_EPROC: Partial<Record<string, SistemaTribunal[]>> = {
-  TJRJ: ["outro", "pje"],
+  TJRJ: ["pje"],
+};
+
+/**
+ * O "Próprio" do cadastro (sistema do tribunal) em cada tribunal que tem conector para ele. No TJRJ é o DCP
+ * (Portal de Serviços): o conector consulta o DCP e, se o processo já migrou, segue pelo eproc no mesmo pedido.
+ */
+const SISTEMA_PROPRIO: Partial<Record<string, SistemaTribunal>> = {
+  TJRJ: "dcp",
 };
 
 /** Conectores do robô que já existem: sistema → tribunais atendidos (robos/autos/src/conectores). */
 export const CONECTORES_DISPONIVEIS: Partial<Record<SistemaTribunal, string[]>> = {
   esaj: ["TJSP", "TJCE", "TJAL", "TJMS"],
   eproc: ["TJSP", "TJRJ"],
+  dcp: ["TJRJ"],
 };
 
 export function digitosDoCnj(cnj: string | null | undefined): string | null {
@@ -76,6 +86,7 @@ export function lerSistema(texto: string | null | undefined): SistemaTribunal | 
   if (limpo.includes("eproc")) return "eproc";
   if (limpo.includes("pje")) return "pje";
   if (limpo.includes("projudi")) return "projudi";
+  if (limpo === "dcp") return "dcp";
   return "outro";
 }
 
@@ -97,7 +108,8 @@ export function roboDoProcesso(cnj: string | null | undefined, sistemaDoCadastro
   const mascarado = mascararCnj(digitos);
   const tribunal = tribunalDoCnj(digitos);
   if (!tribunal) return { cnj: mascarado, tribunal: null, sistema: null, disponivel: false, motivo: "Não reconheci o tribunal pelo número: anexe o PDF dos autos." };
-  const doCadastro = lerSistema(sistemaDoCadastro) ?? SISTEMA_PADRAO[tribunal] ?? null;
+  const lido = lerSistema(sistemaDoCadastro);
+  const doCadastro = (lido === "outro" ? (SISTEMA_PROPRIO[tribunal] ?? lido) : lido) ?? SISTEMA_PADRAO[tribunal] ?? null;
   const sistema = doCadastro && MIGRA_PARA_EPROC[tribunal]?.includes(doCadastro) ? "eproc" : doCadastro;
   if (!sistema) return { cnj: mascarado, tribunal, sistema: null, disponivel: false, motivo: `Ainda não há robô para o ${tribunal}: anexe o PDF dos autos.` };
   const disponivel = CONECTORES_DISPONIVEIS[sistema]?.includes(tribunal) ?? false;

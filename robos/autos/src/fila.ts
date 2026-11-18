@@ -82,17 +82,17 @@ export class Fila {
   }
 
   /** Sobe o PDF ao bucket privado e registra o documento no processo. */
-  async entregar(pedidoId: string, arquivo: string, nome: string, pecas?: string[]): Promise<void> {
+  async entregar(pedidoId: string, arquivo: string, nome: string, pecas?: string[], sistema?: "eproc"): Promise<void> {
     const { size } = await stat(arquivo);
     const { upload } = await this.chamar<{ upload: Upload }>(`/pedidos/${pedidoId}`, { acao: "upload", nome, tamanho: size });
     const armazenamento = createClient(upload.supabaseUrl, upload.anonKey, { auth: { persistSession: false } }).storage;
     const { error } = await armazenamento.from(upload.bucket).uploadToSignedUrl(upload.path, upload.token, await openAsBlob(arquivo, { type: "application/pdf" }), { contentType: "application/pdf" });
     if (error) throw new Error(`O envio do PDF ao ORQESTRAI falhou: ${error.message}`);
-    await this.chamar(`/pedidos/${pedidoId}`, { acao: "concluir", path: upload.path, nome, ...(pecas?.length ? { pecas } : {}) });
+    await this.chamar(`/pedidos/${pedidoId}`, { acao: "concluir", path: upload.path, nome, ...(pecas?.length ? { pecas } : {}), ...(sistema ? { sistema } : {}) });
   }
 
   /** Os autos foram conferidos e não há peça nova: o pedido termina sem PDF. */
-  async semNovidades(pedidoId: string): Promise<void> {
-    await this.chamar(`/pedidos/${pedidoId}`, { acao: "sem_novidades" });
+  async semNovidades(pedidoId: string, sistema?: "eproc"): Promise<void> {
+    await this.chamar(`/pedidos/${pedidoId}`, { acao: "sem_novidades", ...(sistema ? { sistema } : {}) });
   }
 }

@@ -25,13 +25,22 @@ import { lerCnj, type NumeroCnj } from "./esaj-urls.ts";
  *   migrado mostra aviso com "Acessar eproc" (ou "Ir para o eproc", no visualizador); andamentos e peças ficam
  *   como estavam na data da migração.
  *
- * Tudo o que depende das telas logadas (endereços depois do login, seletores, se o PDF vem por download do
- * navegador ou abre em outra aba) está marcado como SUPOSIÇÃO e será conferido no `npm run mapear -- dcp <CNJ>`.
+ * Visto nas telas logadas (mapa de 18/11/2026, processo de teste do TJRJ), corrigindo o manual:
+ * - depois do login o portal abre numa janela própria (popup); a janela do login volta para a página inicial;
+ * - a consulta (Consultas > Consultas Processuais) fica num iframe de www3.tjrj.jus.br/consultaprocessual: aba
+ *   #nav-porNumero, rádio #numeracaoUnica, número em dois campos (input[name=numeroProcesso], que pula sozinho
+ *   para o sufixo ao completar 13 dígitos, e #inputSufixoUnica3) e #botaoPesquisarProcesso (um por aba, mesmo id);
+ * - o número leva direto a "Detalhes do Processo", com o botão "Processo Eletrônico - Visualizador";
+ * - o visualizador abre em aba nova (www3.tjrj.jus.br/visproc/#/<token>); o índice é uma árvore com uma caixa
+ *   (mat-checkbox, aria-roledescription = rótulo) por item, depois de "Exibir caixa de seleção";
+ * - "Baixar o processo atual em PDF" pergunta "Deseja salvar uma cópia das peças processuais?" com "Cancelar",
+ *   "Salvar Documentos Selecionados" (só com algo marcado) e "Salvar Documentos Carregados"; o PDF vem como
+ *   download do navegador, em segundos.
  */
 
 export const LOGIN_PORTAL_DE_SERVICOS = "https://www3.tjrj.jus.br/idserverjus-front/#/login?indGet=true&sgSist=PORTALSERVICOS";
 
-/** SUPOSIÇÃO: a área logada do Portal de Serviços fica neste caminho (sem login, ele devolve a página inicial do tribunal). */
+/** A área logada do Portal de Serviços (sem login, ele devolve a página inicial do tribunal). */
 export const PORTAL_DE_SERVICOS = "https://www3.tjrj.jus.br/portalservicos";
 
 /** Telas do login do TJRJ: IdServerJus (usuário e senha, duplo fator, e-mail, troca de senha, escolha do sistema), certificado e SSO. */
@@ -77,9 +86,8 @@ export function instrucaoDoLoginDcp(etapa: EtapaDoLoginDcp | null): string {
 }
 
 /**
- * A pessoa já entrou? Critério observável: o navegador saiu das telas de login e está no Portal de Serviços.
- * SUPOSIÇÃO: o endereço da área logada começa por PORTAL_DE_SERVICOS; o mapear também aceita a confirmação da
- * pessoa no terminal, caso o portal logado esteja em outro endereço.
+ * A pessoa já entrou? Critério observável: alguma aba saiu das telas de login e está no Portal de Serviços
+ * (no mapa, www3.tjrj.jus.br/portalservicos/#/dashboard, numa janela aberta pelo login).
  */
 export function ehAreaLogadaDcp(url: string): boolean {
   if (etapaDoLoginDcp(url)) return false;
@@ -103,8 +111,7 @@ export interface PartesDoCnjTjrj {
 
 /**
  * O número em pedaços, para as pesquisas que mostram ".8.19." fixo entre dois campos (como a busca da página
- * inicial do tribunal). SUPOSIÇÃO: a aba "Por Número" do Portal de Serviços usa os mesmos dois campos; se usar
- * um campo só, vale o `mascarado`.
+ * inicial do tribunal e a aba "Por Número" do Portal de Serviços, conferida no mapa).
  */
 export function partesDoCnjTjrj(cnj: string): PartesDoCnjTjrj | null {
   const numero = cnjDoTjrj(cnj);
@@ -146,4 +153,55 @@ export function visualizadorDoBotao(texto: string): "novo" | "antigo" | "outro" 
   if (/antigo/i.test(limpo)) return "antigo";
   if (/novo/i.test(limpo)) return "novo";
   return "outro";
+}
+
+/**
+ * Consulta processual do Portal de Serviços, vista no mapa de 18/11/2026: a rota do portal que traz a consulta num
+ * iframe (www3.tjrj.jus.br/consultaprocessual). O portal logado abre numa janela própria (popup) depois do login.
+ */
+export const CONSULTA_PROCESSUAL_DCP = `${PORTAL_DE_SERVICOS}/#/consproc/consultaportal`;
+
+/** A busca dentro do iframe: o iframe guarda a última tela (os detalhes do processo anterior) e volta para cá. */
+export const QUADRO_DA_CONSULTA_DCP = "https://www3.tjrj.jus.br/consultaprocessual/#/consultaportal";
+
+/** O iframe da consulta processual (busca e "Detalhes do Processo"). */
+export function ehQuadroDaConsultaDcp(url: string): boolean {
+  return /^https:\/\/www3\.tjrj\.jus\.br\/consultaprocessual\//i.test(url);
+}
+
+/** O visualizador de autos (abre em aba nova, com um token no endereço). */
+export function ehVisualizadorDcp(url: string): boolean {
+  return /^https:\/\/www3\.tjrj\.jus\.br\/visproc\//i.test(url);
+}
+
+export interface DocumentoDoIndiceDcp {
+  /** Posição da caixa de seleção no índice (ordem da tela). */
+  indice: number;
+  rotulo: string;
+  chave: string;
+}
+
+/**
+ * Item do índice do visualizador que é peça do processo: o rótulo começa pelo número sequencial ("11 - Procuração",
+ * "90 - Juntada - Petição - dia 16/10/2026"). O número só cresce: uma peça antiga não muda quando entra outra.
+ * O nó do processo ("Processo: …") e os agrupadores sem número ("Petição Inicial/Doc. de Origem") ficam de fora.
+ */
+export function chaveDoDocumentoDcp(rotulo: string): string | null {
+  const limpo = rotulo.replace(/\s+/g, " ").trim();
+  if (!/^\d+\s*-\s*\S/.test(limpo)) return null;
+  return `dcp:${limpo.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase()}`;
+}
+
+/** Os rótulos das caixas do índice viram documentos (só os numerados). */
+export function documentosDoIndiceDcp(rotulos: readonly string[]): DocumentoDoIndiceDcp[] {
+  return rotulos.flatMap((rotulo, indice) => {
+    const chave = chaveDoDocumentoDcp(rotulo);
+    return chave ? [{ indice, rotulo: rotulo.replace(/\s+/g, " ").trim(), chave }] : [];
+  });
+}
+
+/** Os documentos que ainda não vieram em downloads anteriores (as chaves de outros sistemas não contam). */
+export function documentosNovosDcp(documentos: DocumentoDoIndiceDcp[], baixadas: readonly string[] | undefined): DocumentoDoIndiceDcp[] {
+  const ja = new Set((baixadas ?? []).filter((chave) => chave.startsWith("dcp:")));
+  return ja.size ? documentos.filter((documento) => !ja.has(documento.chave)) : documentos;
 }

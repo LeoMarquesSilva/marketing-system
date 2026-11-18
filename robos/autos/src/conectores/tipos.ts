@@ -21,6 +21,8 @@ export interface Ambiente {
 export interface ResultadoDoDownload {
   pecas?: string[];
   semNovidades?: boolean;
+  /** O pedido acabou atendido por outro sistema (o DCP do TJRJ manda ao eproc o processo migrado). */
+  sistema?: "eproc";
 }
 
 export interface Conector {

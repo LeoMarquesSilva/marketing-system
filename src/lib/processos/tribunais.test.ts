@@ -48,8 +48,8 @@ describe("roboDoProcesso", () => {
   });
 
   // Números fictícios (dígito verificador inválido de propósito).
-  it("manda o TJRJ para o eproc, inclusive o que o cadastro chama de Próprio (DCP) ou PJe", () => {
-    expect(roboDoProcesso("00123456720198190001", "Próprio")).toMatchObject({ cnj: "0012345-67.2019.8.19.0001", tribunal: "TJRJ", sistema: "eproc", disponivel: true, motivo: null });
+  it("TJRJ: Próprio vai ao DCP; PJe, E-PROC e sem sistema vão ao eproc", () => {
+    expect(roboDoProcesso("00123456720198190001", "Próprio")).toMatchObject({ cnj: "0012345-67.2019.8.19.0001", tribunal: "TJRJ", sistema: "dcp", disponivel: true, motivo: null });
     expect(roboDoProcesso("0801234-56.2024.8.19.0001", "pje")).toMatchObject({ tribunal: "TJRJ", sistema: "eproc", disponivel: true });
     expect(roboDoProcesso("3001234-56.2026.8.19.0001", "E-PROC")).toMatchObject({ tribunal: "TJRJ", sistema: "eproc", disponivel: true });
     expect(roboDoProcesso("0012345-67.2019.8.19.0001", null)).toMatchObject({ tribunal: "TJRJ", sistema: "eproc", disponivel: true });

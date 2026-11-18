@@ -7,6 +7,7 @@ import { MOTIVOS_ESPERA, TAMANHO_MAXIMO_AUTOS, type DocumentoAutos, type PedidoA
 import { ProcessosError } from "./errors";
 import { registrarNoHistorico } from "./processos-server";
 import { db, falhou } from "./server";
+import { ROTULO_SISTEMA, type SistemaTribunal } from "./tribunais";
 
 /**
  * O lado do servidor da fila do robô de autos (robos/autos). O robô roda fora da Vercel e fala só com
@@ -93,11 +94,13 @@ const esquemaAtualizacao = z.discriminatedUnion("acao", [
     acao: z.literal("concluir"),
     path: z.string().trim().min(1).max(500),
     nome: z.string().trim().min(1).max(200),
-    /** eproc: as peças ("evento:nome") que vieram neste PDF. */
+    /** As peças que vieram neste PDF (eproc: "evento:nome"; e-SAJ e DCP: o rótulo do índice). */
     pecas: z.array(z.string().trim().min(1).max(300)).max(5000).optional(),
+    /** O pedido ao DCP do TJRJ acabou atendido pelo eproc (processo migrado): os próximos vão direto ao eproc. */
+    sistema: z.literal("eproc").optional(),
   }),
-  /** eproc: o robô conferiu os autos e não há peça nova desde o último download. */
-  z.object({ acao: z.literal("sem_novidades") }),
+  /** O robô conferiu os autos e não há peça nova desde o último download. */
+  z.object({ acao: z.literal("sem_novidades"), sistema: z.literal("eproc").optional() }),
 ]);
 
 export type RespostaDoRobo =
@@ -154,16 +157,19 @@ export async function atualizarPedidoDoRobo(pedidoId: string, entrada: unknown):
         const { error } = await db().from("proc_documentos").update({ pecas: dados.pecas }).eq("id", documento.id);
         if (error) falhou("registrar as peças do documento", error);
       }
-      return { pedido: await mudar(pedido, { status: "concluido", motivo_espera: null, erro: null, concluido_em: new Date().toISOString() }), documento };
+      return {
+        pedido: await mudar(pedido, { status: "concluido", motivo_espera: null, erro: null, concluido_em: new Date().toISOString(), ...(dados.sistema ? { sistema: dados.sistema } : {}) }),
+        documento,
+      };
     }
     case "sem_novidades": {
-      const concluido = await mudar(pedido, { status: "concluido", motivo_espera: null, erro: null, concluido_em: new Date().toISOString() });
+      const concluido = await mudar(pedido, { status: "concluido", motivo_espera: null, erro: null, concluido_em: new Date().toISOString(), ...(dados.sistema ? { sistema: dados.sistema } : {}) });
       const { data } = await db().from("proc_autos_pedidos").select("pedido_por, pedido_por_nome").eq("id", pedido.id).maybeSingle();
       await registrarNoHistorico(
         pedido.processoId,
         "autos",
         null,
-        `Autos conferidos no ${pedido.sistema === "eproc" ? "eproc" : pedido.sistema} (${pedido.tribunal}): nenhuma peça nova desde o último download`,
+        `Autos conferidos no ${ROTULO_SISTEMA[concluido.sistema as SistemaTribunal] ?? concluido.sistema} (${concluido.tribunal}): nenhuma peça nova desde o último download`,
         { authUserId: (data?.pedido_por as string | null) as string, nome: (data?.pedido_por_nome as string | null) ?? null }
       );
       return { pedido: concluido };

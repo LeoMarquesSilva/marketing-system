@@ -1,8 +1,15 @@
-import type { Page } from "playwright";
+import type { Frame, Page } from "playwright";
 import type { Pedido } from "../fila.ts";
 import { conferirPdf } from "./comum.ts";
 import {
+  CONSULTA_PROCESSUAL_DCP,
   LOGIN_PORTAL_DE_SERVICOS,
+  documentosDoIndiceDcp,
+  documentosNovosDcp,
+  ehQuadroDaConsultaDcp,
+  ehVisualizadorDcp,
+  QUADRO_DA_CONSULTA_DCP,
+  type DocumentoDoIndiceDcp,
   ehAreaLogadaDcp,
   emSegredoDcp,
   etapaDoLoginDcp,
@@ -16,26 +23,12 @@ import { Mapeamento, assentar, clicarPorTexto, entrarComAPessoa, preencherPrimei
 import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./tipos.ts";
 
 /**
- * DCP do TJRJ (Portal de Serviços). RASCUNHO, DESLIGADO: não está em CONECTORES (src/index.ts) nem em
- * CONECTORES_DISPONIVEIS (ORQESTRAI), e assim fica até as telas reais serem vistas com `npm run mapear -- dcp <CNJ>`.
- * O que se sabe de cada tela, e de onde veio, está em dcp-tjrj-urls.ts.
- *
- * Desenho previsto (igual ao do e-SAJ, que também gera um PDF único):
- * 1. login sempre da pessoa (usuário e senha do advogado com duplo fator, ou certificado), na janela do robô;
- * 2. Consultas > Consultas Processuais > Por Número, com o número; abre os detalhes do processo;
- * 3. processo já migrado para o eproc: erro dizendo para pedir pelo eproc (o ORQESTRAI deveria mandar direto);
- * 4. segredo de justiça sem liberação: para;
- * 5. "Processo Eletrônico – Novo Visualizador" > "Baixar o Processo Atual em PDF" > "Salvar processo completo".
- *    Processo volumoso só tem o Antigo Visualizador, que ainda não foi mapeado: erro, anexar à mão.
- *
- * Sem download incremental por ora: o visualizador permite salvar só documentos selecionados, mas a identidade
- * estável de cada peça no índice ainda não é conhecida.
+ * DCP do TJRJ (Portal de Serviços): o conector (ConectorDcpTjrj, no fim do arquivo) e o roteiro do
+ * `npm run mapear -- dcp <CNJ>`, que serviu para conhecer as telas. O que se sabe de cada tela está em
+ * dcp-tjrj-urls.ts.
  */
 
-/**
- * Seletores e textos. SUPOSIÇÃO em tudo que não é texto de manual: os nomes vêm do manual VISPROCELET (2021) e
- * do manual do Portal de Serviços; ids e classes só se saberão no mapa.
- */
+/** Textos do roteiro do mapa (vindos dos manuais; o conector usa os seletores vistos nas telas, mais abaixo). */
 const TELA = {
   menuConsultas: /^Consultas$/i,
   consultasProcessuais: /^Consultas? Processua(l|is)$/i,
@@ -235,83 +228,244 @@ export async function mapearDcp(ambiente: Ambiente, numero: string): Promise<voi
   }
 }
 
-/** Rascunho do conector. Não registrado: veja o comentário do topo. */
+/** Quanto esperar o índice do visualizador e o resultado da pesquisa. */
+const ESPERA_TELA_MS = 60_000;
+
+/** Seletores vistos no mapa de 18/11/2026 (detalhes em dcp-tjrj-urls.ts). */
+const CONSULTA = {
+  abaPorNumero: "#nav-porNumero",
+  numeracaoUnica: "#numeracaoUnica",
+  numero: 'input[name="numeroProcesso"]',
+  sufixo: "#inputSufixoUnica3",
+  pesquisar: "#botaoPesquisarProcesso",
+  visualizador: /Processo Eletr[ôo]nico/i,
+} as const;
+
+const VISUALIZADOR = {
+  caixa: "mat-checkbox[aria-roledescription]",
+  marcada: "mat-checkbox-checked",
+  clicavel: ".mat-checkbox-inner-container",
+  exibirSelecao: "Exibir caixa de seleção",
+  baixar: "Baixar o processo atual em PDF",
+  salvarSelecionados: /^\s*Salvar Documentos Selecionados\s*$/i,
+} as const;
+
+/**
+ * DCP do TJRJ (Portal de Serviços), com as telas vistas no mapa. O "Próprio" do TJRJ no cadastro chega aqui.
+ * 1. login sempre da pessoa (usuário e senha com duplo fator, ou certificado), na janela do robô; o portal logado
+ *    abre numa janela própria, que o robô reaproveita nos pedidos seguintes;
+ * 2. consulta por número no iframe da consulta processual, até "Detalhes do Processo";
+ * 3. processo migrado para o eproc: segue no conector eproc:TJRJ, no mesmo pedido, e avisa o ORQESTRAI;
+ * 4. segredo de justiça sem liberação: para;
+ * 5. visualizador (aba nova): marca no índice só as peças novas (ou o processo inteiro, no primeiro download) e
+ *    usa "Salvar Documentos Selecionados".
+ */
 export class ConectorDcpTjrj implements Conector {
-  /** SUPOSIÇÃO: "dcp" ainda não é um SistemaTribunal do ORQESTRAI (hoje o "Próprio" do TJRJ vira "outro" e vai ao eproc). */
   readonly chave = "dcp:TJRJ";
 
+  /** O eproc do TJRJ, para os processos que o DCP diz terem migrado. */
+  constructor(private readonly eproc?: Conector) {}
+
+  /** A aba do portal já logada, se houver. */
+  private abaDoPortal(ambiente: Ambiente): Page | null {
+    return ambiente.contexto.pages().find((aba) => !aba.isClosed() && ehAreaLogadaDcp(aba.url())) ?? null;
+  }
+
   async entrar(ambiente: Ambiente): Promise<void> {
+    if (this.abaDoPortal(ambiente)) return;
     await entrarComAPessoa(ambiente, opcoesDeLogin());
   }
 
-  private async abrirProcesso(ambiente: Ambiente, partes: PartesDoCnjTjrj): Promise<Page> {
-    const { pagina } = ambiente;
-    const etapa = async (nome: string, feito: boolean) => {
-      if (feito) return;
-      const captura = await ambiente.diagnostico(pagina, `dcp ${nome}`);
-      throw new FalhaDoConector(`A tela do ${SISTEMA} mudou ou não carregou: não achei como ${nome}. Diagnóstico guardado em ${captura}.`);
-    };
-    await etapa("abrir Consultas", await clicarPorTexto(pagina, TELA.menuConsultas));
-    await pagina.waitForTimeout(1_000);
-    await etapa("abrir Consultas Processuais", await clicarPorTexto(pagina, TELA.consultasProcessuais));
-    await assentar(pagina);
-    await clicarPorTexto(pagina, TELA.abaPorNumero);
-    await etapa("preencher o número", await preencherNumero(pagina, partes));
-    await etapa("pesquisar", await clicarPorTexto(pagina, TELA.pesquisar, "button, input[type=button], input[type=submit], a"));
-    await assentar(pagina, 3_000);
-    if (migradoParaEproc(await pagina.locator("body").innerText().catch(() => ""))) {
-      throw new FalhaDoConector(`O processo ${partes.mascarado} foi migrado para o eproc: peça os autos pelo eproc do TJRJ.`);
+  /** Abre a consulta processual na aba do portal e devolve o iframe dela. Com a sessão vencida, chama a pessoa uma vez. */
+  private async consulta(ambiente: Ambiente): Promise<{ portal: Page; quadro: Frame }> {
+    for (let tentativa = 0; tentativa < 2; tentativa += 1) {
+      const portal = this.abaDoPortal(ambiente) ?? (await entrarComAPessoa(ambiente, opcoesDeLogin()));
+      await portal.goto(CONSULTA_PROCESSUAL_DCP, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+      const limite = Date.now() + ESPERA_TELA_MS;
+      let voltouABusca = false;
+      while (Date.now() < limite && ehAreaLogadaDcp(portal.url())) {
+        const quadro = portal.frames().find((item) => ehQuadroDaConsultaDcp(item.url()));
+        if (quadro && (await quadro.locator(CONSULTA.abaPorNumero).count().catch(() => 0))) return { portal, quadro };
+        // O iframe ficou em outra tela (os detalhes do processo anterior): volta para a busca.
+        if (quadro && !voltouABusca && !/\/consultaportal/i.test(quadro.url())) {
+          voltouABusca = true;
+          await quadro.goto(QUADRO_DA_CONSULTA_DCP, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+        }
+        await portal.waitForTimeout(500);
+      }
+      // Saiu do portal (sessão vencida volta para a página inicial do tribunal): login de novo, uma vez.
+      if (ehAreaLogadaDcp(portal.url())) break;
     }
-    await etapa("abrir o processo no resultado", await abrirDetalhes(pagina, partes));
-    return pagina;
+    const aba = this.abaDoPortal(ambiente) ?? ambiente.pagina;
+    const captura = await ambiente.diagnostico(aba, "dcp consulta");
+    throw new FalhaDoConector(`A consulta processual do ${SISTEMA} não abriu. Diagnóstico guardado em ${captura}.`);
+  }
+
+  /** Pesquisa pelo número e espera "Detalhes do Processo". Devolve o texto dos detalhes. */
+  private async pesquisar(ambiente: Ambiente, portal: Page, quadro: Frame, partes: PartesDoCnjTjrj): Promise<string> {
+    const falhar = async (oQue: string): Promise<never> => {
+      const captura = await ambiente.diagnostico(portal, "dcp pesquisa");
+      throw new FalhaDoConector(`${oQue} Diagnóstico guardado em ${captura}.`);
+    };
+    // A página do portal cobre o iframe para o mouse: tudo vai por foco, teclado e evento de clique.
+    await quadro.locator(CONSULTA.abaPorNumero).dispatchEvent("click");
+    await quadro.locator(CONSULTA.numeracaoUnica).dispatchEvent("click");
+    await portal.waitForTimeout(500);
+    const numero = quadro.locator(CONSULTA.numero).locator("visible=true").first();
+    const sufixo = quadro.locator(CONSULTA.sufixo).locator("visible=true").first();
+    await numero.fill("");
+    await sufixo.fill("");
+    await numero.focus();
+    // O campo pula sozinho para o sufixo ao completar os 13 dígitos.
+    await numero.pressSequentially(partes.inicio.replace(/\D/g, ""), { delay: 30 });
+    if ((await sufixo.inputValue()) !== partes.origem) {
+      await sufixo.fill("");
+      await sufixo.focus();
+      await sufixo.pressSequentially(partes.origem, { delay: 30 });
+    }
+    if ((await numero.inputValue()) !== partes.inicio || (await sufixo.inputValue()) !== partes.origem) await falhar(`Não consegui digitar o número ${partes.mascarado} na consulta do ${SISTEMA}.`);
+    await quadro.locator(CONSULTA.pesquisar).locator("visible=true").first().dispatchEvent("click");
+
+    const limite = Date.now() + ESPERA_TELA_MS;
+    while (Date.now() < limite) {
+      await portal.waitForTimeout(700);
+      const texto = await quadro.locator("body").innerText().catch(() => "");
+      if (migradoParaEproc(texto)) return texto;
+      if (/detalhes-processo/i.test(quadro.url()) && texto.includes(partes.mascarado)) return texto;
+      if (/n[ãa]o (foi )?encontrad|nenhum processo/i.test(texto)) await falhar(`O processo ${partes.mascarado} não foi encontrado no ${SISTEMA}.`);
+      // Mais de um resultado (instâncias): abre o do número.
+      const link = quadro.locator("a").filter({ hasText: partes.mascarado });
+      if (!/detalhes-processo/i.test(quadro.url()) && (await link.count().catch(() => 0)) > 0) await link.first().dispatchEvent("click");
+    }
+    return falhar(`A pesquisa do processo ${partes.mascarado} não chegou aos Detalhes do Processo no ${SISTEMA}.`);
+  }
+
+  /** Abre o visualizador (aba nova) e espera o índice. */
+  private async abrirVisualizador(ambiente: Ambiente, portal: Page, quadro: Frame): Promise<Page> {
+    const botao = quadro.getByRole("button", { name: CONSULTA.visualizador }).first();
+    if (!(await botao.count().catch(() => 0))) {
+      const captura = await ambiente.diagnostico(portal, "dcp visualizador");
+      throw new FalhaDoConector(`Os Detalhes do Processo no ${SISTEMA} não têm o botão do processo eletrônico (processo físico ou só no antigo visualizador): anexe o PDF à mão. Diagnóstico em ${captura}.`);
+    }
+    const rotulo = (await botao.innerText().catch(() => "")).replace(/\s+/g, " ");
+    if (visualizadorDoBotao(rotulo) === "antigo") {
+      throw new FalhaDoConector(`O ${SISTEMA} só oferece o Antigo Visualizador para este processo (processo volumoso), que o robô ainda não sabe baixar: anexe o PDF à mão.`);
+    }
+    const nova = ambiente.contexto.waitForEvent("page", { predicate: (aba) => ehVisualizadorDcp(aba.url()) || aba.url() === "about:blank", timeout: 30_000 }).catch(() => null);
+    await botao.dispatchEvent("click");
+    const aba = (await nova) ?? ambiente.contexto.pages().find((item) => !item.isClosed() && ehVisualizadorDcp(item.url())) ?? null;
+    if (!aba) {
+      const captura = await ambiente.diagnostico(portal, "dcp visualizador");
+      throw new FalhaDoConector(`O visualizador de autos do ${SISTEMA} não abriu. Diagnóstico em ${captura}.`);
+    }
+    await aba.waitForURL((url) => ehVisualizadorDcp(url.toString()), { timeout: 30_000 }).catch(() => undefined);
+    try {
+      await aba.locator("mat-nested-tree-node").first().waitFor({ state: "attached", timeout: ESPERA_TELA_MS });
+    } catch {
+      const captura = await ambiente.diagnostico(aba, "dcp indice");
+      await aba.close().catch(() => undefined);
+      throw new FalhaDoConector(`O índice de documentos do visualizador do ${SISTEMA} não carregou. Diagnóstico em ${captura}.`);
+    }
+    // As caixas de seleção só existem com "Exibir caixa de seleção" ligado.
+    if (!(await aba.locator(VISUALIZADOR.caixa).count())) {
+      await aba.getByRole("button", { name: VISUALIZADOR.exibirSelecao }).click();
+      await aba.locator(VISUALIZADOR.caixa).first().waitFor({ state: "attached", timeout: 15_000 });
+    }
+    return aba;
+  }
+
+  private async rotulosDoIndice(visualizador: Page): Promise<string[]> {
+    return visualizador.locator(VISUALIZADOR.caixa).evaluateAll((caixas) => caixas.map((caixa) => caixa.getAttribute("aria-roledescription") ?? ""));
+  }
+
+  private async marcada(visualizador: Page, indice: number): Promise<boolean> {
+    return ((await visualizador.locator(VISUALIZADOR.caixa).nth(indice).getAttribute("class")) ?? "").includes(VISUALIZADOR.marcada);
+  }
+
+  /**
+   * Marca as peças pedidas, na ordem do índice. Marcar um item com filhos marca os filhos junto (a árvore é de
+   * seleção em cascata): quem já ficou marcado não é clicado de novo. Devolve se todas ficaram marcadas.
+   */
+  private async marcar(visualizador: Page, documentos: DocumentoDoIndiceDcp[]): Promise<boolean> {
+    for (const documento of documentos) {
+      if (await this.marcada(visualizador, documento.indice)) continue;
+      await visualizador.locator(VISUALIZADOR.caixa).nth(documento.indice).locator(VISUALIZADOR.clicavel).first().click();
+      await visualizador.waitForTimeout(150);
+    }
+    for (const documento of documentos) if (!(await this.marcada(visualizador, documento.indice))) return false;
+    return true;
   }
 
   async baixar(ambiente: Ambiente, pedido: Pedido, destino: string): Promise<ResultadoDoDownload> {
     const partes = partesDoCnjTjrj(pedido.cnj);
     if (!partes) throw new FalhaDoConector(`Número de processo inválido para o DCP do TJRJ: ${pedido.cnj}.`);
-    await this.entrar(ambiente);
-    const pagina = await this.abrirProcesso(ambiente, partes);
-    const detalhes = await pagina
-      .locator("body")
-      .innerText()
-      .catch(() => "");
-    if (migradoParaEproc(detalhes)) throw new FalhaDoConector(`O processo ${partes.mascarado} foi migrado para o eproc: peça os autos pelo eproc do TJRJ.`);
+    const { portal, quadro } = await this.consulta(ambiente);
+    const detalhes = await this.pesquisar(ambiente, portal, quadro, partes);
+    if (migradoParaEproc(detalhes)) {
+      if (!this.eproc) throw new FalhaDoConector(`O processo ${partes.mascarado} foi migrado para o eproc: peça os autos pelo eproc do TJRJ.`);
+      ambiente.registrar(`O ${SISTEMA} diz que ${partes.mascarado} foi migrado para o eproc. Seguindo pelo eproc do TJRJ.`);
+      const doEproc = await this.eproc.baixar(ambiente, pedido, destino);
+      return { ...(doEproc ?? {}), sistema: "eproc" };
+    }
     if (emSegredoDcp(detalhes) && !pedido.segredoLiberado) throw new SegredoDeJustica();
 
-    const tipo = await abrirVisualizador(ambiente, pagina);
-    if (tipo !== "novo") {
-      const captura = await ambiente.diagnostico(pagina, "dcp visualizador");
-      throw new FalhaDoConector(
-        tipo === "antigo"
-          ? `O DCP só oferece o Antigo Visualizador para este processo (processo volumoso), que o robô ainda não sabe baixar. Anexe o PDF à mão. Diagnóstico em ${captura}.`
-          : `Não achei o "Processo Eletrônico – Novo Visualizador" nos detalhes do processo. Diagnóstico em ${captura}.`
-      );
-    }
-    // O visualizador abre em outra aba: é a mais recente.
-    const abas = ambiente.contexto.pages().filter((aba) => !aba.isClosed());
-    const visualizador = abas[abas.length - 1];
-    await assentar(visualizador, 4_000);
-    if (!(await clicarPorTexto(visualizador, TELA.baixarProcesso))) {
-      const captura = await ambiente.diagnostico(visualizador, "dcp baixar");
-      throw new FalhaDoConector(`Não achei "Baixar o Processo Atual em PDF" no visualizador do DCP. Diagnóstico em ${captura}.`);
-    }
-    // SUPOSIÇÃO: "Salvar processo completo" dispara o download do navegador (e não abre o PDF em outra aba).
-    const botao = visualizador.getByRole("button", { name: TELA.salvarCompleto }).first();
+    const visualizador = await this.abrirVisualizador(ambiente, portal, quadro);
     try {
-      const [arquivo] = await Promise.all([visualizador.waitForEvent("download", { timeout: ambiente.config.geracaoPdfMs }), botao.click()]);
-      const falha = await arquivo.failure();
-      if (falha) throw new FalhaDoConector(`O download do PDF foi interrompido (${falha}).`);
-      await arquivo.saveAs(destino);
-    } catch (erro) {
-      if (erro instanceof FalhaDoConector) throw erro;
-      const captura = await ambiente.diagnostico(visualizador, "dcp download");
-      throw new FalhaDoConector(`O download dos autos não terminou no visualizador do DCP. Diagnóstico em ${captura}.`);
+      const documentos = documentosDoIndiceDcp(await this.rotulosDoIndice(visualizador));
+      if (!documentos.length) {
+        const captura = await ambiente.diagnostico(visualizador, "dcp indice");
+        throw new FalhaDoConector(`O índice do visualizador do ${SISTEMA} veio sem peças numeradas. Diagnóstico em ${captura}.`);
+      }
+      const novos = documentosNovosDcp(documentos, pedido.pecasBaixadas);
+      if (!novos.length) {
+        ambiente.registrar(`${documentos.length} peças no visualizador do DCP, todas já baixadas antes: nada novo.`);
+        return { semNovidades: true };
+      }
+      if (novos.length < documentos.length) ambiente.registrar(`${novos.length} peças novas de ${documentos.length} no DCP. Baixando só as novas.`);
+      if (!(await this.marcar(visualizador, novos))) {
+        const captura = await ambiente.diagnostico(visualizador, "dcp selecao");
+        throw new FalhaDoConector(`Não consegui marcar as peças no índice do visualizador do ${SISTEMA}. Diagnóstico em ${captura}.`);
+      }
+      await visualizador.getByRole("button", { name: VISUALIZADOR.baixar }).click();
+      const salvar = visualizador.locator("mat-dialog-container").getByRole("button", { name: VISUALIZADOR.salvarSelecionados });
+      await salvar.waitFor({ state: "visible", timeout: 15_000 });
+      try {
+        const [arquivo] = await Promise.all([visualizador.waitForEvent("download", { timeout: ambiente.config.geracaoPdfMs }), salvar.click()]);
+        const falha = await arquivo.failure();
+        if (falha) throw new FalhaDoConector(`O download do PDF foi interrompido (${falha}).`);
+        await arquivo.saveAs(destino);
+        await arquivo.delete().catch(() => undefined);
+      } catch (erro) {
+        if (erro instanceof FalhaDoConector) throw erro;
+        const captura = await ambiente.diagnostico(visualizador, "dcp download");
+        throw new FalhaDoConector(`O download dos autos não terminou no visualizador do ${SISTEMA}. Diagnóstico em ${captura}.`);
+      }
+      await conferirPdf(destino);
+      return { pecas: novos.map((documento) => documento.chave) };
+    } finally {
+      // O visualizador é uma aba por processo: fecha. A aba do portal fica, com a sessão.
+      await visualizador.close().catch(() => undefined);
     }
-    await conferirPdf(destino);
-    return {};
   }
 
+  /** npm run inspecionar -- dcp <CNJ>: consulta, detalhes e índice do visualizador, sem baixar. */
   async inspecionar(ambiente: Ambiente, cnj: string): Promise<void> {
-    await mapearDcp(ambiente, cnj);
+    const partes = partesDoCnjTjrj(cnj);
+    if (!partes) throw new FalhaDoConector(`O DCP é do TJRJ: o número precisa ser 0000000-00.0000.8.19.0000 (recebi ${cnj}).`);
+    const { portal, quadro } = await this.consulta(ambiente);
+    const detalhes = await this.pesquisar(ambiente, portal, quadro, partes);
+    if (migradoParaEproc(detalhes)) {
+      ambiente.registrar(`${partes.mascarado}: migrado para o eproc (os autos vêm pelo eproc do TJRJ).`);
+      return;
+    }
+    ambiente.registrar(`${partes.mascarado}: detalhes abertos. Segredo de justiça pelo texto: ${emSegredoDcp(detalhes) ? "sim (ou ambíguo)" : "não"}.`);
+    const visualizador = await this.abrirVisualizador(ambiente, portal, quadro);
+    try {
+      const documentos = documentosDoIndiceDcp(await this.rotulosDoIndice(visualizador));
+      ambiente.registrar(`${documentos.length} peças numeradas no índice. Primeiras: ${documentos.slice(0, 3).map((item) => item.rotulo).join(" | ")}. Últimas: ${documentos.slice(-3).map((item) => item.rotulo).join(" | ")}.`);
+      ambiente.registrar(`Captura: ${await ambiente.diagnostico(visualizador, "dcp inspecionar")}`);
+    } finally {
+      await visualizador.close().catch(() => undefined);
+    }
   }
 }

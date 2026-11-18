@@ -4,7 +4,7 @@ import { setTimeout as dormir } from "node:timers/promises";
 import type { Page } from "playwright";
 import { FalhaDoCertificado, assinaturaDaFonte, diasParaVencer, lerCertificado, type CertificadoCliente } from "./certificado.ts";
 import { lerConfig, type Config } from "./config.ts";
-import { mapearDcp } from "./conectores/dcp-tjrj.ts";
+import { ConectorDcpTjrj, mapearDcp } from "./conectores/dcp-tjrj.ts";
 import { conectoresEproc } from "./conectores/eproc.ts";
 import { tribunalEprocDoCnj } from "./conectores/eproc-urls.ts";
 import { conectoresEsaj } from "./conectores/esaj.ts";
@@ -32,10 +32,11 @@ import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
  */
 
 /**
- * Um conector por sistema e tribunal ("esaj:TJSP", "eproc:TJSP", "eproc:TJRJ"…). Os próximos entram aqui. Os
- * rascunhos do DCP e do PJe do TJRJ (dcp-tjrj.ts, pje.ts) ficam de fora até as telas reais serem mapeadas.
+ * Um conector por sistema e tribunal ("esaj:TJSP", "eproc:TJSP", "eproc:TJRJ", "dcp:TJRJ"…). Os próximos entram
+ * aqui. O rascunho do PJe do TJRJ (pje.ts) fica de fora até as telas reais serem mapeadas. O DCP segue pelo eproc
+ * do TJRJ quando o processo já migrou.
  */
-const TODOS_OS_CONECTORES: Conector[] = [...conectoresEsaj, ...conectoresEproc];
+const TODOS_OS_CONECTORES: Conector[] = [...conectoresEsaj, ...conectoresEproc, new ConectorDcpTjrj(conectoresEproc.find((conector) => conector.chave === "eproc:TJRJ"))];
 
 /**
  * Os conectores que este robô atende (ROBO_CONECTORES): a chave inteira ("esaj:TJCE") ou só o sistema ("eproc").
@@ -51,10 +52,15 @@ function conectoresDoRobo(config: Config): Conector[] {
 let CONECTORES: Conector[] = TODOS_OS_CONECTORES;
 
 /**
- * O conector pedido na linha de comando: sistema "eproc" ou e-SAJ (padrão), e o tribunal ("TJCE") ou o do
- * número do processo; TJSP se nada disser.
+ * O conector pedido na linha de comando: sistema "eproc", "dcp" (TJRJ) ou e-SAJ (padrão), e o tribunal ("TJCE")
+ * ou o do número do processo; TJSP se nada disser.
  */
 function conectorDaLinhaDeComando(cnj?: string): Conector {
+  if (argumentos.some((item) => item.toLowerCase() === "dcp")) {
+    const dcp = CONECTORES.find((item) => item.chave === "dcp:TJRJ");
+    if (!dcp) throw new Error(`Este robô não atende o DCP do TJRJ. Atende: ${CONECTORES.map((item) => item.chave).join(", ")}.`);
+    return dcp;
+  }
   const sistema = argumentos.some((item) => item.toLowerCase() === "eproc") ? "eproc" : "esaj";
   const doNumero = cnj ? (sistema === "eproc" ? tribunalEprocDoCnj(cnj) : tribunalEsajDoCnj(cnj))?.sigla : undefined;
   const sigla = doNumero ?? argumentos.find((item) => /^TJ[A-Z]{2,3}$/.test(item)) ?? "TJSP";
@@ -259,11 +265,11 @@ async function principal(): Promise<void> {
       if (!conector || !cnj) throw new FalhaDoConector(`Este robô não atende ${pedido.sistema} do ${pedido.tribunal}.`);
       const resultado = await conector.baixar(ambientePara(pedido), pedido, destino);
       if (resultado?.semNovidades) {
-        await fila.semNovidades(pedido.id);
+        await fila.semNovidades(pedido.id, resultado.sistema);
         registrar(`Autos de ${pedido.cnj} conferidos: nenhuma peça nova desde o último download.`);
       } else {
         registrar("PDF baixado. Enviando ao ORQESTRAI.");
-        await fila.entregar(pedido.id, destino, nomeDoPdf(cnj), resultado?.pecas);
+        await fila.entregar(pedido.id, destino, nomeDoPdf(cnj), resultado?.pecas, resultado?.sistema);
         registrar(`Autos de ${pedido.cnj} entregues${resultado?.pecas?.length ? ` (${resultado.pecas.length} peças)` : ""}. A leitura pela IA segue no ORQESTRAI.`);
       }
     } catch (erro) {
