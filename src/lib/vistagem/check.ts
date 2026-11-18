@@ -217,7 +217,7 @@ export const CHECK_AUTOMATICO = "Check automático";
  * Quem aparece em "Conferida por" quando a publicação foi direto ao robô, sem a Conferência (VERIFICAR RENÚNCIA da
  * Operações Legais, `vaiDiretoAoRobo`): conferido_em fica com a hora do envio e conferido_por vazio.
  */
-export const CONFERENCIA_AUTOMATICA = "Direto ao robô";
+export const CONFERENCIA_AUTOMATICA = "Fluxo Automático Robô";
 
 /** Foi direto ao robô, sem a Conferência: tem a hora e não tem a pessoa. */
 export function foiConferenciaAutomatica(conferidoPor: string | null, conferidoEm: string | null): boolean {

@@ -926,7 +926,7 @@ async function itensDeConferencia(
     vistadoPor: row.vistado_por ? nomes.get(row.vistado_por) ?? null : null,
     devolvidoPor: row.devolvido_por ? nomes.get(row.devolvido_por) ?? null : null,
     revistadoPor: row.revistado_por ? nomes.get(row.revistado_por) ?? null : null,
-    // Direto ao robô (VERIFICAR RENÚNCIA da Operações Legais): sem pessoa; aparece como "Direto ao robô".
+    // Direto ao robô (VERIFICAR RENÚNCIA da Operações Legais): sem pessoa; aparece como "Fluxo Automático Robô".
     conferidoPor: row.conferido_por
       ? nomes.get(row.conferido_por) ?? null
       : foiConferenciaAutomatica(null, row.conferido_em)
