@@ -265,7 +265,7 @@ O que o painel precisa ter (o código do painel está fora deste repositório):
 
 ## Operação
 
-- **Um contêiner, um navegador:** réplicas = 1 e **sem** "zero-downtime deployment" (dois contêineres no mesmo volume brigariam pelo perfil do navegador).
+- **Um contêiner, um navegador:** em cada serviço, réplicas = 1 e **sem** "zero-downtime deployment" (dois contêineres no mesmo volume brigariam pelo perfil do navegador). Cada serviço tem o seu volume.
 - **Logs:** o robô escreve no terminal; no Easypanel, aba Logs do serviço. Os logs não trazem senha, certificado nem código de 2 fatores; trazem o número dos processos atendidos, como no Mac.
 - **Reinício:** se o robô cair, o processo principal termina e o contêiner para. A página oficial do Easypanel não descreve a política de reinício automático: no primeiro teste, encerre o robô de propósito e confira se o serviço volta sozinho. Quando volta, a sessão do tribunal recomeça (novo login). Trocar o certificado não exige reinício.
 - **Recursos (estimativa, não medida):** 2 vCPU; memória com reserva de 1,5 GB e limite de 3 GB (o Chromium com janela usa de 0,5 a 1 GB, e o eproc monta o PDF dos autos na memória, que pode chegar a 200 MB). Disco: 5 GB no volume.
@@ -277,28 +277,44 @@ O que o painel precisa ter (o código do painel está fora deste repositório):
 
 Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)). Nenhum valor real vai para o repositório: senhas, token, chave privada, certificado e segredos entram só no Easypanel e no painel.
 
+### Três serviços no projeto `bibliotecaBP`
+
+O servidor roda o robô em três serviços, do mesmo código e da mesma imagem, para os tribunais andarem em paralelo (dentro de cada serviço, um processo por vez, no ritmo que o tribunal aguenta):
+
+| Serviço | `ROBO_NOME` | `ROBO_CONECTORES` no fim | Login |
+|---|---|---|---|
+| `robo-autos-eproc-tjsp` | `servidor-eproc-tjsp` | `eproc:TJSP` | Sozinho: certificado A1 e código do segredo do painel |
+| `robo-autos-tjrj` | `servidor-tjrj` | `eproc:TJRJ,dcp,pje` | eproc sozinho; DCP e PJe pela pessoa, pela tela remota |
+| `robo-autos-esaj` | `servidor-esaj` | `esaj` (TJSP, TJCE, TJAL, TJMS) | Pela pessoa: CPF, senha e código do e-mail |
+
+- **TJRJ num serviço só:** o DCP devolve ao eproc do TJRJ o processo já migrado e usa a sessão do eproc. Separados, seriam dois logins do mesmo advogado no eproc do TJRJ.
+- **Cada serviço tem** o seu volume `/dados` (perfil do navegador e sessões), a sua tela remota (domínio próprio, com Basic Auth) e o seu `ROBO_NOME`. A pasta do certificado e a chave do robô são as mesmas nos três, montadas só leitura.
+- **Capas pelo DataJud:** só no `robo-autos-eproc-tjsp` (`CAPA_DATAJUD=sim` a partir da etapa 4); `nao` nos outros dois.
+- **Memória:** cada serviço tem o seu navegador: reserva de 1,5 GB e limite de 3 GB em cada um (de 4,5 a 9 GB no total). Confira a sobra do servidor antes de subir os três.
+
 ### Migração do Mac para o servidor
 
-O alvo é um robô só, no servidor, atendendo todos os sistemas. O Mac continua ligado e atendendo o que ainda não passou, e cada sistema muda de lado só depois de funcionar no servidor. Quem divide o trabalho é `ROBO_CONECTORES`: a fila reserva cada pedido para um robô, e cada um só pede o que está na sua lista. Um sistema nunca fica nas duas listas ao mesmo tempo (seriam dois logins do mesmo advogado no mesmo tribunal).
+O Mac continua ligado e atendendo o que ainda não passou, e cada sistema muda de lado só depois de funcionar no servidor. Quem divide o trabalho é `ROBO_CONECTORES`: a fila reserva cada pedido para um robô, e cada um só pede o que está na sua lista. Um sistema nunca fica em duas listas ao mesmo tempo (seriam dois logins do mesmo advogado no mesmo tribunal).
 
-| Etapa | Servidor (`ROBO_CONECTORES`) | Mac (`ROBO_CONECTORES`) | Login no servidor |
-|---|---|---|---|
-| 1 | `eproc` | `esaj,dcp,pje` | Sozinho: certificado A1 e código do segredo do painel |
-| 2 | `eproc,pje` | `esaj,dcp` | Pessoa pela tela remota: CPF, senha e código do Authenticator |
-| 3 | `eproc,pje,dcp` | `esaj` | Pessoa pela tela remota (certificado do DCP sozinho, se o teste da renegociação passar) |
-| 4 | vazio (todos) | robô desligado | e-SAJ pela pessoa: CPF, senha e código do e-mail |
+| Etapa | `robo-autos-eproc-tjsp` | `robo-autos-tjrj` | `robo-autos-esaj` | Mac (`ROBO_CONECTORES`) |
+|---|---|---|---|---|
+| 1 | `eproc:TJSP` | `eproc:TJRJ` | parado | `esaj,dcp,pje` |
+| 2 | `eproc:TJSP` | `eproc:TJRJ,pje` | parado | `esaj,dcp` |
+| 3 | `eproc:TJSP` | `eproc:TJRJ,dcp,pje` | parado | `esaj` |
+| 4 | `eproc:TJSP` | `eproc:TJRJ,dcp,pje` | `esaj` | robô desligado |
+
+Enquanto o DCP estiver no Mac (etapas 1 e 2), o eproc do TJRJ fica nos dois lados só para os processos que o DCP devolve ao eproc: o robô do Mac abre a sessão do eproc do TJRJ dele nesses casos.
 
 **Para passar de uma etapa à seguinte:**
 
-1. No Easypanel, acrescente o sistema em `ROBO_CONECTORES` do robô do servidor e faça o deploy (a sessão dos tribunais recomeça: novos logins).
+1. No Easypanel, acrescente o sistema em `ROBO_CONECTORES` do serviço da tabela (ou ligue o `robo-autos-esaj`) e faça o deploy desse serviço (a sessão dos tribunais dele recomeça: novos logins).
 2. No mesmo momento, tire o sistema do `ROBO_CONECTORES` do `.env` do Mac e reinicie o robô do Mac.
 3. Acompanhe os primeiros pedidos desse sistema nos logs do servidor e na ficha do processo (o nome do robô, `ROBO_NOME`, aparece em cada pedido). Para considerar o sistema funcionando no servidor: pelo menos um login completo pela tela remota (ou sozinho), e alguns pedidos concluídos sem erro, incluindo um com documentos novos.
 4. Deu problema? Volte o sistema para o Mac (o inverso dos passos 1 e 2) e anote o motivo; os diagnósticos ficam em `/dados/diagnostico` no servidor.
 
-**Etapa 4, desligar o Mac:** só quando os quatro sistemas tiverem passado pelo passo 3 no servidor. Antes de desligar, mude `CAPA_DATAJUD` para o servidor (ligue lá e desligue no Mac): só um robô completa capas pelo DataJud. Guarde o `.env` do Mac fora do repositório, para voltar se for preciso.
+**Etapa 4, desligar o Mac:** só quando os quatro sistemas tiverem passado pelo passo 3 no servidor. Antes de desligar, mude `CAPA_DATAJUD` para o servidor (ligue no `robo-autos-eproc-tjsp` e desligue no Mac): só um robô completa capas pelo DataJud. Guarde o `.env` do Mac fora do repositório, para voltar se for preciso.
 
 **Durante a migração:**
-- O DCP do TJRJ pode devolver ao eproc do TJRJ um processo já migrado. Enquanto o DCP estiver no Mac, o robô do Mac abre a sessão do eproc do TJRJ dele (login e código pela pessoa ou pelo webhook) nesses casos.
 - Conectores que ainda não foram rodados no servidor (DCP, PJe e e-SAJ no modo do contêiner) podem estranhar o navegador do Playwright em algum detalhe (janela nova, download). Por isso a etapa de teste existe: o que aparecer vira ajuste no conector antes de passar o próximo sistema.
 
 ### 1. Gerar a chave do robô
@@ -314,7 +330,9 @@ sudo chmod 0750 /srv/robos/certificados
 
 Dono: o usuário com que o painel grava; grupo: um grupo que inclua o `pwuser` do robô (número com `id pwuser` no console do serviço do robô). Arquivos `0640`. Fora dos backups do volume `/dados`.
 
-### 3. Serviço do robô (App)
+### 3. Serviços do robô (App), um por linha da [tabela](#três-serviços-no-projeto-bibliotecabp)
+
+Os três serviços são iguais, menos `ROBO_NOME`, `ROBO_CONECTORES`, `CAPA_DATAJUD`, o volume e o domínio da tela remota.
 
 1. **Fonte:** o repositório no GitHub, branch com o robô; **Build Path** `/robos/autos`; construção por **Dockerfile** (`Dockerfile`).
 2. **Environment** (valores só no Easypanel):
@@ -323,8 +341,8 @@ Dono: o usuário com que o painel grava; grupo: um grupo que inclua o `pwuser` d
    |---|---|
    | `ORQESTRAI_URL` | endereço de produção do ORQESTRAI |
    | `ROBO_AUTOS_TOKEN` | o mesmo da Vercel |
-   | `ROBO_NOME` | ex. `servidor-easypanel` |
-   | `ROBO_CONECTORES` | conforme a [etapa da migração](#migração-do-mac-para-o-servidor): começa em `eproc`; vazio no fim (todos) |
+   | `ROBO_NOME` | o da [tabela](#três-serviços-no-projeto-bibliotecabp) |
+   | `ROBO_CONECTORES` | o do serviço na [etapa da migração](#migração-do-mac-para-o-servidor) |
    | `EPROC_LOGIN` | `certificado` |
    | `EPROC_TJRJ_LOGIN` | `certificado` |
    | `ESAJ_LOGIN` | `manual` (sem Web Signer no servidor: a pessoa entra com CPF, senha e o código do e-mail pela tela remota) |
@@ -334,15 +352,15 @@ Dono: o usuário com que o painel grava; grupo: um grupo que inclua o `pwuser` d
    | `ROBO_2FA_WEBHOOK_URL`, `ROBO_2FA_WEBHOOK_TOKEN` | os do n8n, só se quiser a alternativa ao segredo do painel |
    | `VNC_SENHA` | senha da tela remota |
    | `TELA_REMOTA_URL` | `https://<domínio da tela>/vnc.html` |
-   | `CAPA_DATAJUD` | `nao` enquanto o Mac completa as capas; `sim` na etapa 4 |
+   | `CAPA_DATAJUD` | `nao`; no `robo-autos-eproc-tjsp`, `sim` a partir da etapa 4 |
 
    O segredo do TOTP **não** vai em variável: o robô lê o `segundo-fator.json` da mesma pasta do certificado. `ROBO_2FA_PASTA` só é preciso se o painel gravar o segredo em outra pasta. `NAVEGADOR_MODO`, `NAVEGADOR_CANAL`, `PASTA_DADOS`, `DISPLAY` e `TZ` já vêm do `Dockerfile`.
 3. **Mounts:**
-   - **Volume** `dados` em `/dados` (perfil, PDFs em trânsito, diagnósticos);
+   - **Volume** em `/dados` (perfil, PDFs em trânsito, diagnósticos), um por serviço;
    - **Bind** de `/srv/robos/certificados` em `/certificados`, **só leitura**;
    - **File** em `/segredos/robo-certificado.key`, com o conteúdo de `robo-certificado.key`. O script de início copia para `/run/robo/certificado.key`, que só o `pwuser` lê, fora do volume.
-4. **Domains:** um domínio para a tela remota, HTTPS, porta **6080**; em Security, **Basic Auth** ligado, com usuário e senha diferentes da `VNC_SENHA`.
-5. **Resources:** 2 vCPU, memória com reserva de 2 GB e limite de 4 GB: no fim da migração o mesmo navegador segura as sessões de todos os sistemas ([Operação](#operação)).
+4. **Domains:** um domínio por serviço para a tela remota, HTTPS, porta **6080**; em Security, **Basic Auth** ligado, com usuário e senha diferentes da `VNC_SENHA`. O `TELA_REMOTA_URL` de cada serviço aponta para o domínio dele.
+5. **Resources:** por serviço, 1 a 2 vCPU, memória com reserva de 1,5 GB e limite de 3 GB ([Operação](#operação)).
 6. **Deploy:** 1 réplica, **sem** zero-downtime. Faça o deploy.
 
 ### 4. Painel de robôs
@@ -365,7 +383,7 @@ O robô adota o certificado em até ~30 s (com a fila vazia) e lê os segredos n
 
 No `.env` do Mac: `ROBO_CONECTORES=esaj,dcp,pje` e `CAPA_DATAJUD` como está (o Mac segue completando as capas até a etapa 4). Reinicie o robô do Mac. Daqui em diante, siga a [migração](#migração-do-mac-para-o-servidor).
 
-### 7. Primeiro teste (eproc)
+### 7. Primeiro teste (eproc, serviços `robo-autos-eproc-tjsp` e `robo-autos-tjrj`)
 
 1. Com um pedido do eproc do TJSP na fila, acompanhe os logs do serviço. O esperado: "Sessão do eproc … fechada: iniciando o login (certificado)", depois "Código de 2 fatores gerado pelo segredo do painel e aceito. Login concluído."
 2. Se aparecer "PRECISA DE UMA PESSOA", abra a tela remota e resolva; o log diz antes o motivo (certificado não aceito, segredo não aceito, CAPTCHA).
