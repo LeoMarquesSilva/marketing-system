@@ -21,8 +21,12 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PersonFace } from "@/components/pesquisas/shared";
 import { MenuItemDialog, TastingDialog } from "@/components/eventos/evento-cardapio-dialogs";
+import { OverallRankingList, TastingScoreTable } from "@/components/eventos/degustacao/tasting-results";
+import { approveDrinkToMenu, fetchDrinkTastings, type DrinkTastingData } from "@/lib/eventos-degustacao-db";
+import { splitLocation, type TastingDrink } from "@/lib/eventos-degustacao";
 import {
   daysUntil,
   formatClock,
@@ -104,6 +108,10 @@ export function EventoCardapioTab({
   const [tastings, setTastings] = useState<EventTasting[]>([]);
   const [itemForm, setItemForm] = useState<{ item: EventMenuItem | null; menuType: MenuType; section?: string } | null>(null);
   const [tastingForm, setTastingForm] = useState<{ tasting: EventTasting | null; menuType: MenuType } | null>(null);
+  const [drinkData, setDrinkData] = useState<DrinkTastingData | null>(null);
+  const [notesTasting, setNotesTasting] = useState<EventTasting | null>(null);
+  const [approveTarget, setApproveTarget] = useState<{ drink: TastingDrink; tasting: EventTasting } | null>(null);
+  const [approveError, setApproveError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,10 +121,35 @@ export function EventoCardapioTab({
       setTastings(data.tastings);
       setLoading(false);
     });
+    // Notas das degustações de drinks (lançadas no celular, em /degustacao).
+    fetchDrinkTastings(eventId)
+      .then((data) => {
+        if (!cancelled) setDrinkData(data);
+      })
+      .catch((error: unknown) => console.error("Erro ao buscar notas das degustações:", error));
     return () => {
       cancelled = true;
     };
   }, [eventId]);
+
+  const approveDrink = async () => {
+    if (!approveTarget) return;
+    setBusy(true);
+    setApproveError(null);
+    try {
+      const nextOrder = items.reduce((max, entry) => Math.max(max, entry.sortOrder), 0) + 1;
+      await approveDrinkToMenu(approveTarget.drink, approveTarget.tasting.vendorName, nextOrder);
+      const [menu, drinks] = await Promise.all([fetchEventMenu(eventId), fetchDrinkTastings(eventId)]);
+      setItems(menu.items);
+      setDrinkData(drinks);
+      onHistory(`Cardápio: drink aprovado na degustação — ${approveTarget.drink.name}`, { drinkId: approveTarget.drink.id, tastingId: approveTarget.tasting.id });
+      setApproveTarget(null);
+    } catch (error) {
+      setApproveError(error instanceof Error ? error.message : "Não foi possível levar o drink ao cardápio.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const now = useMemo(() => today(), []);
   const faceOf = (person: TastingParticipant) => {
@@ -199,6 +232,7 @@ export function EventoCardapioTab({
               const href = tastingLinkHref(tasting.linkUrl);
               const counts = participantCounts(tasting.participants);
               const when = countdown(daysUntil(tasting.tastingDate, now));
+              const place = splitLocation(tasting.location);
               return (
                 <li key={tasting.id} className={cn(CARD, "flex flex-col p-4")}>
                   <div className="flex items-start gap-3">
@@ -219,11 +253,17 @@ export function EventoCardapioTab({
                         {when && <span className="font-medium text-[#285f7a]">{when}</span>}
                       </p>
                       <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                        {tasting.location && (
+                        {place.address && (
                           <span className="inline-flex items-center gap-1">
                             <MapPin className="size-3.5" aria-hidden />
-                            {tasting.location}
+                            {place.address}
                           </span>
+                        )}
+                        {place.mapUrl && (
+                          <a href={place.mapUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-[#285f7a] hover:underline">
+                            Mapa
+                            <ExternalLink className="size-3.5" aria-hidden />
+                          </a>
                         )}
                         {href && (
                           <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-[#285f7a] hover:underline">
@@ -266,6 +306,24 @@ export function EventoCardapioTab({
                       })}
                     </ul>
                   </div>
+
+                  {!food && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#eef3f4] pt-3">
+                      <p className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">{drinkSummary(tasting.id) ?? "Notas pelo celular: foto, nome do drink e nota de 1 a 5."}</p>
+                      {(drinkData?.drinks.some((drink) => drink.tastingId === tasting.id) ?? false) && (
+                        <Button size="sm" variant="outline" onClick={() => setNotesTasting(tasting)}>
+                          <Star className="size-4" />
+                          Notas
+                        </Button>
+                      )}
+                      <Button size="sm" variant="secondary" asChild>
+                        <a href={`/degustacao/${tasting.id}`} target="_blank" rel="noreferrer">
+                          <Martini className="size-4" />
+                          Abrir votação
+                        </a>
+                      </Button>
+                    </div>
+                  )}
                 </li>
               );
             })}
@@ -344,8 +402,15 @@ export function EventoCardapioTab({
                         {parts ? `${parts.day}/${tasting.tastingDate?.slice(5, 7)}` : "Sem data"}
                         {tasting.tastingTime ? ` às ${formatClock(tasting.tastingTime)}` : ""}
                         {tasting.resultNote ? ` · ${tasting.resultNote}` : ""}
+                        {!food && drinkSummary(tasting.id) ? ` · ${drinkSummary(tasting.id)}` : ""}
                       </p>
                     </div>
+                    {!food && (drinkData?.drinks.some((drink) => drink.tastingId === tasting.id) ?? false) && (
+                      <Button size="sm" variant="outline" onClick={() => setNotesTasting(tasting)}>
+                        <Star className="size-4" />
+                        Notas
+                      </Button>
+                    )}
                     <div className="flex items-center" title={tasting.participants.map((person) => shortName(person.name)).join(", ")}>
                       {tasting.participants.map((person, index) => (
                         <span key={`${person.name}-${index}`} className="-ml-2 rounded-full ring-2 ring-white first:ml-0">
@@ -362,8 +427,38 @@ export function EventoCardapioTab({
             </ul>
           </div>
         )}
+
+        {!food && drinkData && drinkData.drinks.length > 0 && (
+          <div className="space-y-2">
+            <div>
+              <h4 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Star className="size-4 text-[#3e84a8]" aria-hidden />
+                Notas das degustações
+              </h4>
+              <p className="text-xs leading-5 text-muted-foreground">Cada drink com a média do grupo que provou. &quot;Levar ao cardápio&quot; lança o drink como bebida aprovada.</p>
+            </div>
+            <OverallRankingList
+              tastings={drinkData.tastings}
+              drinks={drinkData.drinks}
+              votes={drinkData.votes}
+              onApprove={(drink, tasting) => {
+                setApproveError(null);
+                setApproveTarget({ drink, tasting });
+              }}
+              busyDrinkId={busy ? (approveTarget?.drink.id ?? null) : null}
+            />
+          </div>
+        )}
       </section>
     );
+  };
+
+  const drinkSummary = (tastingId: string): string | null => {
+    if (!drinkData) return null;
+    const drinks = drinkData.drinks.filter((drink) => drink.tastingId === tastingId).length;
+    if (drinks === 0) return null;
+    const votes = drinkData.votes.filter((vote) => vote.tastingId === tastingId).length;
+    return `${drinks} ${drinks === 1 ? "drink" : "drinks"} · ${votes} ${votes === 1 ? "nota" : "notas"}`;
   };
 
   return (
@@ -410,6 +505,59 @@ export function EventoCardapioTab({
               : undefined
           }
         />
+      )}
+
+      {notesTasting && drinkData && (
+        <Dialog open onOpenChange={(open) => !open && setNotesTasting(null)}>
+          <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-3xl">
+            <DialogHeader className="border-b border-[#e6eef0] px-5 py-4 text-left">
+              <DialogTitle>Notas · {notesTasting.vendorName}</DialogTitle>
+              <DialogDescription>Uma coluna por pessoa, total e média. Em ordem de média.</DialogDescription>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <TastingScoreTable
+                tasting={drinkData.tastings.find((entry) => entry.id === notesTasting.id) ?? notesTasting}
+                drinks={drinkData.drinks.filter((drink) => drink.tastingId === notesTasting.id)}
+                votes={drinkData.votes.filter((vote) => vote.tastingId === notesTasting.id)}
+                faces={drinkData.faces}
+              />
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[#e6eef0] px-5 py-3">
+              <Button variant="secondary" asChild>
+                <a href={`/degustacao/${notesTasting.id}`} target="_blank" rel="noreferrer">
+                  <Martini className="size-4" />
+                  Abrir votação
+                </a>
+              </Button>
+              <Button variant="outline" onClick={() => setNotesTasting(null)}>
+                Fechar
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {approveTarget && (
+        <Dialog open onOpenChange={(open) => !open && !busy && setApproveTarget(null)}>
+          <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-lg">
+            <DialogHeader className="border-b border-[#e6eef0] px-5 py-4 text-left">
+              <DialogTitle>Levar ao cardápio?</DialogTitle>
+              <DialogDescription>
+                {approveTarget.drink.name} ({approveTarget.tasting.vendorName}) entra no cardápio da festa como bebida aprovada, no grupo &quot;Drinks&quot;. Dá para editar ou tirar depois.
+              </DialogDescription>
+            </DialogHeader>
+            {approveError && <p role="alert" className="mx-5 mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">{approveError}</p>}
+            <div className="flex justify-end gap-2 px-5 py-4">
+              <Button variant="outline" disabled={busy} onClick={() => setApproveTarget(null)}>
+                Cancelar
+              </Button>
+              <Button disabled={busy} onClick={() => void approveDrink()}>
+                {busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                Levar ao cardápio
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       {tastingForm && (

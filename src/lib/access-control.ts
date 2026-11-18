@@ -153,6 +153,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/festa-10-anos",
   // Envio dos convites da festa aos clientes: cada remetente vê só os seus (o servidor confere).
   "/convites-festa",
+  // Votação das degustações de drinks no celular (quem foi ao bar vota; a lista fica na degustação).
+  "/degustacao",
 ];
 
 /**
