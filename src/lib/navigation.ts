@@ -41,6 +41,8 @@ import {
   PartyPopper,
   PenLine,
   Scale,
+  Gavel,
+  BookUser,
   Settings,
   Sparkles,
   Sprout,
@@ -74,6 +76,8 @@ import {
   hasFacilitiesAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
+  hasProcessosAccess,
+  isProcessosPath,
   canSeeVistagemPath,
   entradaDaVistagem,
   isAdminRole,
@@ -463,6 +467,31 @@ export const NAV_FRONTS: NavFront[] = [
         entrada: entradaDaVistagem,
       },
       {
+        // Cadastro de processos do ORQESTRAI (1º módulo do sistema que substitui o VIOS). Admin ou liberação em Usuários.
+        id: "processos",
+        label: "Processos",
+        shortLabel: "Processos",
+        icon: Gavel,
+        pages: [
+          { href: "/operacoes-legais/processos", label: "Processos" },
+          { href: "/operacoes-legais/processos/saneamento", label: "Saneamento" },
+          { href: "/operacoes-legais/processos/carteira", label: "Carteira Rec. Crédito" },
+          { href: "/operacoes-legais/processos/cadastros", label: "Cadastros" },
+        ],
+        configuracoes: { href: "/operacoes-legais/processos/importacao", label: "Importação e VIOS" },
+      },
+      {
+        // Cadastro único de pessoas (clientes, partes, sócios, fiadores, advogados), usado por Processos.
+        id: "cadastro-pessoas",
+        label: "Pessoas",
+        shortLabel: "Pessoas",
+        icon: BookUser,
+        pages: [
+          { href: "/operacoes-legais/pessoas", label: "Pessoas" },
+          { href: "/operacoes-legais/pessoas/duplicadas", label: "Repetidas" },
+        ],
+      },
+      {
         // Escuta do time (1º uso: PE27); a resposta fica em /pesquisa/<link>, aberta ao público de cada pesquisa.
         id: "pesquisas-equipe",
         label: "Pesquisas com a equipe",
@@ -601,6 +630,7 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
       if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
       if (isPe27Path(href)) return hasPe27Access(profile);
+      if (isProcessosPath(href)) return hasProcessosAccess(profile);
       if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
@@ -634,6 +664,7 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
     if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
     if (isPe27Path(href)) return hasPe27Access(profile);
+    if (isProcessosPath(href)) return hasProcessosAccess(profile);
     if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {

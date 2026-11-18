@@ -17,6 +17,10 @@ const nextConfig: NextConfig = {
   } as NextConfig["experimental"],
   // Arquivos do modelo de certificado lidos com fs pela rota (fora de /public).
   outputFileTracingIncludes: {
+    // A leitura dos autos importa o pdfjs em tempo de execução, fora do bundle (ver src/lib/processos/leitura-pdf.ts):
+    // os arquivos entram à mão nas rotas que leem os autos.
+    "/api/operacoes-legais/processos/autos/documentos/*/ler": ["./node_modules/pdfjs-dist/package.json", "./node_modules/pdfjs-dist/legacy/build/pdf.mjs", "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+    "/api/robos/autos/pedidos/*": ["./node_modules/pdfjs-dist/package.json", "./node_modules/pdfjs-dist/legacy/build/pdf.mjs", "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
     "/api/certificados/modelo/*": ["./src/lib/certificados/assets/**/*"],
     // Fontes licenciadas dos modelos do Estúdio de peças.
     "/api/estudio/fontes": ["./src/lib/estudio/assets/fonts/**/*"],

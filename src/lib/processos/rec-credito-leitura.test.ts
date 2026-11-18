@@ -1,0 +1,135 @@
+import { describe, expect, it } from "vitest";
+import type { ItensRecCredito } from "./rec-credito";
+import { creditoDosTitulos, mesmoItem, leituraRecCreditoVazia, sugestoesDaRecCredito, sugestoesDoCreditoPelosTitulos, tipoDaLista, type ItemSugerido, type LeituraRecCredito } from "./rec-credito-leitura";
+
+const TIPOS = ["Nota promissória", "Duplicata", "CCB (Cédula de Crédito Bancário)"];
+const nada: ItensRecCredito = { titulos: [], citacoes: [], pedidos: [], lancamentos: [] };
+/** Conferidor de mentira: acha o trecho quando ele começa com "ok". */
+const conferidor = { trecho: (pagina: number | null, trecho: string | null) => ({ pagina, conferido: Boolean(trecho?.startsWith("ok")) }) };
+const de = (pagina: number, confianca: "alta" | "media" | "baixa" = "alta", trecho = "ok trecho") => ({ pagina, trecho, confianca });
+
+function leitura(parcial: Partial<LeituraRecCredito>): LeituraRecCredito {
+  return { ...leituraRecCreditoVazia(), ...parcial };
+}
+
+describe("tipo do título", () => {
+  it("casa com a lista de Cadastros pelo texto", () => {
+    expect(tipoDaLista("nota_promissoria", "Nota promissória", TIPOS)).toBe("Nota promissória");
+    expect(tipoDaLista("ccb", "Cédula de Crédito Bancário", TIPOS)).toBe("CCB (Cédula de Crédito Bancário)");
+    expect(tipoDaLista("cheque", "Cheque série AAA", TIPOS)).toBe("Cheque");
+    expect(tipoDaLista("cheque", "Cheque", [...TIPOS, "Cheque"])).toBe("Cheque");
+    expect(tipoDaLista("outro", "Confissão de dívida", TIPOS)).toBe("Confissão de dívida");
+  });
+});
+
+describe("sugestões da Rec. Crédito", () => {
+  it("um título por proposta, com o tipo da lista e os dados do formulário", () => {
+    const sugestoes = sugestoesDaRecCredito(
+      leitura({
+        titulos: [
+          { tipo: "duplicata", descricao: "Duplicata mercantil", numero: "101", valor: 1500.5, vencimento: "2024-01-10", ...de(3) },
+          { tipo: "duplicata", descricao: "Duplicata", numero: "101", valor: 1500.5, vencimento: "10/01/2024", ...de(9, "media") },
+          { tipo: "duplicata", descricao: "Duplicata", numero: null, valor: 0, vencimento: "2024-01-10", ...de(4) },
+          { tipo: "duplicata", descricao: "Duplicata", numero: null, valor: 10, vencimento: "sem data", ...de(4) },
+        ],
+      }),
+      nada,
+      TIPOS,
+      conferidor
+    );
+    expect(sugestoes).toHaveLength(1);
+    expect(sugestoes[0]).toMatchObject({ tipo: "rec_credito", campo: "titulo", item: "rec_credito_titulo", pagina: 3, confianca: "alta", trechoConferido: true });
+    expect(sugestoes[0].valor as ItemSugerido).toEqual({ item: "titulo", dados: { tipo: "Duplicata", numero: "101", valor: 1500.5, vencimento: "2024-01-10" }, tipos: TIPOS });
+    expect(sugestoes[0].resumo).toMatch(/^Título: Duplicata nº 101, R\$\s?1\.500,50, vencimento 10\/01\/2024$/);
+  });
+
+  it("não repete o que a ficha já tem", () => {
+    const existentes: ItensRecCredito = {
+      ...nada,
+      lancamentos: [{ id: "x", origem: "manual", documentoId: null, pagina: null, criadoPorNome: null, tipo: "levantamento", data: "2024-05-02", valor: 800, descricao: null }],
+    };
+    const sugestoes = sugestoesDaRecCredito(
+      leitura({
+        lancamentos: [
+          { tipo: "levantamento", data: "2024-05-02", valor: 800, descricao: "alvará", ...de(20) },
+          { tipo: "guia_paga", data: "2024-02-01", valor: 35.9, descricao: "diligência", ...de(12) },
+        ],
+      }),
+      existentes,
+      TIPOS,
+      conferidor
+    );
+    expect(sugestoes.map((item) => (item.valor as ItemSugerido).dados.tipo)).toEqual(["guia_paga"]);
+  });
+
+  it("pedido e decisão do mesmo pedido: fica a situação decidida", () => {
+    const sugestoes = sugestoesDaRecCredito(
+      leitura({
+        pedidos: [
+          { tipo: "SISBAJUD", data_pedido: "2024-03-01", situacao: "requerido", data_decisao: null, resultado: null, valor_obtido: null, ...de(30) },
+          { tipo: "Sisbajud", data_pedido: "2024-03-01", situacao: "deferido", data_decisao: "2024-03-20", resultado: "Bloqueio parcial", valor_obtido: 1200, ...de(35, "media") },
+        ],
+      }),
+      nada,
+      TIPOS,
+      conferidor
+    );
+    expect(sugestoes).toHaveLength(1);
+    expect((sugestoes[0].valor as ItemSugerido).dados).toMatchObject({ situacao: "deferido", decididoEm: "2024-03-20", valorObtido: 1200 });
+  });
+
+  it("trecho não localizado no PDF baixa a confiança", () => {
+    const [sugestao] = sugestoesDaRecCredito(
+      leitura({ citacoes: [{ data: "2024-02-10", meio: "ar", resultado: "negativa", endereco: "Rua A, 10", motivo: "Mudou-se", ...de(7, "alta", "texto inventado") }] }),
+      nada,
+      TIPOS,
+      conferidor
+    );
+    expect(sugestao).toMatchObject({ confianca: "baixa", trechoConferido: false });
+    expect((sugestao.valor as ItemSugerido).dados).toEqual({ tentativaEm: "2024-02-10", meio: "ar", resultado: "negativa", endereco: "Rua A, 10", observacao: "Mudou-se" });
+  });
+
+  it("autos do eproc não repetem o que os do e-SAJ já sugeriram, mesmo com a data um pouco diferente", () => {
+    const doEsaj: ItemSugerido[] = [
+      { item: "pedido", dados: { tipo: "RENAJUD e INFOJUD", pedidoEm: "2023-11-07", situacao: "indeferido", decididoEm: "2023-11-10" } },
+      { item: "lancamento", dados: { tipo: "guia_paga", data: "2024-02-01", valor: 35.9 } },
+    ];
+    const sugestoes = sugestoesDaRecCredito(
+      leitura({
+        pedidos: [
+          { tipo: "INFOJUD e RENAJUD", data_pedido: "2023-11-08", situacao: "indeferido", data_decisao: "2023-11-23", resultado: null, valor_obtido: null, ...de(40) },
+          { tipo: "SISBAJUD", data_pedido: "2025-10-14", situacao: "deferido", data_decisao: null, resultado: null, valor_obtido: null, ...de(41) },
+        ],
+        lancamentos: [{ tipo: "guia_paga", data: "2024-02-03", valor: 35.9, descricao: null, ...de(12) }],
+      }),
+      nada,
+      TIPOS,
+      conferidor,
+      doEsaj
+    );
+    expect(sugestoes.map((item) => (item.valor as ItemSugerido).dados.tipo)).toEqual(["SISBAJUD"]);
+  });
+});
+
+describe("crédito pelos títulos", () => {
+  const titulo = (valor: number, vencimento: string): ItemSugerido => ({ item: "titulo", dados: { tipo: "Duplicata", numero: null, valor, vencimento } });
+  it("valor original é a soma dos títulos e a origem é o vencimento mais antigo de todos", () => {
+    const credito = creditoDosTitulos([titulo(2929.83, "2022-08-26"), titulo(1785.97, "2022-09-06"), titulo(1785.97, "2022-09-06"), titulo(1785.97, "2022-09-16")]);
+    expect(credito).toEqual({ valorOriginal: 6501.77, origem: "2022-08-26", quantidade: 3 });
+    const sugestoes = sugestoesDoCreditoPelosTitulos(credito!, {});
+    expect(sugestoes.map((item) => item.resumo)).toEqual([
+      expect.stringMatching(/soma dos 3 títulos$/),
+      "Data de origem do débito: 26/08/2022, vencimento mais antigo entre os 3 títulos",
+    ]);
+  });
+});
+
+describe("mesma citação", () => {
+  it("sem data num dos dois, compara o endereço escrito de jeitos diferentes", () => {
+    const a: ItemSugerido = { item: "citacao", dados: { tentativaEm: null, resultado: "positiva", endereco: "Avenida das Flores, nº 972, Jardim Azul, CEP 06.434-000, Cidade, SP" } };
+    const b: ItemSugerido = { item: "citacao", dados: { tentativaEm: "2022-02-07", resultado: "positiva", endereco: "Avenida das Flores, nº 972, Jardim Azul, Cidade-SP, CEP 06434-000" } };
+    const outra: ItemSugerido = { item: "citacao", dados: { tentativaEm: null, resultado: "positiva", endereco: "Rua dos Lírios, 15, Centro" } };
+    expect(mesmoItem(a, b)).toBe(true);
+    expect(mesmoItem(a, outra)).toBe(false);
+  });
+});

@@ -8,7 +8,8 @@ import { destacar, lerPublicacao, pontosDeAtencao, type PontoDeAtencao, type Tip
 import type { PublicacaoResumo } from "@/lib/vistagem/types";
 import { Selo } from "./ui";
 
-const MARCA: Record<TipoDestaque, string> = {
+/** Marca-texto por tipo de trecho; a síntese do processo (Processos) usa as mesmas cores. */
+export const MARCA: Record<TipoDestaque, string> = {
   prazo: "rounded-sm bg-amber-100 px-0.5 font-medium text-amber-950",
   pena: "rounded-sm bg-red-50 px-0.5 text-red-800 underline decoration-red-300 underline-offset-2",
   valor: "rounded-sm bg-emerald-50 px-0.5 font-medium text-emerald-900",

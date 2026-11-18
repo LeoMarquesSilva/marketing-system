@@ -60,3 +60,9 @@ skills-lock.json
 *.csv
 
 .vercel
+
+# Robôs (robos/): perfil do navegador com a sessão do tribunal, PDFs em trânsito, capturas e dependências. Nunca vão para o repositório.
+robos/**/perfil/
+robos/**/downloads/
+robos/**/diagnostico/
+robos/**/node_modules/

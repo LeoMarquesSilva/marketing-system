@@ -1,0 +1,214 @@
+import "server-only";
+
+import type { SugestaoNova } from "./autos-types";
+import { andamentosDoDataJud, indiceDoDataJud, lerCnjDaCapa, registroAtual, sugestoesDaCapa, type RegistroDataJud } from "./capa";
+import { ProcessosError } from "./errors";
+import { detalharProcesso } from "./processos-server";
+import { db, falhou, type Ator } from "./server";
+import { decidirSugestao } from "./sugestoes-server";
+
+/**
+ * Completa a capa do processo com o número CNJ e o DataJud, gravando direto no cadastro (fonte oficial).
+ * O DataJud é lento e às vezes recusa por excesso (429): falha não trava nada, fica anotada no processo.
+ */
+
+/** Chave pública do DataJud, publicada pelo CNJ em datajud-wiki.cnj.jus.br/api-publica/acesso (pode mudar: DATAJUD_API_KEY). */
+const CHAVE_PUBLICA_DATAJUD = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==";
+/** O DataJud leva de 20 a 55 s por consulta (medido em 10/11/2026) e às vezes passa de um minuto. */
+const PRAZO_DATAJUD_MS = 75_000;
+
+async function consultarDataJud(digitos: string, indice: string): Promise<RegistroDataJud[]> {
+  const resposta = await fetch(`https://api-publica.datajud.cnj.jus.br/${indice}/_search`, {
+    method: "POST",
+    cache: "no-store",
+    signal: AbortSignal.timeout(PRAZO_DATAJUD_MS),
+    headers: { Authorization: `APIKey ${process.env.DATAJUD_API_KEY?.trim() || CHAVE_PUBLICA_DATAJUD}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query: { match: { numeroProcesso: digitos } }, size: 10 }),
+  });
+  if (resposta.status === 429) throw new Error("o DataJud recusou por excesso de consultas; tente de novo em alguns minutos");
+  if (!resposta.ok) throw new Error(`o DataJud respondeu ${resposta.status}`);
+  const corpo = (await resposta.json()) as { hits?: { hits?: { _source: RegistroDataJud }[] } };
+  return (corpo.hits?.hits ?? []).map((hit) => hit._source);
+}
+
+const municipios = new Map<number, string | null>();
+
+/** Nome do município pelo código do IBGE (API pública de localidades do IBGE), com memória entre chamadas. */
+async function municipioDoIbge(codigo: number | null | undefined): Promise<string | null> {
+  if (!codigo) return null;
+  if (municipios.has(codigo)) return municipios.get(codigo) ?? null;
+  try {
+    const resposta = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/municipios/${codigo}`, { signal: AbortSignal.timeout(10_000) });
+    const corpo = resposta.ok ? ((await resposta.json()) as { nome?: string }) : null;
+    const nome = corpo?.nome?.trim() || null;
+    municipios.set(codigo, nome);
+    return nome;
+  } catch {
+    return null;
+  }
+}
+
+/** Troca as sugestões de capa ainda pendentes do processo pelas novas. Proposta já recusada não volta (mesma chave). */
+async function gravar(processoId: string, sugestoes: SugestaoNova[]): Promise<string[]> {
+  const banco = db();
+  const { error: erroLimpeza } = await banco.from("proc_sugestoes").delete().eq("processo_id", processoId).in("fonte", ["datajud", "cnj"]).eq("situacao", "pendente");
+  if (erroLimpeza) falhou("limpar as sugestões de capa anteriores", erroLimpeza);
+  if (!sugestoes.length) return [];
+  const { data, error } = await banco
+    .from("proc_sugestoes")
+    .upsert(
+      sugestoes.map((item) => ({
+        processo_id: processoId,
+        documento_id: null,
+        fonte: item.fonte ?? "datajud",
+        tipo: item.tipo,
+        campo: item.campo,
+        parte_id: item.parteId,
+        item: item.item,
+        chave: item.chave,
+        resumo: item.resumo.slice(0, 500),
+        valor: item.valor,
+        pagina: null,
+        trecho: item.trecho,
+        trecho_conferido: true,
+        confianca: item.confianca,
+      })),
+      { onConflict: "processo_id,chave", ignoreDuplicates: true }
+    )
+    .select("id");
+  if (error) falhou("gravar as sugestões de capa", error);
+  return (data ?? []).map((linha) => linha.id as string);
+}
+
+/** Quem grava a capa das fontes oficiais: o próprio sistema (no histórico, sem pessoa). */
+const ATOR_DA_CAPA: Ator = { authUserId: null as unknown as string, nome: "DataJud (automático)" };
+
+/**
+ * A capa das fontes oficiais (DataJud e número CNJ) entra direto no cadastro, sem esperar aprovação: cada
+ * sugestão é aprovada pelo sistema, pelo mesmo caminho da tela (histórico com a fonte, fila do VIOS). A que não
+ * puder ser gravada (valor fora da lista de Cadastros, por exemplo) fica na fila para uma pessoa decidir.
+ */
+export async function aplicarCapa(ids: string[]): Promise<{ aplicadas: number; pendentes: number }> {
+  let aplicadas = 0;
+  for (const id of ids) {
+    try {
+      await decidirSugestao(id, { acao: "aprovar" }, ATOR_DA_CAPA);
+      aplicadas += 1;
+    } catch (erro) {
+      console.error("[processos] gravar a capa do DataJud:", erro instanceof Error ? erro.message : erro);
+    }
+  }
+  return { aplicadas, pendentes: ids.length - aplicadas };
+}
+
+export interface ResultadoDaCapa {
+  /** O DataJud tinha o processo. */
+  achou: boolean;
+  /** Sugestões que ficaram na fila (não deu para gravar direto). */
+  sugestoes: number;
+  /** Dados da capa gravados direto no cadastro. */
+  aplicadas: number;
+  /** Andamentos novos na linha do tempo. */
+  andamentos: number;
+  /** Por que não veio nada do DataJud (as regras do número valem mesmo assim). */
+  aviso: string | null;
+}
+
+/** Consulta o DataJud para um processo e deixa as sugestões de capa pendentes na ficha. */
+export async function completarCapa(processoId: string): Promise<ResultadoDaCapa> {
+  const processo = await detalharProcesso(processoId);
+  const cnj = lerCnjDaCapa(typeof processo.valores.cnj === "string" ? processo.valores.cnj : null);
+  if (!cnj) throw new ProcessosError("O processo está sem número CNJ completo: não dá para consultar o DataJud.", 422);
+  const indice = indiceDoDataJud(cnj);
+  const agora = new Date();
+  let registros: RegistroDataJud[] = [];
+  let aviso: string | null = null;
+  if (!indice) {
+    aviso = "O tribunal deste número não tem índice no DataJud.";
+  } else {
+    try {
+      registros = await consultarDataJud(cnj.digitos, indice);
+      if (!registros.length) aviso = "O processo ainda não está no DataJud (o tribunal pode não ter enviado).";
+    } catch (erro) {
+      aviso = `Não foi possível consultar o DataJud: ${erro instanceof Error ? erro.message : String(erro)}.`;
+    }
+  }
+  const municipio = await municipioDoIbge(registroAtual(registros)?.orgaoJulgador?.codigoMunicipioIBGE);
+  const sugestoes = sugestoesDaCapa({ valores: processo.valores, datajud: registros, municipio, consultadoEm: agora.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) });
+  const gravadas = await gravar(processoId, sugestoes);
+  const { pendentes } = await aplicarCapa(gravadas);
+  const andamentos = await guardarAndamentos(processoId, registros);
+  const { error } = await db()
+    .from("proc_processos")
+    .update({ datajud_consultado_em: agora.toISOString(), datajud_erro: registros.length ? null : aviso })
+    .eq("id", processoId);
+  if (error) console.error("[processos] registrar a consulta ao DataJud:", error.message);
+  return { achou: registros.length > 0, sugestoes: pendentes, aplicadas: gravadas.length - pendentes, andamentos, aviso };
+}
+
+/**
+ * Guarda todos os movimentos do DataJud na linha do tempo (proc_andamentos), sem duplicar. Movimento do tribunal
+ * é fato, não sugestão: entra direto. Falha aqui não derruba a capa (a linha do tempo é complemento).
+ */
+async function guardarAndamentos(processoId: string, registros: RegistroDataJud[]): Promise<number> {
+  const andamentos = andamentosDoDataJud(registros);
+  if (!andamentos.length) return 0;
+  let novos = 0;
+  for (let inicio = 0; inicio < andamentos.length; inicio += 500) {
+    const { data, error } = await db()
+      .from("proc_andamentos")
+      .upsert(
+        andamentos.slice(inicio, inicio + 500).map((item) => ({ processo_id: processoId, ...item })),
+        { onConflict: "processo_id,chave", ignoreDuplicates: true }
+      )
+      .select("id");
+    if (error) {
+      console.error("[processos] guardar os andamentos do DataJud:", error.message);
+      return novos;
+    }
+    novos += data?.length ?? 0;
+  }
+  return novos;
+}
+
+/** Intervalo entre duas consultas do mesmo processo pelo robô. */
+const DIAS_ENTRE_CONSULTAS = 7;
+
+export interface ResultadoDaProxima {
+  /** Não há processo esperando consulta: o robô descansa. */
+  nada: boolean;
+  /** O DataJud recusou por excesso: o robô espera mais antes da próxima. */
+  recusado: boolean;
+  achou: boolean;
+  sugestoes: number;
+  restantes: number;
+}
+
+/**
+ * Consulta o DataJud para o próximo processo da vez: os ativos e os nunca consultados primeiro, depois os
+ * consultados há mais de uma semana. Uma por chamada: quem repete é o robô, com pausa (o DataJud é lento
+ * e recusa rajadas). Marca o processo antes de consultar, para duas chamadas não pegarem o mesmo.
+ */
+export async function completarProximaCapa(): Promise<ResultadoDaProxima> {
+  const limite = new Date(Date.now() - DIAS_ENTRE_CONSULTAS * 24 * 60 * 60 * 1000).toISOString();
+  // Consulta que falhou (DataJud fora do ar, 504, recusa) volta para a fila em uma hora, não em uma semana.
+  const limiteDaFalha = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { data, error } = await db()
+    .from("proc_processos")
+    .select("id, situacao, datajud_consultado_em")
+    .not("cnj", "is", null)
+    .or(`datajud_consultado_em.is.null,datajud_consultado_em.lt.${limite},and(datajud_erro.like.Não foi possível*,datajud_consultado_em.lt.${limiteDaFalha})`)
+    .limit(2000);
+  if (error) falhou("listar os processos para o DataJud", error);
+  const fila = ((data ?? []) as { id: string; situacao: string | null; datajud_consultado_em: string | null }[]).sort(
+    (a, b) =>
+      Number(/^ativo/i.test(b.situacao ?? "")) - Number(/^ativo/i.test(a.situacao ?? "")) ||
+      String(a.datajud_consultado_em ?? "").localeCompare(String(b.datajud_consultado_em ?? ""))
+  );
+  const vez = fila[0];
+  if (!vez) return { nada: true, recusado: false, achou: false, sugestoes: 0, restantes: 0 };
+  // Reserva: com o carimbo, o processo sai da fila mesmo se esta chamada cair no meio.
+  await db().from("proc_processos").update({ datajud_consultado_em: new Date().toISOString() }).eq("id", vez.id);
+  const capa = await completarCapa(vez.id);
+  return { nada: false, recusado: Boolean(capa.aviso?.includes("excesso")), achou: capa.achou, sugestoes: capa.sugestoes, restantes: fila.length - 1 };
+}
