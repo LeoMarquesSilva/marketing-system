@@ -139,6 +139,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   MEUS_CLIENTES_KEY,
   // Peças de campanha do planner para quem vai postar (ex.: sócios).
   "/entregas",
+  // O que o Marketing concluiu para a própria pessoa (a API só devolve o que ela pediu).
+  "/minhas-entregas",
   // Atualização da própria ficha cadastral (Pessoas e Cultura).
   "/minha-ficha",
   // Links de boas-vindas da própria área (Pessoas e Cultura).

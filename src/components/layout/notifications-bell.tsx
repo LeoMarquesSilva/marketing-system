@@ -1,15 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { Bell } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ContentScheduleNotificationsList } from "@/components/conteudo/content-schedule-notifications-list";
 import { FollowupAlertCard, requestOpenPost, useFollowupAlerts } from "@/components/conteudo/followup-alerts";
 import { OpsNotificationsList, useOpsNotifications } from "@/components/ops-planner/ops-notifications-list";
+import { useUnseenDeliveries } from "@/components/planner/delivery-notices-bell";
 import { FichaColaboradorDialog } from "@/components/rh/ficha-colaborador-dialog";
 import { HrNotificationsList } from "@/components/rh/hr-notifications-list";
 import { useContentScheduleNotifications } from "@/hooks/use-content-schedule-notifications";
 import { useHrPendingNotifications } from "@/hooks/use-hr-pending-notifications";
+import { MY_DELIVERIES_PATH } from "@/lib/request-files/domain";
 import { cn } from "@/lib/utils";
 
 function Section({ title, count, action, children }: { title: string; count: number; action?: ReactNode; children: ReactNode }) {
@@ -29,26 +32,30 @@ function Section({ title, count, action, children }: { title: string; count: num
 
 /**
  * Sino único da sidebar: junta os avisos do Planner Ops, as atualizações de
- * colaboradores do RH, os ajustes do calendário editorial no VIOS e as novidades
- * nos assuntos já postados (desdobramento do conteúdo). Cada seção só aparece
- * para quem recebe aquele tipo de aviso; a de novidades, só quando há alguma.
+ * colaboradores do RH, os ajustes do calendário editorial no VIOS, as novidades
+ * nos assuntos já postados (desdobramento do conteúdo) e as entregas novas do
+ * Marketing para quem pediu. Cada seção só aparece para quem recebe aquele tipo
+ * de aviso; as de novidades e de entregas, só quando há alguma.
  */
 export function NotificationsBell({ className }: { className?: string }) {
   const ops = useOpsNotifications();
   const hr = useHrPendingNotifications();
   const content = useContentScheduleNotifications();
   const followup = useFollowupAlerts();
+  const deliveries = useUnseenDeliveries();
   const [open, setOpen] = useState(false);
   const [editEmployeeId, setEditEmployeeId] = useState<string | null>(null);
 
   const hasFollowups = followup.enabled && followup.alerts.length > 0;
-  if (!ops.canReceive && !hr.canReceive && !content.canReceive && !hasFollowups) return null;
+  const hasDeliveries = deliveries > 0;
+  if (!ops.canReceive && !hr.canReceive && !content.canReceive && !hasFollowups && !hasDeliveries) return null;
 
   const total =
     (ops.canReceive ? ops.unread : 0) +
     (hr.canReceive ? hr.pendingCount : 0) +
     (content.canReceive ? content.notifications.length : 0) +
-    (hasFollowups ? followup.alerts.length : 0);
+    (hasFollowups ? followup.alerts.length : 0) +
+    deliveries;
   const close = () => setOpen(false);
 
   return (
@@ -88,6 +95,24 @@ export function NotificationsBell({ className }: { className?: string }) {
           className="flex max-h-[min(80dvh,40rem)] w-96 max-w-[calc(100vw-2rem)] flex-col overflow-hidden p-0"
         >
           <div className="min-h-0 overflow-y-auto">
+            {hasDeliveries && (
+              <Section title="Entregas do Marketing" count={deliveries}>
+                <div className="flex items-center justify-between gap-3 px-1">
+                  <p className="text-sm text-slate-700">
+                    {deliveries === 1
+                      ? "O Marketing concluiu algo que você pediu."
+                      : `O Marketing concluiu ${deliveries} pedidos seus.`}
+                  </p>
+                  <Link
+                    href={MY_DELIVERIES_PATH}
+                    onClick={close}
+                    className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-[#285f7a] hover:bg-slate-100 hover:underline"
+                  >
+                    Ver entregas
+                  </Link>
+                </div>
+              </Section>
+            )}
             {ops.canReceive && (
               <Section
                 title="Planner Ops"

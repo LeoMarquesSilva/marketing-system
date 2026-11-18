@@ -271,6 +271,12 @@ describe("rota ativa e cabeçalho", () => {
     expect(visibleHrefs({ role: "admin" })).not.toContain("/operacoes-legais/vistagem/configuracoes");
   });
 
+  it("Minhas entregas aparece para todo mundo da equipe, menos para o perfil só do PE27", () => {
+    expect(visibleHrefs({ role: "admin" })).toContain("/minhas-entregas");
+    expect(visibleHrefs({ role: null, permissions: null, department: "Trabalhista" })).toContain("/minhas-entregas");
+    expect(visibleHrefs({ role: null, permissions: ["/planner"] })).toContain("/minhas-entregas");
+  });
+
   it("Escolhas da equipe aparece para Marketing, admin e líderes, não para o colaborador comum", () => {
     expect(visibleHrefs({ role: "admin" })).toContain("/conteudo/escolhas");
     expect(visibleHrefs({ role: null, permissions: ["/conteudo/roteiros"], department: "Marketing" })).toContain("/conteudo/escolhas");
