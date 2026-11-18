@@ -35,6 +35,8 @@ function Carteira() {
   const [grupo, setGrupo] = useState("");
   const [situacao, setSituacao] = useState("");
   const [baixando, setBaixando] = useState(false);
+  const [atualizando, setAtualizando] = useState(false);
+  const [feito, setFeito] = useState("");
   const [tentativa, setTentativa] = useState(0);
 
   useEffect(() => {
@@ -83,6 +85,29 @@ function Carteira() {
   const savingGeral = atualizado > 0 ? (recuperadoComCalculo / atualizado) * 100 : null;
   const ativos = filtradas.filter((linha) => !linha.encerrado).length;
 
+  /** Pede ao robô a atualização dos autos dos processos filtrados (só o que entrou desde o último download). */
+  async function atualizarAutos() {
+    setAtualizando(true);
+    setErro("");
+    setFeito("");
+    try {
+      const { resultado } = await processosApi.post<{ resultado: { pedidos: number; emAndamento: number; semRobo: number } }>("/autos/atualizar", { ids: filtradas.map((linha) => linha.id) });
+      setFeito(
+        [
+          `${resultado.pedidos} processo${resultado.pedidos === 1 ? "" : "s"} na fila do robô para atualizar os autos.`,
+          resultado.emAndamento ? `${resultado.emAndamento} já estava${resultado.emAndamento === 1 ? "" : "m"} na fila.` : "",
+          resultado.semRobo ? `${resultado.semRobo} sem robô para o tribunal (ou em segredo de justiça): anexe o PDF na ficha.` : "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+    } catch (falha) {
+      setErro(mensagemDeErro(falha));
+    } finally {
+      setAtualizando(false);
+    }
+  }
+
   async function baixar() {
     setBaixando(true);
     try {
@@ -112,6 +137,7 @@ function Carteira() {
         </Indicador>
       </Indicadores>
 
+      {feito ? <Aviso tom="sucesso">{feito}</Aviso> : null}
       {erro ? (
         <Aviso
           tom="erro"
@@ -136,6 +162,14 @@ function Carteira() {
         <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="CNJ, CI, devedor ou cliente" aria-label="Buscar processo" />
         <SeletorBusca valor={grupo} onChange={setGrupo} opcoes={opcoesGrupo} todos={{ rotulo: "Todos os grupos" }} rotulo="Grupo do cliente" className="sm:w-52" />
         <Seletor valor={situacao} onChange={setSituacao} opcoes={SITUACOES} todos={{ rotulo: "Ativos e encerrados" }} rotulo="Situação" className="sm:w-48" />
+        <Button
+          variant="outline"
+          onClick={() => void atualizarAutos()}
+          disabled={atualizando || !filtradas.length}
+          title="Pede ao robô os autos dos processos filtrados: só o que entrou desde o último download, e a IA lê só o novo"
+        >
+          {atualizando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />} Atualizar autos ({filtradas.length})
+        </Button>
         <Button variant="outline" onClick={() => void baixar()} disabled={baixando || !filtradas.length}>
           {baixando ? <LoaderCircle className="animate-spin" /> : <FileSpreadsheet />} Excel
         </Button>

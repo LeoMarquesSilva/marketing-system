@@ -75,7 +75,8 @@ export async function proximoPedido(entrada: unknown): Promise<PedidoParaRobo | 
     if (erroTomar) falhou("reservar o pedido", erroTomar);
     if (tomado?.length) {
       const reservado = paraPedido(tomado[0] as Record<string, unknown>);
-      return { ...reservado, pecasBaixadas: reservado.sistema === "eproc" ? await pecasBaixadas(reservado.processoId) : [] };
+      // Peças já baixadas do processo (eproc: "evento:nome"; e-SAJ: "esaj:texto do documento"): o robô traz só as novas.
+      return { ...reservado, pecasBaixadas: await pecasBaixadas(reservado.processoId) };
     }
   }
   return null;

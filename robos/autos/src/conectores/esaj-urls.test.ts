@@ -85,3 +85,17 @@ describe("escolherCertificado", () => {
     expect(escolherCertificado([], "Maria")).toBe(-1);
   });
 });
+
+describe("download incremental da pasta digital", () => {
+  it("identifica o documento pelo texto do nó e traz só os novos", async () => {
+    const { chaveDoDocumentoEsaj, documentosNovosDaPasta } = await import("./esaj-urls");
+    const documentos = [
+      { id: "1", texto: "Petição Inicial (fls. 1-12)" },
+      { id: "2", texto: "Decisão  (fls. 13-14)" },
+      { id: "3", texto: "Petição Intermediária (fls. 15-20)" },
+    ];
+    expect(chaveDoDocumentoEsaj(documentos[1])).toBe("esaj:DECISAO (FLS. 13-14)");
+    expect(documentosNovosDaPasta(documentos, documentos.slice(0, 2).map(chaveDoDocumentoEsaj)).map((d) => d.id)).toEqual(["3"]);
+    expect(documentosNovosDaPasta(documentos, undefined)).toHaveLength(3);
+  });
+});

@@ -314,6 +314,30 @@ export async function carregarDocumento(
   };
 }
 
+export interface ResultadoDasAtualizacoes {
+  pedidos: number;
+  /** Já tinham pedido em aberto na fila. */
+  emAndamento: number;
+  /** Sem robô para o tribunal ou sistema (anexar à mão), sem CNJ, ou em segredo de justiça sem liberação. */
+  semRobo: number;
+}
+
+/** Pede ao robô a atualização dos autos de vários processos; o que não dá para pedir é contado, não falha. */
+export async function pedirAtualizacoes(ids: string[], ator: Ator): Promise<ResultadoDasAtualizacoes> {
+  const resultado: ResultadoDasAtualizacoes = { pedidos: 0, emAndamento: 0, semRobo: 0 };
+  for (const id of ids) {
+    try {
+      await pedirAutos(id, {}, ator);
+      resultado.pedidos += 1;
+    } catch (erro) {
+      if (erro instanceof ProcessosError && erro.status === 409) resultado.emAndamento += 1;
+      else if (erro instanceof ProcessosError && erro.status === 422) resultado.semRobo += 1;
+      else throw erro;
+    }
+  }
+  return resultado;
+}
+
 /* ------------------------------------------- continuação no eproc */
 
 /** O processo já teve autos entregues pelo eproc. */

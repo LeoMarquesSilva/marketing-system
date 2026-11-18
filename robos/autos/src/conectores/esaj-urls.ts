@@ -108,3 +108,25 @@ export function escolherCertificado(opcoes: string[], trecho: string): number {
   const candidatos = opcoes.map((opcao, indice) => ({ indice, nome: simplificar(opcao) })).filter((opcao) => opcao.nome && !/^selecione/.test(opcao.nome) && (!alvo || opcao.nome.includes(alvo)));
   return candidatos.length === 1 ? candidatos[0].indice : -1;
 }
+
+/** Um documento da árvore da pasta digital: o id do nó (quando há) e o texto, como "Petição (fls. 1-12)". */
+export interface DocumentoDaPasta {
+  id: string;
+  texto: string;
+}
+
+/**
+ * Identidade de um documento da pasta digital, para o próximo download trazer só os novos: o texto do nó, que
+ * traz o nome e as folhas ("Petição Intermediária (fls. 120-125)"). As folhas do e-SAJ só crescem: o texto de
+ * um documento antigo não muda quando entra outro.
+ */
+export function chaveDoDocumentoEsaj(documento: Pick<DocumentoDaPasta, "texto">): string {
+  return `esaj:${documento.texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase()}`;
+}
+
+/** Os documentos que ainda não vieram em downloads anteriores do processo. */
+export function documentosNovosDaPasta(documentos: DocumentoDaPasta[], baixadas: readonly string[] | undefined): DocumentoDaPasta[] {
+  if (!baixadas?.length) return documentos;
+  const ja = new Set(baixadas);
+  return documentos.filter((documento) => !ja.has(chaveDoDocumentoEsaj(documento)));
+}

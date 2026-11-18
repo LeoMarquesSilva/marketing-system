@@ -3,8 +3,21 @@ import { join } from "node:path";
 import type { Page } from "playwright";
 import type { Pedido } from "../fila.ts";
 import { clicar, conferirPdf, temCaptcha, visivel } from "./comum.ts";
-import { TRIBUNAIS_ESAJ, ehPaginaDeLogin, ehPaginaDoProcesso, escolherCertificado, lerCnj, urlDaConsulta, urlDeLogin, type NumeroCnj, type TribunalEsaj } from "./esaj-urls.ts";
-import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from "./tipos.ts";
+import {
+  TRIBUNAIS_ESAJ,
+  chaveDoDocumentoEsaj,
+  documentosNovosDaPasta,
+  ehPaginaDeLogin,
+  ehPaginaDoProcesso,
+  escolherCertificado,
+  lerCnj,
+  urlDaConsulta,
+  urlDeLogin,
+  type DocumentoDaPasta,
+  type NumeroCnj,
+  type TribunalEsaj,
+} from "./esaj-urls.ts";
+import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./tipos.ts";
 
 /**
  * Conector do e-SAJ (Softplan), um por tribunal: TJSP, TJCE, TJAL e TJMS (ver TRIBUNAIS_ESAJ). O login é
@@ -279,14 +292,56 @@ class ConectorEsaj implements Conector {
 
   /* --------------------------------------------------------------- download */
 
-  private async baixarDaPasta(ambiente: Ambiente, pasta: Page, destino: string): Promise<void> {
+  /** Documentos (folhas) da árvore da pasta digital, na ordem da tela. Vazio se a árvore não for reconhecida. */
+  private async documentosDaPasta(pasta: Page): Promise<DocumentoDaPasta[]> {
+    await pasta.locator("li.jstree-leaf a.jstree-anchor").first().waitFor({ state: "attached", timeout: 60_000 }).catch(() => undefined);
+    return pasta
+      .locator("li.jstree-leaf")
+      .evaluateAll((folhas) =>
+        folhas.map((folha) => ({ id: folha.id, texto: (folha.querySelector("a.jstree-anchor")?.textContent ?? "").replace(/\s+/g, " ").trim() })).filter((documento) => documento.texto)
+      )
+      .catch(() => []);
+  }
+
+  /**
+   * Marca na árvore só os documentos novos (download incremental). Devolve as chaves dos marcados, ou null quando
+   * não deu para marcar um a um (a pasta segue com "selecionar todos").
+   */
+  private async marcarNovos(pasta: Page, novos: DocumentoDaPasta[]): Promise<string[] | null> {
+    for (const documento of novos) {
+      if (!documento.id) return null;
+      const caixa = pasta.locator(`li[id="${documento.id}"] > a.jstree-anchor .jstree-checkbox, li[id="${documento.id}"] > a.jstree-anchor`).first();
+      if (!(await caixa.count())) return null;
+      await caixa.click();
+      await pasta.waitForTimeout(150);
+    }
+    const marcados = await pasta.locator("li.jstree-leaf > a.jstree-anchor.jstree-checked, li.jstree-leaf[aria-selected='true']").count().catch(() => 0);
+    return marcados >= novos.length ? novos.map(chaveDoDocumentoEsaj) : null;
+  }
+
+  private async baixarDaPasta(ambiente: Ambiente, pasta: Page, destino: string, baixadas?: string[]): Promise<ResultadoDoDownload> {
     const { config, registrar } = ambiente;
     if (await temCaptcha(pasta)) {
       await ambiente.aguardarPessoa("captcha", "A pasta digital mostrou um CAPTCHA. Resolva o desafio na janela do robô.", async () => !(await temCaptcha(pasta)));
     }
+    let pecas: string[] | undefined;
     try {
-      // Cada etapa espera a tela reagir à anterior: clicar em sequência, sem esperar, deixa a pasta digital no meio do caminho.
-      await clicar(ambiente, pasta, TELA.pasta.selecionarTodos, "selecionar todos os documentos da pasta digital", "e-SAJ", 60_000);
+      // Download incremental: com documentos já baixados antes, marca só os novos; sem novidade, não pede PDF.
+      const documentos = await this.documentosDaPasta(pasta);
+      const novos = documentosNovosDaPasta(documentos, baixadas);
+      if (documentos.length && baixadas?.length && !novos.length) {
+        registrar(`${documentos.length} documentos na pasta digital, todos já baixados antes: nada novo.`);
+        return { semNovidades: true };
+      }
+      const incremental = documentos.length > 0 && novos.length < documentos.length ? await this.marcarNovos(pasta, novos) : null;
+      if (incremental) {
+        registrar(`${novos.length} documentos novos de ${documentos.length} na pasta digital. Baixando só os novos.`);
+        pecas = incremental;
+      } else {
+        // Cada etapa espera a tela reagir à anterior: clicar em sequência, sem esperar, deixa a pasta digital no meio do caminho.
+        await clicar(ambiente, pasta, TELA.pasta.selecionarTodos, "selecionar todos os documentos da pasta digital", "e-SAJ", 60_000);
+        pecas = documentos.length ? documentos.map(chaveDoDocumentoEsaj) : undefined;
+      }
       await pasta.locator(TELA.pasta.marcados).first().waitFor({ state: "attached", timeout: 30_000 });
       await pasta.waitForTimeout(1_000);
       await clicar(ambiente, pasta, TELA.pasta.pedirPdf, "pedir o PDF dos autos", "e-SAJ");
@@ -312,9 +367,10 @@ class ConectorEsaj implements Conector {
       throw new FalhaDoConector(`O download dos autos não terminou na pasta digital. Diagnóstico guardado em ${captura}.`);
     }
     await conferirPdf(destino);
+    return { pecas };
   }
 
-  async baixar(ambiente: Ambiente, pedido: Pedido, destino: string): Promise<void> {
+  async baixar(ambiente: Ambiente, pedido: Pedido, destino: string): Promise<ResultadoDoDownload> {
     const cnj = lerCnj(pedido.cnj);
     if (!cnj) throw new FalhaDoConector(`Número de processo inválido: ${pedido.cnj}.`);
     await this.entrar(ambiente);
@@ -322,7 +378,7 @@ class ConectorEsaj implements Conector {
     if ((await this.emSegredo(ambiente.pagina)) && !pedido.segredoLiberado) throw new SegredoDeJustica();
     const { pasta, novaJanela } = await this.abrirPasta(ambiente);
     try {
-      await this.baixarDaPasta(ambiente, pasta, destino);
+      return await this.baixarDaPasta(ambiente, pasta, destino, pedido.pecasBaixadas);
     } finally {
       if (novaJanela) await pasta.close().catch(() => undefined);
     }

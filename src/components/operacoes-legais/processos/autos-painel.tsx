@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Bot, FileText, Hourglass, LoaderCircle, Paperclip, ShieldAlert, Sparkles, Trash2, X } from "lucide-react";
+import { Bot, FileText, Hourglass, LoaderCircle, Paperclip, RefreshCw, ShieldAlert, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AutosDoProcesso, DocumentoAutos, MotivoEspera, PedidoAutos } from "@/lib/processos/autos-types";
 import { ROTULO_SISTEMA, type SistemaTribunal } from "@/lib/processos/tribunais";
@@ -157,7 +157,7 @@ export function PainelAutos({
       onAutos(resposta.autos);
       setLiberar(false);
       setConfirmaSegredo(false);
-      onFeito("Pedido enviado ao robô. O PDF aparece aqui quando ele terminar.");
+      onFeito(jaBaixou ? "Atualização pedida ao robô: ele baixa só o que entrou desde o último download, e a IA lê só o novo." : "Pedido enviado ao robô. O PDF aparece aqui quando ele terminar.");
     });
 
   const decidirPedido = (pedido: PedidoAutos, acao: "cancelar" | "liberar_segredo") =>
@@ -168,6 +168,10 @@ export function PainelAutos({
     });
 
   const sistema = robo.sistema ? ROTULO_SISTEMA[robo.sistema as SistemaTribunal] : null;
+  // Já veio PDF pelo robô: o próximo pedido é uma atualização (só o que entrou desde então; a IA lê só o novo).
+  const jaBaixou = documentos.some((documento) => documento.origem === "robo");
+  // Último pedido concluído sem PDF novo depois dele: o tribunal não tinha nada novo.
+  const semNovidade = ultimo?.status === "concluido" && !documentos.some((documento) => documento.origem === "robo" && documento.criadoEm >= ultimo.criadoEm);
 
   return (
     <Painel>
@@ -176,8 +180,15 @@ export function PainelAutos({
         {pedidoVisivel ? <LinhaDoPedido pedido={pedidoVisivel} ocupado={ocupado === "pedido"} onAcao={(acao) => void decidirPedido(pedidoVisivel, acao)} /> : null}
         <div className="flex flex-wrap gap-2">
           {robo.disponivel && !pedidoAberto ? (
-            <Button size="sm" variant="outline" disabled={Boolean(ocupado)} onClick={() => (autos.segredoJustica ? setLiberar(true) : void pedir(false))}>
-              {ocupado === "pedir" ? <LoaderCircle className="animate-spin" /> : <Bot />} {pedidoVisivel?.status === "erro" ? "Pedir de novo ao robô" : "Pedir ao robô"}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={Boolean(ocupado)}
+              onClick={() => (autos.segredoJustica ? setLiberar(true) : void pedir(false))}
+              title={jaBaixou ? "O robô baixa só o que entrou no processo desde o último download; a IA lê só o novo e atualiza a síntese." : undefined}
+            >
+              {ocupado === "pedir" ? <LoaderCircle className="animate-spin" /> : jaBaixou ? <RefreshCw /> : <Bot />}{" "}
+              {pedidoVisivel?.status === "erro" ? "Pedir de novo ao robô" : jaBaixou ? "Atualizar autos" : "Pedir ao robô"}
             </Button>
           ) : null}
           <Button size="sm" variant="outline" disabled={Boolean(ocupado) || Boolean(lendo)} onClick={() => arquivoRef.current?.click()}>
@@ -197,6 +208,7 @@ export function PainelAutos({
             }}
           />
         </div>
+        {semNovidade && ultimo ? <p className="text-xs text-emerald-800">Atualizado em {formatarDataHora(ultimo.concluidoEm ?? ultimo.atualizadoEm)}: nada novo no tribunal desde o último download.</p> : null}
         <p className="text-xs text-muted-foreground">{robo.disponivel ? `Robô disponível: ${sistema} do ${robo.tribunal}.` : robo.motivo}</p>
       </div>
 
