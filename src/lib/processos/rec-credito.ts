@@ -380,7 +380,7 @@ export function linhaDaCarteira(dados: DadosDoProcessoNaCarteira, itens: ItensRe
 }
 
 export interface LinhaDaMemoria {
-  tipo: "acao" | "guia" | "levantamento";
+  tipo: "acao" | "guia" | "levantamento" | "multa" | "honorarios";
   descricao: string;
   /** Início da conta desta linha (distribuição, pagamento da guia, levantamento). */
   data: string;
@@ -393,6 +393,35 @@ export interface LinhaDaMemoria {
   total: number;
   /** +1 soma ao débito; −1 abate (valor levantado). */
   sinal: 1 | -1;
+  /** Multa e honorários: o percentual aplicado sobre `valor` (a base). */
+  percentual?: number;
+}
+
+/** Honorários e multa do cálculo: os do cadastro ou, vazios, os padrões pela ação. */
+export interface Encargos {
+  honorarios: number;
+  multa: number;
+  /** De onde vieram: "padrão pela ação (…)" ou "informado na ficha". */
+  origem: string;
+}
+
+/**
+ * Padrões do CPC pela ação: cumprimento de sentença com o devedor intimado que não pagou (art. 523, §1º: multa
+ * de 10% e honorários de 10%); execução de título extrajudicial (art. 827: honorários de 10%). Nas demais ações
+ * (fase de conhecimento), nada até haver execução. Percentual informado na ficha vale por cima do padrão.
+ */
+export function encargosDoProcesso(acao: unknown, honorarios: unknown, multa: unknown): Encargos {
+  const texto = typeof acao === "string" ? acao : "";
+  const padrao = /cumprimento\s+de\s+senten/i.test(texto)
+    ? { honorarios: 10, multa: 10, origem: "padrão do cumprimento de sentença (CPC art. 523, §1º): devedor intimado que não pagou" }
+    : /execu[cç][aã]o\s+de\s+t[ií]tulo\s+extrajudicial/i.test(texto)
+      ? { honorarios: 10, multa: 0, origem: "padrão da execução de título extrajudicial (CPC art. 827)" }
+      : { honorarios: 0, multa: 0, origem: "sem honorários nem multa de execução para esta ação" };
+  const numero = (valor: unknown) => (valor === null || valor === undefined || valor === "" || !Number.isFinite(Number(valor)) ? null : Number(valor));
+  const h = numero(honorarios);
+  const m = numero(multa);
+  if (h === null && m === null) return padrao;
+  return { honorarios: h ?? padrao.honorarios, multa: m ?? padrao.multa, origem: "informados na ficha do processo" };
 }
 
 /** Memória do cálculo do valor da ação atualizado, para a ficha e a janela de conferência. */
@@ -400,8 +429,9 @@ export interface MemoriaDoCalculo {
   /** Até quando a conta foi (hoje, ou o último dia do mês com índice publicado). */
   ate: string;
   linhas: LinhaDaMemoria[];
-  /** Valor da ação + guias − levantamentos, tudo atualizado até `ate` (nunca negativo). */
+  /** Valor da ação − levantamentos + multa + honorários + guias, tudo atualizado até `ate` (nunca negativo). */
   total: number;
+  encargos: Encargos;
   avisos: string[];
 }
 
@@ -409,17 +439,28 @@ export const CRITERIO_DA_MEMORIA = [
   "Correção monetária pela Tabela Prática do TJSP (Lei 14.905/2024): índice do mês final ÷ índice do mês inicial.",
   "Juros de mora simples sobre o valor corrigido: 1% ao mês até 27/08/2024 e, depois, a taxa legal (Selic menos correção), pro rata pelos dias.",
   "Valor da ação: correção e juros desde a distribuição.",
-  "Guias pagas (despesas a cobrar do devedor): correção desde o pagamento, sem juros.",
   "Valores levantados: abatidos pelo mesmo critério da dívida (correção e juros desde o levantamento), o que equivale a descontá-los na data em que foram recebidos.",
+  "Multa (CPC art. 523, §1º) e honorários da execução: percentual sobre a dívida atualizada, já abatidos os levantamentos; os honorários não incidem sobre a multa.",
+  "Guias pagas (despesas a cobrar do devedor): correção desde o pagamento, sem juros, somadas depois dos honorários.",
 ];
 
 type Lancamentos = Pick<Lancamento, "tipo" | "data" | "valor" | "descricao">[];
+
+const percentualTexto = (valor: number) => `${valor.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
 
 /**
  * O valor da ação atualizado pelo cálculo do TJSP até hoje, somando as guias pagas e abatendo os valores
  * levantados, com a memória de cada linha. Nulo sem valor da ação, sem distribuição ou sem índices.
  */
-export function memoriaDoValorDaAcao(tabela: TabelaTjsp | null, valor: unknown, distribuicao: unknown, lancamentos: Lancamentos, hoje: string, indicesAte: string | null): MemoriaDoCalculo | null {
+export function memoriaDoValorDaAcao(
+  tabela: TabelaTjsp | null,
+  valor: unknown,
+  distribuicao: unknown,
+  lancamentos: Lancamentos,
+  hoje: string,
+  indicesAte: string | null,
+  encargos: Encargos = { honorarios: 0, multa: 0, origem: "" }
+): MemoriaDoCalculo | null {
   const base = Number(valor);
   const desde = typeof distribuicao === "string" ? distribuicao.slice(0, 10) : "";
   if (!tabela || !(base > 0) || !DATA.test(desde)) return null;
@@ -454,13 +495,27 @@ export function memoriaDoValorDaAcao(tabela: TabelaTjsp | null, valor: unknown, 
   const acao = linha("acao", "Valor da ação", desde, base, true);
   if (!acao) return null;
   linhas.push(acao);
-  for (const item of [...lancamentos].sort((a, b) => a.data.localeCompare(b.data))) {
-    if (!DATA.test(item.data) || item.data > ate || !(item.valor > 0)) continue;
-    const descricao = item.tipo === "guia_paga" ? `Guia paga${item.descricao ? `: ${item.descricao}` : ""}` : `Valor levantado${item.descricao ? `: ${item.descricao}` : ""}`;
-    const calculada = linha(item.tipo === "guia_paga" ? "guia" : "levantamento", descricao, item.data, item.valor, item.tipo === "levantamento");
+  const validos = [...lancamentos].sort((a, b) => a.data.localeCompare(b.data)).filter((item) => DATA.test(item.data) && item.data <= ate && item.valor > 0);
+  const descrever = (item: Lancamentos[number]) => `${item.tipo === "guia_paga" ? "Guia paga" : "Valor levantado"}${item.descricao ? `: ${item.descricao}` : ""}`;
+  // Dívida: ação atualizada menos os levantamentos; sobre ela, a multa e os honorários.
+  for (const item of validos.filter((lancamento) => lancamento.tipo === "levantamento")) {
+    const calculada = linha("levantamento", descrever(item), item.data, item.valor, true);
     if (calculada) linhas.push(calculada);
   }
-  const soma = linhas.reduce((total, item) => total + item.sinal * item.total, 0);
-  if (soma < 0) avisos.push("Os valores levantados, atualizados, superam o débito: o saldo fica em zero.");
-  return { ate, linhas, total: Math.max(0, Math.round(soma * 100) / 100), avisos };
+  const divida = Math.round(linhas.reduce((total, item) => total + item.sinal * item.total, 0) * 100) / 100;
+  if (divida < 0) avisos.push("Os valores levantados, atualizados, superam o débito: o saldo fica em zero.");
+  const baseDosEncargos = Math.max(0, divida);
+  const encargo = (tipo: "multa" | "honorarios", descricao: string, percentual: number) => {
+    if (!(percentual > 0) || !(baseDosEncargos > 0)) return;
+    const total = Math.round(baseDosEncargos * percentual) / 100;
+    linhas.push({ tipo, descricao, data: ate, valor: baseDosEncargos, fatorCorrecao: 1, corrigido: baseDosEncargos, jurosPercentual: 0, juros: 0, total, sinal: 1, percentual });
+  };
+  encargo("multa", `Multa de ${percentualTexto(encargos.multa)} (CPC art. 523, §1º)`, encargos.multa);
+  encargo("honorarios", `Honorários da execução de ${percentualTexto(encargos.honorarios)}`, encargos.honorarios);
+  for (const item of validos.filter((lancamento) => lancamento.tipo === "guia_paga")) {
+    const calculada = linha("guia", descrever(item), item.data, item.valor, false);
+    if (calculada) linhas.push(calculada);
+  }
+  const encargosSomados = linhas.filter((item) => item.tipo === "multa" || item.tipo === "honorarios" || item.tipo === "guia").reduce((total, item) => total + item.total, 0);
+  return { ate, linhas, total: Math.round((baseDosEncargos + encargosSomados) * 100) / 100, avisos, encargos };
 }

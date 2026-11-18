@@ -37,7 +37,7 @@ export function ValorAtualizado({ memoria, vios, rotulo, className }: { memoria:
               <Calculator className="size-4 text-[#3e84a8]" aria-hidden /> Memória do cálculo
             </DialogTitle>
             <DialogDescription>
-              Valor da ação atualizado pelo cálculo do TJSP até {formatarData(memoria.ate)}, com as guias pagas e abatidos os valores levantados.
+              Valor da ação atualizado pelo cálculo do TJSP até {formatarData(memoria.ate)}, abatidos os valores levantados, com multa, honorários e guias pagas.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
@@ -56,13 +56,14 @@ export function ValorAtualizado({ memoria, vios, rotulo, className }: { memoria:
                   {memoria.linhas.map((linha, indice) => (
                     <tr key={indice} className={linha.sinal < 0 ? "text-emerald-800" : undefined}>
                       <td className="px-3 py-2">
-                        {linha.sinal < 0 ? "(−) " : linha.tipo === "guia" ? "(+) " : ""}
+                        {linha.sinal < 0 ? "(−) " : linha.tipo === "acao" ? "" : "(+) "}
                         {linha.descricao}
+                        {linha.percentual !== undefined ? <span className="block text-[11px] text-muted-foreground">sobre a dívida atualizada de {formatarReal(linha.valor)}</span> : null}
                       </td>
-                      <td className="px-3 py-2 tabular-nums">{formatarData(linha.data)}</td>
+                      <td className="px-3 py-2 tabular-nums">{linha.percentual !== undefined ? "—" : formatarData(linha.data)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatarReal(linha.valor)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fator(linha.fatorCorrecao)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{formatarReal(linha.corrigido)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{linha.percentual !== undefined ? "—" : fator(linha.fatorCorrecao)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{linha.percentual !== undefined ? "—" : formatarReal(linha.corrigido)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {linha.jurosPercentual ? (
                           <>
@@ -91,6 +92,9 @@ export function ValorAtualizado({ memoria, vios, rotulo, className }: { memoria:
               </table>
             </div>
             {memoria.avisos.length ? <Aviso tom="alerta">{memoria.avisos.join("\n")}</Aviso> : null}
+            <p className="text-xs text-muted-foreground">
+              Honorários de {memoria.encargos.honorarios.toLocaleString("pt-BR")}% e multa de {memoria.encargos.multa.toLocaleString("pt-BR")}%: {memoria.encargos.origem}. Se o devedor pagou no prazo ou o juiz fixou outro percentual, a conta ainda não tem onde ajustar.
+            </p>
             {vios ? <p className="text-xs text-muted-foreground">No VIOS, o valor da ação atualizado está em {vios}.</p> : null}
             <div>
               <p className="text-xs font-semibold uppercase text-[#285f7a]">Critério</p>

@@ -8,7 +8,7 @@ import { carregarCatalogoProcessos } from "@/lib/vistagem/sama";
 import { conferirEscolhas } from "./opcoes-server";
 import { tabelaTjspEmCache } from "./indices-server";
 import { ITENS_SANEAMENTO, calcularPreenchimento } from "./preenchimento";
-import { memoriaDoValorDaAcao } from "./rec-credito";
+import { encargosDoProcesso, memoriaDoValorDaAcao } from "./rec-credito";
 import { db, emLotes, falhou, gravacaoSimulada, type Ator } from "./server";
 import type { Alteracao, Contato, Endereco, EnvioVios, OrigemAlteracao, Parte, ProcessoDetalhe, ProcessoResumo, StatusEnvio } from "./types";
 
@@ -231,7 +231,8 @@ export async function detalharProcesso(id: string): Promise<ProcessoDetalhe> {
       valores.data_distribuicao,
       (lancamentos.data ?? []).map((item) => ({ tipo: item.tipo as "guia_paga" | "levantamento", data: item.data as string, valor: Number(item.valor), descricao: (item.descricao as string | null) ?? null })),
       hoje,
-      indices.indicesAte
+      indices.indicesAte,
+      encargosDoProcesso(valores.acao, valores.honorarios_percentual, valores.multa_percentual)
     ),
     valores,
     partes,

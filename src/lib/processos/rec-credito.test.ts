@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TabelaTjsp } from "./calculo-tjsp";
-import { colunasDoItem, lerValor, linhaDaCarteira, memoriaDoValorDaAcao, processoEncerrado, situacaoDaCitacao, type Citacao, type DadosDoProcessoNaCarteira, type ItensRecCredito } from "./rec-credito";
+import { colunasDoItem, encargosDoProcesso, lerValor, linhaDaCarteira, memoriaDoValorDaAcao, processoEncerrado, situacaoDaCitacao, type Citacao, type DadosDoProcessoNaCarteira, type ItensRecCredito } from "./rec-credito";
 
 const tabela = new TabelaTjsp([
   { mes: "2023-01-01", tabelaPratica: 100, taxaLegal: null },
@@ -131,12 +131,12 @@ describe("memória do valor da ação atualizado", () => {
     )!;
     expect(memoria.linhas.map((linha) => [linha.tipo, linha.sinal, linha.total])).toEqual([
       ["acao", 1, 1122],
-      // Guia: 100 × 110/101, sem juros.
-      ["guia", 1, 108.91],
       // Levantamento: abatido pelo mesmo critério da dívida (correção e juros desde 15/02).
       ["levantamento", -1, expect.any(Number)],
+      // Guia: 100 × 110/101, sem juros.
+      ["guia", 1, 108.91],
     ]);
-    const levantado = memoria.linhas[2];
+    const levantado = memoria.linhas[1];
     expect(levantado.juros).toBeGreaterThan(0);
     expect(memoria.total).toBe(Math.round((1122 + 108.91 - levantado.total) * 100) / 100);
   });
@@ -151,5 +151,24 @@ describe("memória do valor da ação atualizado", () => {
     const memoria = memoriaDoValorDaAcao(tabela, 100, "2023-01-15", [{ tipo: "levantamento", data: "2023-01-20", valor: 500, descricao: null }], "2023-03-15", "2023-03-01")!;
     expect(memoria.total).toBe(0);
     expect(memoria.avisos[0]).toMatch(/superam o débito/);
+  });
+
+  it("multa e honorários sobre a dívida já abatida, sem honorários sobre a multa, e guias depois", () => {
+    const encargos = encargosDoProcesso("Cumprimento de sentença", null, null);
+    expect(encargos).toMatchObject({ honorarios: 10, multa: 10 });
+    const memoria = memoriaDoValorDaAcao(tabela, 1000, "2023-01-15", [{ tipo: "guia_paga", data: "2023-02-15", valor: 100, descricao: null }], "2023-03-15", "2023-03-01", encargos)!;
+    expect(memoria.linhas.map((linha) => [linha.tipo, linha.total])).toEqual([
+      ["acao", 1122],
+      ["multa", 112.2],
+      ["honorarios", 112.2],
+      ["guia", 108.91],
+    ]);
+    expect(memoria.total).toBe(1455.31);
+  });
+
+  it("padrões pela ação e percentual informado por cima", () => {
+    expect(encargosDoProcesso("Execução de Título Extrajudicial", null, null)).toMatchObject({ honorarios: 10, multa: 0 });
+    expect(encargosDoProcesso("Monitória", null, null)).toMatchObject({ honorarios: 0, multa: 0 });
+    expect(encargosDoProcesso("Cumprimento de sentença", 15, 0)).toMatchObject({ honorarios: 15, multa: 0, origem: "informados na ficha do processo" });
   });
 });
