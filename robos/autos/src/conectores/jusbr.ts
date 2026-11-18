@@ -5,6 +5,7 @@ import type { Pedido } from "../fila.ts";
 import { conferirPdf } from "./comum.ts";
 import {
   CONSULTA_JUSBR,
+  capaDaFicha,
   digitosDoCnj,
   documentosDaFicha,
   documentosNovosJusbr,
@@ -203,9 +204,11 @@ export class ConectorJusbr implements Conector {
     const documentos = documentosDaFicha(fichas);
     if (!documentos.length) throw new FalhaDoConector(`${pedido.cnj}: o Jus.br não trouxe documentos deste processo (integração incompleta do tribunal).`);
     const novos = documentosNovosJusbr(documentos, pedido.pecasBaixadas);
+    // A capa e os movimentos vão junto (o ORQESTRAI grava a capa e a linha do tempo), com ou sem peça nova.
+    const capa = capaDaFicha(fichas) ?? undefined;
     if (!novos.length) {
       ambiente.registrar(`${documentos.length} documentos no Jus.br, todos já baixados antes: nada novo.`);
-      return { semNovidades: true };
+      return { semNovidades: true, capa };
     }
     ambiente.registrar(`${novos.length} documentos ${novos.length < documentos.length ? `novos de ${documentos.length} ` : ""}no Jus.br (${fichas.map((f) => f.siglaTribunal).join(", ")}). Baixando um a um.`);
     // Processo grande sai em partes (o ORQESTRAI aceita até 200 MB por arquivo): cada parte fecha perto de
@@ -240,7 +243,7 @@ export class ConectorJusbr implements Conector {
     const paginas = partes.reduce((total, parte) => total + parte.paginas, 0);
     ambiente.registrar(`Jus.br: ${contagem.pdf} em PDF, ${contagem.texto} pelo texto, ${contagem.falhou} sem arquivo; ${paginas} páginas${partes.length > 1 ? ` em ${partes.length} partes` : ""}.`);
     const pecas = partes.flatMap((parte) => parte.pecas);
-    return partes.length > 1 ? { pecas, arquivos: partes.map(({ caminho, pecas: daParte }) => ({ caminho, pecas: daParte })) } : { pecas };
+    return partes.length > 1 ? { pecas, capa, arquivos: partes.map(({ caminho, pecas: daParte }) => ({ caminho, pecas: daParte })) } : { pecas, capa };
   }
 
   async inspecionar(ambiente: Ambiente, cnj: string): Promise<void> {

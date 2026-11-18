@@ -121,7 +121,7 @@ export type ValorSugestao =
 
 /** Sugestão pronta para gravar em proc_sugestoes (ainda sem id nem decisão). */
 /** De onde veio a sugestão: IA lendo os autos, DataJud (API pública do CNJ) ou o próprio número CNJ. */
-export type FonteSugestao = "autos" | "datajud" | "cnj";
+export type FonteSugestao = "autos" | "datajud" | "cnj" | "jusbr";
 
 export interface SugestaoNova {
   /** Ausente: "autos" (as sugestões da leitura do PDF). */

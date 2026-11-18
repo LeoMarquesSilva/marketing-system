@@ -1,6 +1,6 @@
 /** Linha do tempo do processo: tipos e regras sem servidor (a ficha usa direto). */
 
-export type FonteAndamento = "datajud" | "vios" | "manual" | "prazo" | "providencia";
+export type FonteAndamento = "datajud" | "jusbr" | "vios" | "manual" | "prazo" | "providencia";
 
 export interface Andamento {
   id: string;
@@ -22,6 +22,7 @@ export interface LinhaDoTempo {
 }
 
 export const FONTES_ANDAMENTO: { valor: FonteAndamento; rotulo: string; descricao: string }[] = [
+  { valor: "jusbr", rotulo: "Tribunal (Jus.br)", descricao: "Movimentos do tribunal pela consulta unificada do CNJ (Jus.br), lidos quando o robô baixa os autos." },
   { valor: "datajud", rotulo: "Tribunal (DataJud)", descricao: "Movimentos que o tribunal enviou ao DataJud do CNJ." },
   { valor: "vios", rotulo: "VIOS", descricao: "Último andamento manual cadastrado no VIOS." },
   { valor: "prazo", rotulo: "Prazos", descricao: "Prazos do processo (chegam com o módulo de prazos)." },

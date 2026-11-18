@@ -14,9 +14,9 @@ import { aplicarNaParte, entradaDaPessoa } from "./sugestoes";
 import { campoPorChave, textoDoValor } from "./campos";
 import type { OrigemAlteracao, ProcessoDetalhe } from "./types";
 
-/** No histórico: "ia" para o que veio dos autos; "datajud" ou "cnj" para a capa das fontes oficiais. */
+/** No histórico: "ia" para o que veio dos autos; "datajud", "jusbr" ou "cnj" para a capa das fontes oficiais. */
 function origemDaSugestao(sugestao: Sugestao): OrigemAlteracao {
-  return sugestao.fonte === "datajud" || sugestao.fonte === "cnj" ? sugestao.fonte : "ia";
+  return sugestao.fonte === "datajud" || sugestao.fonte === "cnj" || sugestao.fonte === "jusbr" ? sugestao.fonte : "ia";
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

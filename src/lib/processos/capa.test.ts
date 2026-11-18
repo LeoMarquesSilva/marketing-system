@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ValorDeCampo } from "./autos-types";
-import { cidadeDoOrgao, dataDoDataJud, indiceDoDataJud, lerCnjDaCapa, orgaoSemComarca, registroAtual, separarVara, sugestoesDaCapa, ultimoMovimento, type RegistroDataJud } from "./capa";
+import { andamentosDoDataJud, cidadeDoOrgao, dataDoDataJud, indiceDoDataJud, lerCnjDaCapa, orgaoSemComarca, registroAtual, registrosDoJusbr, separarVara, sugestoesDaCapa, ultimoMovimento, type RegistroDataJud } from "./capa";
 
 // Números e órgãos inventados.
 const PRIMEIRO_GRAU = "1012345-67.2024.8.26.0114";
@@ -127,3 +127,46 @@ describe("sugestoesDaCapa", () => {
     expect(sugestoes.find((item) => item.campo === "segredo_justica")?.valor).toEqual({ valor: true });
   });
 });
+
+describe("capa pelo Jus.br", () => {
+  const capa = {
+    siglaTribunal: "TJSP",
+    nivelSigilo: 0,
+    tramitacoes: [
+      {
+        grau: "G1",
+        dataHoraAjuizamento: "2024-03-15T10:30:00",
+        classe: "Monitória",
+        orgaoJulgador: "4ª Vara Cível da Comarca de Vila Modelo",
+        cidade: "Vila Modelo",
+        movimentos: [
+          { dataHora: "2026-09-01T10:00:00", descricao: "Conclusos para despacho", codigo: null, complementos: ["urgente"] },
+          { dataHora: "2024-03-15T10:30:00", descricao: "Distribuído por sorteio", codigo: null, complementos: [] },
+        ],
+      },
+    ],
+  };
+
+  it("vira registro do DataJud, com a cidade da ficha", () => {
+    const { registros, municipio } = registrosDoJusbr(capa);
+    expect(municipio).toBe("Vila Modelo");
+    expect(registros[0]).toMatchObject({ grau: "G1", dataAjuizamento: "2024-03-15T10:30:00", classe: { nome: "Monitória" }, nivelSigilo: 0 });
+    expect(registros[0].movimentos?.[0]).toEqual({ codigo: null, nome: "Conclusos para despacho", dataHora: "2026-09-01T10:00:00", complementosTabelados: [{ nome: "urgente" }] });
+  });
+
+  it("sugestões e andamentos com a origem Jus.br", () => {
+    const { registros, municipio } = registrosDoJusbr(capa);
+    const sugestoes = sugestoesDaCapa({ valores: vazio(), datajud: registros, municipio, consultadoEm: "18/11/2026", fonteOficial: "jusbr" });
+    const cidade = sugestoes.find((item) => item.campo === "cidade");
+    expect(cidade).toMatchObject({ fonte: "jusbr", valor: { valor: "Vila Modelo" } });
+    expect(cidade?.trecho).toContain("Jus.br (TJSP, 1º grau), 18/11/2026");
+    expect(sugestoes.find((item) => item.campo === "justica")?.fonte).toBe("cnj");
+    const andamentos = andamentosDoDataJud(registros, "jusbr");
+    expect(andamentos.map((item) => [item.fonte, item.titulo])).toEqual([
+      ["jusbr", "Conclusos para despacho"],
+      ["jusbr", "Distribuído por sorteio"],
+    ]);
+    expect(andamentos[0].chave.startsWith("jusbr|G1|")).toBe(true);
+  });
+});
+

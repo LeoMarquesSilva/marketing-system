@@ -46,6 +46,10 @@ interface TramitacaoJusbr {
   documentos?: DocumentoJusbr[];
   tribunal?: { sigla?: string };
   grau?: { sigla?: string };
+  dataHoraAjuizamento?: string;
+  classe?: { codigo?: number; descricao?: string }[];
+  distribuicao?: { orgaoJulgador?: { nome?: string }[]; orgaoJulgadorLocal?: { nome?: string; jurisdicaoLocal?: { nome?: string } } }[];
+  movimentos?: { dataHora?: string; descricao?: string; tipo?: { codigo?: number }; complementos?: { nome?: string; valor?: { descricao?: string; valor?: string } }[] }[];
 }
 
 export interface FichaJusbr {
@@ -102,6 +106,56 @@ export function documentosDaFicha(fichas: FichaJusbr[]): DocumentoComChave[] {
 export function documentosNovosJusbr<T extends DocumentoComChave>(documentos: T[], baixadas: readonly string[] | undefined): T[] {
   const ja = new Set((baixadas ?? []).filter((chave) => chave.startsWith("jusbr:")));
   return ja.size ? documentos.filter((documento) => !ja.has(documento.chave)) : documentos;
+}
+
+/** A capa que o robô envia ao ORQESTRAI junto com os autos (o formato do CapaDoJusbr de lá). */
+export interface CapaDoJusbr {
+  siglaTribunal: string | null;
+  nivelSigilo: number | null;
+  tramitacoes: {
+    grau: string | null;
+    dataHoraAjuizamento: string | null;
+    classe: string | null;
+    orgaoJulgador: string | null;
+    cidade: string | null;
+    movimentos: { dataHora: string | null; descricao: string | null; codigo: number | null; complementos: string[] }[];
+  }[];
+}
+
+/**
+ * Capa e movimentos de cada tramitação (1º grau, 2º grau…), sem partes nem documentos. A mesma tramitação pode vir
+ * como atual e na lista: entra uma vez (mesmo grau e ajuizamento).
+ */
+export function capaDaFicha(fichas: FichaJusbr[]): CapaDoJusbr | null {
+  const tramitacoes: CapaDoJusbr["tramitacoes"] = [];
+  const vistas = new Set<string>();
+  for (const ficha of fichas) {
+    for (const tramitacao of [ficha.tramitacaoAtual, ...(ficha.tramitacoes ?? [])]) {
+      if (!tramitacao) continue;
+      const chave = `${tramitacao.grau?.sigla ?? ""}|${tramitacao.dataHoraAjuizamento ?? ""}`;
+      if (vistas.has(chave)) continue;
+      vistas.add(chave);
+      const distribuicao = tramitacao.distribuicao?.[0];
+      tramitacoes.push({
+        grau: tramitacao.grau?.sigla ?? null,
+        dataHoraAjuizamento: tramitacao.dataHoraAjuizamento ?? null,
+        classe: tramitacao.classe?.[0]?.descricao ?? null,
+        orgaoJulgador: distribuicao?.orgaoJulgador?.[0]?.nome ?? distribuicao?.orgaoJulgadorLocal?.nome ?? null,
+        cidade: distribuicao?.orgaoJulgadorLocal?.jurisdicaoLocal?.nome ?? null,
+        movimentos: (tramitacao.movimentos ?? [])
+          .filter((movimento) => movimento.dataHora && movimento.descricao)
+          .slice(0, 5000)
+          .map((movimento) => ({
+            dataHora: movimento.dataHora ?? null,
+            descricao: (movimento.descricao ?? "").slice(0, 1000),
+            codigo: typeof movimento.tipo?.codigo === "number" ? movimento.tipo.codigo : null,
+            complementos: (movimento.complementos ?? []).map((item) => (item.valor?.descricao ?? item.valor?.valor ?? item.nome ?? "").slice(0, 300)).filter(Boolean).slice(0, 20),
+          })),
+      });
+    }
+  }
+  if (!tramitacoes.length) return null;
+  return { siglaTribunal: fichas[0]?.siglaTribunal ?? null, nivelSigilo: fichas[0]?.nivelSigilo ?? null, tramitacoes: tramitacoes.slice(0, 10) };
 }
 
 /** Endereço absoluto de um link da ficha ("/processos/.../binario"). */
