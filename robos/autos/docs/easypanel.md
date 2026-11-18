@@ -23,7 +23,7 @@ Estudo de 17/11/2026 (2 fatores pelo painel em 18/11/2026) sobre rodar o robô d
 | `certificado-sso.tjsp.jus.br` pede certificado de cliente já no aperto de mão TLS, aceita autoridades da ICP-Brasil, e tem certificado de servidor numa cadeia pública (o Node confia sem configuração extra) | **Verificado** com uma conexão TLS pública ao endereço, sem login. `sso.tjsp.jus.br` e `esaj.tjsp.jus.br` não pedem certificado de cliente. |
 | `certificado-eproc-sso.tjrj.jus.br` (login por certificado do eproc do TJRJ) pede certificado de cliente no aperto de mão TLS | **Verificado** em 18/11/2026 com uma conexão TLS pública, sem login (o servidor manda o pedido de certificado, sem lista de autoridades). |
 | `www7.tjrj.jus.br/autenticadorCertDigital` (login por certificado do DCP) pede o certificado de cliente por **renegociação** TLS 1.2, depois do aperto de mão | **Verificado** que o servidor renegocia (conexão pública, sem login). **Não verificado** se o intermediário do Playwright atende a renegociação com o A1: testar no servidor antes de contar com isso. |
-| Senha errada e `.pfx` com cifra antiga (RC2) | **Testado aqui**: o robô recusa com mensagem clara e sem mostrar a senha. Um `.pfx` exportado com RC2 não abre no Node; com AES-256, abre. |
+| Senha errada e `.pfx` com cifra antiga (RC2) | **Testado aqui**: senha errada é recusada com mensagem clara e sem mostrar a senha. O `.pfx` exportado com RC2 (comum no Windows) só abre no Node com o provedor legado do OpenSSL; o robô (`NODE_OPTIONS` no `Dockerfile`) e o painel (`--openssl-legacy-provider`) rodam com ele, e o arquivo abre sem reexportar. |
 | Contrato do painel (pasta, `certificado.json`, senha cifrada) e troca do certificado | **Testado aqui** (teste automático em `src/certificado.test.ts` e teste local de ponta a ponta). |
 | Código TOTP gerado pelo robô (RFC 6238) e contrato `segundo-fator.json` | **Testado aqui** com os vetores das RFCs 4226 e 6238 e segredos fictícios (`src/segundo-fator.test.ts`). |
 | Formato do 2FA do eproc: 6 dígitos, novo código a cada 30 s, aplicativos Google/Microsoft Authenticator | **Verificado nos manuais** do TJSP (6 dígitos, conta "eproc TJSP" no aplicativo) e do TJRJ (troca a cada 30 s). O algoritmo (SHA-1, padrão desses aplicativos) é inferência: se o QR code trouxer outro, grave a URI `otpauth://` inteira no painel e o robô usa os parâmetros dela. |
@@ -82,7 +82,7 @@ Por que pesar tanto: quem entra na tela remota vê o navegador **logado como o a
 - O SSO do eproc pede o certificado no endereço `certificado-sso.tjsp.jus.br`, já no aperto de mão TLS (conferido). É exatamente o caso do `clientCertificates` do Playwright: ele recebe o `.pfx` e a senha e apresenta o certificado só às origens indicadas. O padrão do robô é `CERTIFICADO_ORIGENS=https://certificado-sso.tjsp.jus.br`; os demais sites passam direto, sem certificado.
 - Como funciona por dentro: o Playwright põe um intermediário local entre o navegador e a internet. Para a origem do certificado, ele abre a conexão com o tribunal apresentando o `.pfx` e confere o certificado do servidor do tribunal. O Chrome não mostra a lista de certificados.
 - Depois do certificado, o eproc pede o código de 2 fatores. O robô gera o código com o segredo do TOTP cadastrado no painel ([contrato](#segredo-do-totp-2-fatores)); sem ele, busca no webhook do n8n (`ROBO_2FA_WEBHOOK_*`); sem os dois, espera a pessoa pela tela remota.
-- **Formato do .pfx:** o Node (OpenSSL 3) não abre `.pfx` exportado com a cifra antiga RC2, comum em exportações antigas. O robô avisa ("cifra antiga"). A correção é exportar de novo com AES-256; o painel pode fazer isso sozinho ao receber o arquivo (ver o contrato).
+- **Formato do .pfx:** o `.pfx` exportado pelo Windows costuma usar a cifra antiga RC2, que o Node (OpenSSL 3) só abre com o provedor legado. O contêiner do robô e o painel rodam com `--openssl-legacy-provider` (18/11/2026: o primeiro certificado enviado ao painel veio assim), e o arquivo é aceito como está.
 
 ### e-SAJ: Web Signer
 
@@ -147,7 +147,7 @@ openssl pkey -in robo-certificado.key -pubout -out robo-certificado.pub
 1. Abrir o PKCS#12 com a senha (em Python: `cryptography.hazmat.primitives.serialization.pkcs12.load_key_and_certificates`; em Node, uma biblioteca como `node-forge`). Senha errada: recusar com "A senha não abre o certificado".
 2. Conferir que há chave privada e certificado, e que o certificado não venceu.
 3. Mostrar a quem enviou, sem expor a chave: titular (CN do certificado), emissor, início e fim da validade. Não mostrar nem registrar a chave privada nem a senha.
-4. Recomendado: exportar de novo com AES-256 (PBES2, SHA-256), com a mesma senha, para o Node do robô abrir mesmo quando o original usa RC2.
+4. Abrir com o provedor legado do OpenSSL (`node --openssl-legacy-provider`), como o robô: assim o `.pfx` com RC2, comum no Windows, é aceito como está.
 
 ### Gravação na pasta compartilhada
 
