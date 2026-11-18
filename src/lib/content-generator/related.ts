@@ -75,7 +75,14 @@ export function withoutSource(title: string, text?: string | null): { title: str
  * da frase, ou sigla. É o que diz "qual caso" — pesa mais na comparação.
  */
 export function entityTerms(...values: Array<string | null | undefined>): Set<string> {
-  const entities = new Set<string>();
+  const { names, acronyms } = entityKinds(...values);
+  return new Set([...names, ...acronyms]);
+}
+
+/** Nomes (Xuxa, Casas Bahia) e siglas (ISS, LGPD) separados: sigla de lei sozinha não identifica um caso. */
+function entityKinds(...values: Array<string | null | undefined>): { names: Set<string>; acronyms: Set<string> } {
+  const names = new Set<string>();
+  const acronyms = new Set<string>();
   for (const value of values) {
     if (!value) continue;
     for (const sentence of value.split(/[.!?:\n]+/)) {
@@ -86,11 +93,11 @@ export function entityTerms(...values: Array<string | null | undefined>): Set<st
         const isAcronym = /^[A-Z\d]{2,}(?:-\d+)?$/.test(clean) && /[A-Z]/.test(clean);
         const isName = index > 0 && /^\p{Lu}\p{Ll}+/u.test(clean);
         if (!isAcronym && !isName) return;
-        for (const term of subjectTerms(clean)) entities.add(term);
+        for (const term of subjectTerms(clean)) (isAcronym ? acronyms : names).add(term);
       });
     }
   }
-  return entities;
+  return { names, acronyms };
 }
 
 function normalize(text: string): string {
@@ -178,6 +185,36 @@ export function toRelatedRef(candidate: RelatedCandidate): RelatedRef {
     date: candidate.date,
     ...(candidate.people?.length ? { people: candidate.people } : {}),
   };
+}
+
+/** Termos de uma manchete para comparar "mesma notícia em outro veículo". */
+export interface StoryTerms {
+  terms: Set<string>;
+  names: Set<string>;
+  acronyms: Set<string>;
+}
+
+export function storyTerms(title: string): StoryTerms {
+  const clean = stripSourceSuffix(title);
+  return { terms: subjectTerms(clean), ...entityKinds(clean) };
+}
+
+/**
+ * A mesma notícia publicada por outro veículo (ex.: "STJ reduz indenização por
+ * plágio contra empresa de Xuxa" no Jurinews e "STJ ajusta cálculo de indenização
+ * … de Xuxa" no Migalhas). Exige um nome próprio (ou duas siglas) em comum e boa
+ * parte do assunto, ou quase tudo igual. Não junta dois vazamentos de dados de
+ * empresas diferentes nem dois artigos que só falam de LGPD.
+ */
+export function isSameStory(a: StoryTerms, b: StoryTerms): boolean {
+  const smaller = Math.min(a.terms.size, b.terms.size);
+  if (smaller === 0) return false;
+  const shared = [...a.terms].filter((term) => b.terms.has(term));
+  const coverage = shared.length / smaller;
+  const sharedNames = shared.filter((term) => a.names.has(term) && b.names.has(term)).length;
+  const sharedAcronyms = shared.filter((term) => a.acronyms.has(term) && b.acronyms.has(term)).length;
+  const sameCase = sharedNames >= 1 || sharedAcronyms >= 2;
+  return (sameCase && shared.length >= 3 && coverage >= 0.5) || (shared.length >= 4 && coverage >= 0.8);
 }
 
 /** Pessoas distintas, sem vazios (o vínculo do Instagram às vezes repete a mesma pessoa). */
