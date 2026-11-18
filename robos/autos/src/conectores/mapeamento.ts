@@ -7,6 +7,7 @@ import { temCaptcha } from "./comum.ts";
 import { migradoParaEproc } from "./dcp-tjrj-urls.ts";
 import { ehAcaoFinalDeDownload, ehControleDeDownload, nomeDaEtapa, urlSemSegredos } from "./mapeamento-urls.ts";
 import type { Ambiente } from "./tipos.ts";
+import { entrarComCodigoDoPainel } from "../segundo-fator.ts";
 
 /**
  * Modo "mapear" (npm run mapear -- <dcp|pje> <CNJ>): para conhecer um sistema de tribunal antes de escrever o
@@ -73,6 +74,13 @@ export interface OpcoesDeLogin {
   instrucao: (url: string) => string;
   /** O sistema está pedindo o código do segundo fator? */
   pedeCodigo?: (pagina: Page) => Promise<boolean>;
+  /**
+   * Sistema do segredo do TOTP no painel de robôs (ex.: "pdpj"). Com ele e `digitarCodigo`, o robô gera e digita o
+   * código antes de chamar a pessoa (src/segundo-fator.ts). O login (CPF e senha) continua com a pessoa.
+   */
+  sistema2fa?: string;
+  /** Digita o código na tela do segundo fator e confirma. */
+  digitarCodigo?: (pagina: Page, codigo: string) => Promise<void>;
   /** Chamado uma vez em cada tela nova do login (o mapear registra a tela). */
   aoVerTela?: (pagina: Page, tela: "login" | "codigo") => Promise<void>;
   /** Confirmação manual (Enter no terminal), para quando o critério observável falhar. */
@@ -100,6 +108,7 @@ export async function entrarComAPessoa(ambiente: Ambiente, opcoes: OpcoesDeLogin
 
   await opcoes.aoVerTela?.(pagina, "login");
   let codigoVisto = false;
+  let tentouPainel = false;
   while (!(await dentro())) {
     // O login pode abrir outra aba (certificado, gov.br): acompanha a mais recente.
     const abertas = contexto.pages().filter((aba) => !aba.isClosed());
@@ -115,6 +124,21 @@ export async function entrarComAPessoa(ambiente: Ambiente, opcoes: OpcoesDeLogin
     if (opcoes.pedeCodigo && (await opcoes.pedeCodigo(pagina).catch(() => false))) {
       if (!codigoVisto) await opcoes.aoVerTela?.(pagina, "codigo");
       codigoVisto = true;
+      if (opcoes.sistema2fa && opcoes.digitarCodigo && !tentouPainel) {
+        tentouPainel = true;
+        const aba = pagina;
+        const digitar = async (codigo: string) => {
+          await opcoes.digitarCodigo!(aba, codigo);
+          // Saiu da tela do código (ou já está logado): aceito. Ainda nela depois de 20 s: recusado.
+          await aba.waitForTimeout(2_000).catch(() => undefined);
+          for (const limite = Date.now() + 20_000; Date.now() < limite; ) {
+            if ((await dentro()) || !(await opcoes.pedeCodigo!(aba).catch(() => false))) return true;
+            await aba.waitForTimeout(1_000).catch(() => undefined);
+          }
+          return false;
+        };
+        if (await entrarComCodigoDoPainel({ config: ambiente.config.segundoFator, sistema: opcoes.sistema2fa, digitar, registrar })) continue;
+      }
       await ambiente.aguardarPessoa(
         "segundo_fator",
         `O ${opcoes.sistema} pediu o código do segundo fator. O advogado digita o código na janela do robô e confirma. O robô segue sozinho depois.`,

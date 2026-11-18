@@ -198,6 +198,7 @@ O robô exige `formato`, `arquivo` (só o nome, na mesma pasta), `sha256` e `sen
 |---|---|
 | `eproc` | eproc do TJSP |
 | `eproc-tjrj` | eproc do TJRJ (cadastro e segredo próprios) |
+| `pdpj` | SSO nacional da PDPJ (jus.br), usado pelo PJe do TJRJ no 1º grau: o robô digita o código quando a tela pedir; CPF e senha continuam com a pessoa |
 
 Se o 2FA já foi ligado e ninguém guardou o código, ele não aparece de novo: é preciso desativar e ativar o 2FA no eproc ("Autenticação em 2 fatores", na tela inicial), cadastrar o QR code novo no celular do advogado e o código no painel, no mesmo momento. O registro antigo do celular deixa de valer.
 

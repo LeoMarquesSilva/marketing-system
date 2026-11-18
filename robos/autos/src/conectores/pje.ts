@@ -67,6 +67,22 @@ function opcoesDeLogin(instancia: InstanciaPje, extra: Partial<OpcoesDeLogin> = 
   };
 }
 
+/**
+ * Login do conector (o mapear usa o de cima, que não digita nada): no 1º grau, que passa pelo SSO da PDPJ, o código
+ * do Microsoft Authenticator sai do segredo "pdpj" do painel de robôs, se houver. CPF e senha continuam com a pessoa.
+ */
+function loginDoConector(instancia: InstanciaPje): OpcoesDeLogin {
+  if (!instancia.sso) return opcoesDeLogin(instancia);
+  return opcoesDeLogin(instancia, {
+    sistema2fa: "pdpj",
+    digitarCodigo: async (pagina, codigo) => {
+      const campo = pagina.locator(TELA.codigo).first();
+      await campo.fill(codigo);
+      await campo.press("Enter");
+    },
+  });
+}
+
 /** Número na consulta: os campos separados do PJe, ou um campo só. */
 async function preencherNumero(pagina: Page, campos: CamposCnjPje): Promise<boolean> {
   if (await preencherPrimeiro(pagina, TELA.campos.sequencial, campos.sequencial)) {
@@ -250,7 +266,7 @@ export class ConectorPjeTjrj implements Conector {
     const aberta = this.abaDoPje(ambiente);
     if (aberta) return aberta;
     const nova = await ambiente.contexto.newPage();
-    return entrarComAPessoa({ ...ambiente, pagina: nova }, opcoesDeLogin(this.instancia));
+    return entrarComAPessoa({ ...ambiente, pagina: nova }, loginDoConector(this.instancia));
   }
 
   private falha(ambiente: Ambiente, alvo: Page, oQue: string): Promise<never> {
@@ -265,7 +281,7 @@ export class ConectorPjeTjrj implements Conector {
     await pagina.goto(urlDaConsultaPje(this.instancia), { waitUntil: "domcontentloaded" }).catch(() => undefined);
     if (!ehAreaLogadaPje(pagina.url(), this.instancia)) {
       // Sessão vencida: o PJe mandou para o SSO. A pessoa entra de novo nesta aba.
-      pagina = await entrarComAPessoa({ ...ambiente, pagina }, opcoesDeLogin(this.instancia));
+      pagina = await entrarComAPessoa({ ...ambiente, pagina }, loginDoConector(this.instancia));
       await pagina.goto(urlDaConsultaPje(this.instancia), { waitUntil: "domcontentloaded" }).catch(() => undefined);
     }
     const sequencial = pagina.locator(PJE.campo("numeroSequencial"));
