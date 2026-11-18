@@ -5,6 +5,8 @@ import { generateObject } from "ai";
 import { openAIKey } from "@/lib/openai-keys";
 import { OPENAI_DEFAULT_MODEL, isOpenAIReasoningModel } from "@/lib/openai-models";
 import { custoDaChamada } from "@/lib/vistagem/sugestao-ia";
+import { carregarAcordos } from "./acordos-dados";
+import { sugestoesDosAcordos, type AcordoSugerido } from "./acordos-leitura";
 import { carregarDocumento, descartarSeConcluido, pedirContinuacaoNoEproc } from "./autos-server";
 import { BUCKET_AUTOS, type SugestaoNova } from "./autos-types";
 import { ProcessosError } from "./errors";
@@ -261,6 +263,15 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
     const jaSugeridos = (outros.data ?? []).map((linha) => linha.valor as ItemSugerido);
     const daRecCredito = sugestoesDaRecCredito(leitura.rec_credito, lancados, tipos, criarConferidor(texto.paginas), jaSugeridos);
     sugestoes.push(...daRecCredito);
+    // Acordos, pagamentos de parcela e descumprimento, em qualquer processo, sem repetir a ficha nem outros documentos.
+    const [acordosNaFicha, outrosAcordos] = await Promise.all([
+      carregarAcordos(documento.processoId),
+      db().from("proc_sugestoes").select("valor").eq("processo_id", documento.processoId).eq("tipo", "acordo").neq("documento_id", documentoId),
+    ]);
+    if (outrosAcordos.error) falhou("carregar as sugestões anteriores de acordo", outrosAcordos.error);
+    sugestoes.push(
+      ...sugestoesDosAcordos(leitura.acordos, acordosNaFicha, criarConferidor(texto.paginas), (outrosAcordos.data ?? []).map((linha) => linha.valor as AcordoSugerido))
+    );
     // Com os títulos um a um (lidos agora, já lançados ou sugeridos antes), a descrição do "contrato relacionado
     // ao crédito" só repetiria o mesmo (ex.: "Duplicatas 40123/1 a 40123/5"): não é proposta.
     const temTitulos =

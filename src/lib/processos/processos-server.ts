@@ -8,6 +8,8 @@ import { carregarCatalogoProcessos } from "@/lib/vistagem/sama";
 import { conferirEscolhas } from "./opcoes-server";
 import { tabelaTjspEmCache } from "./indices-server";
 import { ITENS_SANEAMENTO, calcularPreenchimento } from "./preenchimento";
+import { levantamentosDosAcordos } from "./acordos";
+import { carregarAcordos } from "./acordos-dados";
 import { encargosDoProcesso, memoriaDoValorDaAcao } from "./rec-credito";
 import { db, emLotes, falhou, gravacaoSimulada, type Ator } from "./server";
 import type { Alteracao, Contato, Endereco, EnvioVios, OrigemAlteracao, Parte, ProcessoDetalhe, ProcessoResumo, StatusEnvio } from "./types";
@@ -216,10 +218,11 @@ export async function detalharProcesso(id: string): Promise<ProcessoDetalhe> {
   const valores = valoresDaLinha(linha);
   const partes = partesDaLinha(linha);
   const naoAplicaveis = (linha.itens_nao_aplicaveis as string[] | null) ?? [];
-  const [{ fotos, nomesDaEquipe }, indices, lancamentos] = await Promise.all([
+  const [{ fotos, nomesDaEquipe }, indices, lancamentos, acordos] = await Promise.all([
     equipeDoProcesso(valores),
     tabelaTjspEmCache().catch(() => ({ tabela: null, indicesAte: null })),
     db().from("proc_lancamentos").select("tipo, data, valor, descricao").eq("processo_id", id),
+    carregarAcordos(id),
   ]);
   if (lancamentos.error) falhou("carregar as guias e os levantamentos", lancamentos.error);
   const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
@@ -229,7 +232,11 @@ export async function detalharProcesso(id: string): Promise<ProcessoDetalhe> {
       indices.tabela,
       valores.valor_acao,
       valores.data_distribuicao,
-      (lancamentos.data ?? []).map((item) => ({ tipo: item.tipo as "guia_paga" | "levantamento", data: item.data as string, valor: Number(item.valor), descricao: (item.descricao as string | null) ?? null })),
+      [
+        ...(lancamentos.data ?? []).map((item) => ({ tipo: item.tipo as "guia_paga" | "levantamento", data: item.data as string, valor: Number(item.valor), descricao: (item.descricao as string | null) ?? null })),
+        // Parcelas pagas dos acordos em que o cliente recebe: abatidas como os valores levantados.
+        ...levantamentosDosAcordos(acordos),
+      ],
       hoje,
       indices.indicesAte,
       encargosDoProcesso(valores.acao, valores.honorarios_percentual, valores.multa_percentual)

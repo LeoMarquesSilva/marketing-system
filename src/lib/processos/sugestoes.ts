@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Confianca, ContatoSugerido, EnderecoSugerido, PessoaSugerida, SugestaoNova, TipoSugestao, ValorSugestao } from "./autos-types";
 import { campoPorChave, coagirValor, estaPreenchido, formatarValor, textoDoValor, type Valores } from "./campos";
 import { ultimoAndamentoDaSintese } from "./sintese-leitura";
+import { ESQUEMA_ACORDOS, instrucoesAcordos, juntarAcordos, leituraAcordosVazia } from "./acordos-leitura";
 import { ESQUEMA_REC_CREDITO, instrucoesRecCredito, juntarRecCredito, leituraRecCreditoVazia } from "./rec-credito-leitura";
 import { TIPOS_CONTATO, rotuloDoPapel, type Contato, type Endereco, type PapelParte, type Parte, type ParteEntrada, type PoloParte, type TipoContato } from "./types";
 
@@ -79,12 +80,13 @@ export const ESQUEMA_LEITURA = z.object({
     })
   ),
   rec_credito: ESQUEMA_REC_CREDITO,
+  acordos: ESQUEMA_ACORDOS,
 });
 
 export type LeituraDosAutos = z.infer<typeof ESQUEMA_LEITURA>;
 
 export function leituraVazia(): LeituraDosAutos {
-  return { campos: [], pessoas: [], enderecos: [], contatos: [], fatos: [], rec_credito: leituraRecCreditoVazia() };
+  return { campos: [], pessoas: [], enderecos: [], contatos: [], fatos: [], rec_credito: leituraRecCreditoVazia(), acordos: leituraAcordosVazia() };
 }
 
 export function juntarLeituras(leituras: LeituraDosAutos[]): LeituraDosAutos {
@@ -97,6 +99,7 @@ export function juntarLeituras(leituras: LeituraDosAutos[]): LeituraDosAutos {
     tudo.fatos.push(...(leitura.fatos ?? []));
   }
   tudo.rec_credito = juntarRecCredito(leituras.map((leitura) => leitura.rec_credito));
+  tudo.acordos = juntarAcordos(leituras.map((leitura) => leitura.acordos));
   return tudo;
 }
 
@@ -437,6 +440,8 @@ export function instrucoesDaLeitura(): string {
     "- No máximo 15 por pedaço, os mais relevantes. Ignore atos de mero expediente: juntadas, conclusões, certidões de publicação, remessas, procurações e guias.",
     "",
     ...instrucoesRecCredito(),
+    "",
+    ...instrucoesAcordos(),
   ].join("\n");
 }
 
