@@ -97,7 +97,7 @@ export class Fila {
    * Sobe o PDF (ou as partes, num processo grande) e registra os documentos no processo. `sistema`: quem acabou
    * atendendo o pedido, quando não foi o sistema pedido (DCP que seguiu pelo eproc, Jus.br que seguiu pelo tribunal).
    */
-  async entregar(pedidoId: string, arquivo: string, nome: string, pecas?: string[], sistema?: string, partes?: { caminho: string; pecas: string[] }[]): Promise<void> {
+  async entregar(pedidoId: string, arquivo: string, nome: string, pecas?: string[], sistema?: string, partes?: { caminho: string; pecas: string[] }[], capa?: unknown): Promise<void> {
     if (partes && partes.length > 1) {
       const enviadas: { path: string; nome: string; pecas: string[] }[] = [];
       for (const [i, parte] of partes.entries()) {
@@ -112,15 +112,16 @@ export class Fila {
         ...(primeira.pecas.length ? { pecas: primeira.pecas } : {}),
         outrasPartes: outras.map((parte) => ({ path: parte.path, nome: parte.nome, ...(parte.pecas.length ? { pecas: parte.pecas } : {}) })),
         ...(sistema ? { sistema } : {}),
+        ...(capa ? { capa } : {}),
       });
       return;
     }
     const path = await this.subir(pedidoId, arquivo, nome);
-    await this.chamar(`/pedidos/${pedidoId}`, { acao: "concluir", path, nome, ...(pecas?.length ? { pecas } : {}), ...(sistema ? { sistema } : {}) });
+    await this.chamar(`/pedidos/${pedidoId}`, { acao: "concluir", path, nome, ...(pecas?.length ? { pecas } : {}), ...(sistema ? { sistema } : {}), ...(capa ? { capa } : {}) });
   }
 
   /** Os autos foram conferidos e não há peça nova: o pedido termina sem PDF. */
-  async semNovidades(pedidoId: string, sistema?: string): Promise<void> {
-    await this.chamar(`/pedidos/${pedidoId}`, { acao: "sem_novidades", ...(sistema ? { sistema } : {}) });
+  async semNovidades(pedidoId: string, sistema?: string, capa?: unknown): Promise<void> {
+    await this.chamar(`/pedidos/${pedidoId}`, { acao: "sem_novidades", ...(sistema ? { sistema } : {}), ...(capa ? { capa } : {}) });
   }
 }

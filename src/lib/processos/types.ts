@@ -30,7 +30,7 @@ export type TipoContato = (typeof TIPOS_CONTATO)[number]["valor"];
 
 export type OrigemDado = "manual" | "vios" | "ia";
 /** No histórico do processo: também as fontes oficiais de sugestões aprovadas (DataJud e o número CNJ). */
-export type OrigemAlteracao = OrigemDado | "datajud" | "cnj";
+export type OrigemAlteracao = OrigemDado | "datajud" | "cnj" | "jusbr";
 
 export function rotuloDoPolo(polo: string): string {
   return POLOS.find((item) => item.valor === polo)?.rotulo ?? polo;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { digitosDoCnj, documentosDaFicha, documentosNovosJusbr, ehAreaLogadaJusbr, ehLoginPdpj, motivoDaResposta, textoParaPdf, urlDaApi } from "./jusbr-urls";
+import { capaDaFicha, digitosDoCnj, documentosDaFicha, documentosNovosJusbr, ehAreaLogadaJusbr, ehLoginPdpj, motivoDaResposta, textoParaPdf, urlDaApi } from "./jusbr-urls";
 
 // Números fictícios (dígito verificador inválido de propósito). Nenhum dado real.
 const doc = (sequencia: number, idCodex: number, data: string, extra: Record<string, unknown> = {}) => ({
@@ -63,5 +63,23 @@ describe("Jus.br: documentos", () => {
 
   it("deixa o texto desenhável pela fonte padrão do PDF", () => {
     expect(textoParaPdf("Petição “inicial” – ação… ✓")).toBe('Petição "inicial" - ação... ?');
+  });
+
+  it("monta a capa de cada tramitação, sem repetir a atual que também vem na lista", () => {
+    const g1 = {
+      grau: { sigla: "G1" },
+      dataHoraAjuizamento: "2024-01-01T10:00:00",
+      classe: [{ codigo: 1, descricao: "Monitória" }],
+      distribuicao: [{ orgaoJulgador: [{ nome: "1ª Vara Cível" }], orgaoJulgadorLocal: { nome: "Vara", jurisdicaoLocal: { nome: "Cidade Exemplo" } } }],
+      movimentos: [
+        { dataHora: "2024-02-01T10:00:00", descricao: "Despacho", complementos: [{ nome: "tipo", valor: { descricao: "mero expediente" } }] },
+        { dataHora: null, descricao: "sem data" },
+      ],
+    };
+    const capa = capaDaFicha([{ siglaTribunal: "TJXX", nivelSigilo: 0, tramitacaoAtual: g1, tramitacoes: [g1, { grau: { sigla: "G2" }, dataHoraAjuizamento: "2025-01-01T10:00:00", movimentos: [] }] } as never]);
+    expect(capa?.tramitacoes.map((t) => t.grau)).toEqual(["G1", "G2"]);
+    expect(capa?.tramitacoes[0]).toMatchObject({ classe: "Monitória", orgaoJulgador: "1ª Vara Cível", cidade: "Cidade Exemplo" });
+    expect(capa?.tramitacoes[0].movimentos).toEqual([{ dataHora: "2024-02-01T10:00:00", descricao: "Despacho", codigo: null, complementos: ["mero expediente"] }]);
+    expect(capaDaFicha([])).toBeNull();
   });
 });

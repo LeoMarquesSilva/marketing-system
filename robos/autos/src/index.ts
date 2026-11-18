@@ -299,11 +299,11 @@ async function principal(): Promise<void> {
         resultado = { ...(doTribunal ?? {}), sistema: doTribunal?.sistema ?? pedido.reserva.split(":")[0] };
       }
       if (resultado?.semNovidades) {
-        await fila.semNovidades(pedido.id, resultado.sistema);
+        await fila.semNovidades(pedido.id, resultado.sistema, resultado.capa);
         registrar(`Autos de ${pedido.cnj} conferidos: nenhuma peça nova desde o último download.`);
       } else {
         registrar(resultado?.arquivos && resultado.arquivos.length > 1 ? `PDF baixado em ${resultado.arquivos.length} partes. Enviando ao ORQESTRAI.` : "PDF baixado. Enviando ao ORQESTRAI.");
-        await fila.entregar(pedido.id, destino, nomeDoPdf(cnj), resultado?.pecas, resultado?.sistema, resultado?.arquivos);
+        await fila.entregar(pedido.id, destino, nomeDoPdf(cnj), resultado?.pecas, resultado?.sistema, resultado?.arquivos, resultado?.capa);
         registrar(`Autos de ${pedido.cnj} entregues${resultado?.pecas?.length ? ` (${resultado.pecas.length} peças)` : ""}. A leitura pela IA segue no ORQESTRAI.`);
       }
     } catch (erro) {

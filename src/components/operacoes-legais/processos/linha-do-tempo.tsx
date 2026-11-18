@@ -12,6 +12,7 @@ import { formatarDataHora, mensagemDeErro, processosApi } from "./processos-api"
 const PASSO = 20;
 
 const VISUAL: Record<FonteAndamento, { icone: LucideIcon; ponto: string; selo: string; rotulo: string }> = {
+  jusbr: { icone: Gavel, ponto: "bg-[#347796]", selo: "bg-[#e8f3f8] text-[#285f7a] ring-[#b9d3dd]", rotulo: "Tribunal" },
   datajud: { icone: Gavel, ponto: "bg-[#347796]", selo: "bg-[#e8f3f8] text-[#285f7a] ring-[#b9d3dd]", rotulo: "Tribunal" },
   vios: { icone: ScrollText, ponto: "bg-[#183f50]", selo: "bg-[#eef1f3] text-[#183f50] ring-[#c9d3d9]", rotulo: "VIOS" },
   prazo: { icone: CalendarClock, ponto: "bg-amber-500", selo: "bg-amber-50 text-amber-900 ring-amber-200", rotulo: "Prazo" },

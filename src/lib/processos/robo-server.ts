@@ -4,6 +4,7 @@ import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { COLUNAS_PEDIDO, jaVeioDoEproc, paraPedido, pecasBaixadas, prepararUpload, registrarDocumento } from "./autos-server";
 import { MOTIVOS_ESPERA, TAMANHO_MAXIMO_AUTOS, type DocumentoAutos, type PedidoAutos } from "./autos-types";
+import { completarCapaPeloJusbr } from "./capa-server";
 import { ProcessosError } from "./errors";
 import { registrarNoHistorico } from "./processos-server";
 import { db, falhou } from "./server";
@@ -95,6 +96,26 @@ export async function proximoPedido(entrada: unknown): Promise<PedidoParaRobo | 
   return null;
 }
 
+/** Capa lida na ficha do Jus.br (sem partes nem documentos): grava a capa e a linha do tempo junto com a entrega. */
+const esquemaCapaJusbr = z.object({
+  siglaTribunal: z.string().max(20).nullish(),
+  nivelSigilo: z.number().int().min(0).max(10).nullish(),
+  tramitacoes: z
+    .array(
+      z.object({
+        grau: z.string().max(10).nullish(),
+        dataHoraAjuizamento: z.string().max(40).nullish(),
+        classe: z.string().max(300).nullish(),
+        orgaoJulgador: z.string().max(300).nullish(),
+        cidade: z.string().max(120).nullish(),
+        movimentos: z
+          .array(z.object({ dataHora: z.string().max(40).nullish(), descricao: z.string().max(1000).nullish(), codigo: z.number().int().nullish(), complementos: z.array(z.string().max(300)).max(20).nullish() }))
+          .max(5000),
+      })
+    )
+    .max(10),
+});
+
 /** Sistemas que podem constar como "quem atendeu" o pedido na entrega. */
 const SISTEMAS_DE_ENTREGA = ["eproc", "esaj", "pje", "dcp", "jusbr"] as const;
 
@@ -118,9 +139,10 @@ const esquemaAtualizacao = z.discriminatedUnion("acao", [
       .optional(),
     /** O pedido acabou atendido por outro sistema: o DCP seguiu pelo eproc, ou o Jus.br pelo robô do tribunal. */
     sistema: z.enum(SISTEMAS_DE_ENTREGA).optional(),
+    capa: esquemaCapaJusbr.optional(),
   }),
   /** O robô conferiu os autos e não há peça nova desde o último download. */
-  z.object({ acao: z.literal("sem_novidades"), sistema: z.enum(SISTEMAS_DE_ENTREGA).optional() }),
+  z.object({ acao: z.literal("sem_novidades"), sistema: z.enum(SISTEMAS_DE_ENTREGA).optional(), capa: esquemaCapaJusbr.optional() }),
 ]);
 
 export type RespostaDoRobo =
@@ -149,6 +171,15 @@ async function mudar(pedido: PedidoAutos, patch: Record<string, unknown>): Promi
   return paraPedido(data[0] as Record<string, unknown>);
 }
 
+/** Grava a capa e a linha do tempo lidas no Jus.br. Falha aqui não impede a entrega dos autos. */
+async function capaDoJusbr(processoId: string, capa: z.infer<typeof esquemaCapaJusbr>): Promise<void> {
+  try {
+    await completarCapaPeloJusbr(processoId, { ...capa, tramitacoes: capa.tramitacoes.map((t) => ({ ...t, movimentos: t.movimentos ?? [] })) });
+  } catch (erro) {
+    console.error("[robos/autos] capa do Jus.br:", erro instanceof Error ? erro.message : erro);
+  }
+}
+
 /** Tudo o que o robô informa sobre um pedido que está com ele. */
 export async function atualizarPedidoDoRobo(pedidoId: string, entrada: unknown): Promise<RespostaDoRobo> {
   const dados = validar(esquemaAtualizacao, entrada);
@@ -172,6 +203,7 @@ export async function atualizarPedidoDoRobo(pedidoId: string, entrada: unknown):
       };
     }
     case "concluir": {
+      if (dados.capa) await capaDoJusbr(pedido.processoId, dados.capa);
       const documentos: DocumentoAutos[] = [];
       for (const parte of [{ path: dados.path, nome: dados.nome, pecas: dados.pecas }, ...(dados.outrasPartes ?? [])]) {
         const documento = await registrarDocumento(pedido.processoId, { path: parte.path, nome: parte.nome }, { origem: "robo", pedidoId: pedido.id, robo: pedido.robo });
@@ -188,6 +220,7 @@ export async function atualizarPedidoDoRobo(pedidoId: string, entrada: unknown):
       };
     }
     case "sem_novidades": {
+      if (dados.capa) await capaDoJusbr(pedido.processoId, dados.capa);
       const concluido = await mudar(pedido, { status: "concluido", motivo_espera: null, erro: null, concluido_em: new Date().toISOString(), ...(dados.sistema ? { sistema: dados.sistema } : {}) });
       const { data } = await db().from("proc_autos_pedidos").select("pedido_por, pedido_por_nome").eq("id", pedido.id).maybeSingle();
       await registrarNoHistorico(

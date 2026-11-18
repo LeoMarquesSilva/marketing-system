@@ -213,8 +213,8 @@ function ConferirCampo({ sugestao, uf, onFechar, aprovar }: { sugestao: Sugestao
   );
 }
 
-const FONTE: Record<Exclude<Sugestao["fonte"], undefined>, string> = { autos: "Autos (IA)", datajud: "DataJud", cnj: "Número CNJ" };
-const ehDaCapa = (sugestao: Sugestao) => sugestao.fonte === "datajud" || sugestao.fonte === "cnj";
+const FONTE: Record<Exclude<Sugestao["fonte"], undefined>, string> = { autos: "Autos (IA)", datajud: "DataJud", jusbr: "Jus.br", cnj: "Número CNJ" };
+const ehDaCapa = (sugestao: Sugestao) => sugestao.fonte === "datajud" || sugestao.fonte === "cnj" || sugestao.fonte === "jusbr";
 const ehSintese = (sugestao: Sugestao) => sugestao.tipo === "campo" && sugestao.campo === "sintese";
 /** Textos que a IA redige com o conjunto dos autos (não são cópia de uma página): síntese e parecer do risco. */
 const ehRedigida = (sugestao: Sugestao) => sugestao.tipo === "campo" && (sugestao.campo === "sintese" || sugestao.campo === "parecer_risco") && !sugestao.trecho;
