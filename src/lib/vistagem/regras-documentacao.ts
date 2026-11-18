@@ -237,6 +237,14 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         origem: "codigo",
       },
       {
+        id: "renuncia-operacoes-legais",
+        titulo: "VERIFICAR RENÚNCIA na Operações Legais",
+        quando: "a publicação for da Operações Legais e tiver a tarefa VERIFICAR RENÚNCIA",
+        entao:
+          "a data é sempre 2 dias úteis depois da vistagem (não muda na tela), e o VIOS divide a tarefa entre as estagiárias. Se for a única tarefa da publicação, ela vai direto ao robô, sem a Conferência, e o check é o automático.",
+        origem: "codigo",
+      },
+      {
         id: "esocial",
         titulo: "eSocial (Trabalhista)",
         quando: `a classificação eSocial for ${lista(ESOCIAL_COM_TAREFA)}`,
@@ -379,7 +387,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "check",
         titulo: "Check do agendamento",
         quando: "a tarefa já estiver no VIOS",
-        entao: `o sistema compara o pedido com o VIOS (data, hora, responsável, fluxo). Erro é registrado como ${lista(SUBTIPOS_AGENDAMENTO_EM_USO)}.`,
+        entao: `o sistema compara o pedido com o VIOS (data, hora, responsável, fluxo). Erro é registrado como ${lista(SUBTIPOS_AGENDAMENTO_EM_USO)}. Na VERIFICAR RENÚNCIA, vale a responsável que o VIOS distribuiu. A CIÊNCIA NF e a VERIFICAR RENÚNCIA sozinhas, gravadas como pedidas, têm o check automático.`,
         origem: "codigo",
         metrica: "checadas",
         rotuloDaMetrica: "checadas",

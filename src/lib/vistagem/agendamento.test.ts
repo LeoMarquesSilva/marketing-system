@@ -19,6 +19,8 @@ import {
   montarObservacaoVios,
   dataLimiteDaTarefa,
   dataPadraoDaTarefa,
+  ehOperacoesLegais,
+  renunciaComDataFixa,
   observacaoObrigatoria,
   origemDoPrazo,
   pedeDataLimite,
@@ -737,5 +739,29 @@ describe("depois das 18h, nenhuma tarefa fica para hoje (pedido de 13/11/2026)",
 
   it("antes das 18h (sem a trava), a data de hoje continua valendo", () => {
     expect(validarAgendamentos([providencia("2026-11-13")], { ...contexto, hoje: "2026-11-13" }).ok).toBe(true);
+  });
+});
+
+describe("VERIFICAR RENÚNCIA na Operações Legais (pedido de 18/11/2026)", () => {
+  const ehDiaUtil = criarCalendario(["2026-11-20"]);
+
+  it("vai sempre para 2 dias úteis depois da vistagem", () => {
+    // quarta 18/11 → quinta 19/11 e, com a sexta 20/11 feriado, segunda 23/11
+    expect(dataPadraoDaTarefa("VERIFICAR RENÚNCIA", "2026-11-18", ehDiaUtil, "Operações Legais")).toBe("2026-11-23");
+    // segunda 16/11 → quarta 18/11
+    expect(dataPadraoDaTarefa("VERIFICAR RENÚNCIA", "2026-11-16", ehDiaUtil, "Operações Legais")).toBe("2026-11-18");
+    // vistada no sábado: conta a partir dos dias úteis seguintes
+    expect(dataPadraoDaTarefa("verificar renuncia", "2026-11-21", ehDiaUtil, "Operações Legais (Legal Ops)")).toBe("2026-11-24");
+  });
+
+  it("só na Operações Legais e só na VERIFICAR RENÚNCIA; a CIÊNCIA NF continua no dia útil seguinte", () => {
+    expect(dataPadraoDaTarefa("VERIFICAR RENÚNCIA", "2026-11-16", ehDiaUtil, "Trabalhista")).toBeNull();
+    expect(dataPadraoDaTarefa("VERIFICAR RENÚNCIA", "2026-11-16", ehDiaUtil)).toBeNull();
+    expect(dataPadraoDaTarefa("RENÚNCIA / SUBSTABELECIMENTO", "2026-11-16", ehDiaUtil, "Operações Legais")).toBeNull();
+    expect(dataPadraoDaTarefa("CIÊNCIA NF", "2026-11-16", ehDiaUtil, "Operações Legais")).toBe("2026-11-17");
+    expect(renunciaComDataFixa("VERIFICAR RENÚNCIA", "Operações Legais")).toBe(true);
+    expect(renunciaComDataFixa("VERIFICAR RENÚNCIA", "Cível")).toBe(false);
+    expect(ehOperacoesLegais("Operações Legais (Legal Ops)")).toBe(true);
+    expect(ehOperacoesLegais(null)).toBe(false);
   });
 });

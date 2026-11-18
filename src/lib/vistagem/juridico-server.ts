@@ -6,6 +6,8 @@ import {
   nomesDasPessoas,
   pessoasDaArea,
   primeiroDiaDaTarefa,
+  dataPadraoDaTarefa,
+  renunciaComDataFixa,
   responsavelSugerido,
   responsaveisNaArea,
   tarefasPermitidas,
@@ -21,11 +23,18 @@ import {
 import { openAIKey } from "@/lib/openai-keys";
 import { enviarDoPrazo, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
 import { MINIMO_BUSCA_NO_BANCO, camposDoCheck, combinaCampos, digitosDoTermo, normalizarBusca, padraoDoTermo, termosDaBusca } from "./busca";
-import { CHECK_AUTOMATICO, foiCheckAutomatico, notaDoCheckAutomatico } from "./check";
+import { CHECK_AUTOMATICO, CONFERENCIA_AUTOMATICA, foiCheckAutomatico, foiConferenciaAutomatica, notaDoCheckAutomatico } from "./check";
 import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { vaiParaCentral } from "./central";
 import { enviarParaCentral } from "./central-server";
-import { cienciaDosAgendamentos, dataDaCienciaNaVistagem, dataDaCienciaNoEnvio, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
+import {
+  cienciaDosAgendamentos,
+  dataDaCienciaNaVistagem,
+  dataDaCienciaNoEnvio,
+  ehCienciaDosAgendamentos,
+  ehReestruturacao,
+  vaiDiretoAoRobo,
+} from "./ciencia-agendamentos";
 import { alteracaoDaVistagem, inicioDaConferenciaSegura, reabertaParaAlterar } from "./alterar-vistagem";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
@@ -512,7 +521,7 @@ export async function salvarVistagem(
   authUserId: string,
   areas: AreasVistagem = null,
   veRisco = true
-): Promise<{ central: ResultadoCentral | null }> {
+): Promise<{ central: ResultadoCentral | null; direto?: boolean }> {
   const carregada = await carregarPublicacao(id);
   const resolucao = entrada.resolucao ?? null;
   // Direto da triagem: valida tudo com o escritório e a pasta escolhidos e só então tira a pendência da controladoria.
@@ -543,28 +552,36 @@ export async function salvarVistagem(
     depoisDoHorario: primeiroDia > hoje ? primeiroDia : null,
   });
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
+  // Operações Legais: a VERIFICAR RENÚNCIA vai sempre para 2 dias úteis depois do dia em que vistou, mesmo que a tela
+  // tenha sido aberta noutro dia (pedido de 18/11/2026).
+  const areaDaPasta = publicacao.escritorio_responsavel ?? catalogo.area;
+  const itensVistados = validacao.itens.map((item) =>
+    renunciaComDataFixa(item.tarefa, areaDaPasta)
+      ? { ...item, data: dataPadraoDaTarefa(item.tarefa, hoje, criarCalendario(feriados), areaDaPasta) ?? item.data }
+      : item
+  );
   // Trabalhista: classificação eSocial (só na publicação, não vai para o VIOS) e, se pedir, a tarefa Inserir E-social.
   const esocial = validarEsocial({
     areaDoCatalogo: catalogo.area,
     classificacao: entrada.publicacaoEsocial,
     providencias: catalogo.tarefas.PROVIDENCIA,
-    itens: validacao.itens,
+    itens: itensVistados,
   });
   if (!esocial.ok) throw new VistagemError(esocial.erro);
   // Ciência dos Agendamentos em todo agendamento: se o fluxo do VIOS das tarefas não cria, o Orquestra cria.
-  const ciencia = await cienciaParaGravar(validacao.itens, {
+  const ciencia = await cienciaParaGravar(itensVistados, {
     arvore,
     catalogo,
-    area: publicacao.escritorio_responsavel ?? catalogo.area,
+    area: areaDaPasta,
     ehDiaUtil: criarCalendario(feriados),
   });
-  const itensParaGravar = ciencia ? [...validacao.itens, ciencia] : validacao.itens;
+  const itensParaGravar = ciencia ? [...itensVistados, ciencia] : itensVistados;
   // Mede o acerto da IA: o jurídico usou a sugestão como veio, alterou ou não usou.
   const resultadoIa = publicacao.sugestao_ia
     ? resultadoDaSugestao({
         usou: entrada.sugestaoUsada === true,
         sugestao: sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas),
-        itens: validacao.itens,
+        itens: itensVistados,
         esocial: esocial.valor,
         tarefaEsocialId: tarefaEsocialDaLista(catalogo.tarefas.PROVIDENCIA)?.id ?? null,
         dataPublicacao: publicacao.data_publicacao,
@@ -614,8 +631,9 @@ export async function salvarVistagem(
   const quemVistou = revistagem
     ? { revistado_por: authUserId, revistado_em: agora }
     : { vistado_por: authUserId, vistado_em: agora, revistado_por: null, revistado_em: null };
-  // Toda vistagem passa pela conferência da controladoria, com ou sem pasta. Sem pasta no VIOS, é ao validar que ela
-  // vira pedido de abertura de pasta na Central do SharePoint (validarVistagem), com quem conferiu registrado.
+  // A vistagem passa pela conferência da controladoria, com ou sem pasta. Sem pasta no VIOS, é ao validar que ela
+  // vira pedido de abertura de pasta na Central do SharePoint (validarVistagem), com quem conferiu registrado. A
+  // VERIFICAR RENÚNCIA sozinha da Operações Legais é validada logo abaixo, sem pessoa (vaiDiretoAoRobo).
   const { data: atualizada, error } = await db
     .from("vistagem_publicacoes")
     .update({
@@ -638,9 +656,19 @@ export async function salvarVistagem(
       area: catalogo.area,
       sugestao: sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas),
       resultado: resultadoIa,
-      itens: validacao.itens,
+      itens: itensVistados,
       autor: authUserId,
     });
+  }
+  // Operações Legais só com a VERIFICAR RENÚNCIA: vai direto ao robô, sem a Conferência (pedido de 18/11/2026); o check
+  // é o automático. Se a fila do robô falhar, a publicação fica na Conferência, como as outras.
+  if (vaiDiretoAoRobo(areaDaPasta, itensParaGravar)) {
+    try {
+      const enviada = await validarVistagem(id, null);
+      return { central: enviada.central ?? null, direto: true };
+    } catch (erro) {
+      console.error("[vistagem] VERIFICAR RENÚNCIA direto ao robô (ficou na Conferência):", erro instanceof Error ? erro.message : erro);
+    }
   }
   return { central: null };
 }
@@ -819,7 +847,9 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
     devolucao: devolucao ? { ...devolucao, motivo: row.devolucao_motivo, total: row.devolucoes ?? 1 } : null,
     revistagem: marca(row.revistado_por, row.revistado_em),
     reabertura: marca(row.reaberta_por ?? null, row.reaberta_em ?? null),
-    conferencia: marca(row.conferido_por, row.conferido_em),
+    conferencia: row.conferido_em
+      ? { por: foiConferenciaAutomatica(row.conferido_por, row.conferido_em) ? CONFERENCIA_AUTOMATICA : nome(row.conferido_por), em: row.conferido_em }
+      : null,
     central: temCentral
       ? { itemId: row.central_item_id, enviadaEm: row.central_enviada_em, erro: row.central_erro, tentativaEm: row.central_tentativa_em }
       : null,
@@ -896,7 +926,12 @@ async function itensDeConferencia(
     vistadoPor: row.vistado_por ? nomes.get(row.vistado_por) ?? null : null,
     devolvidoPor: row.devolvido_por ? nomes.get(row.devolvido_por) ?? null : null,
     revistadoPor: row.revistado_por ? nomes.get(row.revistado_por) ?? null : null,
-    conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
+    // Direto ao robô (VERIFICAR RENÚNCIA da Operações Legais): sem pessoa; aparece como "Direto ao robô".
+    conferidoPor: row.conferido_por
+      ? nomes.get(row.conferido_por) ?? null
+      : foiConferenciaAutomatica(null, row.conferido_em)
+        ? CONFERENCIA_AUTOMATICA
+        : null,
     // Check automático da CIÊNCIA NF: sem pessoa; aparece como "Check automático".
     ...(row.checado_por
       ? { checadoPor: nomes.get(row.checado_por) ?? null }
@@ -1176,8 +1211,11 @@ async function fotosDosItens(itens: ConferenciaItem[], tela: string): Promise<Re
   return pessoas.fotos;
 }
 
-/** Validação da controladoria: as tarefas vão para a fila do robô do SAMA (na intimação, todas juntas). */
-export async function validarVistagem(id: string, authUserId: string): Promise<{ enviadas: number; simulado: boolean; central?: ResultadoCentral }> {
+/**
+ * Validação da controladoria: as tarefas vão para a fila do robô do SAMA (na intimação, todas juntas), ou à Central,
+ * sem pasta. `authUserId` null: foi direto, sem a Conferência (`vaiDiretoAoRobo`), e conferido_por fica vazio.
+ */
+export async function validarVistagem(id: string, authUserId: string | null): Promise<{ enviadas: number; simulado: boolean; central?: ResultadoCentral }> {
   const publicacao = await carregarPublicacao(id);
   if (publicacao.status !== "controladoria_vistar") throw new VistagemError("Esta publicação não está aguardando conferência.", 409);
   if (!publicacao.numero_processo) throw new VistagemError("Publicação sem número de processo: não dá para agendar no VIOS.", 422);

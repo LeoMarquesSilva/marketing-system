@@ -63,6 +63,7 @@ import {
   observacaoObrigatoria,
   pedeDataLimite,
   primeiroDiaDaTarefa,
+  renunciaComDataFixa,
   revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
@@ -836,7 +837,8 @@ export function EditorVistagem({
   navegacao: Navegacao | null;
   onAbrir: (id: string) => void;
   /** `central`: a publicação não tem pasta e virou pedido de abertura na Central do SharePoint. */
-  onConcluida: (id: string, central: ResultadoCentral | null) => void;
+  /** `direto`: foi direto ao robô, sem a Conferência (VERIFICAR RENÚNCIA sozinha da Operações Legais). */
+  onConcluida: (id: string, central: ResultadoCentral | null, direto?: boolean) => void;
   onTransferida: (destino: string) => void;
   onVoltar: () => void;
   /** "Agendar Direto" da controladoria: a pendência ainda na triagem, com escritório, grupo, risco e CI escolhidos. */
@@ -1066,7 +1068,14 @@ export function EditorVistagem({
   function dataPadrao(etiqueta: Etiqueta, tarefa: string): string | null {
     if (!detalhe || !tarefa || etiqueta === "PRAZO") return null;
     const opcao = detalhe.catalogo?.tarefas[etiqueta].find((item) => item.nome === tarefa);
-    return dataPadraoDaTarefa(opcao ? opcao.nomeVios ?? opcao.nome : tarefa, detalhe.hoje, ehDiaUtil);
+    return dataPadraoDaTarefa(opcao ? opcao.nomeVios ?? opcao.nome : tarefa, detalhe.hoje, ehDiaUtil, areaDaPublicacao);
+  }
+
+  /** Operações Legais: a VERIFICAR RENÚNCIA tem a data fixa, 2 dias úteis depois de hoje; null nas outras tarefas. */
+  function dataFixa(etiqueta: Etiqueta, tarefa: string): string | null {
+    if (!detalhe || !tarefa || etiqueta === "PRAZO") return null;
+    const opcao = detalhe.catalogo?.tarefas[etiqueta].find((item) => item.nome === tarefa);
+    return renunciaComDataFixa(opcao ? opcao.nomeVios ?? opcao.nome : tarefa, areaDaPublicacao) ? dataPadrao(etiqueta, tarefa) : null;
   }
 
   /**
@@ -1074,6 +1083,9 @@ export function EditorVistagem({
    * por cima de data escolhida à mão; só troca a que veio do tipo anterior, e a tira ao trocar para um tipo sem data.
    */
   function dataDoTipo(linha: Linha, nome: string): Partial<Linha> {
+    // Operações Legais: a data da VERIFICAR RENÚNCIA é fixa (2 dias úteis depois de hoje), mesmo com outra já escolhida.
+    const fixa = dataFixa(linha.etiqueta, nome);
+    if (fixa) return { data: fixa };
     const anterior = dataPadrao(linha.etiqueta, linha.tarefa);
     const veioDoTipo = anterior !== null && linha.data === anterior;
     if (linha.data && !veioDoTipo) return {};
@@ -1199,7 +1211,7 @@ export function EditorVistagem({
             etiqueta: linha.etiqueta,
             tarefa: linha.tarefa,
             tarefaId: detalhe?.catalogo?.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null,
-            data: linha.etiqueta === "PRAZO" && !semFatal(linha) ? "" : linha.data,
+            data: linha.etiqueta === "PRAZO" && !semFatal(linha) ? "" : dataFixa(linha.etiqueta, linha.tarefa) ?? linha.data,
             dataFatal: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.dataFatal : null,
             diasPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.diasPrazo : null,
             contagemPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) && linha.diasPrazo ? linha.contagemPrazo : null,
@@ -1216,7 +1228,7 @@ export function EditorVistagem({
       });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao enviar.");
-      onConcluida(id, corpo.central ?? null);
+      onConcluida(id, corpo.central ?? null, corpo.direto === true);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao enviar.");
     } finally {
@@ -1780,16 +1792,28 @@ export function EditorVistagem({
                               <div className="flex flex-wrap items-end gap-3">
                                 <div className="w-[11rem] space-y-1.5">
                                   <span className="block text-xs font-medium text-muted-foreground">Data no VIOS</span>
-                                  <CampoData
-                                    rotulo={`Data da tarefa ${indice + 1} no VIOS`}
-                                    valor={linha.data}
-                                    ehDiaUtil={ehDiaUtil}
-                                    // Depois das 18h, hoje (e antes) fica bloqueado no calendário.
-                                    min={depoisDoHorario ? primeiroDia : undefined}
-                                    invalido={dataAntesDoPermitido}
-                                    onChange={(data) => alterar(linha.chave, { data })}
-                                  />
+                                  {dataFixa(linha.etiqueta, linha.tarefa) ? (
+                                    <p className={cn(campo, "flex items-center bg-[#f7fbfc] tabular-nums text-foreground")} aria-label={`Data da tarefa ${indice + 1} no VIOS`}>
+                                      {formatarData(dataFixa(linha.etiqueta, linha.tarefa))}
+                                    </p>
+                                  ) : (
+                                    <CampoData
+                                      rotulo={`Data da tarefa ${indice + 1} no VIOS`}
+                                      valor={linha.data}
+                                      ehDiaUtil={ehDiaUtil}
+                                      // Depois das 18h, hoje (e antes) fica bloqueado no calendário.
+                                      min={depoisDoHorario ? primeiroDia : undefined}
+                                      invalido={dataAntesDoPermitido}
+                                      onChange={(data) => alterar(linha.chave, { data })}
+                                    />
+                                  )}
                                 </div>
+                                {dataFixa(linha.etiqueta, linha.tarefa) ? (
+                                  <p className="min-w-[14rem] flex-1 text-xs text-muted-foreground">
+                                    Operações Legais: a VERIFICAR RENÚNCIA vai sempre para 2 dias úteis depois da vistagem, e o VIOS divide entre as
+                                    estagiárias. Sozinha na publicação, vai direto ao robô, sem a Conferência e sem o check da controladoria.
+                                  </p>
+                                ) : null}
                                 {prazo ? (
                                   <p className="min-w-[14rem] flex-1 text-xs text-muted-foreground">
                                     Sem prazo próprio no VIOS: a data já vem preenchida, e as tarefas do fluxo contam a partir dela.
@@ -2458,7 +2482,7 @@ function Juridico() {
     void carregar(escritorio);
   }
 
-  function concluida(id: string, central: ResultadoCentral | null) {
+  function concluida(id: string, central: ResultadoCentral | null, direto = false) {
     // Segue para a próxima da fila (ou a anterior, se era a última).
     const posicao = ordem.indexOf(id);
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
@@ -2466,7 +2490,9 @@ function Juridico() {
     avisarContagensVistagem();
     setAviso(
       !central
-        ? "Vistagem enviada para a conferência da controladoria."
+        ? direto
+          ? "VERIFICAR RENÚNCIA da Operações Legais: foi direto ao robô, sem a Conferência."
+          : "Vistagem enviada para a conferência da controladoria."
         : central.itemId
           ? `Sem pasta no VIOS: pedido de abertura de pasta criado na Central do SharePoint (item ${central.itemId}).`
           : "Vistagem salva. A Central do SharePoint não respondeu: a controladoria vê o pedido na Conferência e o sistema tenta de novo."

@@ -31,6 +31,8 @@ export interface ResponsavelNoVios {
   /** No VIOS sem terem sido pedidos (informativo: o tipo pode ter responsável fixo). */
   aMais: string[];
   situacao: SituacaoCampo;
+  /** VERIFICAR RENÚNCIA: o VIOS divide entre as estagiárias, e vale quem ele pôs (não é divergência). */
+  distribuidoPeloVios?: boolean;
 }
 
 /** Data do fluxo escolhida pelo jurídico (o robô grava no VIOS depois de lançar) e as datas gravadas com aquele nome. */
@@ -89,9 +91,12 @@ function principalDe(agendamento: AgendamentoResumo): TarefaNoVios | null {
   return (agendamento.viosTarefas ?? []).find((tarefa) => tarefa.principal) ?? null;
 }
 
-function compararResponsavel(pedidoTexto: string, gravada: TarefaNoVios | null): ResponsavelNoVios {
+function compararResponsavel(pedidoTexto: string, gravada: TarefaNoVios | null, tarefa: string): ResponsavelNoVios {
   const pedido = nomesDasPessoas(pedidoTexto);
   const noVios = nomesDasPessoas(gravada?.responsaveis);
+  // VERIFICAR RENÚNCIA: o próprio VIOS divide entre as estagiárias (pedido de 18/11/2026); a escolhida na vistagem
+  // pode não ser a que ficou, e isso não é erro.
+  if (ehVerificarRenuncia(tarefa) && noVios.length) return { pedido, noVios, faltando: [], aMais: [], situacao: "confere", distribuidoPeloVios: true };
   const chavesNoVios = new Set(noVios.map(chaveNome));
   const chavesPedido = new Set(pedido.map(chaveNome));
   const faltando = pedido.filter((nome) => !chavesNoVios.has(chaveNome(nome)));
@@ -134,7 +139,7 @@ export function compararTarefa(agendamento: AgendamentoResumo): ComparacaoDaTare
   const horaPedida = horaCurta(agendamento.hora);
   const horaNoVios = horaCurta(gravada?.hora ?? null);
   const hora: CampoNoVios | null = horaPedida ? { pedido: horaPedida, noVios: horaNoVios, situacao: comparar(horaPedida, horaNoVios) } : null;
-  const responsavel = compararResponsavel(agendamento.responsavel, gravada);
+  const responsavel = compararResponsavel(agendamento.responsavel, gravada, agendamento.tarefa);
   const datasDoFluxo = compararDatasDoFluxo(agendamento);
 
   const divergencias: Divergencia[] = [];
@@ -207,6 +212,17 @@ export function descricaoSugerida(agendamentos: AgendamentoResumo[], ids?: strin
 
 /** Quem aparece em "Checada por" no check automático: não há pessoa (checado_por fica vazio). */
 export const CHECK_AUTOMATICO = "Check automático";
+
+/**
+ * Quem aparece em "Conferida por" quando a publicação foi direto ao robô, sem a Conferência (VERIFICAR RENÚNCIA da
+ * Operações Legais, `vaiDiretoAoRobo`): conferido_em fica com a hora do envio e conferido_por vazio.
+ */
+export const CONFERENCIA_AUTOMATICA = "Direto ao robô";
+
+/** Foi direto ao robô, sem a Conferência: tem a hora e não tem a pessoa. */
+export function foiConferenciaAutomatica(conferidoPor: string | null, conferidoEm: string | null): boolean {
+  return !conferidoPor && Boolean(conferidoEm);
+}
 const PREFIXO_CHECK_AUTOMATICO = "Check automático:";
 
 /** O check foi o automático do Orquestra (sem pessoa), pela nota que ele grava. */
@@ -235,7 +251,8 @@ export function notaDoCheckAutomatico(agendamentos: AgendamentoResumo[]): string
   if (!tipo || tarefa.envioStatus !== "concluido" || tarefa.envioSimulado) return null;
   const comparacao = compararTarefa(tarefa);
   if (!comparacao.ci || comparacao.situacao !== "confere") return null;
-  return `${PREFIXO_CHECK_AUTOMATICO} ${tipo} única agendada no VIOS (CI ${comparacao.ci}), com a data e o responsável do pedido.`;
+  const quem = comparacao.responsavel.distribuidoPeloVios ? "a responsável que o VIOS distribuiu" : "o responsável do pedido";
+  return `${PREFIXO_CHECK_AUTOMATICO} ${tipo} única agendada no VIOS (CI ${comparacao.ci}), com a data e ${quem}.`;
 }
 
 /** Tipo de agendamento para o filtro do Check: a Ciência NF à parte; as outras pela classe (Prazo, Providência, Compromisso). */

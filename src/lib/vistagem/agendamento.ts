@@ -399,12 +399,35 @@ export function observacaoObrigatoria(nomeDaTarefa: string | null | undefined): 
   return chaveNome(nomeDaTarefa) === "CIENCIA NF";
 }
 
+/** Área Operações Legais (escritório da pasta ou área do catálogo, com os nomes do RH e do VIOS). */
+export function ehOperacoesLegais(area: string | null | undefined): boolean {
+  return chaveNome(escritorioDaArea(area)) === "OPERACOES LEGAIS";
+}
+
+/** Dias úteis da VERIFICAR RENÚNCIA da Operações Legais, contados do dia da vistagem (pedido de 18/11/2026). */
+export const DIAS_DA_RENUNCIA = 2;
+
+/**
+ * VERIFICAR RENÚNCIA na Operações Legais (pedido de 18/11/2026): a data é sempre 2 dias úteis depois da vistagem, e a
+ * tela não deixa mudar (o servidor grava a do dia em que vistou). O VIOS divide a tarefa entre as estagiárias.
+ */
+export function renunciaComDataFixa(nomeDaTarefa: string | null | undefined, area: string | null | undefined): boolean {
+  return chaveNome(nomeDaTarefa) === "VERIFICAR RENUNCIA" && ehOperacoesLegais(area);
+}
+
 /**
  * Data que o tipo de tarefa já traz ao ser escolhido. A CIÊNCIA NF vai para o dia útil seguinte ao da vistagem
- * (pedido de 11/11/2026; era o que o jurídico preenchia à mão), como o Inserir E-social. Os outros tipos começam
- * vazios (null). Recebe o nome como está no VIOS.
+ * (pedido de 11/11/2026; era o que o jurídico preenchia à mão), como o Inserir E-social. Na Operações Legais, a
+ * VERIFICAR RENÚNCIA vai para 2 dias úteis depois (`renunciaComDataFixa`). Os outros tipos começam vazios (null).
+ * Recebe o nome como está no VIOS e a área da publicação.
  */
-export function dataPadraoDaTarefa(nomeDaTarefa: string | null | undefined, hoje: string, ehDiaUtil: (iso: string) => boolean): string | null {
+export function dataPadraoDaTarefa(
+  nomeDaTarefa: string | null | undefined,
+  hoje: string,
+  ehDiaUtil: (iso: string) => boolean,
+  area: string | null = null
+): string | null {
+  if (renunciaComDataFixa(nomeDaTarefa, area)) return somarDiasUteis(hoje, DIAS_DA_RENUNCIA, ehDiaUtil);
   return chaveNome(nomeDaTarefa) === "CIENCIA NF" ? somarDiasUteis(hoje, 1, ehDiaUtil) : null;
 }
 
