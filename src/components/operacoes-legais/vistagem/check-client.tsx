@@ -52,6 +52,7 @@ import { AvatarPessoa } from "./combobox-busca";
 import { ContextoDoProcesso, DialogoAcao, EscolhaEmCartoes, type OpcaoEmCartao } from "./dialogo-acao";
 import { AutoriaNaFaixa, BOTAO_FAIXA, BOTAO_FAIXA_PRINCIPAL, FaixaDoProcesso, SetasDaFila, type NavegacaoNaFila } from "./faixa-processo";
 import { FilaPorArea, agruparPorArea, areaDaPublicacao, ordemDaFila } from "./fila-por-area";
+import { BotaoHistorico } from "./historico-publicacao";
 import { EscolhaDoDia, FiltroData, dataNaLista, rotuloDaData } from "./filtro-data";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
@@ -252,6 +253,8 @@ function ItemCheck({
           </>
         }
       >
+        {/* O que aconteceu com a publicação, como na Conferência: vistagem, ajustes de data e responsável, robô, check. */}
+        <BotaoHistorico publicacaoId={publicacao.id} processo={processo} className={cn(BOTAO_FAIXA, !checada && "mr-1")} />
         {!checada ? (
           <div className="flex flex-wrap items-center gap-2" data-tour="ck-acoes">
             <Button size="sm" variant="outline" className={BOTAO_FAIXA} onClick={() => apontarErro()} disabled={ocupado}>

@@ -203,6 +203,52 @@ export async function getInstagramAccountId(): Promise<string> {
   return id;
 }
 
+export interface BusinessDiscoveryProfile {
+  username: string;
+  name: string | null;
+  followers_count: number | null;
+  media_count: number | null;
+  profile_picture_url: string | null;
+  media: Array<{
+    id: string;
+    caption?: string;
+    media_type?: string;
+    media_product_type?: string;
+    media_url?: string;
+    permalink?: string;
+    timestamp?: string;
+    like_count?: number;
+    comments_count?: number;
+  }>;
+}
+
+/**
+ * Perfil público de outra conta Business/Creator do Instagram (Business Discovery),
+ * lido com a nossa conta. Só funciona com contas profissionais; @ errado ou conta
+ * pessoal volta erro da Meta ("Invalid user id").
+ */
+export async function fetchBusinessDiscovery(username: string, mediaLimit = 30): Promise<BusinessDiscoveryProfile> {
+  const handle = username.trim().replace(/^@/, "").toLowerCase();
+  if (!/^[a-z0-9._]{1,30}$/.test(handle)) throw new Error("@ inválido.");
+  const igId = await getInstagramAccountId();
+  const fields =
+    `business_discovery.username(${handle}){username,name,followers_count,media_count,profile_picture_url,` +
+    `media.limit(${Math.min(50, Math.max(1, mediaLimit))}){id,caption,media_type,media_product_type,media_url,permalink,timestamp,like_count,comments_count}}`;
+  const data = await graphFetch<{
+    business_discovery?: Omit<BusinessDiscoveryProfile, "media"> & { media?: { data?: BusinessDiscoveryProfile["media"] } };
+  }>(`/${igId}?fields=${encodeURIComponent(fields)}`);
+  const profile = data.business_discovery;
+  if (!profile) throw new Error("A Meta não devolveu esse perfil.");
+  return {
+    username: profile.username,
+    name: profile.name ?? null,
+    followers_count: profile.followers_count ?? null,
+    media_count: profile.media_count ?? null,
+    profile_picture_url: profile.profile_picture_url ?? null,
+    media: profile.media?.data ?? [],
+  };
+}
+
 export async function fetchAccountStats(igAccountId: string): Promise<MetaAccountStats> {
   const data = await graphFetch<{
     username: string;

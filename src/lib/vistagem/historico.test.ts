@@ -157,3 +157,28 @@ describe("montarHistorico", () => {
     expect(eventos[2]).toMatchObject({ tipo: "pendencia", por: "Bia", detalhes: [], area: "Cível | Insolvência", pasta: { ci: "26160", vinculo: "PROCESSO PRINCIPAL" } });
   });
 });
+
+describe("montarHistorico: como a fatal foi escolhida (pedido de 18/11/2026)", () => {
+  const vistada = { vistagem: { por: "Maria", em: "2026-11-09T19:57:48Z", observacao: null } };
+
+  it("no Prazo, a tarefa da vistagem leva a fatal, os dias, a origem e os ajustes", () => {
+    const ajustes = [{ por: "Giovanna", em: "2026-11-10T12:00:00Z", mudancas: [{ campo: "Data fatal", de: "20/11/2026", para: "24/11/2026" }] }];
+    const eventos = montarHistorico(
+      base({
+        ...vistada,
+        tarefas: [
+          tarefa({ tarefa: "MANIFESTAÇÃO", etiqueta: "PRAZO", dataFatal: "2026-11-24", diasPrazo: null, contagemPrazo: null, origemPrazo: "atalho", ajustes }),
+        ],
+      })
+    );
+    const vistagem = eventos.find((evento) => evento.tipo === "vistagem");
+    expect(vistagem?.tarefas).toEqual([
+      { tarefa: "MANIFESTAÇÃO", data: "2026-11-10", responsavel: "Ligia", etiqueta: "PRAZO", dataFatal: "2026-11-24", diasPrazo: null, contagemPrazo: null, origemPrazo: "atalho", ajustes },
+    ]);
+  });
+
+  it("fora do Prazo com fatal, a tarefa fica só com data e responsável", () => {
+    const eventos = montarHistorico(base({ ...vistada, tarefas: [tarefa({ etiqueta: "PROVIDENCIA", dataFatal: null, origemPrazo: null })] }));
+    expect(eventos.find((evento) => evento.tipo === "vistagem")?.tarefas).toEqual([{ tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Ligia" }]);
+  });
+});

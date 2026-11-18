@@ -2,13 +2,32 @@
 
 import { useId, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ArrowRight, Bot, CalendarClock, CalendarDays, ChevronDown, CircleCheckBig, ClipboardList, CornerDownRight, ExternalLink, Hourglass, Pencil, Workflow } from "lucide-react";
+import {
+  ArrowRight,
+  Bot,
+  CalendarClock,
+  CalendarDays,
+  ChevronDown,
+  CircleCheckBig,
+  CircleHelp,
+  ClipboardList,
+  CornerDownRight,
+  ExternalLink,
+  FileText,
+  Hourglass,
+  MousePointerClick,
+  Pencil,
+  Scale,
+  Sparkles,
+  Workflow,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA, ROTULO_ORIGEM_PRAZO, chaveNome, nomesDasPessoas } from "@/lib/vistagem/agendamento";
+import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, type OrigemPrazo } from "@/lib/vistagem/agendamento";
 import { TEXTO_DA_REPETIDA } from "@/lib/vistagem/ciencia-agendamentos";
 import { agendaNoVios, nomeCurto, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
+import { origemDaFatal, type TarefaComFatal } from "@/lib/vistagem/origem-da-fatal";
 import type { AgendamentoResumo, AjusteNaTarefa, EnvioStatus, MudancaNaTarefa } from "@/lib/vistagem/types";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AvatarPessoa } from "./combobox-busca";
@@ -267,8 +286,11 @@ export function ListaDeMudancas({ mudancas }: { mudancas: MudancaNaTarefa[] }) {
   );
 }
 
-/** O que a controladoria ajustou na tarefa, com quem e quando: a data e o responsável não são mais os que o jurídico vistou. */
-function AjustesDaTarefa({ ajustes }: { ajustes: AjusteNaTarefa[] }) {
+/**
+ * O que a controladoria ajustou na tarefa, com quem e quando: a data e o responsável não são mais os que o jurídico vistou.
+ * Aparece nos cartões da Conferência, do Vistado e do Check.
+ */
+export function AjustesDaTarefa({ ajustes }: { ajustes: AjusteNaTarefa[] }) {
   return (
     <section aria-label="Ajustes feitos na conferência" className="space-y-2 rounded-md border border-[#dce9eb] bg-[#f7fbfc] px-3 py-2">
       {ajustes.map((ajuste) => (
@@ -282,6 +304,37 @@ function AjustesDaTarefa({ ajustes }: { ajustes: AjusteNaTarefa[] }) {
         </div>
       ))}
     </section>
+  );
+}
+
+const VISUAL_ORIGEM: Record<OrigemPrazo | "nenhuma", { icone: LucideIcon; tom: TomSelo }> = {
+  atalho: { icone: MousePointerClick, tom: "marca" },
+  calendario: { icone: CalendarDays, tom: "escuro" },
+  tarefa: { icone: Scale, tom: "neutro" },
+  publicacao: { icone: FileText, tom: "neutro" },
+  sugestao_ia: { icone: Sparkles, tom: "ia" },
+  nenhuma: { icone: CircleHelp, tom: "neutro" },
+};
+
+/**
+ * "Fatal: Calendário" ou "Fatal: Botão 15 dias úteis": como a fatal foi escolhida na vistagem, à vista em todos os
+ * históricos (pedido de 18/11/2026). Com a fatal mudada depois na Conferência, um segundo selo diz isso.
+ */
+export function SeloOrigemDaFatal({ item, className }: { item: TarefaComFatal; className?: string }) {
+  const origem = origemDaFatal(item);
+  if (!origem) return null;
+  const { icone, tom } = VISUAL_ORIGEM[origem.origem ?? "nenhuma"];
+  return (
+    <span className={cn("flex flex-wrap items-center gap-1.5", className)}>
+      <Selo tom={tom} icone={icone} titulo={origem.descricao}>
+        <span className="font-normal">Fatal:</span> {origem.rotulo}
+      </Selo>
+      {origem.mudadaNaConferencia ? (
+        <Selo tom="alerta" icone={Pencil} titulo="A Conferência mudou a data fatal depois da vistagem: veja o ajuste na tarefa.">
+          Mudada na conferência
+        </Selo>
+      ) : null}
+    </span>
   );
 }
 
@@ -347,6 +400,7 @@ export function CartoesTarefas({
                   {comEnvio && item.viosTarefaId ? <LinkVios ci={item.viosTarefaId} /> : null}
                 </div>
                 <p className="break-words font-semibold text-foreground">{item.tarefa}</p>
+                <SeloOrigemDaFatal item={item} />
                 {item.observacao ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.observacao}</p> : null}
                 {simulada ? <p className="text-xs text-muted-foreground">Preenchida no VIOS, não gravada.</p> : null}
                 {item.envioErro ? <p className={cn("whitespace-pre-wrap break-words text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</p> : null}
@@ -378,16 +432,11 @@ export function CartoesTarefas({
                       {formatarData(item.enviarHoje)}) e põe o Revisar e o Protocolar antes da fatal. Não precisa editar.
                     </p>
                   ) : null}
-                  {(item.diasPrazo && item.contagemPrazo) || item.origemPrazo ? (
-                    <div className="text-[11px] leading-snug text-muted-foreground">
-                      {item.diasPrazo && item.contagemPrazo ? (
-                        <p>
-                          {item.diasPrazo} {ROTULO_CONTAGEM[item.contagemPrazo]} após a publicação
-                        </p>
-                      ) : null}
-                      {/* De onde veio o prazo (pedido de 11/11/2026): botões de dias, calendário, prazo legal, publicação ou IA. */}
-                      {item.origemPrazo ? <p className="text-muted-foreground/80">{ROTULO_ORIGEM_PRAZO[item.origemPrazo]}</p> : null}
-                    </div>
+                  {/* De onde veio a fatal (botões, calendário, prazo legal, publicação, IA): no selo do topo do cartão. */}
+                  {item.diasPrazo && item.contagemPrazo ? (
+                    <p className="text-[11px] leading-snug text-muted-foreground">
+                      {item.diasPrazo} {ROTULO_CONTAGEM[item.contagemPrazo]} após a publicação
+                    </p>
                   ) : null}
                 </div>
               ) : null}

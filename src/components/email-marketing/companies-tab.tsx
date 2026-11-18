@@ -1,29 +1,29 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  AlertCircle,
-  Building2,
-  ChevronDown,
-  ChevronRight,
-  Layers,
-  Search,
-  User,
-} from "lucide-react";
+import { AlertCircle, Building2, ClipboardCheck, ClipboardList, Search, UserX, Users, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import type { EmailCompany, EmailContact, EmailPerson } from "@/lib/email-marketing";
 import {
   computeEnrichmentStats,
   contactToEnrichable,
-  listMissingFieldLabels,
-  matchesEnrichmentFilter,
   personToEnrichable,
   type EnrichmentFilterId,
 } from "@/lib/email-marketing-enrichment";
-import { CompanyDetailDialog } from "./company-detail-dialog";
-import { EnrichmentFiltersBar } from "./enrichment-filters";
-import { ContactAvatar, EmailStatCard } from "./email-marketing-ui";
+import { buildClientGroups, groupMatchesEnrichment, SEM_GRUPO, type ClientGroupBucket } from "./client-groups";
+import { ClientGroupDialog } from "./client-group-dialog";
+import {
+  ClientLogo,
+  IconeArea,
+  MetricBand,
+  PeopleStack,
+  useClientGroupsMeta,
+  useHasClientLogo,
+  useTeam,
+} from "./email-marketing-visuals";
 
 interface CompaniesTabProps {
   companies: EmailCompany[];
@@ -31,461 +31,285 @@ interface CompaniesTabProps {
   people: EmailPerson[];
 }
 
-interface ClientGroupBucket {
-  key: string;
-  id: string | null;
-  name: string;
-  companies: EmailCompany[];
-  groupPeople: EmailPerson[];
-  pendingCount: number;
+type Sort = "contatos" | "pendencias" | "nome";
+
+const PAGE = 24;
+const SEM_AREA = "__sem_area__";
+
+function percentOf(group: ClientGroupBucket): number {
+  return group.profiles ? Math.round((group.complete / group.profiles) * 100) : 0;
 }
 
-function resolveGroupKey(entity: { clientGroupId: string | null; clientGroupName?: string | null }): string {
-  return entity.clientGroupId ?? entity.clientGroupName ?? "__sem_grupo__";
-}
-
-function buildGroupBuckets(companies: EmailCompany[], people: EmailPerson[]): ClientGroupBucket[] {
-  const buckets = new Map<string, ClientGroupBucket>();
-
-  for (const company of companies) {
-    const key = resolveGroupKey(company);
-    const existing = buckets.get(key);
-    if (existing) {
-      existing.companies.push(company);
-      continue;
-    }
-    buckets.set(key, {
-      key,
-      id: company.clientGroupId,
-      name: company.clientGroupName ?? "Sem grupo",
-      companies: [company],
-      groupPeople: [],
-      pendingCount: 0,
-    });
-  }
-
-  for (const person of people) {
-    const key = resolveGroupKey(person);
-    const name = person.clientGroupName ?? "Sem grupo";
-    const existing = buckets.get(key);
-    if (existing) {
-      existing.groupPeople.push(person);
-      continue;
-    }
-    buckets.set(key, {
-      key,
-      id: person.clientGroupId,
-      name,
-      companies: [],
-      groupPeople: [person],
-      pendingCount: 0,
-    });
-  }
-
-  return Array.from(buckets.values()).sort((a, b) => {
-    if (a.key === "__sem_grupo__") return 1;
-    if (b.key === "__sem_grupo__") return -1;
-    return a.name.localeCompare(b.name, "pt-BR");
-  });
-}
-
-function personInitials(name: string): string {
-  const parts = name.split(/\s+/).filter(Boolean);
-  return parts.slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "?";
-}
-
-function PersonRow({ person }: { person: EmailPerson }) {
-  const missing = listMissingFieldLabels(personToEnrichable(person));
+function ClientCard({ group, onOpen }: { group: ClientGroupBucket; onOpen: () => void }) {
+  const team = useTeam();
+  const responsibles = group.responsibleUserIds.map((id) => team.get(id)).filter((m): m is NonNullable<typeof m> => Boolean(m));
+  const percent = percentOf(group);
+  const pending = group.profiles - group.complete;
 
   return (
-    <div className="flex items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-semibold text-violet-700 ring-2 ring-violet-200/60">
-        {personInitials(person.name)}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{person.name}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {[person.cargo, person.area, person.email, person.phone, person.cpfCnpj]
-            .filter(Boolean)
-            .join(" · ") || "Cadastro pendente"}
-        </p>
-      </div>
-      {missing.length > 0 && (
-        <Badge variant="outline" className="shrink-0 text-[10px] text-amber-700 border-amber-200 bg-amber-50">
-          Falta: {missing.join(", ")}
-        </Badge>
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "group flex h-full w-full flex-col rounded-lg border border-[#dce9eb] bg-white text-left shadow-sm transition",
+        "hover:border-[#47cdd0]/70 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
       )}
-    </div>
-  );
-}
-
-function ContactRow({ contact }: { contact: EmailContact }) {
-  const missing = listMissingFieldLabels(contactToEnrichable(contact));
-
-  return (
-    <div className="flex items-center gap-2.5 rounded-lg border bg-background px-2.5 py-2">
-      <ContactAvatar contact={contact} className="h-7 w-7 text-[10px]" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{contact.name ?? "Sem nome"}</p>
-        <p className="truncate text-xs text-muted-foreground">{contact.email}</p>
-      </div>
-      {missing.length > 0 && (
-        <Badge variant="outline" className="shrink-0 text-[10px] text-amber-700 border-amber-200 bg-amber-50">
-          Falta: {missing.join(", ")}
-        </Badge>
-      )}
-    </div>
-  );
-}
-
-function CompanyRow({
-  company,
-  contacts,
-  onOpen,
-}: {
-  company: EmailCompany;
-  contacts: EmailContact[];
-  onOpen: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const location = [company.city, company.state].filter(Boolean).join(" · ");
-  const pendingInCompany = contacts.filter((c) =>
-    listMissingFieldLabels(contactToEnrichable(c)).length > 0
-  ).length;
-
-  return (
-    <div className="rounded-xl border bg-card/80 overflow-hidden">
-      <div className="flex items-center gap-2 p-3">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-muted/60"
-          aria-label={open ? "Recolher empresa" : "Expandir empresa"}
-        >
-          {open ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex min-w-0 flex-1 items-start gap-3 text-left hover:opacity-90"
-        >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Building2 className="h-4 w-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium">{company.name}</span>
-            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-              {[company.cnpj, location].filter(Boolean).join(" · ") || "Sem CNPJ/local"}
-            </span>
-          </span>
-        </button>
-
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <Badge variant="outline" className="text-[11px]">
-            {contacts.length} contato{contacts.length === 1 ? "" : "s"}
-          </Badge>
-          {pendingInCompany > 0 && (
-            <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-200 bg-amber-50">
-              {pendingInCompany} pendente{pendingInCompany === 1 ? "" : "s"}
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      {open && (
-        <div className="border-t bg-muted/10 px-3 py-2 space-y-1.5">
-          {contacts.length === 0 ? (
-            <p className="py-2 text-center text-xs text-muted-foreground">Nenhum contato vinculado.</p>
-          ) : (
-            contacts.map((contact) => <ContactRow key={contact.id} contact={contact} />)
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ClientGroupSection({
-  group,
-  contactsByCompany,
-  defaultOpen,
-  onOpenCompany,
-}: {
-  group: ClientGroupBucket;
-  contactsByCompany: Map<string, EmailContact[]>;
-  defaultOpen?: boolean;
-  onOpenCompany: (company: EmailCompany) => void;
-}) {
-  const [open, setOpen] = useState(defaultOpen ?? false);
-
-  return (
-    <section className="rounded-lg border border-border/80 bg-card shadow-sm overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 px-4 py-4 text-left hover:bg-muted/20 transition-colors"
-      >
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-700">
-          <Layers className="h-5 w-5" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-base font-semibold leading-snug">{group.name}</span>
-          <span className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <span>{group.companies.length} empresa{group.companies.length === 1 ? "" : "s"}</span>
-            <span>·</span>
-            <span>{group.groupPeople.length} pessoa{group.groupPeople.length === 1 ? "" : "s"}</span>
-            {group.pendingCount > 0 && (
-              <>
-                <span>·</span>
-                <span className="inline-flex items-center gap-1 text-amber-700">
-                  <AlertCircle className="h-3 w-3" />
-                  {group.pendingCount} pendência{group.pendingCount === 1 ? "" : "s"}
-                </span>
-              </>
+    >
+      <div className="flex items-start gap-3 p-4 pb-3">
+        <ClientLogo group={group.key === SEM_GRUPO ? null : group.name} size="lg" />
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 font-semibold leading-snug text-[#0d2a38] group-hover:text-[#285f7a]">{group.name}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#3b5560]">
+            {group.area ? (
+              <span className="inline-flex items-center gap-1">
+                <IconeArea area={group.area} tamanho="xs" />
+                {group.area}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">Sem área no SIOE</span>
             )}
+            {group.inactive && <span className="rounded-full bg-[#eef2f4] px-1.5 text-[#4b5b66]">Inativo</span>}
+          </div>
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-3 border-y border-[#eaf2f5] text-center">
+        {[
+          { label: "empresas", value: group.companies.length },
+          { label: "inscritos", value: group.subscribed },
+          { label: "pessoas", value: group.people.length },
+        ].map((item, index) => (
+          <div key={item.label} className={cn("px-2 py-2", index > 0 && "border-l border-[#eaf2f5]")}>
+            <dt className="sr-only">{item.label}</dt>
+            <dd className="text-base font-semibold tabular-nums text-[#0d2a38]">{item.value}</dd>
+            <p className="text-xs text-[#5a717b]" aria-hidden>
+              {item.label}
+            </p>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-auto space-y-2 p-4 pt-3">
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-[#3b5560]">
+            Cadastro <strong className="font-semibold tabular-nums text-[#0d2a38]">{percent}%</strong>
           </span>
-        </span>
-        {open ? (
-          <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-        )}
-      </button>
-
-      {open && (
-        <div className="border-t px-4 py-4 space-y-4 bg-muted/5">
-          {group.companies.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Empresas</p>
-              <div className="space-y-2">
-                {group.companies
-                  .slice()
-                  .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
-                  .map((company) => (
-                    <CompanyRow
-                      key={company.id}
-                      company={company}
-                      contacts={contactsByCompany.get(company.id) ?? []}
-                      onOpen={() => onOpenCompany(company)}
-                    />
-                  ))}
-              </div>
-            </div>
-          )}
-
-          {group.groupPeople.length > 0 && (
-            <div className="space-y-2">
-              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                <User className="h-3.5 w-3.5" />
-                Pessoas do grupo
-              </p>
-              <div className="space-y-1.5">
-                {group.groupPeople
-                  .slice()
-                  .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
-                  .map((person) => (
-                    <PersonRow key={person.id} person={person} />
-                  ))}
-              </div>
-            </div>
+          {pending > 0 ? (
+            <span className="inline-flex items-center gap-1 text-amber-800">
+              <AlertCircle className="h-3.5 w-3.5" />
+              {pending} pendente{pending === 1 ? "" : "s"}
+            </span>
+          ) : group.profiles > 0 ? (
+            <span className="text-emerald-700">Tudo preenchido</span>
+          ) : (
+            <span className="text-muted-foreground">Sem cadastros</span>
           )}
         </div>
-      )}
-    </section>
+        <span className="block h-1.5 overflow-hidden rounded-full bg-[#eaf2f5]">
+          <span
+            className={cn("block h-full rounded-full", percent >= 80 ? "bg-emerald-500" : percent >= 40 ? "bg-amber-500" : "bg-rose-500")}
+            style={{ width: `${Math.max(percent, group.profiles ? 3 : 0)}%` }}
+          />
+        </span>
+        <div className="flex min-h-7 items-center justify-between gap-2 pt-1">
+          {responsibles.length ? (
+            <>
+              <PeopleStack people={responsibles} max={4} size="sm" />
+              <span className="truncate text-xs text-[#5a717b]">
+                {responsibles.length === 1 ? responsibles[0].name.split(" ")[0] : `${responsibles.length} responsáveis`}
+              </span>
+            </>
+          ) : (
+            <span className="text-xs text-muted-foreground">Sem responsável vinculado</span>
+          )}
+        </div>
+      </div>
+    </button>
   );
 }
 
 export function CompaniesTab({ companies, contacts, people }: CompaniesTabProps) {
+  const meta = useClientGroupsMeta();
+  const hasLogo = useHasClientLogo();
   const [search, setSearch] = useState("");
-  const [groupFilter, setGroupFilter] = useState("__all__");
-  const [enrichmentFilter, setEnrichmentFilter] = useState<EnrichmentFilterId>("all");
-  const [onlyPendingGroups, setOnlyPendingGroups] = useState(false);
-  const [selected, setSelected] = useState<EmailCompany | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [area, setArea] = useState("__all__");
+  const [pendencia, setPendencia] = useState<EnrichmentFilterId>("all");
+  const [sort, setSort] = useState<Sort>("contatos");
+  const [limit, setLimit] = useState(PAGE);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
-  const allProfiles = useMemo(
-    () => [...people.map(personToEnrichable), ...contacts.map(contactToEnrichable)],
-    [people, contacts]
-  );
+  const groups = useMemo(() => buildClientGroups(companies, contacts, people, meta), [companies, contacts, people, meta]);
+  const selected = groups.find((g) => g.key === selectedKey) ?? null;
 
-  const enrichmentStats = useMemo(() => computeEnrichmentStats(allProfiles), [allProfiles]);
+  const stats = useMemo(() => {
+    const enrichment = computeEnrichmentStats([...people.map(personToEnrichable), ...contacts.map(contactToEnrichable)]);
+    return {
+      groups: groups.filter((g) => g.key !== SEM_GRUPO).length,
+      withLogo: groups.filter((g) => g.key !== SEM_GRUPO && hasLogo(g.name)).length,
+      companies: companies.length,
+      ...enrichment,
+    };
+  }, [groups, companies, contacts, people, hasLogo]);
 
-  const groupOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const person of people) {
-      const key = resolveGroupKey(person);
-      if (key !== "__sem_grupo__") map.set(key, person.clientGroupName ?? "Sem grupo");
+  const areas = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const g of groups) {
+      const key = g.area ?? SEM_AREA;
+      map.set(key, (map.get(key) ?? 0) + 1);
     }
-    for (const company of companies) {
-      const key = resolveGroupKey(company);
-      if (key !== "__sem_grupo__") map.set(key, company.clientGroupName ?? "Sem grupo");
-    }
-    return Array.from(map.entries())
-      .map(([key, label]) => ({ key, label }))
-      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
-  }, [people, companies]);
+    return Array.from(map.entries()).sort((a, b) => (a[0] === SEM_AREA ? 1 : b[0] === SEM_AREA ? -1 : b[1] - a[1]));
+  }, [groups]);
 
-  const filteredPeople = useMemo(() => {
-    return people.filter((person) => {
-      if (groupFilter !== "__all__" && resolveGroupKey(person) !== groupFilter) return false;
-      return matchesEnrichmentFilter(personToEnrichable(person), enrichmentFilter);
-    });
-  }, [people, groupFilter, enrichmentFilter]);
-
-  const filteredContacts = useMemo(() => {
-    return contacts.filter((contact) => {
-      if (groupFilter !== "__all__" && resolveGroupKey(contact) !== groupFilter) return false;
-      return matchesEnrichmentFilter(contactToEnrichable(contact), enrichmentFilter);
-    });
-  }, [contacts, groupFilter, enrichmentFilter]);
-
-  const contactsByCompany = useMemo(() => {
-    const map = new Map<string, EmailContact[]>();
-    for (const contact of filteredContacts) {
-      if (!contact.companyId) continue;
-      const list = map.get(contact.companyId) ?? [];
-      list.push(contact);
-      map.set(contact.companyId, list);
-    }
-    return map;
-  }, [filteredContacts]);
-
-  const filteredCompanies = useMemo(() => {
-    if (groupFilter === "__all__") return companies;
-    return companies.filter((company) => resolveGroupKey(company) === groupFilter);
-  }, [companies, groupFilter]);
-
-  const groups = useMemo(() => {
-    const buckets = buildGroupBuckets(filteredCompanies, filteredPeople);
-
-    return buckets
-      .map((group) => {
-        const visibleCompanies =
-          enrichmentFilter === "all"
-            ? group.companies
-            : group.companies.filter((company) => (contactsByCompany.get(company.id)?.length ?? 0) > 0);
-
-        const pendingCount =
-          group.groupPeople.filter((p) => profileIsIncompleteLocal(p)).length +
-          group.companies.reduce((sum, company) => {
-            const companyContacts = contactsByCompany.get(company.id) ?? [];
-            return (
-              sum +
-              companyContacts.filter((c) => listMissingFieldLabels(contactToEnrichable(c)).length > 0).length
-            );
-          }, 0);
-
-        return { ...group, companies: visibleCompanies, pendingCount };
-      })
-      .filter((group) => {
-        if (onlyPendingGroups && group.pendingCount === 0) return false;
-        if (enrichmentFilter !== "all" && group.companies.length === 0 && group.groupPeople.length === 0) {
-          return false;
-        }
-        return true;
-      });
-  }, [filteredCompanies, filteredPeople, contactsByCompany, enrichmentFilter, onlyPendingGroups]);
-
-  const filteredGroups = useMemo(() => {
-    if (!search.trim()) return groups;
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return groups
-      .map((group) => {
-        if (group.name.toLowerCase().includes(q)) return group;
-        const matchedCompanies = group.companies.filter(
-          (c) =>
-            c.name.toLowerCase().includes(q) ||
-            (c.city ?? "").toLowerCase().includes(q) ||
-            (c.cnpj ?? "").includes(q)
-        );
-        const matchedPeople = group.groupPeople.filter(
-          (p) =>
-            p.name.toLowerCase().includes(q) ||
-            (p.email ?? "").toLowerCase().includes(q) ||
-            (p.cargo ?? "").toLowerCase().includes(q) ||
-            (p.cpfCnpj ?? "").includes(q)
-        );
-        if (matchedCompanies.length === 0 && matchedPeople.length === 0) return null;
-        return { ...group, companies: matchedCompanies, groupPeople: matchedPeople };
-      })
-      .filter(Boolean) as ClientGroupBucket[];
-  }, [groups, search]);
+    const list = groups.filter((g) => {
+      if (area !== "__all__" && (g.area ?? SEM_AREA) !== area) return false;
+      if (!groupMatchesEnrichment(g, pendencia)) return false;
+      if (!q) return true;
+      return (
+        g.name.toLowerCase().includes(q) ||
+        g.companies.some((c) => c.name.toLowerCase().includes(q) || (c.cnpj ?? "").includes(q) || (c.city ?? "").toLowerCase().includes(q)) ||
+        g.contacts.some((c) => (c.name ?? "").toLowerCase().includes(q) || c.email.toLowerCase().includes(q)) ||
+        g.people.some((p) => p.name.toLowerCase().includes(q))
+      );
+    });
+    return list.sort((a, b) => {
+      if (a.key === SEM_GRUPO) return 1;
+      if (b.key === SEM_GRUPO) return -1;
+      if (sort === "nome") return a.name.localeCompare(b.name, "pt-BR");
+      if (sort === "pendencias") return b.profiles - b.complete - (a.profiles - a.complete) || a.name.localeCompare(b.name, "pt-BR");
+      return b.contacts.length - a.contacts.length || a.name.localeCompare(b.name, "pt-BR");
+    });
+  }, [groups, search, area, pendencia, sort]);
 
-  const visiblePeopleCount = filteredPeople.length + filteredContacts.length;
+  const visible = filtered.slice(0, limit);
+  const hasFilters = search.trim() !== "" || area !== "__all__" || pendencia !== "all";
 
-  const openCompany = (company: EmailCompany) => {
-    setSelected(company);
-    setDetailOpen(true);
+  const pick = (filter: EnrichmentFilterId) => {
+    setPendencia((current) => (current === filter ? "all" : filter));
+    setLimit(PAGE);
   };
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <EmailStatCard label="Grupos" value={groupOptions.length} hint="Grupo Cliente (SIOE)" />
-        <EmailStatCard label="Pessoas" value={people.length + contacts.length} />
-        <EmailStatCard label="Cadastros incompletos" value={enrichmentStats.incompleto} />
-        <EmailStatCard label="Sem e-mail" value={enrichmentStats.semEmail} hint="Prioridade para gestores" />
-      </div>
-
-      <EnrichmentFiltersBar
-        groupOptions={groupOptions}
-        groupFilter={groupFilter}
-        onGroupFilterChange={setGroupFilter}
-        enrichmentFilter={enrichmentFilter}
-        onEnrichmentFilterChange={setEnrichmentFilter}
-        onlyPendingGroups={onlyPendingGroups}
-        onOnlyPendingGroupsChange={setOnlyPendingGroups}
-        stats={enrichmentStats}
-        resultCount={visiblePeopleCount}
+      <MetricBand
+        active={pendencia === "all" ? "all" : pendencia}
+        onSelect={(id) => pick(id as EnrichmentFilterId)}
+        metrics={[
+          { id: "all", icon: Building2, label: "Clientes", value: stats.groups.toLocaleString("pt-BR"), hint: `${stats.companies} empresas · ${stats.withLogo} com logo` },
+          { id: "sem_email", icon: UserX, label: "Pessoas sem e-mail", value: stats.semEmail.toLocaleString("pt-BR"), hint: "não recebem campanhas", warn: stats.semEmail > 0 },
+          { id: "sem_cargo", icon: Users, label: "Sem cargo", value: stats.semCargo.toLocaleString("pt-BR"), hint: "atrapalha a segmentação", warn: stats.semCargo > 0 },
+          { id: "incompleto", icon: ClipboardList, label: "Cadastro incompleto", value: stats.incompleto.toLocaleString("pt-BR"), hint: `de ${stats.total.toLocaleString("pt-BR")} cadastros` },
+          { id: "completo", icon: ClipboardCheck, label: "Cadastro completo", value: stats.completo.toLocaleString("pt-BR"), hint: "e-mail, cargo, telefone e área" },
+        ]}
       />
 
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar grupo, empresa ou pessoa..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 w-80"
-          />
+      <section className="space-y-3 rounded-lg border border-[#dce9eb] bg-white p-3 shadow-sm">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_200px]">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar cliente, empresa, CNPJ ou pessoa"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setLimit(PAGE);
+              }}
+              className="pl-8"
+              aria-label="Buscar clientes"
+            />
+          </div>
+          <Select value={sort} onValueChange={(v) => setSort(v as Sort)}>
+            <SelectTrigger className="w-full bg-white" aria-label="Ordenar clientes">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="contatos">Mais contatos primeiro</SelectItem>
+              <SelectItem value="pendencias">Mais pendências primeiro</SelectItem>
+              <SelectItem value="nome">Nome (A a Z)</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {filteredGroups.length} grupo{filteredGroups.length === 1 ? "" : "s"} visíveis
-        </p>
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none]" role="group" aria-label="Filtrar por área">
+          {[["__all__", groups.length] as [string, number], ...areas].map(([key, count]) => {
+            const active = area === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={active}
+                onClick={() => {
+                  setArea(key);
+                  setLimit(PAGE);
+                }}
+                className={cn(
+                  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors",
+                  active ? "border-[#347796] bg-[#347796] font-medium text-white" : "border-[#dce9eb] bg-white text-[#3b5560] hover:bg-[#eaf2f5]"
+                )}
+              >
+                {key !== "__all__" && key !== SEM_AREA && <IconeArea area={key} tamanho="xs" className={cn(active && "bg-white ring-white/40")} />}
+                {key === "__all__" ? "Todas as áreas" : key === SEM_AREA ? "Sem área" : key}
+                <span className={cn("tabular-nums", active ? "text-white/80" : "text-muted-foreground")}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="flex items-center justify-between gap-2 px-1 text-xs text-[#5a717b]">
+        <span className="tabular-nums">
+          {filtered.length} cliente{filtered.length === 1 ? "" : "s"}
+          {pendencia !== "all" && " com essa pendência"}
+        </span>
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearch("");
+              setArea("__all__");
+              setPendencia("all");
+              setLimit(PAGE);
+            }}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 font-medium text-[#285f7a] hover:bg-[#eaf2f5]"
+          >
+            <X className="h-3.5 w-3.5" />
+            Limpar filtros
+          </button>
+        )}
       </div>
 
-      {filteredGroups.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground">
-          <Building2 className="h-9 w-9 opacity-40" />
-          <p className="text-sm font-medium text-foreground">Nenhum resultado com estes filtros</p>
-          <p className="text-xs max-w-sm">
-            Tente limpar os filtros ou escolher outra pendência (sem e-mail, sem cargo, etc.).
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-[#dce9eb] bg-white px-6 py-16 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#eaf2f5] text-[#285f7a]">
+            <Building2 className="h-5 w-5" />
+          </span>
+          <p className="font-medium text-[#0d2a38]">{groups.length === 0 ? "Nenhum cliente ainda" : "Nenhum cliente com esses filtros"}</p>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            {groups.length === 0 ? "Sincronize os clientes ativos do SIOE em Configurações." : "Troque a área, a pendência ou limpe a busca."}
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredGroups.map((group, index) => (
-            <ClientGroupSection
-              key={group.key}
-              group={group}
-              contactsByCompany={contactsByCompany}
-              defaultOpen={index === 0 || filteredGroups.length === 1}
-              onOpenCompany={openCompany}
-            />
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {visible.map((group) => (
+            <li key={group.key}>
+              <ClientCard group={group} onOpen={() => setSelectedKey(group.key)} />
+            </li>
           ))}
+        </ul>
+      )}
+
+      {filtered.length > visible.length && (
+        <div className="flex flex-col items-center gap-1.5">
+          <Button variant="secondary" onClick={() => setLimit((n) => n + PAGE * 2)}>
+            Mostrar mais {Math.min(PAGE * 2, filtered.length - visible.length)} clientes
+          </Button>
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {visible.length} de {filtered.length}
+          </span>
         </div>
       )}
 
-      <CompanyDetailDialog open={detailOpen} onOpenChange={setDetailOpen} company={selected} />
+      <ClientGroupDialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelectedKey(null)} group={selected} />
     </div>
   );
-}
-
-function profileIsIncompleteLocal(person: EmailPerson): boolean {
-  return listMissingFieldLabels(personToEnrichable(person)).length > 0;
 }

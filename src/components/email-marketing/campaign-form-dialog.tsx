@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Check,
   ChevronDown,
+  Newspaper,
   ChevronUp,
   Code2,
   LayoutTemplate,
@@ -55,6 +57,60 @@ import { TemplateGalleryDialog } from "./template-gallery-dialog";
 import { NewsletterBuilder } from "./newsletter-builder";
 import { MergeTagPicker, SubjectWithMergeTags } from "./merge-tag-picker";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/utils/supabase/client";
+import { isOfficeMailbox, mailboxDuration, MicrosoftMark } from "./send-mode";
+import { PersonPhoto, shortName, teamMemberFor, useTeam } from "./email-marketing-visuals";
+
+type SendMode = EmailCampaign["sendMode"];
+
+/** Por onde sai a campanha (coluna send_mode); grava direto na campanha depois de salvar o rascunho. */
+async function saveSendMode(id: string, mode: SendMode): Promise<void> {
+  const { error } = await supabase.from("email_campaigns").update({ send_mode: mode }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+function ModeOption({
+  active,
+  onSelect,
+  icon,
+  title,
+  text,
+}: {
+  active: boolean;
+  onSelect: () => void;
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      onClick={onSelect}
+      className={cn(
+        "flex items-start gap-3 rounded-lg border p-3 text-left transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+        active ? "border-[#347796] bg-[#347796]/[0.06]" : "border-[#dce9eb] bg-white hover:bg-[#f5f9fa]"
+      )}
+    >
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-white ring-1 ring-[#dce9eb]">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium text-[#0d2a38]">{title}</span>
+        <span className="mt-0.5 block text-xs text-[#5a717b]">{text}</span>
+      </span>
+      <span
+        className={cn(
+          "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+          active ? "border-[#347796] bg-[#347796] text-white" : "border-[#b9cbd2]"
+        )}
+        aria-hidden
+      >
+        {active && <Check className="size-3" />}
+      </span>
+    </button>
+  );
+}
 
 export type CampaignFormStep = "setup" | "editor";
 
@@ -153,7 +209,10 @@ export function CampaignFormDialog({
   const [step, setStep] = useState<WizardStep>("setup");
   const [savedCampaignId, setSavedCampaignId] = useState<string | null>(null);
   const [senderConfig, setSenderConfig] = useState<EmailSenderConfig | null>(null);
+  const team = useTeam();
   const [name, setName] = useState("");
+  const [sendMode, setSendMode] = useState<SendMode>("mailbox");
+  const [fromEmail, setFromEmail] = useState("");
   const [fromName, setFromName] = useState("");
   const [replyTo, setReplyTo] = useState("");
   const [subject, setSubject] = useState("");
@@ -181,6 +240,9 @@ export function CampaignFormDialog({
     setStep(initialStep === "editor" && campaign ? "editor" : "setup");
     setSavedCampaignId(campaign?.id ?? null);
     setName(campaign?.name ?? "");
+    // Campanha nova sai pela caixa do remetente (as de produto); a newsletter em volume escolhe o Resend.
+    setSendMode(campaign?.sendMode ?? "mailbox");
+    setFromEmail(campaign?.sendMode === "mailbox" ? campaign.fromEmail : "");
     setFromName(campaign?.fromName ?? "");
     setReplyTo(campaign?.replyTo ?? "");
     setSubject(campaign?.subject ?? "");
@@ -270,15 +332,19 @@ export function CampaignFormDialog({
     return previewDoc;
   }, [isNewsletter, newsletterData, previewDoc]);
 
+  const isMailbox = sendMode === "mailbox";
+
   const buildPayload = () => {
     const sender = resolveSenderFields(senderConfig);
+    const mailbox = fromEmail.trim().toLowerCase();
     return {
       name: name.trim(),
       subject: subject.trim(),
       previewText: previewText.trim() || null,
       fromName: fromName.trim() || sender.fromName,
-      fromEmail: sender.fromEmail,
-      replyTo: replyTo.trim() || sender.replyTo,
+      // Pela caixa do remetente sai do e-mail escolhido; pelo Resend, do remetente padrão do domínio de envio.
+      fromEmail: isMailbox ? mailbox : sender.fromEmail,
+      replyTo: isMailbox ? mailbox : replyTo.trim() || sender.replyTo,
       htmlBody: isNewsletter ? packNewsletterCampaignHtml(newsletterData) : htmlBody,
       listId: listId === "__all__" ? null : listId,
     };
@@ -287,6 +353,11 @@ export function CampaignFormDialog({
   const validateSetup = (): string | null => {
     if (!name.trim()) return "Informe o nome interno da campanha.";
     if (!subject.trim()) return "Informe o assunto do e-mail.";
+    if (isMailbox) {
+      if (!isOfficeMailbox(fromEmail)) return "Informe a caixa que envia: um e-mail @bismarchipires.com.br.";
+      if (!fromName.trim()) return "Informe o nome que aparece (o nome de quem envia).";
+      return null;
+    }
     if (replyTo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo.trim())) {
       return "O e-mail de resposta não parece válido.";
     }
@@ -300,9 +371,11 @@ export function CampaignFormDialog({
     const payload = buildPayload();
     if (campaignId) {
       await updateEmailCampaign(campaignId, payload);
+      await saveSendMode(campaignId, sendMode);
       return campaignId;
     }
     const created = await createEmailCampaign(payload);
+    await saveSendMode(created.id, sendMode);
     setSavedCampaignId(created.id);
     onSaved(created.id);
     return created.id;
@@ -475,8 +548,17 @@ export function CampaignFormDialog({
   }
 
   const resolvedSender = resolveSenderFields(senderConfig);
-  const sender = { ...resolvedSender, fromName: fromName.trim() || resolvedSender.fromName };
+  const sender = {
+    ...resolvedSender,
+    fromName: fromName.trim() || resolvedSender.fromName,
+    fromEmail: isMailbox ? fromEmail.trim() : resolvedSender.fromEmail,
+  };
   const senderInitial = (sender.fromName || "?").trim().charAt(0).toUpperCase();
+  // Quem da equipe é a caixa escolhida (foto na prévia e item marcado na lista).
+  const mailboxMember = isMailbox ? teamMemberFor(team, [fromEmail], null) : null;
+  const mailboxPeople = Array.from(team.values())
+    .filter((member) => member.email && /@(bismarchipires|bpplaw)\.com\.br$/i.test(member.email))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
   return (
     <Dialog open={open && step === "setup"} onOpenChange={onOpenChange}>
@@ -566,6 +648,87 @@ export function CampaignFormDialog({
               </div>
 
               <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase text-muted-foreground">Como enviar</p>
+                <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Como enviar">
+                  <ModeOption
+                    active={isMailbox}
+                    onSelect={() => setSendMode("mailbox")}
+                    icon={<MicrosoftMark className="size-4" />}
+                    title="Pela caixa do remetente (Microsoft 365)"
+                    text="Um e-mail por pessoa, da caixa do sócio. Abertura e clique medidos pelo ORQESTRAI."
+                  />
+                  <ModeOption
+                    active={!isMailbox}
+                    onSelect={() => isMailbox && setSendMode("broadcast")}
+                    icon={<Newspaper className="size-4 text-[#347796]" />}
+                    title="Resend (newsletter em volume)"
+                    text="Disparo em massa pelo domínio de envio; precisa dos registros DNS verificados."
+                  />
+                </div>
+              </div>
+
+              {isMailbox ? (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">Quem envia</p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="campaign-mailbox-person">Escolher da equipe</Label>
+                    <Select
+                      value={mailboxMember?.id ?? ""}
+                      onValueChange={(id) => {
+                        const member = team.get(id);
+                        if (!member?.email) return;
+                        setFromEmail(member.email.toLowerCase().replace(/@bpplaw\.com\.br$/, "@bismarchipires.com.br"));
+                        setFromName(member.name);
+                      }}
+                    >
+                      <SelectTrigger id="campaign-mailbox-person" className="w-full">
+                        <SelectValue placeholder="Selecione o sócio ou advogado que assina" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-72">
+                        {mailboxPeople.map((member) => (
+                          <SelectItem key={member.id} value={member.id}>
+                            <span className="flex items-center gap-2">
+                              <PersonPhoto name={member.name} photo={member.photo} size="xs" />
+                              {shortName(member.name)}
+                              <span className="text-xs text-muted-foreground">{member.email}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="campaign-from-email">E-mail que envia *</Label>
+                      <Input
+                        id="campaign-from-email"
+                        type="email"
+                        value={fromEmail}
+                        onChange={(e) => setFromEmail(e.target.value)}
+                        placeholder="nome@bismarchipires.com.br"
+                        aria-invalid={fromEmail.trim() !== "" && !isOfficeMailbox(fromEmail)}
+                      />
+                      {fromEmail.trim() !== "" && !isOfficeMailbox(fromEmail) && (
+                        <p className="text-[11px] text-destructive">Precisa ser uma caixa @bismarchipires.com.br.</p>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="campaign-from-name-mailbox">Nome que aparece *</Label>
+                      <Input
+                        id="campaign-from-name-mailbox"
+                        value={fromName}
+                        onChange={(e) => setFromName(e.target.value)}
+                        placeholder="Nome de quem envia"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Respostas e avisos de não entrega chegam nessa caixa.
+                    {audienceCount ? ` ${audienceCount.toLocaleString("pt-BR")} contatos levam ${mailboxDuration(audienceCount)} (um e-mail a cada 2,5 s).` : ""}
+                  </p>
+                </div>
+              ) : (
+              <div className="space-y-3">
                 <p className="text-xs font-semibold uppercase text-muted-foreground">Remetente</p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
@@ -592,6 +755,7 @@ export function CampaignFormDialog({
                   Sai de {resolveSenderFields(senderConfig).fromEmail || "o e-mail de envio configurado"}; quem responder fala direto com o e-mail acima.
                 </p>
               </div>
+              )}
 
               <div className="space-y-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -678,11 +842,16 @@ export function CampaignFormDialog({
               </p>
               <div className="rounded-lg border bg-background p-3 space-y-2 shadow-sm">
                 <div className="flex items-start gap-2.5">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                    {senderInitial}
-                  </div>
+                  {mailboxMember ? (
+                    <PersonPhoto name={mailboxMember.name} photo={mailboxMember.photo} size="sm" className="size-8" />
+                  ) : (
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                      {senderInitial}
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <p className="text-xs font-medium truncate">{sender.fromName}</p>
+                    {sender.fromEmail && <p className="truncate text-[11px] text-muted-foreground">{sender.fromEmail}</p>}
                     <p className="text-xs font-semibold truncate">
                       {previewSubject || <span className="italic text-muted-foreground">Sem assunto</span>}
                     </p>
@@ -694,10 +863,17 @@ export function CampaignFormDialog({
                   </div>
                 </div>
               </div>
-              {!sender.fromEmail && (
-                <p className="text-[11px] text-amber-600">
-                  Configure o e-mail remetente na aba Configurações para poder salvar a campanha.
+              {isMailbox ? (
+                <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                  <MicrosoftMark className="mt-px size-3" />
+                  Sai da caixa Microsoft 365 de quem envia, como um e-mail normal dele.
                 </p>
+              ) : (
+                !sender.fromEmail && (
+                  <p className="text-[11px] text-amber-600">
+                    Configure o e-mail remetente na aba Configurações para poder salvar a campanha.
+                  </p>
+                )
               )}
             </div>
           </div>

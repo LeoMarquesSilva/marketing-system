@@ -1,23 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, Globe, Link2, MapPin, Users } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  EMAIL_CONTACT_STATUS_LABEL,
-  fetchEmailCompanyContacts,
-  type EmailCompany,
-  type EmailContact,
-  type EmailContactStatus,
-} from "@/lib/email-marketing";
+import { Globe, Link2, MapPin, Users } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { fetchEmailCompanyContacts, type EmailCompany, type EmailContact } from "@/lib/email-marketing";
+import { contactToEnrichable, getProfileCargo } from "@/lib/email-marketing-enrichment";
 import { ContactAvatar } from "./email-marketing-ui";
+import { ClientLogo, ContactStatusPill, PeopleStack, SeloArea, useTeam } from "./email-marketing-visuals";
 
 interface CompanyDetailDialogProps {
   open: boolean;
@@ -25,14 +15,8 @@ interface CompanyDetailDialogProps {
   company: EmailCompany | null;
 }
 
-const STATUS_VARIANT: Record<EmailContactStatus, "default" | "secondary" | "destructive" | "outline"> = {
-  subscribed: "default",
-  unsubscribed: "secondary",
-  bounced: "destructive",
-  complained: "destructive",
-};
-
 export function CompanyDetailDialog({ open, onOpenChange, company }: CompanyDetailDialogProps) {
+  const team = useTeam();
   const [contacts, setContacts] = useState<EmailContact[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -49,65 +33,66 @@ export function CompanyDetailDialog({ open, onOpenChange, company }: CompanyDeta
 
   const location = [company.city, company.state, company.country].filter(Boolean).join(" · ");
   const subscribedCount = contacts.filter((c) => c.status === "subscribed").length;
+  const responsibles = company.responsibleUserIds.map((id) => team.get(id)).filter((m): m is NonNullable<typeof m> => Boolean(m));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[88vh] overflow-hidden flex flex-col gap-0 p-0">
-        <DialogHeader className="border-b px-6 py-5 shrink-0">
-          <div className="flex items-start gap-3 pr-6">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Building2 className="h-5 w-5" />
-            </span>
-            <div className="min-w-0">
-              <DialogTitle className="text-left leading-snug">{company.name}</DialogTitle>
-              {company.clientGroupName && (
-                <p className="mt-1 text-xs font-medium text-violet-700">{company.clientGroupName}</p>
-              )}
-              {company.cnpj && (
-                <p className="mt-1 text-xs text-muted-foreground">{company.cnpj}</p>
-              )}
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="shrink-0 border-b border-[#eaf2f5] px-6 py-5 pr-12 text-left">
+          <div className="flex items-start gap-4">
+            <ClientLogo group={company.clientGroupName} company={company.name} size="xl" />
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="text-lg leading-snug text-[#0d2a38]">{company.name}</DialogTitle>
+              <DialogDescription className="mt-0.5">
+                {[company.clientGroupName, company.cnpj].filter(Boolean).join(" · ") || "Sem grupo e CNPJ"}
+              </DialogDescription>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {company.responsibleArea && <SeloArea area={company.responsibleArea} />}
+                {location && (
+                  <span className="inline-flex items-center gap-1 text-xs text-[#3b5560]">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {location}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Card className="rounded-xl shadow-none">
-              <CardContent className="p-3">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Contatos</p>
-                <p className="mt-1 text-xl font-semibold">{company.contactCount ?? contacts.length}</p>
-              </CardContent>
-            </Card>
-            <Card className="rounded-xl shadow-none">
-              <CardContent className="p-3">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Inscritos</p>
-                <p className="mt-1 text-xl font-semibold text-emerald-600">{subscribedCount}</p>
-              </CardContent>
-            </Card>
-            {location && (
-              <Card className="rounded-xl shadow-none col-span-2">
-                <CardContent className="p-3">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Localização</p>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm font-medium">
-                    <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                    {location}
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid grid-cols-2 gap-4 bg-[#f7fafb] px-6 py-4 sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-[#5a717b]">Contatos</p>
+              <p className="text-2xl font-semibold tabular-nums text-[#0d2a38]">{company.contactCount ?? contacts.length}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#5a717b]">Inscritos</p>
+              <p className="text-2xl font-semibold tabular-nums text-emerald-700">{loading ? "—" : subscribedCount}</p>
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <p className="text-xs text-[#5a717b]">Quem cuida</p>
+              {responsibles.length ? (
+                <div className="mt-1 flex items-center gap-2">
+                  <PeopleStack people={responsibles} size="sm" />
+                  {responsibles.length === 1 && <span className="truncate text-sm text-[#0d2a38]">{responsibles[0].name.split(" ")[0]}</span>}
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-muted-foreground">Ninguém vinculado</p>
+              )}
+            </div>
           </div>
 
           {(company.website || company.linkedin) && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 border-t border-[#eaf2f5] px-6 py-3">
               {company.website && (
                 <a
                   href={company.website}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg border bg-muted/30 px-3 py-2 text-sm hover:bg-muted/60 transition-colors"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#dce9eb] px-2.5 text-sm text-[#285f7a] hover:bg-[#eaf2f5]"
                 >
-                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                  Website
+                  <Globe className="h-3.5 w-3.5" />
+                  Site
                 </a>
               )}
               {company.linkedin && (
@@ -115,49 +100,55 @@ export function CompanyDetailDialog({ open, onOpenChange, company }: CompanyDeta
                   href={company.linkedin}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg border bg-muted/30 px-3 py-2 text-sm hover:bg-muted/60 transition-colors"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#dce9eb] px-2.5 text-sm text-[#285f7a] hover:bg-[#eaf2f5]"
                 >
-                  <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  <Link2 className="h-3.5 w-3.5" />
                   LinkedIn
                 </a>
               )}
             </div>
           )}
 
-          <div>
-            <div className="mb-3 flex items-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm font-medium">Contatos vinculados</p>
-            </div>
-
+          <section className="space-y-2 border-t border-[#eaf2f5] px-6 py-5">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-[#0d2a38]">
+              <Users className="h-4 w-4 text-[#3e84a8]" />
+              Contatos da empresa
+            </h3>
             {loading ? (
-              <div className="flex justify-center py-10">
-                <div className="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              </div>
-            ) : contacts.length === 0 ? (
-              <div className="rounded-xl border border-dashed py-10 text-center text-sm text-muted-foreground">
-                Nenhum contato vinculado a esta empresa.
-              </div>
-            ) : (
               <div className="space-y-2">
-                {contacts.map((contact) => (
-                  <div
-                    key={contact.id}
-                    className="flex items-center gap-3 rounded-xl border bg-card px-3 py-2.5 transition-colors hover:bg-muted/20"
-                  >
-                    <ContactAvatar contact={contact} className="h-8 w-8 text-[10px]" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{contact.name ?? "Sem nome"}</p>
-                      <p className="truncate text-xs text-muted-foreground">{contact.email}</p>
-                    </div>
-                    <Badge variant={STATUS_VARIANT[contact.status]} className="shrink-0">
-                      {EMAIL_CONTACT_STATUS_LABEL[contact.status]}
-                    </Badge>
-                  </div>
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-11 animate-pulse rounded-md bg-[#f4f6f8]" />
                 ))}
               </div>
+            ) : contacts.length === 0 ? (
+              <p className="py-4 text-sm text-muted-foreground">Nenhum contato vinculado a esta empresa.</p>
+            ) : (
+              <ul className="divide-y divide-[#eaf2f5]">
+                {contacts.map((contact) => {
+                  const cargo = getProfileCargo(contactToEnrichable(contact));
+                  return (
+                    <li key={contact.id} className="flex items-center gap-3 py-2.5">
+                      <ContactAvatar contact={contact} className="h-8 w-8 text-[10px]" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-[#0d2a38]">{contact.name ?? "Sem nome"}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {cargo ? `${cargo} · ` : ""}
+                          {contact.email}
+                        </p>
+                      </div>
+                      <ContactStatusPill status={contact.status} />
+                    </li>
+                  );
+                })}
+              </ul>
             )}
-          </div>
+          </section>
+        </div>
+
+        <div className="flex shrink-0 justify-end border-t border-[#eaf2f5] bg-white px-6 py-3">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Fechar
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

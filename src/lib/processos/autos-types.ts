@@ -155,6 +155,8 @@ export interface AutosDoProcesso {
   sugestoes: Sugestao[];
   /** Há chave de IA configurada no servidor (sem ela, o PDF é guardado mas não é lido). */
   iaConfigurada: boolean;
-  /** Dias que o PDF fica guardado enquanto houver sugestão sem decisão. */
+  /** Dias que o PDF fica guardado enquanto houver sugestão sem decisão (só com o descarte ligado). */
   diasDeGuarda: number;
+  /** O PDF sai do ORQESTRAI depois de conferido ou vencido (PROCESSOS_AUTOS_DESCARTE=ligado); senão fica guardado. */
+  descarteLigado: boolean;
 }

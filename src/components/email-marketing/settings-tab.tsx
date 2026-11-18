@@ -85,7 +85,7 @@ export function SettingsTab() {
     <div className="max-w-5xl space-y-4">
       <SendingSetupCard />
 
-      <Card className="rounded-xl">
+      <Card className="rounded-lg border-[#dce9eb] shadow-sm">
         <CardHeader>
           <CardTitle className="text-base">RD Station Marketing (importação)</CardTitle>
         </CardHeader>
@@ -144,7 +144,7 @@ export function SettingsTab() {
         </CardContent>
       </Card>
 
-      <Card className="rounded-xl">
+      <Card className="rounded-lg border-[#dce9eb] shadow-sm">
         <CardHeader>
           <CardTitle className="text-base">SIOE — clientes ativos</CardTitle>
         </CardHeader>

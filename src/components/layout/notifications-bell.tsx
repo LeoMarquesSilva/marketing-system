@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { Bell } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ContentScheduleNotificationsList } from "@/components/conteudo/content-schedule-notifications-list";
+import { FollowupAlertCard, requestOpenPost, useFollowupAlerts } from "@/components/conteudo/followup-alerts";
 import { OpsNotificationsList, useOpsNotifications } from "@/components/ops-planner/ops-notifications-list";
 import { FichaColaboradorDialog } from "@/components/rh/ficha-colaborador-dialog";
 import { HrNotificationsList } from "@/components/rh/hr-notifications-list";
@@ -28,22 +29,26 @@ function Section({ title, count, action, children }: { title: string; count: num
 
 /**
  * Sino único da sidebar: junta os avisos do Planner Ops, as atualizações de
- * colaboradores do RH e os ajustes do calendário editorial no VIOS. Cada seção
- * só aparece para quem recebe aquele tipo de aviso.
+ * colaboradores do RH, os ajustes do calendário editorial no VIOS e as novidades
+ * nos assuntos já postados (desdobramento do conteúdo). Cada seção só aparece
+ * para quem recebe aquele tipo de aviso; a de novidades, só quando há alguma.
  */
 export function NotificationsBell({ className }: { className?: string }) {
   const ops = useOpsNotifications();
   const hr = useHrPendingNotifications();
   const content = useContentScheduleNotifications();
+  const followup = useFollowupAlerts();
   const [open, setOpen] = useState(false);
   const [editEmployeeId, setEditEmployeeId] = useState<string | null>(null);
 
-  if (!ops.canReceive && !hr.canReceive && !content.canReceive) return null;
+  const hasFollowups = followup.enabled && followup.alerts.length > 0;
+  if (!ops.canReceive && !hr.canReceive && !content.canReceive && !hasFollowups) return null;
 
   const total =
     (ops.canReceive ? ops.unread : 0) +
     (hr.canReceive ? hr.pendingCount : 0) +
-    (content.canReceive ? content.notifications.length : 0);
+    (content.canReceive ? content.notifications.length : 0) +
+    (hasFollowups ? followup.alerts.length : 0);
   const close = () => setOpen(false);
 
   return (
@@ -56,6 +61,7 @@ export function NotificationsBell({ className }: { className?: string }) {
           if (ops.canReceive) void ops.load();
           if (hr.canReceive) void hr.refetch();
           if (content.canReceive) void content.load();
+          if (followup.enabled) void followup.reload();
         }}
       >
         <PopoverTrigger asChild>
@@ -121,6 +127,25 @@ export function NotificationsBell({ className }: { className?: string }) {
                   onResolve={(notification) => void content.resolve(notification)}
                   onNavigate={close}
                 />
+              </Section>
+            )}
+            {hasFollowups && (
+              <Section title="Novidades nos seus assuntos" count={followup.alerts.length}>
+                <p className="mb-2 px-1 text-xs text-slate-600">Um assunto que você postou teve fato novo. Que tal a continuação?</p>
+                <div className="divide-y divide-slate-200">
+                  {followup.alerts.map((alert) => (
+                    <div key={alert.id} className="px-1 py-3 first:pt-1 last:pb-0">
+                      <FollowupAlertCard
+                        alert={alert}
+                        onDismiss={() => void followup.dismiss(alert.id)}
+                        onOpen={() => {
+                          close();
+                          requestOpenPost(alert.roteiroId);
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
               </Section>
             )}
           </div>

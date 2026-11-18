@@ -92,7 +92,9 @@ import {
   resolveAllowedSections,
   type AccessProfile,
 } from "@/lib/access-control";
-import { isContentCollaborator } from "@/lib/content-areas";
+import { isContentCollaborator, isContentManager } from "@/lib/content-areas";
+import { CONTENT_CHOICES_PATH, canSeeContentChoices } from "@/lib/content-escolhas";
+import { CONTENT_SETTINGS_PATH } from "@/lib/content-generator/settings";
 import { canAccessGustavoContent } from "@/lib/gustavo-content/access";
 import {
   FACILITIES_ASSETS_PATH,
@@ -124,8 +126,11 @@ export type NavFeature = {
   shortLabel?: string;
   icon: LucideIcon;
   pages: NavPage[];
-  /** Página de configurações do módulo (só admin): fica na engrenagem do canto direito do cabeçalho, não nas abas. */
-  configuracoes?: NavPage;
+  /**
+   * Página de configurações do módulo: fica na engrenagem do canto direito do cabeçalho, não nas abas.
+   * Por padrão só admin vê; `visivel` libera para outros perfis (ex.: Marketing no Gerador de conteúdo).
+   */
+  configuracoes?: NavPage & { visivel?: (profile: NavProfile | null | undefined) => boolean };
   /** Por onde o perfil entra na funcionalidade (link da sidebar), quando não é a primeira aba liberada. */
   entrada?: (profile: NavProfile | null | undefined) => string;
 };
@@ -219,7 +224,11 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [
           { href: "/conteudo/roteiros", label: "Posts" },
           { href: "/conteudo/reels", label: "Roteiros de Reels" },
+          // Quem escolheu, descartou ou trouxe cada matéria (Marketing, admin e líderes).
+          { href: CONTENT_CHOICES_PATH, label: "Escolhas da equipe" },
         ],
+        // Fontes, regras da IA, busca e aprendizado com o Instagram: equipe de Marketing.
+        configuracoes: { href: CONTENT_SETTINGS_PATH, label: "Configurações", visivel: (profile) => isContentManager(profile) },
       },
       {
         // Peças a partir dos modelos do Illustrator (campos + IA), exportadas em PNG.
@@ -622,8 +631,13 @@ const COLLABORATOR_PAGES = new Set([
  */
 export function createNavVisibility(profile: NavProfile | null | undefined): (href: string) => boolean {
   const base = createBaseNavVisibility(profile);
-  // PDI em teste: só admin enxerga o módulo inteiro (trava em access-control).
-  return (href) => (PDI_ADMIN_ONLY && isPdiPath(href) ? isAdminRole(profile) : base(href));
+  return (href) => {
+    // PDI em teste: só admin enxerga o módulo inteiro (trava em access-control).
+    if (PDI_ADMIN_ONLY && isPdiPath(href)) return isAdminRole(profile);
+    // Escolhas da equipe: Marketing, admin e líderes (a API recorta pelas áreas da pessoa).
+    if (href === CONTENT_CHOICES_PATH) return !isPe27OnlyProfile(profile) && canSeeContentChoices(profile);
+    return base(href);
+  };
 }
 
 function createBaseNavVisibility(profile: NavProfile | null | undefined): (href: string) => boolean {
@@ -754,9 +768,18 @@ export type HeaderContext = {
   /** Abas das páginas irmãs; vazio quando a funcionalidade tem uma página só. */
   tabs: NavPage[];
   activeHref: string | null;
-  /** Engrenagem das configurações do módulo (quem mostra decide se a pessoa é admin); `ativa` na própria página. */
-  configuracoes?: NavPage & { ativa: boolean };
+  /** Engrenagem das configurações do módulo (quem vê: canSeeModuleSettings); `ativa` na própria página. */
+  configuracoes?: NavPage & { ativa: boolean; visivel?: (profile: NavProfile | null | undefined) => boolean };
 };
+
+/** Quem vê a engrenagem do módulo: a regra do módulo, ou só admin quando ele não define. */
+export function canSeeModuleSettings(
+  configuracoes: HeaderContext["configuracoes"],
+  profile: NavProfile | null | undefined,
+): boolean {
+  if (!configuracoes) return false;
+  return configuracoes.visivel ? configuracoes.visivel(profile) : isAdminRole(profile);
+}
 
 const allPages = NAV_FRONTS.flatMap((front) =>
   front.features.flatMap((feature) => feature.pages.map((page) => ({ front, feature, page })))

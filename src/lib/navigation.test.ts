@@ -270,4 +270,12 @@ describe("rota ativa e cabeçalho", () => {
     // A página de configurações não vira aba nem aparece na sidebar.
     expect(visibleHrefs({ role: "admin" })).not.toContain("/operacoes-legais/vistagem/configuracoes");
   });
+
+  it("Escolhas da equipe aparece para Marketing, admin e líderes, não para o colaborador comum", () => {
+    expect(visibleHrefs({ role: "admin" })).toContain("/conteudo/escolhas");
+    expect(visibleHrefs({ role: null, permissions: ["/conteudo/roteiros"], department: "Marketing" })).toContain("/conteudo/escolhas");
+    expect(visibleHrefs({ role: null, permissions: null, department: "Trabalhista", ferias_view_enabled: true })).toContain("/conteudo/escolhas");
+    expect(visibleHrefs({ role: null, permissions: null, department: "Trabalhista" })).not.toContain("/conteudo/escolhas");
+    expect(visibleHrefs({ role: null, permissions: ["/conteudo/roteiros"], department: "Cível" })).not.toContain("/conteudo/escolhas");
+  });
 });
