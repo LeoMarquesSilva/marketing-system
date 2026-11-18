@@ -211,7 +211,11 @@ export function FollowupAlertsSection({ onOpen }: { onOpen: (roteiroId: string) 
   const { alerts, dismiss } = useFollowupAlerts();
   if (alerts.length === 0) return null;
   return (
-    <section className="rounded-lg border border-[#cfe4ea] bg-white shadow-[0_1px_2px_rgba(4,32,47,0.04)]" aria-label="Novidades nos seus assuntos">
+    <section
+      data-tour="followup-alerts"
+      className="rounded-lg border border-[#cfe4ea] bg-white shadow-[0_1px_2px_rgba(4,32,47,0.04)]"
+      aria-label="Novidades nos seus assuntos"
+    >
       <header className="flex items-center gap-2 border-b border-[#eef4f5] px-4 py-3">
         <History className="size-4 text-[#48466e]" aria-hidden />
         <h2 className="text-sm font-semibold text-slate-900">Novidades nos seus assuntos</h2>
