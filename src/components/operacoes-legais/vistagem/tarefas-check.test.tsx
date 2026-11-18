@@ -73,3 +73,38 @@ describe("CartoesCheck: linha Revisor", () => {
     expect(confere).toBe(false);
   });
 });
+
+describe("CartoesCheck: ajustes da Conferência", () => {
+  const texto = (item: AgendamentoResumo) =>
+    renderToStaticMarkup(<CartoesCheck agendamentos={[item]} fotos={{}} hoje="2026-11-09" />)
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ");
+
+  it("mostra quem alterou a data e o horário, quando e de quanto para quanto", () => {
+    const html = texto(
+      agendamento({
+        ajustes: [
+          {
+            por: "Giovanna Pereira de Souza",
+            em: "2026-11-17T16:29:55.298Z",
+            mudancas: [
+              { campo: "Data e horário", de: "17/11/2026 às 13:30", para: "18/11/2026 às 14:00" },
+              { campo: "Responsável", de: LORENA, para: VANESSA },
+            ],
+          },
+        ],
+      })
+    );
+    expect(html).toContain("Ajustada na conferência por Giovanna Pereira de Souza");
+    expect(html).toContain("17/11");
+    expect(html).toContain("13:29");
+    expect(html).toContain("Data e horário: 17/11/2026 às 13:30");
+    expect(html).toContain("18/11/2026 às 14:00");
+    expect(html).toContain(`Responsável: ${LORENA}`);
+  });
+
+  it("sem ajuste, o cartão não fala nisso", () => {
+    expect(texto(agendamento({ ajustes: [] }))).not.toContain("Ajustada na conferência");
+    expect(texto(agendamento({}))).not.toContain("Ajustada na conferência");
+  });
+});

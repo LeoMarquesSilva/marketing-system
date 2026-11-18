@@ -267,8 +267,11 @@ export function ListaDeMudancas({ mudancas }: { mudancas: MudancaNaTarefa[] }) {
   );
 }
 
-/** O que a controladoria ajustou na tarefa, com quem e quando: a data e o responsável não são mais os que o jurídico vistou. */
-function AjustesDaTarefa({ ajustes }: { ajustes: AjusteNaTarefa[] }) {
+/**
+ * O que a controladoria ajustou na tarefa, com quem e quando: a data e o responsável não são mais os que o jurídico vistou.
+ * Aparece nos cartões da Conferência, do Vistado e do Check.
+ */
+export function AjustesDaTarefa({ ajustes }: { ajustes: AjusteNaTarefa[] }) {
   return (
     <section aria-label="Ajustes feitos na conferência" className="space-y-2 rounded-md border border-[#dce9eb] bg-[#f7fbfc] px-3 py-2">
       {ajustes.map((ajuste) => (
