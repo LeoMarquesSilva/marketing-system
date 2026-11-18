@@ -3,7 +3,7 @@
  * Outlook, Excel), para o RH colar e mandar ao gestor da área.
  */
 
-import { previousMonth, type AreaReport } from "./metrics";
+import { previousMonth, type AreaReport, type AreasPivot } from "./metrics";
 import { AREA_BAND_LABEL, MONTH_LABELS, categoryLabel } from "./types";
 
 /** "2026-10-02" → "02/10". */
@@ -102,6 +102,47 @@ export function areaReportHtml(report: AreaReport, nameOf: NameOf, includeItems:
       `</table>`
     );
   }
+  parts.push(`</div>`);
+  return parts.join("");
+}
+
+/* ------------------------------------------- quadro simples (dinâmica) */
+
+export function pivotTitle(pivot: AreasPivot): string {
+  return `Feedbacks de boas práticas — ${MONTH_LABELS[pivot.month.month - 1].toLowerCase()} de ${pivot.month.year}`;
+}
+
+/** Linha de pessoa no quadro: equipe inteira vira "Equipe toda". */
+const pivotPersonName = (row: AreasPivot["rows"][number]["people"][number], nameOf: NameOf) =>
+  row.isTeam ? "Equipe toda" : nameOf(row);
+
+export function areasPivotText(pivot: AreasPivot, nameOf: NameOf): string {
+  const lines = [`*${pivotTitle(pivot)}*`, `${plural(pivot.total, "feedback", "feedbacks")} no mês`];
+  for (const row of pivot.rows) {
+    lines.push("", `*${row.area}* — ${row.sent}`);
+    for (const person of row.people) lines.push(`• ${pivotPersonName(person, nameOf)} — ${person.sent}`);
+  }
+  if (pivot.empty.length) lines.push("", `Sem feedback: ${pivot.empty.join(", ")}`);
+  return lines.join("\n");
+}
+
+export function areasPivotHtml(pivot: AreasPivot, nameOf: NameOf): string {
+  const parts = [
+    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#10293a;">`,
+    `<p style="margin:0 0 8px;font-size:15px;"><b>${escapeHtml(pivotTitle(pivot))}</b></p>`,
+    `<table style="border-collapse:collapse;">`,
+    `<tr><th style="${HEAD}">Área / pessoa</th><th style="${HEAD}text-align:right;">Qtd.</th></tr>`,
+  ];
+  for (const row of pivot.rows) {
+    parts.push(`<tr><td style="${CELL}background:#f6fafb;"><b>${escapeHtml(row.area)}</b></td><td style="${CELL}background:#f6fafb;text-align:right;"><b>${row.sent}</b></td></tr>`);
+    for (const person of row.people) {
+      parts.push(
+        `<tr><td style="${CELL}padding-left:24px;">${escapeHtml(pivotPersonName(person, nameOf))}</td><td style="${CELL}text-align:right;">${person.sent}</td></tr>`
+      );
+    }
+  }
+  parts.push(`<tr><td style="${HEAD}">Total</td><td style="${HEAD}text-align:right;">${pivot.total}</td></tr>`, `</table>`);
+  if (pivot.empty.length) parts.push(`<p style="margin:8px 0 0;color:#4b5f6b;">Sem feedback: ${escapeHtml(pivot.empty.join(", "))}</p>`);
   parts.push(`</div>`);
   return parts.join("");
 }

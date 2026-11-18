@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
+  Building2,
   Check,
   ChevronLeft,
   ChevronRight,
   Download,
   ImageIcon,
+  LayoutList,
   Loader2,
   Table2,
   TrendingDown,
@@ -18,18 +20,34 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { getAreaIconStyle } from "@/lib/area-icons";
 import { getInitials } from "@/lib/ferias/filters";
-import { areaReportHtml, areaReportText, dayMonth } from "@/lib/rh/boas-praticas/area-report-text";
+import {
+  areaReportHtml,
+  areaReportText,
+  areasPivotHtml,
+  areasPivotText,
+  dayMonth,
+} from "@/lib/rh/boas-praticas/area-report-text";
 import {
   areaCountsInMonth,
   flowStatus,
   monthKey,
+  pivotCountsByMonth,
   previousMonth,
   summarizeArea,
+  summarizeAreasPivot,
   todayIso,
   type AreaPersonRow,
+  type AreasPivot,
   type MonthRef,
 } from "@/lib/rh/boas-praticas/metrics";
-import { MONTH_LABELS, categoryLabel, chapterLabel, type GoodPracticeFeedback } from "@/lib/rh/boas-praticas/types";
+import {
+  FEEDBACK_AREAS,
+  MONTH_LABELS,
+  MONTH_SHORT,
+  categoryLabel,
+  chapterLabel,
+  type GoodPracticeFeedback,
+} from "@/lib/rh/boas-praticas/types";
 import { cn } from "@/lib/utils";
 import { BandBadge, FlowStatusBadge, formatDate } from "./feedback-badges";
 import { AreaGlyph, CategoryGlyph, CategoryIcon, usePeopleIndex } from "./feedback-visuals";
@@ -86,21 +104,40 @@ function useEmbeddedImage(url: string | null): string | null {
   return url && state?.url === url ? state.data : null;
 }
 
-function ReportAvatar({ name, avatarUrl, isTeam }: { name: string; avatarUrl: string | null; isTeam: boolean }) {
+function ReportAvatar({
+  name,
+  avatarUrl,
+  isTeam,
+  size = "md",
+}: {
+  name: string;
+  avatarUrl: string | null;
+  isTeam: boolean;
+  /** sm = linha do quadro compacto; md = folha detalhada. */
+  size?: "sm" | "md";
+}) {
   const photo = useEmbeddedImage(isTeam ? null : avatarUrl);
+  const box = size === "sm" ? "size-6" : "size-9";
   if (isTeam) {
     return (
-      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#e8f1f5] text-[#315f73]" aria-hidden>
-        <UsersRound className="size-4" />
+      <span className={cn("grid shrink-0 place-items-center rounded-full bg-[#e8f1f5] text-[#315f73]", box)} aria-hidden>
+        <UsersRound className={size === "sm" ? "size-3.5" : "size-4"} />
       </span>
     );
   }
   if (photo) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={photo} alt="" className="size-9 shrink-0 rounded-full object-cover ring-1 ring-black/5" />;
+    return <img src={photo} alt="" className={cn("shrink-0 rounded-full object-cover ring-1 ring-black/5", box)} />;
   }
   return (
-    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#e8f1f5] text-xs font-semibold text-[#315f73]" aria-hidden>
+    <span
+      className={cn(
+        "grid shrink-0 place-items-center rounded-full bg-[#e8f1f5] font-semibold text-[#315f73]",
+        box,
+        size === "sm" ? "text-[10px]" : "text-xs"
+      )}
+      aria-hidden
+    >
       {getInitials(name || "?")}
     </span>
   );
@@ -147,6 +184,152 @@ function SheetSection({ title, meta, children }: { title: string; meta?: string;
 
 type Busy = "copiar" | "baixar" | "tabela" | null;
 type Status = { tone: "ok" | "error"; text: string } | null;
+type NameOf = (row: { name: string; employeeId: string | null }) => string;
+
+/* ------------------------------------------------- régua dos meses */
+
+/** Os 12 meses do ano com a quantidade: clicar abre o mês (pedido do Felipe). */
+function MonthStrip({ items, month, onChange }: { items: GoodPracticeFeedback[]; month: MonthRef; onChange: (month: MonthRef) => void }) {
+  const counts = useMemo(() => pivotCountsByMonth(items, month.year), [items, month.year]);
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto px-3 py-2">
+      <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0" aria-label="Ano anterior" onClick={() => onChange({ year: month.year - 1, month: 12 })}>
+        <ChevronLeft className="size-4" />
+      </Button>
+      <span className="shrink-0 px-1 text-sm font-semibold tabular-nums text-foreground">{month.year}</span>
+      <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0" aria-label="Próximo ano" onClick={() => onChange({ year: month.year + 1, month: 1 })}>
+        <ChevronRight className="size-4" />
+      </Button>
+      <div className="ml-1 grid min-w-[540px] flex-1 grid-cols-12 gap-1" role="group" aria-label={`Meses de ${month.year}`}>
+        {MONTH_SHORT.map((label, index) => {
+          const selected = index + 1 === month.month;
+          const sent = counts[index];
+          return (
+            <button
+              key={label}
+              type="button"
+              aria-pressed={selected}
+              aria-label={`${MONTH_LABELS[index]}: ${sent} ${sent === 1 ? "feedback" : "feedbacks"}`}
+              onClick={() => onChange({ year: month.year, month: index + 1 })}
+              className={cn(
+                "flex min-h-11 flex-col items-center justify-center rounded-md px-1 leading-tight transition-colors duration-150",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60",
+                selected ? "bg-[#10293a] text-white" : "hover:bg-[#f2f8f9]"
+              )}
+            >
+              <span className={cn("text-xs", selected ? "text-white/80" : "text-muted-foreground")}>{label}</span>
+              <span className={cn("text-sm font-semibold tabular-nums", !selected && !sent && "text-muted-foreground/60")}>{sent || "–"}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------- quadro simples (dinâmica) */
+
+/** Áreas com as pessoas embaixo e só a quantidade, compacto para print. */
+function AreasPivotSheet({
+  pivot,
+  nameOf,
+  avatarOf,
+  sheetRef,
+}: {
+  pivot: AreasPivot;
+  nameOf: NameOf;
+  avatarOf: (employeeId: string | null) => string | null;
+  sheetRef: RefObject<HTMLDivElement | null>;
+}) {
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  const monthName = MONTH_LABELS[pivot.month.month - 1];
+  const toggle = (area: string) =>
+    setCollapsed((current) => (current.includes(area) ? current.filter((entry) => entry !== area) : [...current, area]));
+
+  return (
+    <div ref={sheetRef} className="mx-auto w-full max-w-[560px] overflow-hidden rounded-lg border border-[#dce9eb] bg-white text-[#10293a]">
+      <header className="flex items-end justify-between gap-4 border-b border-[#e6eef0] px-4 py-3">
+        <div>
+          <h3 className="text-sm font-semibold">Feedbacks de boas práticas</h3>
+          <p className="text-xs text-muted-foreground">
+            {monthName} de {pivot.month.year} · por área e pessoa
+          </p>
+        </div>
+        <p className="text-right">
+          <span className="block text-2xl font-semibold leading-7 tabular-nums">{pivot.total}</span>
+          <span className="text-xs text-muted-foreground">no mês</span>
+        </p>
+      </header>
+      {pivot.total === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+          Nenhum feedback em {monthName.toLowerCase()} de {pivot.month.year}.
+        </p>
+      ) : (
+        <table className="w-full border-collapse text-[13px]">
+          <thead>
+            <tr className="text-xs text-muted-foreground">
+              <th className="px-4 py-1.5 text-left font-medium">Área / pessoa</th>
+              <th className="w-16 px-4 py-1.5 text-right font-medium">Qtd.</th>
+            </tr>
+          </thead>
+          {pivot.rows.map((row) => {
+            const open = !collapsed.includes(row.area);
+            return (
+              <tbody key={row.area} className="border-t border-[#e6eef0]">
+                <tr className="bg-[#f6fafb]">
+                  <td className="px-2 py-1">
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => toggle(row.area)}
+                      className="flex w-full items-center gap-1.5 rounded px-1.5 py-0.5 text-left font-semibold hover:bg-[#eef6f8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60"
+                    >
+                      <ChevronRight className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-150", open && "rotate-90")} aria-hidden />
+                      <span className={cn("grid size-5 shrink-0 place-items-center rounded ring-1 ring-inset", getAreaIconStyle(row.area))} aria-hidden>
+                        <AreaGlyph area={row.area} className="size-3" />
+                      </span>
+                      {row.area}
+                    </button>
+                  </td>
+                  <td className="px-4 py-1 text-right font-semibold tabular-nums">{row.sent}</td>
+                </tr>
+                {open &&
+                  row.people.map((person) => {
+                    const label = person.isTeam ? "Equipe toda" : nameOf(person);
+                    return (
+                      <tr key={person.key}>
+                        <td className="py-1 pl-[34px] pr-4">
+                          <span className="flex items-center gap-2">
+                            <ReportAvatar
+                              size="sm"
+                              name={label}
+                              avatarUrl={person.isTeam ? null : avatarOf(person.employeeId)}
+                              isTeam={person.isTeam}
+                            />
+                            <span className={cn("min-w-0 truncate", person.isTeam && "text-muted-foreground")}>{label}</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-1 text-right tabular-nums">{person.sent}</td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            );
+          })}
+          <tfoot>
+            <tr className="border-t-2 border-[#dce9eb]">
+              <td className="px-4 py-1.5 font-semibold">Total</td>
+              <td className="px-4 py-1.5 text-right font-semibold tabular-nums">{pivot.total}</td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+      {pivot.empty.length > 0 && (
+        <p className="border-t border-[#e6eef0] px-4 py-2 text-xs text-muted-foreground">Sem feedback no mês: {pivot.empty.join(", ")}.</p>
+      )}
+    </div>
+  );
+}
 
 export function FeedbackAreaReport({
   items,
@@ -157,9 +340,10 @@ export function FeedbackAreaReport({
 }: {
   items: GoodPracticeFeedback[];
   month: MonthRef;
-  area: string;
+  /** null = resumo de todas as áreas; com área, a folha detalhada dela. */
+  area: string | null;
   onMonthChange: (month: MonthRef) => void;
-  onAreaChange: (area: string) => void;
+  onAreaChange: (area: string | null) => void;
 }) {
   const people = usePeopleIndex();
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -167,17 +351,23 @@ export function FeedbackAreaReport({
   const [busy, setBusy] = useState<Busy>(null);
   const [status, setStatus] = useState<Status>(null);
 
-  const report = useMemo(() => summarizeArea(items, area, month), [items, area, month]);
+  const pivot = useMemo(() => summarizeAreasPivot(items, month), [items, month]);
+  const report = useMemo(() => summarizeArea(items, area ?? "", month), [items, area, month]);
   const areas = useMemo(() => areaCountsInMonth(items, month), [items, month]);
   const monthName = MONTH_LABELS[month.month - 1];
   const previousName = MONTH_LABELS[previousMonth(month).month - 1].toLowerCase();
-  const nextMonth: MonthRef = month.month === 12 ? { year: month.year + 1, month: 1 } : { year: month.year, month: month.month + 1 };
   const individuals = report.people.filter((row) => !row.isTeam).length;
   const repeaters = report.people.filter((row) => !row.isTeam && row.yearToDate >= 3).length;
 
-  const nameOf = (row: { name: string; employeeId: string | null }) =>
-    (row.employeeId && people.get(row.employeeId)?.short_name) || row.name;
+  const nameOf: NameOf = (row) => (row.employeeId && people.get(row.employeeId)?.short_name) || row.name;
   const personOf = (row: AreaPersonRow) => (row.employeeId ? (people.get(row.employeeId) ?? null) : null);
+
+  /** Detalhe abre na área com mais feedbacks do mês. */
+  function openDetail() {
+    setStatus(null);
+    const ranked = [...areas].sort((a, b) => b.sent - a.sent);
+    onAreaChange(pivot.rows[0]?.area ?? ranked[0]?.area ?? FEEDBACK_AREAS[0]);
+  }
 
   function changeMonth(next: MonthRef) {
     setStatus(null);
@@ -217,7 +407,7 @@ export function FeedbackAreaReport({
     run("baixar", async () => {
       const blob = await renderSheet();
       const { downloadBlob } = await import("@/components/estudio/export-png");
-      const slug = area
+      const slug = (area ?? "resumo das areas")
         .normalize("NFD")
         .replace(/[̀-ͯ]/g, "")
         .toLowerCase()
@@ -229,8 +419,8 @@ export function FeedbackAreaReport({
 
   const copyTable = () =>
     run("tabela", async () => {
-      const text = areaReportText(report, nameOf, includeItems);
-      const html = areaReportHtml(report, nameOf, includeItems);
+      const text = area ? areaReportText(report, nameOf, includeItems) : areasPivotText(pivot, nameOf);
+      const html = area ? areaReportHtml(report, nameOf, includeItems) : areasPivotHtml(pivot, nameOf);
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
         await navigator.clipboard.write([
           new ClipboardItem({
@@ -253,21 +443,36 @@ export function FeedbackAreaReport({
   return (
     <div className="space-y-4">
       <Card className="gap-0 py-0">
-        <div className="flex flex-wrap items-center gap-3 border-b border-[#e6eef0] px-4 py-2.5">
-          <div className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="icon" className="size-8" aria-label="Mês anterior" onClick={() => changeMonth(previousMonth(month))}>
-              <ChevronLeft className="size-4" />
-            </Button>
-            <span className="min-w-36 text-center text-sm font-semibold text-foreground">
-              {monthName} de {month.year}
-            </span>
-            <Button type="button" variant="ghost" size="icon" className="size-8" aria-label="Próximo mês" onClick={() => changeMonth(nextMonth)}>
-              <ChevronRight className="size-4" />
-            </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6eef0] px-4 py-2.5">
+          <div role="radiogroup" aria-label="Visão" className="inline-flex rounded-md border border-input bg-white p-0.5">
+            {[
+              { key: "resumo", label: "Resumo das áreas", icon: LayoutList, active: area === null, onClick: () => { setStatus(null); onAreaChange(null); } },
+              { key: "detalhe", label: "Detalhe de uma área", icon: Building2, active: area !== null, onClick: () => area === null && openDetail() },
+            ].map(({ key, label, icon: Icon, active, onClick }) => (
+              <button
+                key={key}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={onClick}
+                className={cn(
+                  "inline-flex min-h-9 items-center gap-1.5 rounded-[5px] px-3 text-sm transition-colors duration-150",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50",
+                  active ? "bg-[#347796] font-medium text-white" : "text-muted-foreground hover:bg-[#47cdd0]/10 hover:text-foreground"
+                )}
+              >
+                <Icon className="size-4" aria-hidden />
+                {label}
+              </button>
+            ))}
           </div>
-          <p className="text-xs text-muted-foreground">Escolha a área: a folha abaixo é a que vai na imagem e na tabela.</p>
+          <p className="text-xs text-muted-foreground">
+            {area === null ? "Clique no mês. O quadro abaixo é o que vai na imagem e na tabela." : "Escolha a área: a folha abaixo é a que vai na imagem e na tabela."}
+          </p>
         </div>
-        <div role="radiogroup" aria-label="Área" className="flex flex-wrap gap-1.5 px-4 py-3">
+        <MonthStrip items={items} month={month} onChange={changeMonth} />
+        {area !== null && (
+        <div role="radiogroup" aria-label="Área" className="flex flex-wrap gap-1.5 border-t border-[#e6eef0] px-4 py-3">
           {areas.map((row) => {
             const selected = row.area === area;
             return (
@@ -303,18 +508,23 @@ export function FeedbackAreaReport({
             );
           })}
         </div>
+        )}
       </Card>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
-          <input
-            type="checkbox"
-            checked={includeItems}
-            onChange={(event) => setIncludeItems(event.target.checked)}
-            className="size-4 accent-[#347796]"
-          />
-          Incluir o texto de cada ocorrência
-        </label>
+        {area !== null ? (
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              checked={includeItems}
+              onChange={(event) => setIncludeItems(event.target.checked)}
+              className="size-4 accent-[#347796]"
+            />
+            Incluir o texto de cada ocorrência
+          </label>
+        ) : (
+          <span className="text-sm text-muted-foreground">Clique numa área do quadro para recolher ou abrir as pessoas.</span>
+        )}
         <div className="flex flex-wrap gap-2">
           {actions.map(({ kind, label, icon: Icon, onClick, primary }) => (
             <Button key={kind} type="button" variant={primary ? "default" : "outline"} className="gap-2" disabled={busy !== null} onClick={onClick}>
@@ -341,6 +551,14 @@ export function FeedbackAreaReport({
       </p>
 
       {/* Folha: é o que vai na imagem. Sem botões nem filtros dentro. */}
+      {area === null ? (
+        <AreasPivotSheet
+          pivot={pivot}
+          nameOf={nameOf}
+          avatarOf={(employeeId) => (employeeId ? (people.get(employeeId)?.avatar_url ?? null) : null)}
+          sheetRef={sheetRef}
+        />
+      ) : (
       <div className="overflow-x-auto">
         <div ref={sheetRef} className="mx-auto w-full min-w-[640px] max-w-[880px] overflow-hidden rounded-lg border border-[#dce9eb] bg-white text-[#10293a]">
           <header className="flex flex-wrap items-start justify-between gap-4 border-b border-[#e6eef0] px-6 py-5">
@@ -502,6 +720,7 @@ export function FeedbackAreaReport({
           </footer>
         </div>
       </div>
+      )}
     </div>
   );
 }

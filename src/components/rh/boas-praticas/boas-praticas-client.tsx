@@ -14,9 +14,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { feedzPrefill, type FeedzRow } from "@/lib/rh/boas-praticas/feedz";
-import { areaCountsInMonth, currentMonthRef, monthKey, type MonthRef } from "@/lib/rh/boas-praticas/metrics";
+import { currentMonthRef, monthKey, type MonthRef } from "@/lib/rh/boas-praticas/metrics";
 import {
-  FEEDBACK_AREAS,
   GOOD_PRACTICES_MANUAL,
   manualHref,
   type FeedbackPerson,
@@ -39,13 +38,6 @@ const TABS: Array<{ key: Tab; label: string; icon: LucideIcon }> = [
   { key: "areas", label: "Por área", icon: Building2 },
   { key: "registros", label: "Registros", icon: ListChecks },
 ];
-
-/** Área que abre a aba Por área: a da URL ou a com mais feedbacks no mês. */
-function startingArea(items: GoodPracticeFeedback[], month: MonthRef, fromUrl: string | undefined): string {
-  if (fromUrl?.trim()) return fromUrl.trim();
-  const ranked = [...areaCountsInMonth(items, month)].sort((a, b) => b.sent - a.sent);
-  return ranked[0]?.sent ? ranked[0].area : FEEDBACK_AREAS[0];
-}
 
 /** ?mes=2026-10; sem parâmetro (ou inválido) abre o mês corrente. */
 function parseMonth(value: string | undefined): MonthRef {
@@ -81,7 +73,8 @@ export function BoasPraticasClient({
   const [items, setItems] = useState(initialItems);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [month, setMonth] = useState<MonthRef>(() => parseMonth(initialMonth));
-  const [area, setArea] = useState<string>(() => startingArea(initialItems, parseMonth(initialMonth), initialArea));
+  // Aba Por área: sem área abre o resumo de todas (quadro do Felipe); com área, o detalhe dela.
+  const [area, setArea] = useState<string | null>(() => initialArea?.trim() || null);
   // Filtro de mês da aba Registros: "Ver registros do mês" abre já filtrado; a aba abre com tudo.
   const [recordsMonth, setRecordsMonth] = useState<string>("all");
   const [dialog, setDialog] = useState<{ item: GoodPracticeFeedback | null; key: number; fromFeedz?: FeedzRow } | null>(
@@ -102,7 +95,7 @@ export function BoasPraticasClient({
     router.replace(query ? `?${query}` : "?", { scroll: false });
   }
 
-  function chooseTab(next: Tab, nextArea = area) {
+  function chooseTab(next: Tab, nextArea: string | null = area) {
     setTab(next);
     if (next === "areas") setArea(nextArea);
     // ?aba=areas&area=Cível: o link abre direto na área (para mandar a outra pessoa do RH).

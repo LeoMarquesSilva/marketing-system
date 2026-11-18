@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { areaReportHtml, areaReportText, dayMonth, reportSummaryLine } from "./area-report-text";
-import { summarizeArea } from "./metrics";
+import { areaReportHtml, areaReportText, areasPivotHtml, areasPivotText, dayMonth, reportSummaryLine } from "./area-report-text";
+import { summarizeArea, summarizeAreasPivot } from "./metrics";
 import type { GoodPracticeFeedback } from "./types";
 
 let seq = 0;
@@ -73,6 +73,15 @@ describe("texto da visão por área", () => {
     expect(html).toContain("Ana Souza");
     expect(html).toContain("Caneca &lt;suja&gt;");
     expect(html).not.toContain("<suja>");
+  });
+
+  it("monta o quadro simples com área, pessoas e quantidade", () => {
+    const pivot = summarizeAreasPivot(items, { year: 2026, month: 10 });
+    const text = areasPivotText(pivot, nameOf);
+    expect(text).toContain("*Cível* — 2");
+    expect(text).toContain("• Ana Souza — 2");
+    expect(text).toContain("Sem feedback: Reestruturação");
+    expect(areasPivotHtml(pivot, nameOf)).toContain("Total</td>");
   });
 
   it("avisa quando a área não teve feedback no mês", () => {

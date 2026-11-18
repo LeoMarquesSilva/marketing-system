@@ -6,8 +6,10 @@ import {
   canonicalFeedbackArea,
   flowStatus,
   repeatOffenders,
+  pivotCountsByMonth,
   suggestAreaFromDepartment,
   summarizeArea,
+  summarizeAreasPivot,
   summarizeMonth,
   summarizeYear,
 } from "./metrics";
@@ -196,6 +198,33 @@ describe("summarizeArea", () => {
     // Gestores entra como grupo no fim; área fora da lista oficial (ADD) não ganha botão.
     expect(counts[counts.length - 1].area).toBe("Gestores");
     expect(areaCountsInMonth([feedback({ sent_on: "2026-02-05", area: "ADD" })], { year: 2026, month: 2 }).some((row) => row.area === "ADD")).toBe(false);
+  });
+});
+
+describe("summarizeAreasPivot", () => {
+  const items = [
+    feedback({ sent_on: "2026-11-02", area: "Cível", employee_id: "e1", employee_name: "Ana" }),
+    feedback({ sent_on: "2026-11-05", area: "Cível", employee_id: "e1", employee_name: "Ana" }),
+    feedback({ sent_on: "2026-11-06", area: "Cível", employee_id: "e2", employee_name: "Bruno" }),
+    feedback({ sent_on: "2026-11-07", area: "Trabalhista", employee_id: "e3", employee_name: "Carla" }),
+    feedback({ sent_on: "2026-11-08", area: "Gestores", employee_name: "Equipe Gestores", is_team: true }),
+    feedback({ sent_on: "2026-11-09", area: "ADD", employee_id: "e4", employee_name: "Davi" }),
+    feedback({ sent_on: "2026-10-09", area: "Cível", employee_id: "e1", employee_name: "Ana" }),
+  ];
+
+  it("mostra cada área com as pessoas e só a quantidade, Gestores no fim", () => {
+    const pivot = summarizeAreasPivot(items, { year: 2026, month: 11 });
+    expect(pivot.total).toBe(5);
+    expect(pivot.rows.map((row) => `${row.area} ${row.sent}`)).toEqual(["Cível 3", "Trabalhista 1", "Gestores 1"]);
+    expect(pivot.rows[0].people.map((row) => `${row.name} ${row.sent}`)).toEqual(["Ana 2", "Bruno 1"]);
+    expect(pivot.empty).toContain("Tributário");
+    expect(pivot.empty).not.toContain("Cível");
+  });
+
+  it("conta os meses do ano sem área fora da lista", () => {
+    const counts = pivotCountsByMonth(items, 2026);
+    expect(counts[10]).toBe(5);
+    expect(counts[9]).toBe(1);
   });
 });
 

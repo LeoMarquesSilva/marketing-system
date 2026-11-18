@@ -441,6 +441,57 @@ export function summarizeArea(items: GoodPracticeFeedback[], area: string, ref: 
   };
 }
 
+export interface AreaPivotRow {
+  area: string;
+  sent: number;
+  people: { key: string; name: string; employeeId: string | null; isTeam: boolean; sent: number }[];
+}
+
+export interface AreasPivot {
+  month: MonthRef;
+  total: number;
+  /** Áreas oficiais com feedback no mês e, no fim, o grupo Gestores (se teve). */
+  rows: AreaPivotRow[];
+  /** Áreas oficiais sem feedback no mês. */
+  empty: string[];
+}
+
+/**
+ * Quadro simples (pedido do Felipe, 18/11/2026): no mês, cada área com as
+ * pessoas embaixo e só a quantidade, como uma tabela dinâmica.
+ */
+export function summarizeAreasPivot(items: GoodPracticeFeedback[], ref: MonthRef): AreasPivot {
+  const rows: AreaPivotRow[] = [];
+  const empty: string[] = [];
+  for (const area of [...FEEDBACK_AREAS, LEADERS_GROUP]) {
+    const report = summarizeArea(items, area, ref);
+    if (!report.total) {
+      if (area !== LEADERS_GROUP) empty.push(area);
+      continue;
+    }
+    rows.push({
+      area,
+      sent: report.total,
+      people: report.people.map(({ key, name, employeeId, isTeam, sent }) => ({ key, name, employeeId, isTeam, sent })),
+    });
+  }
+  const leaders = rows.filter((row) => row.area === LEADERS_GROUP);
+  const areas = rows.filter((row) => row.area !== LEADERS_GROUP).sort((a, b) => b.sent - a.sent || a.area.localeCompare(b.area, "pt-BR"));
+  const ordered = [...areas, ...leaders];
+  return { month: ref, total: ordered.reduce((sum, row) => sum + row.sent, 0), rows: ordered, empty };
+}
+
+/** Quantos feedbacks cada mês do ano teve (áreas oficiais e Gestores), para a régua de meses. */
+export function pivotCountsByMonth(items: GoodPracticeFeedback[], year: number): number[] {
+  const counts = Array<number>(12).fill(0);
+  for (const item of items) {
+    if (!item.sent_on.startsWith(`${year}-`)) continue;
+    if (!(FEEDBACK_AREAS as readonly string[]).includes(item.area) && item.area !== LEADERS_GROUP) continue;
+    counts[Number(item.sent_on.slice(5, 7)) - 1] += 1;
+  }
+  return counts;
+}
+
 /** Quantos feedbacks cada área teve no mês (para os botões de área). */
 export function areaCountsInMonth(items: GoodPracticeFeedback[], ref: MonthRef): { area: string; sent: number }[] {
   const counts = countBy(
