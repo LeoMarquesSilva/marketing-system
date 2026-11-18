@@ -16,7 +16,7 @@ import {
 import { ProcessosError } from "./errors";
 import { registrarNoHistorico } from "./processos-server";
 import { db, falhou, type Ator } from "./server";
-import { roboDoProcesso } from "./tribunais";
+import { roboDoProcesso, roboPeloJusbr } from "./tribunais";
 
 type Linha = Record<string, unknown>;
 
@@ -91,6 +91,16 @@ export function paraSugestao(linha: Linha): Sugestao {
   };
 }
 
+/** PROCESSOS_AUTOS_FONTE=jusbr: os pedidos vão primeiro ao Jus.br (robô único), com o robô do tribunal de reserva. */
+export function fonteJusbr(): boolean {
+  return process.env.PROCESSOS_AUTOS_FONTE?.trim().toLowerCase() === "jusbr";
+}
+
+/** Que robô atende os autos do processo agora: o do tribunal, ou o Jus.br quando a fonte estiver ligada. */
+export function roboDosAutos(cnj: string | null | undefined, sistemaDoCadastro: string | null | undefined) {
+  return fonteJusbr() ? roboPeloJusbr(cnj, sistemaDoCadastro) : roboDoProcesso(cnj, sistemaDoCadastro);
+}
+
 /**
  * O PDF dos autos sai do ORQESTRAI depois de conferido ou vencido? Desligado por padrão desde 18/11/2026: os autos
  * ficam todos guardados no Supabase. PROCESSOS_AUTOS_DESCARTE=ligado volta a descartar (por conferência e por prazo).
@@ -130,7 +140,7 @@ export async function carregarAutos(processoId: string): Promise<AutosDoProcesso
   if (documentos.error) falhou("carregar os documentos", documentos.error);
   if (sugestoes.error) falhou("carregar as sugestões", sugestoes.error);
   return {
-    robo: roboDoProcesso(processo.cnj, processo.sistema),
+    robo: roboDosAutos(processo.cnj, processo.sistema),
     segredoJustica: processo.segredo,
     pedidos: ((pedidos.data ?? []) as Linha[]).map(paraPedido),
     documentos: ((documentos.data ?? []) as Linha[]).map(paraDocumento),
@@ -154,7 +164,7 @@ export async function pedirAutos(processoId: string, entrada: Record<string, unk
   const processo = await carregarProcesso(processoId);
   // Processo que já veio do eproc (migrado do e-SAJ): o eproc traz o processo inteiro, inclusive o histórico do
   // e-SAJ, e baixa só as peças novas. O pedido vai para lá mesmo que o cadastro ainda diga e-SAJ.
-  const robo = roboDoProcesso(processo.cnj, (await jaVeioDoEproc(processoId)) ? "eproc" : processo.sistema);
+  const robo = roboDosAutos(processo.cnj, (await jaVeioDoEproc(processoId)) ? "eproc" : processo.sistema);
   if (!robo.disponivel || !robo.cnj || !robo.sistema || !robo.tribunal) throw new ProcessosError(robo.motivo ?? "Não há robô para este processo.", 422);
   const liberar = entrada.liberarSegredo === true;
   if (processo.segredo && !liberar) {

@@ -21,6 +21,8 @@ export interface Pedido {
   tentativas: number;
   /** eproc: peças ("evento:nome") já baixadas em pedidos anteriores do processo. */
   pecasBaixadas?: string[];
+  /** Pedido ao Jus.br: o conector do tribunal ("eproc:TJSP") para quando o Jus.br não trouxer os autos. */
+  reserva?: string | null;
 }
 
 /** O pedido saiu das mãos do robô (cancelado na ficha, por exemplo): ele larga o que estava fazendo. */
@@ -81,18 +83,44 @@ export class Fila {
     await this.chamar(`/pedidos/${pedidoId}`, { acao: "erro", mensagem: mensagem.slice(0, 900) });
   }
 
-  /** Sobe o PDF ao bucket privado e registra o documento no processo. */
-  async entregar(pedidoId: string, arquivo: string, nome: string, pecas?: string[], sistema?: "eproc"): Promise<void> {
+  /** Sobe um PDF ao bucket privado. Devolve o caminho dele no armazenamento. */
+  private async subir(pedidoId: string, arquivo: string, nome: string): Promise<string> {
     const { size } = await stat(arquivo);
     const { upload } = await this.chamar<{ upload: Upload }>(`/pedidos/${pedidoId}`, { acao: "upload", nome, tamanho: size });
     const armazenamento = createClient(upload.supabaseUrl, upload.anonKey, { auth: { persistSession: false } }).storage;
     const { error } = await armazenamento.from(upload.bucket).uploadToSignedUrl(upload.path, upload.token, await openAsBlob(arquivo, { type: "application/pdf" }), { contentType: "application/pdf" });
     if (error) throw new Error(`O envio do PDF ao ORQESTRAI falhou: ${error.message}`);
-    await this.chamar(`/pedidos/${pedidoId}`, { acao: "concluir", path: upload.path, nome, ...(pecas?.length ? { pecas } : {}), ...(sistema ? { sistema } : {}) });
+    return upload.path;
+  }
+
+  /**
+   * Sobe o PDF (ou as partes, num processo grande) e registra os documentos no processo. `sistema`: quem acabou
+   * atendendo o pedido, quando não foi o sistema pedido (DCP que seguiu pelo eproc, Jus.br que seguiu pelo tribunal).
+   */
+  async entregar(pedidoId: string, arquivo: string, nome: string, pecas?: string[], sistema?: string, partes?: { caminho: string; pecas: string[] }[]): Promise<void> {
+    if (partes && partes.length > 1) {
+      const enviadas: { path: string; nome: string; pecas: string[] }[] = [];
+      for (const [i, parte] of partes.entries()) {
+        const nomeDaParte = nome.replace(/\.pdf$/i, ` (parte ${i + 1} de ${partes.length}).pdf`);
+        enviadas.push({ path: await this.subir(pedidoId, parte.caminho, nomeDaParte), nome: nomeDaParte, pecas: parte.pecas });
+      }
+      const [primeira, ...outras] = enviadas;
+      await this.chamar(`/pedidos/${pedidoId}`, {
+        acao: "concluir",
+        path: primeira.path,
+        nome: primeira.nome,
+        ...(primeira.pecas.length ? { pecas: primeira.pecas } : {}),
+        outrasPartes: outras.map((parte) => ({ path: parte.path, nome: parte.nome, ...(parte.pecas.length ? { pecas: parte.pecas } : {}) })),
+        ...(sistema ? { sistema } : {}),
+      });
+      return;
+    }
+    const path = await this.subir(pedidoId, arquivo, nome);
+    await this.chamar(`/pedidos/${pedidoId}`, { acao: "concluir", path, nome, ...(pecas?.length ? { pecas } : {}), ...(sistema ? { sistema } : {}) });
   }
 
   /** Os autos foram conferidos e não há peça nova: o pedido termina sem PDF. */
-  async semNovidades(pedidoId: string, sistema?: "eproc"): Promise<void> {
+  async semNovidades(pedidoId: string, sistema?: string): Promise<void> {
     await this.chamar(`/pedidos/${pedidoId}`, { acao: "sem_novidades", ...(sistema ? { sistema } : {}) });
   }
 }

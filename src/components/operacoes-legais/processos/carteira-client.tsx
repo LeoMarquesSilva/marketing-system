@@ -2,9 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Banknote, FileSpreadsheet, FolderSearch, LoaderCircle, Percent, Receipt, RefreshCw, Scale, SearchX } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Banknote, FileSpreadsheet, FolderSearch, LoaderCircle, Percent, Receipt, RefreshCw, Scale, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ROTULO_SITUACAO_CITACAO, SITUACOES_PEDIDO, formatarData, formatarReal, type LinhaCarteira, type SituacaoCitacao } from "@/lib/processos/rec-credito";
+import {
+  ROTULO_ROBO_AGORA,
+  ROTULO_SITUACAO_CITACAO,
+  SITUACOES_DA_ATUALIZACAO,
+  SITUACOES_PEDIDO,
+  diaEmBrasilia,
+  formatarData,
+  formatarMomento,
+  formatarReal,
+  situacaoDaAtualizacao,
+  type AtualizacaoDosAutos,
+  type LinhaCarteira,
+  type SituacaoCitacao,
+} from "@/lib/processos/rec-credito";
 import { LogoGrupo } from "../vistagem/marcas";
 import { Seletor, SeletorBusca, type OpcaoSeletor } from "../vistagem/seletor";
 import { Aviso, BarraAba, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, type TomSelo } from "../vistagem/ui";
@@ -24,6 +37,35 @@ const SITUACOES: OpcaoSeletor[] = [
   { valor: "ativos", rotulo: "Ativos" },
   { valor: "encerrados", rotulo: "Encerrados" },
 ];
+const ATUALIZACOES: OpcaoSeletor[] = SITUACOES_DA_ATUALIZACAO.map((item) => ({ valor: item.valor, rotulo: item.rotulo }));
+type Valor = string | number | null;
+/** Colunas da tabela e o valor pelo qual cada uma ordena a lista. */
+const COLUNAS: { titulo: string; valor: (linha: LinhaCarteira) => Valor }[] = [
+  { titulo: "Processo", valor: (linha) => linha.cnj ?? linha.ci },
+  { titulo: "Robô e IA", valor: (linha) => linha.autos.roboEm },
+  { titulo: "Situação", valor: (linha) => `${linha.encerrado ? "1" : "0"} ${linha.fase ?? ""}` },
+  { titulo: "Tipo do crédito", valor: (linha) => linha.tiposCredito.join(", ") || null },
+  { titulo: "Valor original", valor: (linha) => linha.valorOriginal },
+  { titulo: "No ajuizamento", valor: (linha) => linha.valorNoAjuizamento },
+  { titulo: "Atualizado", valor: (linha) => linha.valorAtualizado },
+  { titulo: "Citação", valor: (linha) => ROTULO_SITUACAO_CITACAO[linha.citacao] },
+  { titulo: "Endereços pleiteados", valor: (linha) => linha.enderecosTentados.length || null },
+  { titulo: "Passos e pedidos de execução", valor: (linha) => linha.pedidos.length || null },
+  { titulo: "Guias pagas", valor: (linha) => linha.guiasPagas || null },
+  { titulo: "Recuperado", valor: (linha) => linha.valorRecuperado || null },
+  { titulo: "Saving", valor: (linha) => linha.saving },
+  { titulo: "Duração", valor: (linha) => linha.duracao?.meses ?? null },
+  { titulo: "Próximos passos", valor: (linha) => linha.proximosPassos },
+];
+
+/** Vazios sempre no fim, nos dois sentidos. */
+function compararValores(a: Valor, b: Valor, sentido: 1 | -1): number {
+  if (a === null || a === "") return b === null || b === "" ? 0 : 1;
+  if (b === null || b === "") return -1;
+  const resultado = typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "pt-BR", { numeric: true });
+  return resultado * sentido;
+}
+
 const real = (valor: number | null) => (valor === null ? "—" : formatarReal(valor));
 const situacaoPedido = (valor: string) => SITUACOES_PEDIDO.find((item) => item.valor === valor)?.rotulo ?? valor;
 
@@ -34,6 +76,8 @@ function Carteira() {
   const [busca, setBusca] = useState("");
   const [grupo, setGrupo] = useState("");
   const [situacao, setSituacao] = useState("");
+  const [atualizacao, setAtualizacao] = useState("");
+  const [ordem, setOrdem] = useState<{ coluna: string; sentido: 1 | -1 } | null>(null);
   const [baixando, setBaixando] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
   const [feito, setFeito] = useState("");
@@ -61,6 +105,14 @@ function Carteira() {
     .sort((a, b) => a.localeCompare(b, "pt-BR"))
     .map((valor) => ({ valor, rotulo: valor, contagem: todas.filter((linha) => linha.grupoCliente === valor).length }));
 
+  const hoje = diaEmBrasilia(new Date());
+  // Enquanto o robô ou a IA trabalham em algum processo, a carteira se recarrega sozinha a cada 30 s.
+  const trabalhando = todas.some((linha) => situacaoDaAtualizacao(linha.autos, hoje) === "em_andamento");
+  useEffect(() => {
+    if (!trabalhando) return;
+    const relogio = window.setInterval(() => setTentativa((atual) => atual + 1), 30_000);
+    return () => window.clearInterval(relogio);
+  }, [trabalhando]);
   const filtradas = useMemo(() => {
     const digitos = busca.replace(/\D/g, "");
     const termo = busca.trim().toLowerCase();
@@ -68,11 +120,22 @@ function Carteira() {
       if (grupo && linha.grupoCliente !== grupo) return false;
       if (situacao === "ativos" && linha.encerrado) return false;
       if (situacao === "encerrados" && !linha.encerrado) return false;
+      if (atualizacao && situacaoDaAtualizacao(linha.autos, hoje) !== atualizacao) return false;
       if (!termo) return true;
       if (digitos.length >= 4 && ((linha.cnj ?? "").replace(/\D/g, "").includes(digitos) || (linha.ci ?? "").includes(digitos))) return true;
       return [linha.devedor, linha.cliente].some((campo) => campo?.toLowerCase().includes(termo));
     });
-  }, [todas, busca, grupo, situacao]);
+  }, [todas, busca, grupo, situacao, atualizacao, hoje]);
+
+  const ordenadas = useMemo(() => {
+    const coluna = ordem ? COLUNAS.find((item) => item.titulo === ordem.coluna) : null;
+    if (!coluna || !ordem) return filtradas;
+    return [...filtradas].sort((a, b) => compararValores(coluna.valor(a), coluna.valor(b), ordem.sentido));
+  }, [filtradas, ordem]);
+
+  /** 1º clique: crescente; 2º: decrescente; 3º: volta à ordem original. */
+  const ordenarPor = (titulo: string) =>
+    setOrdem((atual) => (atual?.coluna !== titulo ? { coluna: titulo, sentido: 1 } : atual.sentido === 1 ? { coluna: titulo, sentido: -1 } : null));
 
   if (!dados && !erro) return <Carregando rotulo="Calculando a carteira" />;
 
@@ -101,6 +164,7 @@ function Carteira() {
           .filter(Boolean)
           .join(" ")
       );
+      setTentativa((atual) => atual + 1);
     } catch (falha) {
       setErro(mensagemDeErro(falha));
     } finally {
@@ -111,7 +175,7 @@ function Carteira() {
   async function baixar() {
     setBaixando(true);
     try {
-      const filtrado = Boolean(busca || grupo || situacao);
+      const filtrado = Boolean(busca || grupo || situacao || atualizacao);
       await processosApi.baixarCarteira(filtrado ? filtradas.map((linha) => linha.id) : null);
     } catch (falha) {
       setErro(mensagemDeErro(falha));
@@ -162,6 +226,7 @@ function Carteira() {
         <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="CNJ, CI, devedor ou cliente" aria-label="Buscar processo" />
         <SeletorBusca valor={grupo} onChange={setGrupo} opcoes={opcoesGrupo} todos={{ rotulo: "Todos os grupos" }} rotulo="Grupo do cliente" className="sm:w-52" />
         <Seletor valor={situacao} onChange={setSituacao} opcoes={SITUACOES} todos={{ rotulo: "Ativos e encerrados" }} rotulo="Situação" className="sm:w-48" />
+        <Seletor valor={atualizacao} onChange={setAtualizacao} opcoes={ATUALIZACOES} todos={{ rotulo: "Toda atualização" }} rotulo="Atualização dos autos" className="sm:w-56" />
         <Button
           variant="outline"
           onClick={() => void atualizarAutos()}
@@ -185,33 +250,25 @@ function Carteira() {
             <table className="w-full min-w-[110rem] text-left text-sm">
               <thead className="border-b border-[#e6eef0] bg-[#f7fbfc] text-xs font-medium text-muted-foreground">
                 <tr>
-                  {[
-                    "Processo",
-                    "Situação",
-                    "Tipo do crédito",
-                    "Valor original",
-                    "No ajuizamento",
-                    "Atualizado",
-                    "Citação",
-                    "Endereços pleiteados",
-                    "Passos e pedidos de execução",
-                    "Guias pagas",
-                    "Recuperado",
-                    "Saving",
-                    "Duração",
-                    "Próximos passos",
-                  ].map((titulo) => (
-                    <th key={titulo} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-                      {titulo}
-                    </th>
-                  ))}
+                  {COLUNAS.map(({ titulo }) => {
+                    const ativa = ordem?.coluna === titulo ? ordem : null;
+                    const Seta = !ativa ? ArrowUpDown : ativa.sentido === 1 ? ArrowUp : ArrowDown;
+                    return (
+                      <th key={titulo} scope="col" className="whitespace-nowrap px-3 py-2 font-medium" aria-sort={!ativa ? "none" : ativa.sentido === 1 ? "ascending" : "descending"}>
+                        <button type="button" onClick={() => ordenarPor(titulo)} className={`inline-flex items-center gap-1 hover:text-[#10293a] ${ativa ? "text-[#10293a]" : ""}`}>
+                          {titulo}
+                          <Seta className={`size-3.5 ${ativa ? "" : "opacity-40"}`} aria-hidden />
+                        </button>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e6eef0] align-top">
-                {filtradas.map((linha) => (
+                {ordenadas.map((linha) => (
                   <tr key={linha.id} className="hover:bg-[#f6fafb]">
                     <td className="min-w-[16rem] px-3 py-2.5">
-                      <Link href={`/operacoes-legais/processos/${linha.id}`} className="flex min-w-0 items-start gap-2.5 hover:underline">
+                      <Link href={`/operacoes-legais/processos/${linha.id}?de=carteira`} className="flex min-w-0 items-start gap-2.5 hover:underline">
                         <LogoGrupo grupo={linha.grupoCliente} tamanho="md" />
                         <span className="min-w-0">
                           <span className="block truncate font-semibold tabular-nums text-[#10293a]">{linha.cnj ?? "Sem número CNJ"}</span>
@@ -220,6 +277,9 @@ function Carteira() {
                           </span>
                         </span>
                       </Link>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-xs">
+                      <AtualizacaoDosAutosNaLinha autos={linha.autos} hoje={hoje} />
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5">
                       <Selo tom={linha.encerrado ? "neutro" : "marca"}>{linha.encerrado ? "Encerrado" : "Ativo"}</Selo>
@@ -291,6 +351,31 @@ function Carteira() {
           </div>
         )}
       </Painel>
+    </div>
+  );
+}
+
+const TOM_ROBO_AGORA: Record<NonNullable<AtualizacaoDosAutos["roboAgora"]>, TomSelo> = { na_fila: "alerta", baixando: "marca", aguardando_pessoa: "alerta", erro: "perigo" };
+
+/** Quando o robô conferiu o tribunal e quando a IA leu: verde se foi hoje, cinza se antes, âmbar se nunca. */
+function AtualizacaoDosAutosNaLinha({ autos, hoje }: { autos: AtualizacaoDosAutos; hoje: string }) {
+  const cor = (iso: string | null) => (!iso ? "text-amber-700" : diaEmBrasilia(iso) === hoje ? "text-emerald-700" : "text-muted-foreground");
+  const ia = autos.iaEm ? formatarMomento(autos.iaEm) : autos.documentos ? "não lida" : "sem autos";
+  const extras = [autos.iaPendentes ? `${autos.iaPendentes} por ler` : "", autos.iaErros ? `${autos.iaErros} com erro` : "", autos.iaSemTexto ? `${autos.iaSemTexto} sem texto` : ""].filter(Boolean);
+  return (
+    <div className="space-y-1">
+      {autos.roboAgora ? (
+        <Selo tom={TOM_ROBO_AGORA[autos.roboAgora]} titulo={autos.roboErro ?? undefined}>
+          {ROTULO_ROBO_AGORA[autos.roboAgora]}
+        </Selo>
+      ) : null}
+      <p className={cor(autos.roboEm)}>
+        <span className="font-medium">Robô</span> <span className="tabular-nums">{autos.roboEm ? formatarMomento(autos.roboEm) : "nunca baixou"}</span>
+      </p>
+      <p className={cor(autos.iaEm)}>
+        <span className="font-medium">IA</span> <span className="tabular-nums">{ia}</span>
+        {extras.length ? <span className="text-amber-700"> · {extras.join(" · ")}</span> : null}
+      </p>
     </div>
   );
 }

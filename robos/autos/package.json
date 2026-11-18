@@ -13,6 +13,7 @@
     "uma-vez": "tsx --env-file=.env src/index.ts --uma-vez",
     "inspecionar": "tsx --env-file=.env src/index.ts --inspecionar",
     "mapear": "tsx --env-file=.env src/index.ts --mapear",
+    "provar": "tsx --env-file=.env src/index.ts --provar",
     "tsc": "tsc --noEmit"
   },
   "dependencies": {
