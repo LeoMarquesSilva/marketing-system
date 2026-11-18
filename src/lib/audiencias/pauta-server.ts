@@ -1,0 +1,173 @@
+import "server-only";
+
+import { z } from "zod";
+import { hojeEmBrasilia, proximosDiasUteis, somarDias } from "./agenda";
+import { avisarTroca, ehDiaUtil } from "./avisos-server";
+import { lerConfig, modoOutlook, modoWhatsapp } from "./config-server";
+import { AudienciasError, carregarAudiencias, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico, type Ator } from "./server";
+import type { Audiencia, PessoaPauta } from "./tipos";
+
+/** O que as telas pedem: pauta de um período, distribuição dos próximos dias úteis, troca e conferência. */
+
+export interface Convite {
+  audienciaId: string;
+  papel: "titular" | "backup";
+  pessoaId: string | null;
+  status: string;
+  resposta: string | null;
+}
+
+export interface Leitura {
+  fonte: string;
+  tribunal: string | null;
+  iniciadaEm: string;
+  terminadaEm: string | null;
+  total: number;
+  erro: string | null;
+}
+
+export interface DadosDaPauta {
+  audiencias: Audiencia[];
+  pessoas: PessoaPauta[];
+  convites: Convite[];
+  leituras: Leitura[];
+  duracoes: Record<string, number>;
+  modos: { outlook: string; whatsapp: string };
+}
+
+async function convitesDe(ids: string[]): Promise<Convite[]> {
+  if (!ids.length) return [];
+  const saida: Convite[] = [];
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data, error } = await db().from("aud_convites").select("audiencia_id, papel, pessoa_id, status, resposta").in("audiencia_id", ids.slice(i, i + 300));
+    if (error) falhou("ler os convites", error);
+    for (const c of (data ?? []) as Record<string, string | null>[])
+      saida.push({ audienciaId: c.audiencia_id!, papel: c.papel as Convite["papel"], pessoaId: c.pessoa_id, status: c.status!, resposta: c.resposta });
+  }
+  return saida;
+}
+
+async function ultimasLeituras(): Promise<Leitura[]> {
+  const { data } = await db().from("aud_leituras").select("fonte, tribunal, iniciada_em, terminada_em, total, erro").order("iniciada_em", { ascending: false }).limit(20);
+  const vistas = new Set<string>();
+  const saida: Leitura[] = [];
+  for (const l of (data ?? []) as Record<string, unknown>[]) {
+    const chave = `${l.fonte}:${l.tribunal ?? ""}`;
+    if (vistas.has(chave)) continue;
+    vistas.add(chave);
+    saida.push({ fonte: String(l.fonte), tribunal: (l.tribunal as string | null) ?? null, iniciadaEm: String(l.iniciada_em), terminadaEm: (l.terminada_em as string | null) ?? null, total: Number(l.total ?? 0), erro: (l.erro as string | null) ?? null });
+  }
+  return saida;
+}
+
+async function montar(audiencias: Audiencia[]): Promise<DadosDaPauta> {
+  const [pessoas, convites, leituras, config] = await Promise.all([carregarPessoas(), convitesDe(audiencias.map((a) => a.id)), ultimasLeituras(), lerConfig()]);
+  return { audiencias, pessoas, convites, leituras, duracoes: config.duracoes as Record<string, number>, modos: { outlook: modoOutlook(), whatsapp: modoWhatsapp() } };
+}
+
+const esquemaPeriodo = z.object({ de: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), ate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
+
+export async function pautaDoPeriodo(params: URLSearchParams): Promise<DadosDaPauta> {
+  const hoje = hojeEmBrasilia();
+  const lido = esquemaPeriodo.safeParse({ de: params.get("de") ?? hoje, ate: params.get("ate") ?? somarDias(hoje, 7) });
+  if (!lido.success) throw new AudienciasError("Período inválido.", 400);
+  const { de, ate } = lido.data;
+  if (ate < de || somarDias(de, 120) < ate) throw new AudienciasError("O período vai de 1 a 120 dias.", 400);
+  return montar(await carregarAudiencias(`${de}T00:00:00-03:00`, `${somarDias(ate, 1)}T00:00:00-03:00`));
+}
+
+/** A tela da reunião diária: hoje e os próximos dois dias úteis (com feriado no meio, pula). */
+export async function dadosDaDistribuicao(): Promise<DadosDaPauta & { hoje: string; dias: string[] }> {
+  const util = await ehDiaUtil();
+  const hoje = hojeEmBrasilia();
+  const dias = proximosDiasUteis(hoje, 2, util);
+  const ultimo = dias[dias.length - 1] ?? somarDias(hoje, 1);
+  return { ...(await montar(await carregarAudiencias(`${hoje}T00:00:00-03:00`, `${somarDias(ultimo, 1)}T00:00:00-03:00`))), hoje, dias };
+}
+
+async function umaAudiencia(id: string): Promise<Audiencia> {
+  const { data, error } = await db().from("aud_audiencias").select(COLUNAS_AUDIENCIA).eq("id", id).maybeSingle();
+  if (error) falhou("ler a audiência", error);
+  if (!data) throw new AudienciasError("Audiência não encontrada.", 404);
+  return paraAudiencia(data as Record<string, unknown>);
+}
+
+const esquemaTroca = z.object({
+  papel: z.enum(["titular", "backup"]),
+  pessoaId: z.string().uuid(),
+  motivo: z.string().trim().min(2, "Diga o motivo da troca.").max(200),
+});
+
+/** Atribui ou troca titular/backup. Fica no histórico e avisa no grupo; o convite é refeito na próxima rotina. */
+export async function trocarPessoa(id: string, entrada: unknown, ator: Ator): Promise<Audiencia> {
+  const lido = esquemaTroca.safeParse(entrada);
+  if (!lido.success) throw new AudienciasError(lido.error.issues[0]?.message ?? "Troca inválida.", 400);
+  const { papel, pessoaId, motivo } = lido.data;
+  const aud = await umaAudiencia(id);
+  if (aud.situacao !== "designada") throw new AudienciasError("Esta audiência não está mais designada no tribunal.", 409);
+  const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
+  const nova = pessoas.get(pessoaId);
+  if (!nova || !nova.ativo) throw new AudienciasError("Pessoa não encontrada na equipe da pauta.", 404);
+  const de = papel === "titular" ? aud.titularId : aud.backupId;
+  if (de === pessoaId) return aud;
+  const campos: Record<string, unknown> = papel === "titular" ? { titular_id: pessoaId } : { backup_id: pessoaId };
+  // Quem era backup e virou titular deixa a vaga de backup.
+  if (papel === "titular" && aud.backupId === pessoaId) campos.backup_id = null;
+  if (papel === "backup" && aud.titularId === pessoaId) throw new AudienciasError("Essa pessoa já é a titular desta audiência.", 409);
+  const { error } = await db().from("aud_audiencias").update(campos).eq("id", id);
+  if (error) falhou("trocar a pessoa da audiência", error);
+  await registrarHistorico(id, papel === "titular" ? "titular" : "backup", {
+    de: de ? pessoas.get(de)?.nomeCurto ?? null : null,
+    para: nova.nomeCurto,
+    motivo,
+    feitoPor: ator.nome,
+  });
+  const atualizada = await umaAudiencia(id);
+  await avisarTroca(atualizada, papel, de, pessoaId, motivo);
+  return atualizada;
+}
+
+const esquemaCampos = z.object({
+  modalidadeEquipe: z.enum(["presencial", "video"]).nullable().optional(),
+  correspondente: z.string().trim().max(160).nullable().optional(),
+  observacao: z.string().trim().max(500).nullable().optional(),
+  linkSala: z.string().trim().url().max(500).nullable().optional(),
+});
+
+/** O que a equipe completa: como vai na híbrida, correspondente, observação e link quando o tribunal não deu. */
+export async function completarAudiencia(id: string, entrada: unknown, ator: Ator): Promise<Audiencia> {
+  const lido = esquemaCampos.safeParse(entrada);
+  if (!lido.success) throw new AudienciasError(lido.error.issues[0]?.message ?? "Dados inválidos.", 400);
+  const d = lido.data;
+  const campos: Record<string, unknown> = {};
+  if (d.modalidadeEquipe !== undefined) campos.modalidade_equipe = d.modalidadeEquipe;
+  if (d.correspondente !== undefined) campos.correspondente = d.correspondente || null;
+  if (d.observacao !== undefined) campos.observacao = d.observacao || null;
+  if (d.linkSala !== undefined) Object.assign(campos, { link_sala: d.linkSala || null, link_fonte: d.linkSala ? "manual" : null, link_fonte_data: null });
+  if (!Object.keys(campos).length) return umaAudiencia(id);
+  const { error } = await db().from("aud_audiencias").update(campos).eq("id", id);
+  if (error) falhou("completar a audiência", error);
+  await registrarHistorico(id, "completada", { para: Object.keys(campos).join(", "), feitoPor: ator.nome });
+  return umaAudiencia(id);
+}
+
+/** Marca como conferidas no VIOS as mudanças e cancelamentos vistos no tribunal. */
+export async function conferirMudancas(entrada: unknown, ator: Ator): Promise<{ conferidas: number }> {
+  const lido = z.object({ ids: z.array(z.string().uuid()).min(1).max(200) }).safeParse(entrada);
+  if (!lido.success) throw new AudienciasError("Diga quais audiências foram conferidas.", 400);
+  const agora = new Date().toISOString();
+  const { data, error } = await db()
+    .from("aud_audiencias")
+    .update({ mudanca_conferida_em: agora, mudanca_conferida_por: ator.nome })
+    .in("id", lido.data.ids)
+    .select("id");
+  if (error) falhou("marcar como conferido", error);
+  for (const l of (data ?? []) as { id: string }[]) await registrarHistorico(l.id, "conferida no VIOS", { feitoPor: ator.nome });
+  return { conferidas: data?.length ?? 0 };
+}
+
+export async function historicoDaAudiencia(id: string) {
+  const { data, error } = await db().from("aud_historico").select("acao, de, para, motivo, feito_por, em").eq("audiencia_id", id).order("em", { ascending: false }).limit(50);
+  if (error) falhou("ler o histórico", error);
+  return data ?? [];
+}

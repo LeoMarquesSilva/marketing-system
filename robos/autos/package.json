@@ -13,7 +13,8 @@
     "uma-vez": "tsx --env-file=.env src/index.ts --uma-vez",
     "inspecionar": "tsx --env-file=.env src/index.ts --inspecionar",
     "mapear": "tsx --env-file=.env src/index.ts --mapear",
-    "tsc": "tsc --noEmit"
+    "tsc": "tsc --noEmit",
+    "pauta": "tsx --env-file=.env src/pauta.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",

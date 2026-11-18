@@ -54,6 +54,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
   { key: "/operacoes-legais/vistagem", label: "Vistagem de Publicações BP", manualOnly: true },
   { key: "/operacoes-legais/processos", label: "Processos e Pessoas (cadastro, autos, Rec. Crédito)", manualOnly: true },
+  { key: "/operacoes-legais/pauta", label: "Pauta de Audiências (distribuição, troca de titular e backup)", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
   { key: "/facilities", label: "Gestão de Fornecedores e Prestadores de Serviços (Facilities)", manualOnly: true },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
@@ -85,6 +86,8 @@ export const VISTAGEM_KEY = "/operacoes-legais/vistagem";
 export const PROCESSOS_KEY = "/operacoes-legais/processos";
 /** Cadastro de pessoas: parte do módulo de Processos (mesma liberação). */
 export const PESSOAS_PATH = "/operacoes-legais/pessoas";
+/** Pauta de Audiências: advogados, coordenação e controladoria (liberação própria, fora do "só admin" de Operações Legais). */
+export const PAUTA_KEY = "/operacoes-legais/pauta";
 export const TEAM_SURVEYS_KEY = "/operacoes-legais/pesquisas";
 export const ICP_KEY = "/icp";
 export const FACILITIES_KEY = "/facilities";
@@ -347,6 +350,17 @@ export function isProcessosPath(pathname: string): boolean {
   return [PROCESSOS_KEY, PESSOAS_PATH].some((base) => pathname === base || pathname.startsWith(`${base}/`));
 }
 
+/** Pauta de Audiências: admin ou liberação manual em Usuários. */
+export function hasPautaAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(PAUTA_KEY));
+}
+
+export function isPautaPath(pathname: string): boolean {
+  return pathname === PAUTA_KEY || pathname.startsWith(`${PAUTA_KEY}/`);
+}
+
 /** Painel de Vistagem e agendamento: admin ou liberação manual em Usuários. */
 export function hasVistagemAccess(profile: AccessProfile | null | undefined): boolean {
   if (!profile) return false;
@@ -476,6 +490,10 @@ export function canAccessPath(
 
   if (isProcessosPath(pathname)) {
     return hasProcessosAccess(profile);
+  }
+
+  if (isPautaPath(pathname)) {
+    return hasPautaAccess(profile);
   }
 
   if (isPe27Path(pathname)) {

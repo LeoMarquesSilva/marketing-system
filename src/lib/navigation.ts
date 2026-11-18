@@ -15,6 +15,7 @@ import {
   Award,
   BookCheck,
   CalendarClock,
+  CalendarCheck,
   CalendarRange,
   Camera,
   ChartNoAxesColumn,
@@ -78,6 +79,8 @@ import {
   hasOperacoesLegaisAccess,
   hasProcessosAccess,
   isProcessosPath,
+  hasPautaAccess,
+  isPautaPath,
   canSeeVistagemPath,
   entradaDaVistagem,
   isAdminRole,
@@ -481,6 +484,20 @@ export const NAV_FRONTS: NavFront[] = [
         configuracoes: { href: "/operacoes-legais/processos/importacao", label: "Importação e VIOS" },
       },
       {
+        // Pauta de Audiências da trabalhista: lida do PJe, conferida no DJEN e no VIOS, com titular e backup.
+        // Liberação própria (advogados, coordenação e controladoria), fora do "só admin" de Operações Legais.
+        id: "pauta-audiencias",
+        label: "Pauta de Audiências",
+        shortLabel: "Pauta",
+        icon: CalendarCheck,
+        pages: [
+          { href: "/operacoes-legais/pauta", label: "Pauta" },
+          { href: "/operacoes-legais/pauta/distribuicao", label: "Distribuição" },
+          { href: "/operacoes-legais/pauta/tribunal", label: "Tribunal" },
+        ],
+        configuracoes: { href: "/operacoes-legais/pauta/configuracoes", label: "Equipe, leituras e avisos" },
+      },
+      {
         // Cadastro único de pessoas (clientes, partes, sócios, fiadores, advogados), usado por Processos.
         id: "cadastro-pessoas",
         label: "Pessoas",
@@ -631,6 +648,7 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
       if (isPe27Path(href)) return hasPe27Access(profile);
       if (isProcessosPath(href)) return hasProcessosAccess(profile);
+      if (isPautaPath(href)) return hasPautaAccess(profile);
       if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
@@ -665,6 +683,7 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
     if (isPe27Path(href)) return hasPe27Access(profile);
     if (isProcessosPath(href)) return hasProcessosAccess(profile);
+    if (isPautaPath(href)) return hasPautaAccess(profile);
     if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
