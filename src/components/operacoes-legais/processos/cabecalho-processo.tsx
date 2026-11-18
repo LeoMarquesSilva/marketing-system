@@ -11,6 +11,7 @@ import { AvatarPessoa } from "../vistagem/combobox-busca";
 import { Celula, LinkPastaVios } from "../vistagem/ficha-pasta";
 import { LogoGrupo, SeloArea } from "../vistagem/marcas";
 import { Selo } from "../vistagem/ui";
+import { ValorAtualizado } from "./memoria-calculo";
 import { type CapaConsultada, LinhaDoTempo } from "./linha-do-tempo";
 import { BarraPreenchimento } from "./preenchimento-ui";
 import { TextoSintese } from "./texto-sintese";
@@ -427,7 +428,12 @@ export function CabecalhoDoProcesso({
                       })}
                       {dado("fase", { apoio: texto("jurisdicao_atual") })}
                       {dado("valor_acao", {
-                        apoio: mostrar("valor_acao_atualizado") ? `Atualizado: ${mostrar("valor_acao_atualizado")}` : null,
+                        // O atualizado é o cálculo do TJSP (com guias e levantamentos); clicar abre a memória. Sem ele, o do VIOS.
+                        apoio: processo.valorAcaoTjsp ? (
+                          <ValorAtualizado memoria={processo.valorAcaoTjsp} vios={mostrar("valor_acao_atualizado")} rotulo="Atualizado:" />
+                        ) : mostrar("valor_acao_atualizado") ? (
+                          `Atualizado (VIOS): ${mostrar("valor_acao_atualizado")}`
+                        ) : null,
                       })}
                       {dado("departamento", {
                         apoio: texto("contrato_cliente") ? `Contrato: ${texto("contrato_cliente")}` : null,

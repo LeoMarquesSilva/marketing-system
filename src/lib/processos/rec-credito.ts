@@ -379,28 +379,88 @@ export function linhaDaCarteira(dados: DadosDoProcessoNaCarteira, itens: ItensRe
   };
 }
 
-export interface ValorDaAcaoAtualizado {
+export interface LinhaDaMemoria {
+  tipo: "acao" | "guia" | "levantamento";
+  descricao: string;
+  /** Início da conta desta linha (distribuição, pagamento da guia, levantamento). */
+  data: string;
   valor: number;
-  /** Data da distribuição (início da conta). */
-  desde: string;
-  /** Até quando a conta foi (hoje, ou o último mês com índice publicado). */
-  ate: string;
+  fatorCorrecao: number;
+  corrigido: number;
+  /** Juros em % no período (zero quando a linha só tem correção). */
+  jurosPercentual: number;
+  juros: number;
+  total: number;
+  /** +1 soma ao débito; −1 abate (valor levantado). */
+  sinal: 1 | -1;
 }
 
+/** Memória do cálculo do valor da ação atualizado, para a ficha e a janela de conferência. */
+export interface MemoriaDoCalculo {
+  /** Até quando a conta foi (hoje, ou o último dia do mês com índice publicado). */
+  ate: string;
+  linhas: LinhaDaMemoria[];
+  /** Valor da ação + guias − levantamentos, tudo atualizado até `ate` (nunca negativo). */
+  total: number;
+  avisos: string[];
+}
+
+export const CRITERIO_DA_MEMORIA = [
+  "Correção monetária pela Tabela Prática do TJSP (Lei 14.905/2024): índice do mês final ÷ índice do mês inicial.",
+  "Juros de mora simples sobre o valor corrigido: 1% ao mês até 27/08/2024 e, depois, a taxa legal (Selic menos correção), pro rata pelos dias.",
+  "Valor da ação: correção e juros desde a distribuição.",
+  "Guias pagas (despesas a cobrar do devedor): correção desde o pagamento, sem juros.",
+  "Valores levantados: abatidos pelo mesmo critério da dívida (correção e juros desde o levantamento), o que equivale a descontá-los na data em que foram recebidos.",
+];
+
+type Lancamentos = Pick<Lancamento, "tipo" | "data" | "valor" | "descricao">[];
+
 /**
- * O valor da ação atualizado pelo cálculo do TJSP, da distribuição até hoje: Tabela Prática e juros (1% a.m.
- * até 27/08/2024, taxa legal depois), como o crédito. Nulo sem valor da ação, sem distribuição ou sem índices.
+ * O valor da ação atualizado pelo cálculo do TJSP até hoje, somando as guias pagas e abatendo os valores
+ * levantados, com a memória de cada linha. Nulo sem valor da ação, sem distribuição ou sem índices.
  */
-export function valorDaAcaoAtualizado(tabela: TabelaTjsp | null, valor: unknown, distribuicao: unknown, hoje: string, indicesAte: string | null): ValorDaAcaoAtualizado | null {
+export function memoriaDoValorDaAcao(tabela: TabelaTjsp | null, valor: unknown, distribuicao: unknown, lancamentos: Lancamentos, hoje: string, indicesAte: string | null): MemoriaDoCalculo | null {
   const base = Number(valor);
   const desde = typeof distribuicao === "string" ? distribuicao.slice(0, 10) : "";
   if (!tabela || !(base > 0) || !DATA.test(desde)) return null;
   const ate = limitarAosIndices(hoje, indicesAte);
   if (ate <= desde) return null;
-  try {
-    return { valor: atualizarTitulo(tabela, { valor: base, vencimento: desde }, ate).total, desde, ate };
-  } catch (erro) {
-    if (erro instanceof IndiceAusente) return null;
-    throw erro;
+  const avisos: string[] = [];
+  const linhas: LinhaDaMemoria[] = [];
+  const linha = (tipo: LinhaDaMemoria["tipo"], descricao: string, data: string, quanto: number, comJuros: boolean): LinhaDaMemoria | null => {
+    try {
+      const conta = atualizarTitulo(tabela, { valor: quanto, vencimento: data }, ate);
+      const juros = comJuros ? conta.juros : 0;
+      return {
+        tipo,
+        descricao,
+        data,
+        valor: quanto,
+        fatorCorrecao: conta.fatorCorrecao,
+        corrigido: conta.corrigido,
+        jurosPercentual: comJuros ? conta.jurosPercentual : 0,
+        juros,
+        total: Math.round((conta.corrigido + juros) * 100) / 100,
+        sinal: tipo === "levantamento" ? -1 : 1,
+      };
+    } catch (erro) {
+      if (erro instanceof IndiceAusente) {
+        avisos.push(`${descricao} (${formatarData(data)}) ficou fora: falta o índice do TJSP de ${erro.mes.slice(5, 7)}/${erro.mes.slice(0, 4)}.`);
+        return null;
+      }
+      throw erro;
+    }
+  };
+  const acao = linha("acao", "Valor da ação", desde, base, true);
+  if (!acao) return null;
+  linhas.push(acao);
+  for (const item of [...lancamentos].sort((a, b) => a.data.localeCompare(b.data))) {
+    if (!DATA.test(item.data) || item.data > ate || !(item.valor > 0)) continue;
+    const descricao = item.tipo === "guia_paga" ? `Guia paga${item.descricao ? `: ${item.descricao}` : ""}` : `Valor levantado${item.descricao ? `: ${item.descricao}` : ""}`;
+    const calculada = linha(item.tipo === "guia_paga" ? "guia" : "levantamento", descricao, item.data, item.valor, item.tipo === "levantamento");
+    if (calculada) linhas.push(calculada);
   }
+  const soma = linhas.reduce((total, item) => total + item.sinal * item.total, 0);
+  if (soma < 0) avisos.push("Os valores levantados, atualizados, superam o débito: o saldo fica em zero.");
+  return { ate, linhas, total: Math.max(0, Math.round(soma * 100) / 100), avisos };
 }

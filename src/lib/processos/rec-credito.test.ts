@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TabelaTjsp } from "./calculo-tjsp";
-import { colunasDoItem, lerValor, linhaDaCarteira, processoEncerrado, situacaoDaCitacao, type Citacao, type DadosDoProcessoNaCarteira, type ItensRecCredito } from "./rec-credito";
+import { colunasDoItem, lerValor, linhaDaCarteira, memoriaDoValorDaAcao, processoEncerrado, situacaoDaCitacao, type Citacao, type DadosDoProcessoNaCarteira, type ItensRecCredito } from "./rec-credito";
 
 const tabela = new TabelaTjsp([
   { mes: "2023-01-01", tabelaPratica: 100, taxaLegal: null },
@@ -113,5 +113,43 @@ describe("linha da carteira", () => {
     expect(processoEncerrado({ situacao: "Ativo", dataEncerramento: null })).toBe(false);
     expect(processoEncerrado({ situacao: "Arquivado definitivamente", dataEncerramento: null })).toBe(true);
     expect(processoEncerrado({ situacao: null, dataEncerramento: "2024-01-01" })).toBe(true);
+  });
+});
+
+describe("memória do valor da ação atualizado", () => {
+  it("atualiza a ação desde a distribuição, soma guias só corrigidas e abate levantamentos com juros", () => {
+    const memoria = memoriaDoValorDaAcao(
+      tabela,
+      1000,
+      "2023-01-15",
+      [
+        { tipo: "guia_paga", data: "2023-02-15", valor: 100, descricao: "diligência" },
+        { tipo: "levantamento", data: "2023-02-15", valor: 200, descricao: "alvará" },
+      ],
+      "2023-03-15",
+      "2023-03-01"
+    )!;
+    expect(memoria.linhas.map((linha) => [linha.tipo, linha.sinal, linha.total])).toEqual([
+      ["acao", 1, 1122],
+      // Guia: 100 × 110/101, sem juros.
+      ["guia", 1, 108.91],
+      // Levantamento: abatido pelo mesmo critério da dívida (correção e juros desde 15/02).
+      ["levantamento", -1, expect.any(Number)],
+    ]);
+    const levantado = memoria.linhas[2];
+    expect(levantado.juros).toBeGreaterThan(0);
+    expect(memoria.total).toBe(Math.round((1122 + 108.91 - levantado.total) * 100) / 100);
+  });
+
+  it("sem distribuição, sem valor ou sem índices não calcula", () => {
+    expect(memoriaDoValorDaAcao(tabela, 1000, null, [], "2023-03-15", "2023-03-01")).toBeNull();
+    expect(memoriaDoValorDaAcao(tabela, 0, "2023-01-15", [], "2023-03-15", "2023-03-01")).toBeNull();
+    expect(memoriaDoValorDaAcao(null, 1000, "2023-01-15", [], "2023-03-15", "2023-03-01")).toBeNull();
+  });
+
+  it("levantamento maior que a dívida deixa o saldo em zero, com aviso", () => {
+    const memoria = memoriaDoValorDaAcao(tabela, 100, "2023-01-15", [{ tipo: "levantamento", data: "2023-01-20", valor: 500, descricao: null }], "2023-03-15", "2023-03-01")!;
+    expect(memoria.total).toBe(0);
+    expect(memoria.avisos[0]).toMatch(/superam o débito/);
   });
 });

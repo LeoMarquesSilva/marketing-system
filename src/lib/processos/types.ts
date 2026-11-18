@@ -1,3 +1,4 @@
+import type { MemoriaDoCalculo } from "./rec-credito";
 import type { Valores } from "./campos";
 
 export const POLOS = [
@@ -194,8 +195,11 @@ export interface ProcessoDetalhe {
   viosEditadoEm: string | null;
   /** A fila do VIOS está em modo simulado (padrão) ou gravando de verdade. */
   gravacaoSimulada: boolean;
-  /** Valor da ação atualizado pelo cálculo do TJSP, da distribuição até hoje (o do VIOS fica em `valores`). */
-  valorAcaoTjsp: { valor: number; desde: string; ate: string } | null;
+  /**
+   * Valor da ação atualizado pelo cálculo do TJSP até hoje, com as guias pagas e abatidos os valores levantados,
+   * e a memória do cálculo (o número do VIOS fica em `valores`).
+   */
+  valorAcaoTjsp: MemoriaDoCalculo | null;
 }
 
 export interface ExecucaoSync {

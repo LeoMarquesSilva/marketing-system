@@ -40,6 +40,7 @@ import { EditarCampos } from "./editar-campos";
 import { EditarParte } from "./editar-parte";
 import { BarraPreenchimento } from "./preenchimento-ui";
 import { formatarDataHora, mensagemDeErro, processosApi } from "./processos-api";
+import { ValorAtualizado } from "./memoria-calculo";
 import { PainelRecCredito } from "./rec-credito-painel";
 import { PainelSugestoes } from "./sugestoes-painel";
 import { VisualizadorAutos } from "./visualizador-autos";
@@ -73,14 +74,13 @@ function ValorDoCampo({ item, processo }: { item: CampoProcesso; processo: Proce
   const valor = processo.valores[item.chave];
   // Valor da ação atualizado: o cálculo do TJSP desde a distribuição; o número do VIOS fica embaixo, para comparar.
   if (item.chave === "valor_acao_atualizado" && processo.valorAcaoTjsp) {
-    const { valor: calculado, desde, ate } = processo.valorAcaoTjsp;
-    const data = (iso: string) => iso.split("-").reverse().join("/");
+    const vios = estaPreenchido(valor) ? formatarValor(item, valor) : null;
     return (
       <>
-        <p className="text-sm font-medium tabular-nums text-foreground">{formatarValor(item, calculado)}</p>
+        <ValorAtualizado memoria={processo.valorAcaoTjsp} vios={vios} className="text-sm font-medium text-foreground" />
         <p className="text-xs text-muted-foreground">
-          Cálculo do TJSP de {data(desde)} a {data(ate)}
-          {estaPreenchido(valor) ? <> · no VIOS: <span className="tabular-nums">{formatarValor(item, valor)}</span></> : null}
+          Cálculo do TJSP, com guias e levantamentos
+          {vios ? <> · no VIOS: <span className="tabular-nums">{vios}</span></> : null}
         </p>
       </>
     );
