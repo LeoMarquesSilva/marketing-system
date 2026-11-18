@@ -82,8 +82,9 @@ export function getEmailSenderConfig(): EmailSenderConfig {
   };
 }
 
+/** Links que vão dentro dos e-mails (descadastro): sem a variável, o endereço público do ORQESTRAI. */
 function getBaseUrl(): string {
-  return getMarketingPublicUrl() || "http://localhost:3000";
+  return (getMarketingPublicUrl() || "https://www.orqestrai.com.br").replace(/\/$/, "");
 }
 
 export function buildUnsubscribeUrl(token: string): string {
@@ -109,7 +110,7 @@ export interface CampaignRow {
   list_id: string | null;
   status: string;
   total_recipients: number;
-  send_mode: "broadcast" | "batch";
+  send_mode: "broadcast" | "batch" | "mailbox";
   resend_segment_id: string | null;
   resend_broadcast_id: string | null;
   scheduled_at: string | null;
@@ -425,7 +426,7 @@ export function verifyResendWebhook(rawBody: string, headers: Headers): WebhookE
 }
 
 /** Ordem do funil: um evento atrasado (ex.: "entregue" depois de "abriu") não faz o status voltar. */
-const RECIPIENT_STATUS_RANK: Record<string, number> = {
+export const RECIPIENT_STATUS_RANK: Record<string, number> = {
   queued: 0,
   skipped: 0,
   sent: 1,

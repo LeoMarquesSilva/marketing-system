@@ -183,8 +183,11 @@ export interface EmailCampaign {
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
-  /** broadcast = Marketing do Resend (padrão); batch = lotes transacionais (100/dia no grátis). */
-  sendMode: "broadcast" | "batch";
+  /**
+   * broadcast = Marketing do Resend (padrão); batch = lotes transacionais (100/dia no grátis);
+   * mailbox = caixa Microsoft 365 do remetente, um e-mail por pessoa, com rastreio do ORQESTRAI.
+   */
+  sendMode: "broadcast" | "batch" | "mailbox";
   resendBroadcastId: string | null;
   /** Último erro do envio (ex.: domínio não verificado), mostrado na campanha. */
   lastError: string | null;
@@ -1084,10 +1087,14 @@ export async function cancelScheduledCampaign(id: string): Promise<void> {
 }
 
 export interface CampaignSendProgress {
-  mode: "broadcast" | "batch";
-  phase?: "syncing" | "scheduled" | "sent";
+  mode: "broadcast" | "batch" | "mailbox";
+  /** syncing = preparando no Resend; sending = saindo pela caixa do remetente (um por um). */
+  phase?: "syncing" | "sending" | "scheduled" | "sent";
   total?: number;
   synced?: number;
+  /** Caixa do remetente: quantos já saíram e quantos falharam. */
+  sent?: number;
+  failed?: number;
   skipped?: number;
   finished?: boolean;
   processed?: number;
@@ -1102,7 +1109,8 @@ export async function sendEmailCampaign(
   id: string,
   options: { scheduledAt?: string | null; onProgress?: (progress: CampaignSendProgress) => void } = {}
 ): Promise<CampaignSendProgress> {
-  for (let round = 0; round < 40; round++) {
+  // Pela caixa do remetente sai ~1 e-mail a cada 2,5 s (limite do Exchange): 400 contatos = ~25 levas.
+  for (let round = 0; round < 120; round++) {
     const res = await fetch(`/api/email-marketing/campaigns/${id}/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1111,7 +1119,7 @@ export async function sendEmailCampaign(
     const data = (await res.json().catch(() => ({}))) as CampaignSendProgress & { error?: string };
     if (!res.ok) throw new Error(data.error ?? "Erro ao enviar a campanha.");
     options.onProgress?.(data);
-    if (data.mode === "batch" || data.phase !== "syncing") return data;
+    if (data.mode === "batch" || (data.phase !== "syncing" && data.phase !== "sending")) return data;
   }
   throw new Error("O envio demorou mais que o esperado. Abra a campanha de novo para continuar.");
 }

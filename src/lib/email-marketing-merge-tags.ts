@@ -12,6 +12,8 @@ export interface EmailMergeContext {
   email: string;
   empresa: string;
   telefone: string;
+  /** "Olá, Maria," ou "Olá," quando o cadastro não tem nome de pessoa. */
+  saudacao: string;
   /** Campos extras (custom_fields rd_* e outros) */
   [key: string]: string;
 }
@@ -28,7 +30,19 @@ export const STANDARD_MERGE_TAGS: MergeTagDefinition[] = [
   { tag: "email", label: "E-mail", example: "maria@empresa.com.br" },
   { tag: "empresa", label: "Empresa", example: "Empresa Exemplo Ltda." },
   { tag: "telefone", label: "Telefone", example: "(19) 99999-9999" },
+  { tag: "saudacao", label: "Saudação (Olá, Nome,)", example: "Olá, Maria," },
 ];
+
+const COMPANY_LIKE_NAME = /\b(ltda|s\/?a|eireli|epp|cia|comercio|comércio|industria|indústria|servicos|serviços|grupo|holding|associa|condom|cooperativa)\b/i;
+
+/** Primeiro nome só quando o cadastro parece de pessoa (há contatos com nome de empresa ou vazio). */
+function greetingFor(name: string | null | undefined): string {
+  const clean = name?.trim() ?? "";
+  const first = clean.split(/\s+/)[0] ?? "";
+  if (!first || COMPANY_LIKE_NAME.test(clean) || /[\d@]/.test(first) || first.length < 2) return "Olá,";
+  const pretty = first === first.toUpperCase() ? first.charAt(0) + first.slice(1).toLowerCase() : first;
+  return `Olá, ${pretty},`;
+}
 
 export const SAMPLE_MERGE_CONTEXT: EmailMergeContext = {
   nome: "Maria Silva",
@@ -36,6 +50,7 @@ export const SAMPLE_MERGE_CONTEXT: EmailMergeContext = {
   email: "maria@empresa.com.br",
   empresa: "Empresa Exemplo Ltda.",
   telefone: "(19) 99999-9999",
+  saudacao: "Olá, Maria,",
   rd_cargo_e_book: "Gerente de RH",
   rd_cidade_empresa: "Campinas",
   rd_estado_empresa: "SP",
@@ -62,6 +77,7 @@ export function buildMergeContext(contact: {
     email: contact.email,
     empresa,
     telefone: contact.phone?.trim() || "",
+    saudacao: greetingFor(contact.name),
   };
 
   for (const [key, raw] of Object.entries(contact.customFields ?? {})) {
@@ -98,6 +114,8 @@ const BROADCAST_PLACEHOLDERS: Record<string, string> = {
   nome: "{{{contact.first_name}}} {{{contact.last_name}}}",
   email: "{{{contact.email}}}",
   empresa: "{{{contact.empresa}}}",
+  // O broadcast não tem condição: sem o nome garantido, a saudação fica neutra.
+  saudacao: "Olá,",
   unsubscribe_url: "{{{RESEND_UNSUBSCRIBE_URL}}}",
 };
 
