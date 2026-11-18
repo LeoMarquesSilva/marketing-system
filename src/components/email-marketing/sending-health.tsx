@@ -20,9 +20,11 @@ export function isDomainReady(status: string | undefined): boolean {
 function Segment({ icon: Icon, title, children }: { icon: typeof Globe; title: string; children: React.ReactNode }) {
   return (
     <div className="flex min-w-0 items-start gap-3 px-4 py-3">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#3e84a8]" />
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-[#eaf2f5] text-[#285f7a]">
+        <Icon className="size-4" />
+      </span>
       <div className="min-w-0 space-y-0.5">
-        <p className="text-xs text-muted-foreground">{title}</p>
+        <p className="text-xs font-medium text-[#3b5560]">{title}</p>
         {children}
       </div>
     </div>
@@ -72,8 +74,8 @@ export function SendingHealthStrip({
           <p className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
-              <strong className="font-semibold">O envio está bloqueado até o domínio ser verificado.</strong> Faltam os registros DNS de{" "}
-              {domain?.name ?? "envio"} no Cloudflare. Dá para montar e revisar as campanhas enquanto isso.
+              <strong className="font-semibold">O envio pelo Resend está bloqueado até o domínio ser verificado.</strong> Faltam os registros
+              DNS de {domain?.name ?? "envio"} no Cloudflare. As campanhas pela caixa do remetente (Microsoft 365) já podem sair.
             </span>
           </p>
           <Link

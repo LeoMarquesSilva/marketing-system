@@ -38,7 +38,7 @@ const NEEDS: Record<EmailMarketingTabId, { contacts?: boolean; companies?: boole
   campanhas: { contacts: true, lists: true, campaigns: true },
   contatos: { contacts: true, companies: true },
   empresas: { contacts: true, companies: true, people: true },
-  listas: { contacts: true, lists: true },
+  listas: { contacts: true, lists: true, campaigns: true },
   progresso: { contacts: true, people: true },
   configuracoes: {},
 };
@@ -85,14 +85,21 @@ export function EmailMarketingClient({ tab }: { tab: EmailMarketingTabId }) {
       needs.companies ? fetchEmailCompanies().then((v) => !cancelled && setCompanies(v)) : null,
       needs.people ? fetchEmailPeople().then((v) => !cancelled && setPeople(v)) : null,
       needs.lists ? fetchEmailLists().then((v) => !cancelled && setLists(v)) : null,
-      needs.campaigns ? reloadCampaigns() : null,
+      needs.campaigns
+        ? Promise.all([fetchEmailCampaigns(), fetchAllEmailCampaignStats(), fetchEmailRdEmails()]).then(([cp, st, rd]) => {
+            if (cancelled) return;
+            setCampaigns(cp);
+            setCampaignStats(st);
+            setRdEmails(rd);
+          })
+        : null,
     ])
       .catch((err) => !cancelled && setError(err instanceof Error ? err.message : "Erro ao carregar os dados."))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [needs, reloadCampaigns]);
+  }, [needs]);
 
   if (loading) return <EmailMarketingLoading />;
 
@@ -121,7 +128,7 @@ export function EmailMarketingClient({ tab }: { tab: EmailMarketingTabId }) {
     case "empresas":
       return <CompaniesTab companies={companies} contacts={contacts} people={people} />;
     case "listas":
-      return <ListsTab lists={lists} contacts={contacts} onChanged={reloadLists} />;
+      return <ListsTab lists={lists} contacts={contacts} campaigns={campaigns} onChanged={reloadLists} />;
     case "progresso":
       return <ProgressTab contacts={contacts} people={people} />;
     case "configuracoes":
