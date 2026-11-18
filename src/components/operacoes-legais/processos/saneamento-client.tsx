@@ -152,7 +152,7 @@ function Saneamento() {
             <ul className="divide-y divide-[#e6eef0]">
               {filtrados.slice(0, visiveis).map((processo) => (
                 <li key={processo.id}>
-                  <Link href={`/operacoes-legais/processos/${processo.id}`} className={`${linhaLista()} block space-y-2 lg:space-y-0 ${COLUNAS}`}>
+                  <Link href={`/operacoes-legais/processos/${processo.id}?de=saneamento`} className={`${linhaLista()} block space-y-2 lg:space-y-0 ${COLUNAS}`}>
                     <div className="flex min-w-0 items-center gap-3">
                       <LogoGrupo grupo={processo.grupoCliente} tamanho="md" />
                       <div className="min-w-0">

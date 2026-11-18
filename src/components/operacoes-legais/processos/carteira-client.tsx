@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Banknote, FileSpreadsheet, FolderSearch, LoaderCircle, Percent, Receipt, RefreshCw, Scale, SearchX } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Banknote, FileSpreadsheet, FolderSearch, LoaderCircle, Percent, Receipt, RefreshCw, Scale, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   ROTULO_ROBO_AGORA,
@@ -38,6 +38,34 @@ const SITUACOES: OpcaoSeletor[] = [
   { valor: "encerrados", rotulo: "Encerrados" },
 ];
 const ATUALIZACOES: OpcaoSeletor[] = SITUACOES_DA_ATUALIZACAO.map((item) => ({ valor: item.valor, rotulo: item.rotulo }));
+type Valor = string | number | null;
+/** Colunas da tabela e o valor pelo qual cada uma ordena a lista. */
+const COLUNAS: { titulo: string; valor: (linha: LinhaCarteira) => Valor }[] = [
+  { titulo: "Processo", valor: (linha) => linha.cnj ?? linha.ci },
+  { titulo: "Robô e IA", valor: (linha) => linha.autos.roboEm },
+  { titulo: "Situação", valor: (linha) => `${linha.encerrado ? "1" : "0"} ${linha.fase ?? ""}` },
+  { titulo: "Tipo do crédito", valor: (linha) => linha.tiposCredito.join(", ") || null },
+  { titulo: "Valor original", valor: (linha) => linha.valorOriginal },
+  { titulo: "No ajuizamento", valor: (linha) => linha.valorNoAjuizamento },
+  { titulo: "Atualizado", valor: (linha) => linha.valorAtualizado },
+  { titulo: "Citação", valor: (linha) => ROTULO_SITUACAO_CITACAO[linha.citacao] },
+  { titulo: "Endereços pleiteados", valor: (linha) => linha.enderecosTentados.length || null },
+  { titulo: "Passos e pedidos de execução", valor: (linha) => linha.pedidos.length || null },
+  { titulo: "Guias pagas", valor: (linha) => linha.guiasPagas || null },
+  { titulo: "Recuperado", valor: (linha) => linha.valorRecuperado || null },
+  { titulo: "Saving", valor: (linha) => linha.saving },
+  { titulo: "Duração", valor: (linha) => linha.duracao?.meses ?? null },
+  { titulo: "Próximos passos", valor: (linha) => linha.proximosPassos },
+];
+
+/** Vazios sempre no fim, nos dois sentidos. */
+function compararValores(a: Valor, b: Valor, sentido: 1 | -1): number {
+  if (a === null || a === "") return b === null || b === "" ? 0 : 1;
+  if (b === null || b === "") return -1;
+  const resultado = typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "pt-BR", { numeric: true });
+  return resultado * sentido;
+}
+
 const real = (valor: number | null) => (valor === null ? "—" : formatarReal(valor));
 const situacaoPedido = (valor: string) => SITUACOES_PEDIDO.find((item) => item.valor === valor)?.rotulo ?? valor;
 
@@ -49,6 +77,7 @@ function Carteira() {
   const [grupo, setGrupo] = useState("");
   const [situacao, setSituacao] = useState("");
   const [atualizacao, setAtualizacao] = useState("");
+  const [ordem, setOrdem] = useState<{ coluna: string; sentido: 1 | -1 } | null>(null);
   const [baixando, setBaixando] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
   const [feito, setFeito] = useState("");
@@ -97,6 +126,16 @@ function Carteira() {
       return [linha.devedor, linha.cliente].some((campo) => campo?.toLowerCase().includes(termo));
     });
   }, [todas, busca, grupo, situacao, atualizacao, hoje]);
+
+  const ordenadas = useMemo(() => {
+    const coluna = ordem ? COLUNAS.find((item) => item.titulo === ordem.coluna) : null;
+    if (!coluna || !ordem) return filtradas;
+    return [...filtradas].sort((a, b) => compararValores(coluna.valor(a), coluna.valor(b), ordem.sentido));
+  }, [filtradas, ordem]);
+
+  /** 1º clique: crescente; 2º: decrescente; 3º: volta à ordem original. */
+  const ordenarPor = (titulo: string) =>
+    setOrdem((atual) => (atual?.coluna !== titulo ? { coluna: titulo, sentido: 1 } : atual.sentido === 1 ? { coluna: titulo, sentido: -1 } : null));
 
   if (!dados && !erro) return <Carregando rotulo="Calculando a carteira" />;
 
@@ -211,34 +250,25 @@ function Carteira() {
             <table className="w-full min-w-[110rem] text-left text-sm">
               <thead className="border-b border-[#e6eef0] bg-[#f7fbfc] text-xs font-medium text-muted-foreground">
                 <tr>
-                  {[
-                    "Processo",
-                    "Robô e IA",
-                    "Situação",
-                    "Tipo do crédito",
-                    "Valor original",
-                    "No ajuizamento",
-                    "Atualizado",
-                    "Citação",
-                    "Endereços pleiteados",
-                    "Passos e pedidos de execução",
-                    "Guias pagas",
-                    "Recuperado",
-                    "Saving",
-                    "Duração",
-                    "Próximos passos",
-                  ].map((titulo) => (
-                    <th key={titulo} scope="col" className="whitespace-nowrap px-3 py-2 font-medium">
-                      {titulo}
-                    </th>
-                  ))}
+                  {COLUNAS.map(({ titulo }) => {
+                    const ativa = ordem?.coluna === titulo ? ordem : null;
+                    const Seta = !ativa ? ArrowUpDown : ativa.sentido === 1 ? ArrowUp : ArrowDown;
+                    return (
+                      <th key={titulo} scope="col" className="whitespace-nowrap px-3 py-2 font-medium" aria-sort={!ativa ? "none" : ativa.sentido === 1 ? "ascending" : "descending"}>
+                        <button type="button" onClick={() => ordenarPor(titulo)} className={`inline-flex items-center gap-1 hover:text-[#10293a] ${ativa ? "text-[#10293a]" : ""}`}>
+                          {titulo}
+                          <Seta className={`size-3.5 ${ativa ? "" : "opacity-40"}`} aria-hidden />
+                        </button>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e6eef0] align-top">
-                {filtradas.map((linha) => (
+                {ordenadas.map((linha) => (
                   <tr key={linha.id} className="hover:bg-[#f6fafb]">
                     <td className="min-w-[16rem] px-3 py-2.5">
-                      <Link href={`/operacoes-legais/processos/${linha.id}`} className="flex min-w-0 items-start gap-2.5 hover:underline">
+                      <Link href={`/operacoes-legais/processos/${linha.id}?de=carteira`} className="flex min-w-0 items-start gap-2.5 hover:underline">
                         <LogoGrupo grupo={linha.grupoCliente} tamanho="md" />
                         <span className="min-w-0">
                           <span className="block truncate font-semibold tabular-nums text-[#10293a]">{linha.cnj ?? "Sem número CNJ"}</span>

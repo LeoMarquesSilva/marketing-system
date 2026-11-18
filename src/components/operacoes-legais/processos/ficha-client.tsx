@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Ban,
@@ -40,7 +41,7 @@ import { EditarCampos } from "./editar-campos";
 import { EditarParte } from "./editar-parte";
 import { BarraPreenchimento } from "./preenchimento-ui";
 import { formatarDataHora, mensagemDeErro, processosApi } from "./processos-api";
-import { ValorAtualizado } from "./memoria-calculo";
+import { ValorAtualizado, identificacaoDoProcesso } from "./memoria-calculo";
 import { PainelRecCredito } from "./rec-credito-painel";
 import { PainelSugestoes } from "./sugestoes-painel";
 import { VisualizadorAutos } from "./visualizador-autos";
@@ -62,10 +63,10 @@ const CAMPO_DO_HISTORICO: Record<string, string> = { partes: "Partes", saneament
 
 const ICONE_CONTATO = { celular: Phone, telefone: Phone, email: Mail, site: Globe } as const;
 
-export function FichaClient({ id }: { id: string }) {
+export function FichaClient({ id, de = null }: { id: string; de?: string | null }) {
   return (
     <AcessoProcessos>
-      <Ficha id={id} />
+      <Ficha id={id} de={de} />
     </AcessoProcessos>
   );
 }
@@ -77,7 +78,7 @@ function ValorDoCampo({ item, processo }: { item: CampoProcesso; processo: Proce
     const vios = estaPreenchido(valor) ? formatarValor(item, valor) : null;
     return (
       <>
-        <ValorAtualizado memoria={processo.valorAcaoTjsp} vios={vios} className="text-sm font-medium text-foreground" />
+        <ValorAtualizado memoria={processo.valorAcaoTjsp} processo={identificacaoDoProcesso(processo)} vios={vios} className="text-sm font-medium text-foreground" />
         <p className="text-xs text-muted-foreground">
           Cálculo do TJSP, com guias e levantamentos
           {vios ? <> · no VIOS: <span className="tabular-nums">{vios}</span></> : null}
@@ -204,8 +205,30 @@ function CartaoDaParte({ parte, partes, onEditar, onExcluir }: { parte: Parte; p
 
 type Dialogo = { tipo: "campos"; grupos: GrupoCampo[]; titulo: string } | { tipo: "parte"; parte: Parte | null; polo: Parte["polo"] } | { tipo: "excluir"; parte: Parte } | null;
 
-function Ficha({ id }: { id: string }) {
+const ORIGENS = {
+  processos: { rotulo: "Processos", href: "/operacoes-legais/processos" },
+  saneamento: { rotulo: "Saneamento", href: "/operacoes-legais/processos/saneamento" },
+  carteira: { rotulo: "Carteira Rec. Crédito", href: "/operacoes-legais/processos/carteira" },
+} as const;
+
+/**
+ * Lista de onde a ficha foi aberta (`?de=carteira`, `?de=saneamento`; sem nada, Processos). O botão volta pelo
+ * histórico, para a lista voltar como estava; aberta direto num link (sem histórico), vai para a lista.
+ */
+function useOrigemDaFicha(de: string | null) {
+  const router = useRouter();
+  const chave = de && de in ORIGENS ? (de as keyof typeof ORIGENS) : null;
+  const voltar = (evento: React.MouseEvent) => {
+    if (!chave || window.history.length < 2 || evento.metaKey || evento.ctrlKey) return;
+    evento.preventDefault();
+    router.back();
+  };
+  return { origem: ORIGENS[chave ?? "processos"], voltar };
+}
+
+function Ficha({ id, de }: { id: string; de: string | null }) {
   const tituloId = useId();
+  const { origem, voltar } = useOrigemDaFicha(de);
   const [processo, setProcesso] = useState<ProcessoDetalhe | null>(null);
   const [autos, setAutos] = useState<AutosDoProcesso | null>(null);
   const [erro, setErro] = useState("");
@@ -314,7 +337,7 @@ function Ficha({ id }: { id: string }) {
               <RefreshCw /> Tentar de novo
             </Button>
             <Button asChild variant="outline">
-              <Link href="/operacoes-legais/processos">
+              <Link href={origem.href} onClick={voltar}>
                 <ArrowLeft /> Voltar à lista
               </Link>
             </Button>
@@ -358,8 +381,8 @@ function Ficha({ id }: { id: string }) {
           }
         >
           <Button asChild size="sm" variant="outline" className={BOTAO_FAIXA}>
-            <Link href="/operacoes-legais/processos">
-              <ArrowLeft /> Processos
+            <Link href={origem.href} onClick={voltar}>
+              <ArrowLeft /> {origem.rotulo}
             </Link>
           </Button>
         </FaixaDoProcesso>
