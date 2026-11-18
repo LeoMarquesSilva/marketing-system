@@ -321,7 +321,9 @@ class ConectorEproc implements Conector {
               .catch(() => "")
           );
         if (ehCapaDoProcesso(pagina.url(), texto, cnj)) return null;
-        if (avisos.length) return avisos.join(" ").replace(/\s+/g, " ").trim().slice(0, 200);
+        // O alerta também pode ser só a faixa "Usuário logado como…": essa não é resposta da pesquisa.
+        const alerta = mensagemDaPesquisa(avisos);
+        if (alerta) return alerta;
         // Resultado em lista (o número aparece em mais de um lugar): só segue se houver um único com o número exato.
         const iguais = pagina.locator("a").filter({ hasText: cnj.mascarado });
         if (!/acao=processo_selecionar/i.test(pagina.url()) && (await iguais.count().catch(() => 0)) === 1) {
