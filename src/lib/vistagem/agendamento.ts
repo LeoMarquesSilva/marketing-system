@@ -415,6 +415,18 @@ export function renunciaComDataFixa(nomeDaTarefa: string | null | undefined, are
   return chaveNome(nomeDaTarefa) === "VERIFICAR RENUNCIA" && ehOperacoesLegais(area);
 }
 
+/** O que aparece no responsável da VERIFICAR RENÚNCIA pedida sem ninguém, até o robô trazer quem o VIOS pôs. */
+export const RESPONSAVEL_PELO_VIOS = "O VIOS define";
+
+/**
+ * Tarefa pedida sem responsável (VERIFICAR RENÚNCIA da Operações Legais, pedido de 18/11/2026): o VIOS define, e a
+ * Orquestra grava quem ele pôs quando o robô volta (`responsavelQueOViosPos`). Enquanto isso, as telas mostram
+ * `RESPONSAVEL_PELO_VIOS`.
+ */
+export function responsavelFicaComOVios(tarefa: string | null | undefined, responsavel: string | null | undefined): boolean {
+  return !String(responsavel ?? "").trim() && chaveNome(tarefa) === "VERIFICAR RENUNCIA";
+}
+
 /**
  * Data que o tipo de tarefa já traz ao ser escolhido. A CIÊNCIA NF vai para o dia útil seguinte ao da vistagem
  * (pedido de 11/11/2026; era o que o jurídico preenchia à mão), como o Inserir E-social. Na Operações Legais, a

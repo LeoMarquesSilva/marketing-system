@@ -49,7 +49,7 @@ import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
-import { linhasParaFila, modoDaPublicacao, podeTerGravadoNoVios, type TarefaNoVios } from "./fila-vios";
+import { linhasParaFila, modoDaPublicacao, podeTerGravadoNoVios, responsavelQueOViosPos, type TarefaNoVios } from "./fila-vios";
 import { avisarErrosDoRobo } from "./aviso-erro-robo-server";
 import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria, precisaDeSistema, sistemaDaLista } from "./dados-processo";
 import { buscarPastaPorCi, cadastroDaPasta, semMateria, semSistema, sinteseECadastroDaPasta, type CadastroDaPasta } from "./sioe";
@@ -1648,7 +1648,7 @@ export async function atualizarEnvios(): Promise<{
   const db = admin();
   const { data, error } = await db
     .from("vistagem_agendamentos")
-    .select("id, publicacao_id, sama_agendamento_id, envio_status, envio_erro, envio_simulado")
+    .select("id, publicacao_id, sama_agendamento_id, envio_status, envio_erro, envio_simulado, responsavel")
     .in("envio_status", ["pendente", "enviado", "processando"])
     .not("sama_agendamento_id", "is", null)
     .limit(1000);
@@ -1660,6 +1660,7 @@ export async function atualizarEnvios(): Promise<{
     envio_status: EnvioStatus;
     envio_erro: string | null;
     envio_simulado: boolean | null;
+    responsavel: string | null;
   }[];
   const resumo = { consultadas: pendentes.length, concluidas: 0, erros: 0 };
   if (!pendentes.length) return { ...resumo, checadasSozinhas: await checarSozinho() };
@@ -1677,6 +1678,9 @@ export async function atualizarEnvios(): Promise<{
     publicacoesTocadas.add(item.publicacao_id);
     // Lançamento pela intimação: uma linha da fila para várias tarefas, cada uma com o seu CI.
     const viosTarefaId = atual.cisPorAgendamento.size ? atual.cisPorAgendamento.get(item.id) ?? null : atual.viosTarefaId;
+    const tarefasNoVios = atual.tarefasViosPorAgendamento.get(item.id) ?? null;
+    // Pedida sem ninguém (VERIFICAR RENÚNCIA da Operações Legais): fica gravado para quem o VIOS agendou.
+    const doVios = atual.status === "concluido" ? responsavelQueOViosPos(item.responsavel, tarefasNoVios) : null;
     // Só grava se ninguém mudou antes (o cron e o botão Atualizar podem rodar juntos): quem grava o erro é quem avisa.
     const { data: gravada } = await db
       .from("vistagem_agendamentos")
@@ -1684,7 +1688,8 @@ export async function atualizarEnvios(): Promise<{
         envio_status: atual.status,
         vios_tarefa_id: viosTarefaId,
         // Datas como ficaram no VIOS (Check); só vêm no lançamento pela intimação.
-        vios_tarefas: atual.tarefasViosPorAgendamento.get(item.id) ?? null,
+        vios_tarefas: tarefasNoVios,
+        ...(doVios ? { responsavel: doVios } : {}),
         envio_erro: atual.erro,
         envio_atualizado_em: agora,
       })

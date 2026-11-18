@@ -258,6 +258,17 @@ export interface TarefaNoVios {
   responsaveis: string | null;
 }
 
+/**
+ * Responsável que o VIOS pôs na tarefa pedida sem ninguém (VERIFICAR RENÚNCIA da Operações Legais, pedido de
+ * 18/11/2026), lido da tarefa principal que o robô devolveu: a Orquestra grava para mostrar para quem foi agendada.
+ * Null quando foi pedida para alguém ou quando o robô não devolveu quem ficou.
+ */
+export function responsavelQueOViosPos(pedido: string | null | undefined, tarefas: TarefaNoVios[] | null | undefined): string | null {
+  if (String(pedido ?? "").trim()) return null;
+  const principal = (tarefas ?? []).find((tarefa) => tarefa.principal);
+  return principal?.responsaveis?.trim() || null;
+}
+
 /** DD/MM/AAAA → AAAA-MM-DD; outro formato → null. */
 function dataIso(valor: unknown): string | null {
   const m = String(valor ?? "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);

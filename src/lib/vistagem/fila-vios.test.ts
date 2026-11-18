@@ -4,6 +4,7 @@ import {
   linhasParaFila,
   modoDaPublicacao,
   podeTerGravadoNoVios,
+  responsavelQueOViosPos,
   tarefasViosDoResultado,
   type AgendamentoParaFila,
   type PublicacaoParaFila,
@@ -274,5 +275,24 @@ describe("Rodar novamente: erro em que o robô pode já ter gravado no VIOS", ()
     expect(podeTerGravadoNoVios("Tipo de tarefa não encontrado no VIOS.")).toBe(false);
     expect(podeTerGravadoNoVios(null)).toBe(false);
     expect(podeTerGravadoNoVios("")).toBe(false);
+  });
+});
+
+describe("responsavelQueOViosPos: para quem o VIOS agendou a Renúncia pedida sem ninguém (pedido de 18/11/2026)", () => {
+  // 0000431-64: pedida sem responsável; o VIOS pôs a Marina (CI 944762).
+  const noVios = [
+    { ci: "944762", tipo: "VERIFICAR RENÚNCIA", principal: true, data: "2026-11-23", dataLimite: "2026-11-23", hora: null, responsaveis: "Marina Silva Pinelli" },
+  ];
+
+  it("pedida sem ninguém: quem o VIOS pôs na tarefa principal", () => {
+    expect(responsavelQueOViosPos("", noVios)).toBe("Marina Silva Pinelli");
+    expect(responsavelQueOViosPos(null, noVios)).toBe("Marina Silva Pinelli");
+  });
+
+  it("pedida para alguém, ou sem o retorno do robô: não muda", () => {
+    expect(responsavelQueOViosPos("Natalia Borges Breve", noVios)).toBeNull();
+    expect(responsavelQueOViosPos("", null)).toBeNull();
+    expect(responsavelQueOViosPos("", [{ ...noVios[0], responsaveis: null }])).toBeNull();
+    expect(responsavelQueOViosPos("", [{ ...noVios[0], principal: false }])).toBeNull();
   });
 });

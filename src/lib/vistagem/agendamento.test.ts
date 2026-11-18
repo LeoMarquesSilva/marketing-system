@@ -21,6 +21,7 @@ import {
   dataPadraoDaTarefa,
   ehOperacoesLegais,
   renunciaComDataFixa,
+  responsavelFicaComOVios,
   observacaoObrigatoria,
   origemDoPrazo,
   pedeDataLimite,
@@ -793,5 +794,13 @@ describe("VERIFICAR RENÚNCIA da Operações Legais vai sem responsável (pedido
     expect(
       validarAgendamentos([{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-20", responsavel: "" }], { ...contexto, area: "Operações Legais" }).ok
     ).toBe(false);
+  });
+});
+
+describe("responsavelFicaComOVios", () => {
+  it("só a VERIFICAR RENÚNCIA pedida sem ninguém", () => {
+    expect(responsavelFicaComOVios("VERIFICAR RENÚNCIA", "")).toBe(true);
+    expect(responsavelFicaComOVios("VERIFICAR RENÚNCIA", "Marina Silva Pinelli")).toBe(false);
+    expect(responsavelFicaComOVios("CIÊNCIA NF", "")).toBe(false);
   });
 });
