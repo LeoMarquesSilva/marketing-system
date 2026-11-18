@@ -541,7 +541,10 @@ export async function salvarVistagem(
   // Depois das 18h nada fica para hoje: as datas vão a partir do dia útil seguinte (pedido de 13/11/2026).
   const hoje = hojeEmSaoPaulo();
   const primeiroDia = primeiroDiaDaTarefa(hoje, horaEmSaoPaulo(), criarCalendario(feriados));
+  // Operações Legais: a VERIFICAR RENÚNCIA vai sem responsável (o VIOS divide entre as estagiárias).
+  const areaDaPasta = publicacao.escritorio_responsavel ?? catalogo.area;
   const validacao = validarAgendamentos(entrada.agendamentos, {
+    area: areaDaPasta,
     tarefas: catalogo.tarefas,
     usuarios: catalogo.usuarios,
     ehDiaUtil: criarCalendario(feriados),
@@ -554,7 +557,6 @@ export async function salvarVistagem(
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
   // Operações Legais: a VERIFICAR RENÚNCIA vai sempre para 2 dias úteis depois do dia em que vistou, mesmo que a tela
   // tenha sido aberta noutro dia (pedido de 18/11/2026).
-  const areaDaPasta = publicacao.escritorio_responsavel ?? catalogo.area;
   const itensVistados = validacao.itens.map((item) =>
     renunciaComDataFixa(item.tarefa, areaDaPasta)
       ? { ...item, data: dataPadraoDaTarefa(item.tarefa, hoje, criarCalendario(feriados), areaDaPasta) ?? item.data }
@@ -1349,6 +1351,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
       semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
       hoje,
+      area: publicacao.escritorio_responsavel ?? catalogo.area,
       // A Observação não se edita aqui: uma CIÊNCIA NF vistada antes da regra não pode ficar sem ajuste de data.
       exigirObservacao: false,
     }

@@ -299,3 +299,43 @@ describe("VERIFICAR RENÚNCIA: o VIOS divide entre as estagiárias (pedido de 18
     expect(outra.responsavel.distribuidoPeloVios).toBeUndefined();
   });
 });
+
+describe("VERIFICAR RENÚNCIA da Operações Legais pedida sem responsável", () => {
+  it("vale quem o VIOS definiu, e o check é o automático", () => {
+    const renuncia = agendamento({
+      etiqueta: "PROVIDENCIA",
+      tarefa: "VERIFICAR RENÚNCIA",
+      data: "2026-11-23",
+      dataFatal: null,
+      diasPrazo: null,
+      contagemPrazo: null,
+      responsavel: "",
+      revisor: null,
+      viosTarefaId: "945000",
+      viosTarefas: [gravada({ ci: "945000", tipo: "VERIFICAR RENÚNCIA", data: "2026-11-23", dataLimite: "2026-11-23", responsaveis: "Maria Julia Pereira" })],
+    });
+    expect(compararTarefa(renuncia).responsavel).toMatchObject({ pedido: [], noVios: ["Maria Julia Pereira"], situacao: "confere", distribuidoPeloVios: true });
+    expect(notaDoCheckAutomatico([renuncia])).toContain("a responsável que o VIOS distribuiu");
+  });
+});
+
+describe("VERIFICAR RENÚNCIA que ficou só com o usuário do robô", () => {
+  it("o VIOS não dividiu: é divergência e vai para o check manual", () => {
+    const renuncia = agendamento({
+      etiqueta: "PROVIDENCIA",
+      tarefa: "VERIFICAR RENÚNCIA",
+      data: "2026-11-23",
+      dataFatal: null,
+      diasPrazo: null,
+      contagemPrazo: null,
+      responsavel: "",
+      revisor: null,
+      viosTarefaId: "945001",
+      viosTarefas: [gravada({ ci: "945001", tipo: "VERIFICAR RENÚNCIA", data: "2026-11-23", dataLimite: "2026-11-23", responsaveis: "Fênix Agendador" })],
+    });
+    const comparacao = compararTarefa(renuncia);
+    expect(comparacao.situacao).toBe("diverge");
+    expect(comparacao.divergencias.map((divergencia) => divergencia.texto)).toEqual(["o VIOS não dividiu entre as estagiárias: ficou com Fênix Agendador"]);
+    expect(notaDoCheckAutomatico([renuncia])).toBeNull();
+  });
+});

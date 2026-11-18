@@ -479,6 +479,11 @@ export function validarAgendamentos(
      * e pessoas, e uma tarefa vistada antes da regra não pode ficar sem ajuste.
      */
     exigirObservacao?: boolean;
+    /**
+     * Área da publicação (escritório da pasta ou área do catálogo). Na Operações Legais, a VERIFICAR RENÚNCIA vai sem
+     * responsável: o VIOS define e divide entre as estagiárias (`renunciaComDataFixa`, pedido de 18/11/2026).
+     */
+    area?: string | null;
   }
 ): { ok: true; itens: AgendamentoValidado[] } | { ok: false; erros: string[] } {
   const erros: string[] = [];
@@ -540,10 +545,12 @@ export function validarAgendamentos(
       erros.push(`${n}: a data limite tem de ser a data para conclusão ou depois.`);
     }
     const dataLimite = dataLimiteDaTarefa(nomeVios, data, limitePedido);
-    // Pode haver mais de um responsável (ex.: tipos com responsáveis fixos no VIOS), separados por vírgula.
-    const nomesResponsaveis = separarNomes(entrada.responsavel);
+    // Pode haver mais de um responsável (ex.: tipos com responsáveis fixos no VIOS), separados por vírgula. Na
+    // VERIFICAR RENÚNCIA da Operações Legais não vai ninguém: o VIOS define e divide entre as estagiárias.
+    const peloVios = renunciaComDataFixa(nomeVios, contexto.area);
+    const nomesResponsaveis = peloVios ? [] : separarNomes(entrada.responsavel);
     const encontrados = nomesResponsaveis.map((nome) => usuarioPorChave.get(chaveNome(nome)));
-    const responsavel = nomesResponsaveis.length && encontrados.every(Boolean) ? (encontrados as OpcaoVios[]) : null;
+    const responsavel = peloVios ? [] : nomesResponsaveis.length && encontrados.every(Boolean) ? (encontrados as OpcaoVios[]) : null;
     if (!responsavel) erros.push(`${n}: escolha o responsável na lista de usuários do VIOS.`);
     // Providência não tem revisor: nenhum tipo de Providência cria 2. REVISAR no VIOS (conferido em 05/11/2026).
     const comRevisor = entrada.etiqueta !== "PROVIDENCIA";

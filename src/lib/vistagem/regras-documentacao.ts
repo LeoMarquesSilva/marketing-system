@@ -241,7 +241,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         titulo: "VERIFICAR RENÚNCIA na Operações Legais",
         quando: "a publicação for da Operações Legais e tiver a tarefa VERIFICAR RENÚNCIA",
         entao:
-          "a data é sempre 2 dias úteis depois da vistagem (não muda na tela), e o VIOS divide a tarefa entre as estagiárias. Se for a única tarefa da publicação, ela vai direto ao robô, sem a Conferência, e o check é o automático.",
+          "a data é sempre 2 dias úteis depois da vistagem (não muda na tela), e ela vai sem responsável: o VIOS define e divide entre as estagiárias. Se for a única tarefa da publicação, ela vai direto ao robô, sem a Conferência, e o check é o automático.",
         origem: "codigo",
       },
       {

@@ -91,12 +91,23 @@ function principalDe(agendamento: AgendamentoResumo): TarefaNoVios | null {
   return (agendamento.viosTarefas ?? []).find((tarefa) => tarefa.principal) ?? null;
 }
 
+/**
+ * Usuário do robô no VIOS (sama-rpa, regras-fluxo.js): tarefa que fica sem ninguém cai no nome dele. Na VERIFICAR
+ * RENÚNCIA, ficar só com ele quer dizer que o VIOS não dividiu entre as estagiárias.
+ */
+const USUARIO_DO_ROBO = "Fênix Agendador";
+
 function compararResponsavel(pedidoTexto: string, gravada: TarefaNoVios | null, tarefa: string): ResponsavelNoVios {
   const pedido = nomesDasPessoas(pedidoTexto);
   const noVios = nomesDasPessoas(gravada?.responsaveis);
-  // VERIFICAR RENÚNCIA: o próprio VIOS divide entre as estagiárias (pedido de 18/11/2026); a escolhida na vistagem
-  // pode não ser a que ficou, e isso não é erro.
-  if (ehVerificarRenuncia(tarefa) && noVios.length) return { pedido, noVios, faltando: [], aMais: [], situacao: "confere", distribuidoPeloVios: true };
+  // VERIFICAR RENÚNCIA: o próprio VIOS define e divide entre as estagiárias (pedido de 18/11/2026). Na Operações
+  // Legais ela vai sem responsável; nas vistadas antes, a escolhida pode não ser a que ficou, e isso não é erro.
+  if (ehVerificarRenuncia(tarefa) && noVios.length) {
+    const soORobo = noVios.every((nome) => chaveNome(nome) === chaveNome(USUARIO_DO_ROBO));
+    return soORobo
+      ? { pedido, noVios, faltando: [], aMais: noVios, situacao: "diverge" }
+      : { pedido, noVios, faltando: [], aMais: [], situacao: "confere", distribuidoPeloVios: true };
+  }
   const chavesNoVios = new Set(noVios.map(chaveNome));
   const chavesPedido = new Set(pedido.map(chaveNome));
   const faltando = pedido.filter((nome) => !chavesNoVios.has(chaveNome(nome)));
@@ -148,7 +159,9 @@ export function compararTarefa(agendamento: AgendamentoResumo): ComparacaoDaTare
   if (responsavel.situacao === "diverge") {
     divergencias.push({
       campo: "responsavel",
-      texto: `responsável pedido ${responsavel.pedido.join(", ")}, no VIOS ${responsavel.noVios.join(", ")}`,
+      texto: responsavel.pedido.length
+        ? `responsável pedido ${responsavel.pedido.join(", ")}, no VIOS ${responsavel.noVios.join(", ")}`
+        : `o VIOS não dividiu entre as estagiárias: ficou com ${responsavel.noVios.join(", ")}`,
     });
   }
   for (const doFluxo of datasDoFluxo) {

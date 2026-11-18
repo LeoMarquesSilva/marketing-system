@@ -765,3 +765,33 @@ describe("VERIFICAR RENÚNCIA na Operações Legais (pedido de 18/11/2026)", () 
     expect(ehOperacoesLegais(null)).toBe(false);
   });
 });
+
+describe("VERIFICAR RENÚNCIA da Operações Legais vai sem responsável (pedido de 18/11/2026)", () => {
+  const contexto = {
+    tarefas: {
+      PRAZO: tarefasPermitidas(ETAPAS, "PRAZO"),
+      PROVIDENCIA: [...tarefasPermitidas(ETAPAS, "PROVIDENCIA"), { id: "320", nome: "VERIFICAR RENÚNCIA" }],
+      COMPROMISSO: tarefasPermitidas(ETAPAS, "COMPROMISSO"),
+    },
+    usuarios: USUARIOS,
+    ehDiaUtil: criarCalendario([]),
+    cadeiaDaTarefa: () => CADEIA_PADRAO,
+  };
+  const renuncia = (responsavel: string) => [{ etiqueta: "PROVIDENCIA" as const, tarefa: "VERIFICAR RENÚNCIA", tarefaId: "320", data: "2026-11-20", responsavel }];
+
+  it("na Operações Legais o VIOS define: aceita sem ninguém e não grava quem veio", () => {
+    const resultado = validarAgendamentos(renuncia(""), { ...contexto, area: "Operações Legais" });
+    expect(resultado.ok).toBe(true);
+    if (resultado.ok) expect(resultado.itens[0]).toMatchObject({ tarefa: "VERIFICAR RENÚNCIA", responsavel: "", responsavelId: "" });
+    const comAlguem = validarAgendamentos(renuncia("Advogada Exemplo"), { ...contexto, area: "Operações Legais" });
+    if (comAlguem.ok) expect(comAlguem.itens[0].responsavel).toBe("");
+  });
+
+  it("nas outras áreas, e nas outras tarefas, o responsável continua obrigatório", () => {
+    expect(validarAgendamentos(renuncia(""), { ...contexto, area: "Trabalhista" }).ok).toBe(false);
+    expect(validarAgendamentos(renuncia(""), contexto).ok).toBe(false);
+    expect(
+      validarAgendamentos([{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-20", responsavel: "" }], { ...contexto, area: "Operações Legais" }).ok
+    ).toBe(false);
+  });
+});

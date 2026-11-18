@@ -244,7 +244,7 @@ function Comparacao({
             rotulo="Responsável"
             dica={responsavel.distribuidoPeloVios ? "O VIOS divide a VERIFICAR RENÚNCIA entre as estagiárias: vale quem ele pôs." : undefined}
             situacao={responsavel.situacao}
-            pedido={<PessoasCurtas texto={item.responsavel} fotos={fotos} />}
+            pedido={<PessoasCurtas texto={item.responsavel} fotos={fotos} vazio={responsavel.distribuidoPeloVios ? "O VIOS define" : "—"} />}
             noVios={
               responsavel.noVios.length ? (
                 <span className="block space-y-1">

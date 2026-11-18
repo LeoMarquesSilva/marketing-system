@@ -1000,7 +1000,9 @@ export function EditorVistagem({
     // Depois das 18h, a data escolhida para hoje não deixa vistar (o Prazo com fatal tem o Enviar calculado).
     const dataEscolhida = linha.etiqueta !== "PRAZO" || semFatal(linha);
     if (depoisDoHorario && dataEscolhida && linha.data && linha.data < primeiroDia) return false;
-    return linhaCompleta(linha, semFatal(linha), pedeObservacao(linha), pedeLimite(linha));
+    // VERIFICAR RENÚNCIA da Operações Legais: o responsável não é escolhido (o VIOS divide entre as estagiárias).
+    const conferida = dataFixa(linha.etiqueta, linha.tarefa) ? { ...linha, responsavel: "VIOS" } : linha;
+    return linhaCompleta(conferida, semFatal(linha), pedeObservacao(linha), pedeLimite(linha));
   }
 
   function dataSemFatal(): string {
@@ -1219,7 +1221,8 @@ export function EditorVistagem({
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             horaFim: linha.etiqueta === "COMPROMISSO" ? linha.horaFim || null : null,
             dataLimite: pedeLimite(linha) ? linha.dataLimite || linha.data || null : null,
-            responsavel: linha.responsavel,
+            // VERIFICAR RENÚNCIA da Operações Legais: ninguém; o VIOS define e divide entre as estagiárias.
+            responsavel: dataFixa(linha.etiqueta, linha.tarefa) ? "" : linha.responsavel,
             revisor: linha.etiqueta === "PROVIDENCIA" ? null : linha.revisor || null,
             observacao: linha.observacao || null,
             fluxoDatas: Object.values(linha.fluxoDatas),
@@ -1884,6 +1887,11 @@ export function EditorVistagem({
                             <div className={cn("grid gap-3", linha.etiqueta !== "PROVIDENCIA" && "@md:grid-cols-2")}>
                               <div className="space-y-1.5">
                                 <span className="block text-xs font-medium text-muted-foreground">Responsável</span>
+                                {dataFixa(linha.etiqueta, linha.tarefa) ? (
+                                  <p className={cn(campo, "flex items-center bg-[#f7fbfc] text-muted-foreground")} aria-label={`Responsável da tarefa ${indice + 1}`}>
+                                    Distribuída pelo VIOS entre as estagiárias
+                                  </p>
+                                ) : (
                                 <CampoResponsaveis
                                   pessoas={pessoasDoCampo}
                                   valor={linha.responsavel}
@@ -1896,6 +1904,7 @@ export function EditorVistagem({
                                       : null
                                   }
                                 />
+                                )}
                               </div>
                               {linha.etiqueta === "PROVIDENCIA" ? null : (
                               <div className="space-y-1.5">
