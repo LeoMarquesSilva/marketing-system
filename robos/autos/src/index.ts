@@ -11,7 +11,7 @@ import { conectoresEsaj } from "./conectores/esaj.ts";
 import { lerCnj, nomeDoPdf, tribunalEsajDoCnj } from "./conectores/esaj-urls.ts";
 import { navegadorDoRoboAberto } from "./conectores/mapeamento.ts";
 import { lerPedidoDeMapa } from "./conectores/mapeamento-urls.ts";
-import { mapearPje } from "./conectores/pje.ts";
+import { ConectorPjeTjrj, mapearPje } from "./conectores/pje.ts";
 import { EsperaEsgotada, FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from "./conectores/tipos.ts";
 import { Fila, PedidoEncerrado, type Pedido } from "./fila.ts";
 import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
@@ -32,11 +32,11 @@ import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
  */
 
 /**
- * Um conector por sistema e tribunal ("esaj:TJSP", "eproc:TJSP", "eproc:TJRJ", "dcp:TJRJ"…). Os próximos entram
- * aqui. O rascunho do PJe do TJRJ (pje.ts) fica de fora até as telas reais serem mapeadas. O DCP segue pelo eproc
- * do TJRJ quando o processo já migrou.
+ * Um conector por sistema e tribunal ("esaj:TJSP", "eproc:TJSP", "eproc:TJRJ", "dcp:TJRJ", "pje:TJRJ"…). Os
+ * próximos entram aqui. O DCP e o PJe do TJRJ seguem pelo eproc do TJRJ quando o processo já migrou.
  */
-const TODOS_OS_CONECTORES: Conector[] = [...conectoresEsaj, ...conectoresEproc, new ConectorDcpTjrj(conectoresEproc.find((conector) => conector.chave === "eproc:TJRJ"))];
+const EPROC_TJRJ = conectoresEproc.find((conector) => conector.chave === "eproc:TJRJ");
+const TODOS_OS_CONECTORES: Conector[] = [...conectoresEsaj, ...conectoresEproc, new ConectorDcpTjrj(EPROC_TJRJ), new ConectorPjeTjrj(EPROC_TJRJ)];
 
 /**
  * Os conectores que este robô atende (ROBO_CONECTORES): a chave inteira ("esaj:TJCE") ou só o sistema ("eproc").
@@ -52,14 +52,15 @@ function conectoresDoRobo(config: Config): Conector[] {
 let CONECTORES: Conector[] = TODOS_OS_CONECTORES;
 
 /**
- * O conector pedido na linha de comando: sistema "eproc", "dcp" (TJRJ) ou e-SAJ (padrão), e o tribunal ("TJCE")
+ * O conector pedido na linha de comando: sistema "eproc", "dcp" ou "pje" (TJRJ) ou e-SAJ (padrão), e o tribunal ("TJCE")
  * ou o do número do processo; TJSP se nada disser.
  */
 function conectorDaLinhaDeComando(cnj?: string): Conector {
-  if (argumentos.some((item) => item.toLowerCase() === "dcp")) {
-    const dcp = CONECTORES.find((item) => item.chave === "dcp:TJRJ");
-    if (!dcp) throw new Error(`Este robô não atende o DCP do TJRJ. Atende: ${CONECTORES.map((item) => item.chave).join(", ")}.`);
-    return dcp;
+  const doTjrj = argumentos.map((item) => item.toLowerCase()).find((item) => item === "dcp" || item === "pje");
+  if (doTjrj) {
+    const conector = CONECTORES.find((item) => item.chave === `${doTjrj}:TJRJ`);
+    if (!conector) throw new Error(`Este robô não atende o ${doTjrj} do TJRJ. Atende: ${CONECTORES.map((item) => item.chave).join(", ")}.`);
+    return conector;
   }
   const sistema = argumentos.some((item) => item.toLowerCase() === "eproc") ? "eproc" : "esaj";
   const doNumero = cnj ? (sistema === "eproc" ? tribunalEprocDoCnj(cnj) : tribunalEsajDoCnj(cnj))?.sigla : undefined;

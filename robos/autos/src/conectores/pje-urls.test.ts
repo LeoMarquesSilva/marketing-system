@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   camposCnjPje,
   chaveDaPecaPje,
-  downloadEmSegundoPlano,
   ehAreaLogadaPje,
   ehAutosDigitais,
   ehLoginPje,
   emSegredoPje,
-  idDoDocumentoPje,
+  idDoRotuloPje,
+  ehQuadroDaAreaDeDownload,
+  urlDaAreaDeDownloadPje,
   idInicialDoIncremental,
   instanciaPjeTjrj,
   urlDaConsultaPublicaPje,
@@ -74,10 +75,18 @@ describe("sigilo e documentos", () => {
     expect(emSegredoPje("Classe judicial: Procedimento Comum Cível")).toBe(false);
   });
 
-  it("acha o id do documento no link", () => {
-    expect(idDoDocumentoPje("https://tjrj.pje.jus.br/1g/Processo/ConsultaDocumento/listView.seam?idProcessoDocumento=12345&ca=x")).toBe(12345);
-    expect(idDoDocumentoPje("https://tjrj.pje.jus.br/1g/documento/download/678")).toBe(678);
-    expect(idDoDocumentoPje("https://tjrj.pje.jus.br/1g/Painel/painel_usuario/advogado.seam")).toBeNull();
+  it("acha o id do documento pelo rótulo na linha do tempo", () => {
+    expect(idDoRotuloPje("273922481 - Certidão de Migração")).toBe(273922481);
+    expect(idDoRotuloPje(" 259218359 - Outros documentos (DOC.01)")).toBe(259218359);
+    expect(idDoRotuloPje("MIGRADA A TRAMITAÇÃO DO PROCESSO")).toBeNull();
+    expect(idDoRotuloPje("15:04")).toBeNull();
+  });
+
+  it("reconhece os autos e a Área de download", () => {
+    expect(ehAutosDigitais("https://tjrj.pje.jus.br/1g/Processo/ConsultaProcesso/Detalhe/listProcessoCompletoAdvogado.seam?id=1&ca=x")).toBe(true);
+    expect(urlDaAreaDeDownloadPje(primeiro)).toBe("https://tjrj.pje.jus.br/1g/AreaDeDownload/listView.seam");
+    expect(ehQuadroDaAreaDeDownload("https://pje-frontend-docs.tjrj.jus.br/#/area-download")).toBe(true);
+    expect(ehQuadroDaAreaDeDownload("https://tjrj.pje.jus.br/1g/AreaDeDownload/listView.seam")).toBe(false);
   });
 
   it("download incremental a partir do maior id já baixado", () => {
@@ -87,9 +96,4 @@ describe("sigilo e documentos", () => {
     expect(idInicialDoIncremental(undefined)).toBeNull();
   });
 
-  it("reconhece o aviso de PDF montado em segundo plano", () => {
-    expect(downloadEmSegundoPlano("O arquivo estará disponível na área de download")).toBe(true);
-    expect(downloadEmSegundoPlano("Solicitação de download registrada")).toBe(true);
-    expect(downloadEmSegundoPlano("Autos digitais")).toBe(false);
-  });
 });

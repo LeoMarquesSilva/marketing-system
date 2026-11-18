@@ -125,8 +125,13 @@ export function partesDoCnjTjrj(cnj: string): PartesDoCnjTjrj | null {
  * Aí o pedido deve ir ao conector eproc:TJRJ, que já baixa os autos.
  */
 export function migradoParaEproc(texto: string): boolean {
-  const limpo = texto.replace(/\s+/g, " ");
-  return /migrado (para|ao) o? ?eproc|acessar (o )?eproc|ir para o eproc/i.test(limpo);
+  const limpo = texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+  // PJe do TJRJ (situação na consulta e movimento nos autos, visto em 18/11/2026): "Migrada a tramitação do processo
+  // do sistema eletrônico originário para o outro sistema eletrônico".
+  return /migrad[oa] (para|ao) o? ?(sistema )?eproc|acessar (o )?eproc|ir para o eproc|migrada a tramitacao do processo/i.test(limpo);
 }
 
 /**

@@ -20,7 +20,8 @@ import { cnjDoTjrj } from "./dcp-tjrj-urls.ts";
  * - Migração (Dica de Sistema "Migração PJe x eproc", TJRJ): processo migrado mostra "Processo migrado para o eproc,
  *   acesse-o através do link …", o peticionamento fica bloqueado e o eproc mantém o número CNJ.
  *
- * O que está marcado como SUPOSIÇÃO vem do PJe nacional (o mesmo sistema em vários tribunais) e será conferido no
+ * Conferido nas telas do 1º grau do TJRJ em 18/11/2026: consulta, autos digitais, download e Área de download (veja
+ * pje.ts). O que ainda está marcado como SUPOSIÇÃO vem do PJe nacional (o mesmo sistema em vários tribunais) e será conferido no
  * `npm run mapear -- pje <CNJ>`.
  */
 
@@ -77,10 +78,31 @@ export function ehAreaLogadaPje(url: string, instancia: InstanciaPje): boolean {
   return !/\/(consultapublica|push)\//.test(endereco.slice(base.length));
 }
 
-/** SUPOSIÇÃO: os autos digitais abrem em listAutosDigitais.seam (outra aba), com idProcesso e a chave "ca". */
+/**
+ * Os autos digitais abrem em outra aba. No TJRJ (visto em 18/11/2026) o advogado cai em
+ * Processo/ConsultaProcesso/Detalhe/listProcessoCompletoAdvogado.seam?id=…&ca=…; listAutosDigitais.seam é o nome
+ * em outras versões do PJe.
+ */
 export function ehAutosDigitais(url: string): boolean {
-  return /\/listAutosDigitais\.seam/i.test(url);
+  return /\/(listAutosDigitais|listProcessoCompletoAdvogado)\.seam/i.test(url);
 }
+
+/** A Área de download do PJe: o PDF pedido nos autos é montado em segundo plano e baixado de lá. */
+export function urlDaAreaDeDownloadPje(instancia: InstanciaPje): string {
+  return `${instancia.base}/AreaDeDownload/listView.seam`;
+}
+
+/** O iframe da Área de download (pje-frontend-docs.tjrj.jus.br/#/area-download no TJRJ). */
+export function ehQuadroDaAreaDeDownload(url: string): boolean {
+  return /#\/area-download\b/i.test(url);
+}
+
+/** Id de um documento pelo rótulo na linha do tempo dos autos ("273922481 - Certidão de Migração"). */
+export function idDoRotuloPje(rotulo: string): number | null {
+  const achado = /^\s*(\d{6,})\s*-\s*\S/.exec(rotulo);
+  return achado ? Number(achado[1]) : null;
+}
+
 
 export interface CamposCnjPje {
   /** NNNNNNN */
@@ -132,14 +154,6 @@ export function emSegredoPje(texto: string): boolean {
   return /segredo de justica|\bsigiloso\b/.test(limpo);
 }
 
-/**
- * Id do documento num link do PJe. O manual confirma que o download do processo aceita "Id" (os documentos têm id
- * numérico). SUPOSIÇÃO: o id vem como idProcessoDocumento=, idDocumento= ou /documento/(download/)<id> no link.
- */
-export function idDoDocumentoPje(url: string): number | null {
-  const achado = /[?&](?:idProcessoDocumento|idDocumento|idProcessoDoc)=(\d+)/i.exec(url) ?? /\/documento\/(?:download\/)?(\d+)/i.exec(url);
-  return achado ? Number(achado[1]) : null;
-}
 
 /** Identidade de uma peça no PJe: o id do documento, que não muda. É por ela que o próximo download traz só o novo. */
 export function chaveDaPecaPje(id: number): string {
@@ -147,20 +161,12 @@ export function chaveDaPecaPje(id: number): string {
 }
 
 /**
- * Download incremental: o primeiro id que ainda não veio. SUPOSIÇÃO: os ids crescem com a juntada, então "Id a
- * partir de" (filtro do download do processo) com o maior id baixado + 1 traz só o que é novo. Sem peças
- * anteriores (ou sem chaves do PJe), o processo inteiro (null).
+ * Download incremental: o primeiro id que ainda não veio. Os ids crescem com a juntada (conferido nos autos), então
+ * "ID a partir de" (filtro do download do processo, que respeita a faixa) com o maior id baixado + 1 traz só o que
+ * é novo. Sem peças anteriores (ou sem chaves do PJe), o processo inteiro (null).
  */
 export function idInicialDoIncremental(pecasBaixadas: readonly string[] | undefined): number | null {
   const ids = (pecasBaixadas ?? []).map((chave) => /^pje:(\d+)$/.exec(chave)?.[1]).filter((id): id is string => Boolean(id));
   if (!ids.length) return null;
   return Math.max(...ids.map(Number)) + 1;
-}
-
-/**
- * Resposta do PJe ao pedido de download que não é o arquivo: o PDF será montado em segundo plano. SUPOSIÇÃO:
- * versões novas do PJe avisam que o arquivo fica disponível depois (área de downloads ou e-mail).
- */
-export function downloadEmSegundoPlano(texto: string): boolean {
-  return /(ser[áa]|estar[áa]) dispon[íi]vel|em processamento|solicita[çc][ãa]o de download|[áa]rea de download|enviado (para|ao) (o )?(seu )?e-?mail/i.test(texto.replace(/\s+/g, " "));
 }

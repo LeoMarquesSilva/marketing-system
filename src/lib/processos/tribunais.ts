@@ -34,16 +34,15 @@ const SISTEMA_PADRAO: Record<string, SistemaTribunal> = {
 
 /**
  * Tribunais que migram o acervo dos sistemas antigos para o eproc, com o mesmo número CNJ: o robô procura o
- * processo no eproc, e o que ainda não migrou volta com erro explicando. O DCP e o PJe do TJRJ estão sendo
- * migrados (mais de 1,3 milhão de processos em 18/11/2026); o PJe do TJRJ ainda não tem conector e vai ao eproc.
+ * processo no eproc, e o que ainda não migrou volta com erro explicando. Vazio por ora: no TJRJ (DCP e PJe em
+ * migração, mais de 1,3 milhão de processos em 18/11/2026) os conectores do DCP e do PJe olham o sistema antigo e,
+ * se o processo já migrou, seguem pelo eproc no mesmo pedido.
  */
-const MIGRA_PARA_EPROC: Partial<Record<string, SistemaTribunal[]>> = {
-  TJRJ: ["pje"],
-};
+const MIGRA_PARA_EPROC: Partial<Record<string, SistemaTribunal[]>> = {};
 
 /**
  * O "Próprio" do cadastro (sistema do tribunal) em cada tribunal que tem conector para ele. No TJRJ é o DCP
- * (Portal de Serviços): o conector consulta o DCP e, se o processo já migrou, segue pelo eproc no mesmo pedido.
+ * (Portal de Serviços).
  */
 const SISTEMA_PROPRIO: Partial<Record<string, SistemaTribunal>> = {
   TJRJ: "dcp",
@@ -54,6 +53,7 @@ export const CONECTORES_DISPONIVEIS: Partial<Record<SistemaTribunal, string[]>> 
   esaj: ["TJSP", "TJCE", "TJAL", "TJMS"],
   eproc: ["TJSP", "TJRJ"],
   dcp: ["TJRJ"],
+  pje: ["TJRJ"],
 };
 
 export function digitosDoCnj(cnj: string | null | undefined): string | null {

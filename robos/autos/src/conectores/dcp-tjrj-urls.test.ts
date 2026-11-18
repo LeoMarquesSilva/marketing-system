@@ -71,6 +71,8 @@ describe("telas do processo", () => {
     expect(migradoParaEproc("Processo migrado para o eproc, acesse-o através do link")).toBe(true);
     expect(migradoParaEproc("Ir para o eproc")).toBe(true);
     expect(migradoParaEproc("Processo Eletrônico – Novo Visualizador")).toBe(false);
+    expect(migradoParaEproc("Cartório Migrada a tramitação do processo do sistema eletrônico originário para o outro sistema eletrônico")).toBe(true);
+    expect(migradoParaEproc("NOTIFICAÇÃO DE PROCESSO MIGRADO PARA O EPROC")).toBe(true);
   });
 
   it("decide o sigilo pelo texto, na dúvida segredo", () => {

@@ -2,7 +2,7 @@
 
 Baixa os autos dos processos no tribunal e entrega o PDF ao ORQESTRAI, onde a IA lê e deixa sugestões para uma pessoa aprovar. Roda **fora da Vercel**, numa máquina do escritório, com Node e Playwright, ou num contêiner no servidor (Easypanel): veja [Servidor (Easypanel)](#servidor-easypanel).
 
-Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.ts`; endereços em `TRIBUNAIS_ESAJ`, em `esaj-urls.ts`) **eproc do TJSP e do TJRJ** (`src/conectores/eproc.ts`; instalações e SSO em `TRIBUNAIS_EPROC`, em `eproc-urls.ts`) e **DCP do TJRJ** (Portal de Serviços, `src/conectores/dcp-tjrj.ts`). Os próximos (PJe, Projudi) entram em `src/conectores/`, um por sistema de tribunal. O **PJe do TJRJ** tem rascunho desligado e um modo de mapeamento: veja [DCP e PJe do TJRJ](#dcp-e-pje-do-tjrj-mapear-e-rascunhos).
+Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.ts`; endereços em `TRIBUNAIS_ESAJ`, em `esaj-urls.ts`) **eproc do TJSP e do TJRJ** (`src/conectores/eproc.ts`; instalações e SSO em `TRIBUNAIS_EPROC`, em `eproc-urls.ts`) **DCP e PJe (1º grau) do TJRJ** (`src/conectores/dcp-tjrj.ts`, `src/conectores/pje.ts`; veja [DCP e PJe do TJRJ](#dcp-e-pje-do-tjrj-mapear-e-rascunhos)). Os próximos (Projudi, PJe de outros tribunais) entram em `src/conectores/`, um por sistema de tribunal.
 
 ## Como funciona
 
@@ -90,7 +90,7 @@ O TJRJ tem três sistemas, e o mesmo número CNJ (`…8.19.…`) pode estar em q
 - **PJe** (`tjrj.pje.jus.br`, login pelo SSO nacional da PDPJ), usado nas varas cíveis e juizados de 2019 a 2026.
 - **eproc** (`eproc1g.tjrj.jus.br` e `eproc2g.tjrj.jus.br`, login em `eproc-sso.tjrj.jus.br`): desde maio de 2026 recebe todo processo cível novo, e o tribunal está migrando para ele o acervo do DCP e do PJe, com o mesmo número CNJ (1,3 milhão de processos migrados em 18/11/2026). Os juizados cíveis entram de 10/12/2026 a 2027.
 
-Por isso o ORQESTRAI manda o "Próprio" do TJRJ ao conector `dcp:TJRJ` e o resto (PJe, eproc, sem sistema) ao `eproc:TJRJ`. O DCP, quando o processo já migrou, segue pelo eproc no mesmo pedido e avisa o ORQESTRAI, que manda as atualizações seguintes direto ao eproc. O PJe do TJRJ ainda não tem conector: se o processo não migrou, a pesquisa do eproc não o acha e o pedido volta com erro (anexe o PDF à mão).
+Por isso o ORQESTRAI manda o "Próprio" do TJRJ ao conector `dcp:TJRJ`, o PJe ao `pje:TJRJ` e o resto (eproc, sem sistema) ao `eproc:TJRJ`. O DCP e o PJe, quando o processo já migrou, seguem pelo eproc no mesmo pedido e avisam o ORQESTRAI, que manda as atualizações seguintes direto ao eproc.
 
 - **Login:** o mesmo desenho do TJSP (SSO Keycloak com usuário e senha, ou "Certificado Digital"), com cadastro e senha próprios do advogado no TJRJ (`EPROC_TJRJ_*`). No caminho, o navegador passa pelo SSO nacional da PDPJ (`sso.cloud.pje.jus.br`), que redireciona sozinho para o SSO do TJRJ.
 - **2 fatores:** o eproc do TJRJ tem autenticação em dois fatores, como o do TJSP. Com o webhook configurado, o robô pede o código com `?sistema=eproc-tjrj` (o segredo do TOTP do TJRJ é outro); sem ele, ou se o webhook não conhecer esse sistema, a pessoa digita o código.
@@ -110,7 +110,14 @@ Para conferir: `npm run inspecionar -- eproc 0000000-00.0000.8.19.0000`. Para ab
 
 Para conferir sem baixar: `npm run inspecionar -- dcp 0000000-00.0000.8.19.0000`.
 
-**PJe do TJRJ** continua como **rascunho desligado** (`src/conectores/pje.ts`, parte sem navegador em `pje-urls.ts`), fora de `CONECTORES` e de `CONECTORES_DISPONIVEIS` até as telas reais serem vistas. No código, o que ainda não foi visto está marcado como **SUPOSIÇÃO**.
+**PJe do TJRJ, 1º grau (ligado desde 18/11/2026).** Telas vistas com a sessão do advogado (detalhes em `pje.ts` e `pje-urls.ts`):
+
+- **Login:** sempre da pessoa (SSO da PDPJ com o código do Microsoft Authenticator, PJe Office ou gov.br), numa aba própria do robô, que fica aberta.
+- **Consulta:** `Processo/ConsultaProcesso/listView.seam`, número em campos separados. A situação na lista já diz "Migrada a tramitação do processo… para o outro sistema eletrônico" quando o processo foi para o eproc: aí o pedido segue pelo `eproc:TJRJ`.
+- **Autos:** o número abre os autos numa janela de nome fixo (o robô fecha a que sobrar antes). A linha do tempo mostra cada documento com o Id.
+- **Download:** "Download autos do processo" com "ID a partir de" = maior Id já baixado + 1. O PJe monta o PDF e o abre com `window.open` (link assinado e temporário), que o Chrome barra como popup: o robô pega o link na aba dos autos e baixa. Às vezes o PDF vai para a "Área de download"; aí o robô baixa de lá quando fica "Concluído".
+
+Para conferir sem baixar: `npm run inspecionar -- pje 0000000-00.0000.8.19.0000`. O 2º grau (login próprio) ainda não foi mapeado.
 
 O que se sabe hoje (fontes públicas do tribunal, conferidas em 18/11/2026):
 
@@ -137,8 +144,6 @@ npm run mapear -- pje 0000000-00.0000.8.19.0000        # 1º grau; acrescente 2g
 5. **Nada é baixado nem enviado.** Durante o mapa o download do navegador fica bloqueado, e o robô nunca clica no botão que conclui o download ("Download", "Salvar processo completo"…): no máximo abre a janela de opções para descrevê-la e cancela. Diálogos do tribunal depois do login (alerta de acesso, declaração) são registrados e cancelados, nunca confirmados.
 
 Se o processo já tiver migrado para o eproc, o mapa registra o aviso e para: o pedido dele vai pelo `eproc:TJRJ`.
-
-**Depois do mapa do PJe**, com as capturas: ajustar os seletores (`TELA` no rascunho) e as funções marcadas como SUPOSIÇÃO, decidir o roteamento do PJe do TJRJ (hoje vai ao eproc) e só então incluir o conector em `CONECTORES` e em `CONECTORES_DISPONIVEIS`.
 
 Observado no mapa do DCP: o Enter no terminal nem sempre chega ao mapa (no painel de terminal do app, por exemplo). Se o mapa ficar parado num passo, as telas podem ser lidas pela porta de depuração do Chrome do robô (`perfil/DevToolsActivePort`) sem fechar o navegador.
 
