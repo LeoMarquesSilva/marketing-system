@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ItensRecCredito } from "./rec-credito";
-import { creditoDosTitulos, leituraRecCreditoVazia, sugestoesDaRecCredito, sugestoesDoCreditoPelosTitulos, tipoDaLista, type ItemSugerido, type LeituraRecCredito } from "./rec-credito-leitura";
+import { creditoDosTitulos, mesmoItem, leituraRecCreditoVazia, sugestoesDaRecCredito, sugestoesDoCreditoPelosTitulos, tipoDaLista, type ItemSugerido, type LeituraRecCredito } from "./rec-credito-leitura";
 
 const TIPOS = ["Nota promissória", "Duplicata", "CCB (Cédula de Crédito Bancário)"];
 const nada: ItensRecCredito = { titulos: [], citacoes: [], pedidos: [], lancamentos: [] };
@@ -121,5 +121,15 @@ describe("crédito pelos títulos", () => {
       expect.stringMatching(/soma dos 3 títulos$/),
       "Data de origem do débito: 26/08/2022, vencimento mais antigo entre os 3 títulos",
     ]);
+  });
+});
+
+describe("mesma citação", () => {
+  it("sem data num dos dois, compara o endereço escrito de jeitos diferentes", () => {
+    const a: ItemSugerido = { item: "citacao", dados: { tentativaEm: null, resultado: "positiva", endereco: "Avenida das Flores, nº 972, Jardim Azul, CEP 06.434-000, Cidade, SP" } };
+    const b: ItemSugerido = { item: "citacao", dados: { tentativaEm: "2022-02-07", resultado: "positiva", endereco: "Avenida das Flores, nº 972, Jardim Azul, Cidade-SP, CEP 06434-000" } };
+    const outra: ItemSugerido = { item: "citacao", dados: { tentativaEm: null, resultado: "positiva", endereco: "Rua dos Lírios, 15, Centro" } };
+    expect(mesmoItem(a, b)).toBe(true);
+    expect(mesmoItem(a, outra)).toBe(false);
   });
 });

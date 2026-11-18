@@ -175,6 +175,16 @@ function perto(a: unknown, b: unknown, dias: number): boolean {
   return Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) <= dias * DIA;
 }
 
+/** Mesmo endereço: o começo do logradouro igual e algum número em comum (o da casa), ignorando a ordem do resto. */
+function mesmoEndereco(a: unknown, b: unknown): boolean {
+  const x = chaveTexto(typeof a === "string" ? a : "");
+  const y = chaveTexto(typeof b === "string" ? b : "");
+  if (x.length < 12 || y.length < 12) return x === y;
+  const numeros = (texto: unknown) => new Set((typeof texto === "string" ? texto : "").match(/\d+/g) ?? []);
+  const nx = numeros(a);
+  return x.slice(0, 20) === y.slice(0, 20) && [...numeros(b)].some((numero) => nx.has(numero));
+}
+
 /** "RENAJUD e INFOJUD" e "INFOJUD e RENAJUD" são o mesmo pedido. */
 function tipoDoPedido(valor: unknown): string {
   return String(valor ?? "")
@@ -200,8 +210,9 @@ export function mesmoItem(a: ItemSugerido, b: ItemSugerido): boolean {
       return centavos(Number(x.valor)) === centavos(Number(y.valor)) && (x.vencimento === y.vencimento || perto(x.vencimento, y.vencimento, 3));
     case "citacao":
       if (x.resultado !== y.resultado) return false;
-      if (x.tentativaEm || y.tentativaEm) return perto(x.tentativaEm, y.tentativaEm, 5);
-      return chaveTexto(x.endereco as string | null) === chaveTexto(y.endereco as string | null);
+      if (x.tentativaEm && y.tentativaEm) return perto(x.tentativaEm, y.tentativaEm, 5);
+      // Sem data num dos dois: a mesma tentativa se o endereço é o mesmo (rua e número), escrito de jeitos diferentes.
+      return mesmoEndereco(x.endereco, y.endereco);
     case "pedido": {
       if (tipoDoPedido(x.tipo) !== tipoDoPedido(y.tipo)) return false;
       if (perto(x.pedidoEm, y.pedidoEm, 5) || perto(x.decididoEm, y.decididoEm, 5)) return true;

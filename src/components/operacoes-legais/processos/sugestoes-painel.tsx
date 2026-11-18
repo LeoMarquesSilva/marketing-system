@@ -1,12 +1,13 @@
 "use client";
 
-import { useId, useState } from "react";
+import { Fragment, useId, useState, type ReactNode } from "react";
 import { Check, CheckCheck, ExternalLink, Landmark, LoaderCircle, MapPin, PencilLine, Sparkles, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import type { AutosDoProcesso, Confianca, ContatoSugerido, EnderecoSugerido, PessoaSugerida, Sugestao, ValorDeCampo } from "@/lib/processos/autos-types";
 import { GRUPOS_CAMPO, campoPorChave, estaPreenchido, formatarValor, rotuloDoCampo } from "@/lib/processos/campos";
 import { ITENS_SANEAMENTO } from "@/lib/processos/preenchimento";
-import { ROTULO_DO_ITEM } from "@/lib/processos/rec-credito";
+import { MEIOS_CITACAO, RESULTADOS_CITACAO, ROTULO_DO_ITEM, SITUACOES_PEDIDO, formatarData, formatarReal } from "@/lib/processos/rec-credito";
 import type { ItemSugerido } from "@/lib/processos/rec-credito-leitura";
 import { aplicarNaParte, entradaDaPessoa, linhaDoEndereco } from "@/lib/processos/sugestoes";
 import { TIPOS_CONTATO, rotuloDoPapel, type ParteEntrada, type ProcessoDetalhe } from "@/lib/processos/types";
@@ -227,6 +228,165 @@ function Trecho({ sugestao, onAbrir }: { sugestao: Sugestao; onAbrir?: () => voi
   );
 }
 
+/** Campos que a IA redige com o conjunto dos autos: um bloco próprio, no topo. */
+const CAMPOS_REDIGIDOS = new Set(["sintese", "parecer_risco", "proximos_passos", "ultimo_andamento_texto", "fase"]);
+
+type TipoTabela = "titulo" | "citacao" | "pedido" | "guia" | "levantamento";
+
+interface GrupoDeSugestoes {
+  chave: string;
+  titulo: string;
+  descricao?: string;
+  lista: Sugestao[];
+  lote: boolean;
+  nome?: string;
+  tabela?: TipoTabela;
+}
+
+const COLUNAS_TABELA: Record<TipoTabela, { titulo: string; valor: (dados: ItemSugerido["dados"]) => ReactNode; numero?: boolean }[]> = {
+  titulo: [
+    { titulo: "Tipo", valor: (d) => d.tipo },
+    { titulo: "Número", valor: (d) => d.numero ?? "—" },
+    { titulo: "Valor", valor: (d) => (typeof d.valor === "number" ? formatarReal(d.valor) : "—"), numero: true },
+    { titulo: "Vencimento", valor: (d) => (typeof d.vencimento === "string" ? formatarData(d.vencimento) : "—"), numero: true },
+  ],
+  citacao: [
+    { titulo: "Data", valor: (d) => (typeof d.tentativaEm === "string" ? formatarData(d.tentativaEm) : "—"), numero: true },
+    { titulo: "Meio", valor: (d) => MEIOS_CITACAO.find((item) => item.valor === d.meio)?.rotulo ?? d.meio },
+    { titulo: "Resultado", valor: (d) => <SeloResultado valor={String(d.resultado ?? "")} /> },
+    { titulo: "Endereço", valor: (d) => d.endereco ?? "—" },
+  ],
+  pedido: [
+    { titulo: "Pedido em", valor: (d) => (typeof d.pedidoEm === "string" ? formatarData(d.pedidoEm) : "—"), numero: true },
+    { titulo: "Pedido", valor: (d) => d.tipo },
+    { titulo: "Situação", valor: (d) => <SeloSituacao valor={String(d.situacao ?? "")} decididoEm={typeof d.decididoEm === "string" ? d.decididoEm : null} /> },
+    { titulo: "Resultado", valor: (d) => [d.resultado, typeof d.valorObtido === "number" ? formatarReal(d.valorObtido) : null].filter(Boolean).join(" · ") || "—" },
+  ],
+  guia: [
+    { titulo: "Data", valor: (d) => (typeof d.data === "string" ? formatarData(d.data) : "—"), numero: true },
+    { titulo: "Valor", valor: (d) => (typeof d.valor === "number" ? formatarReal(d.valor) : "—"), numero: true },
+    { titulo: "Descrição", valor: (d) => d.descricao ?? "—" },
+  ],
+  levantamento: [
+    { titulo: "Data", valor: (d) => (typeof d.data === "string" ? formatarData(d.data) : "—"), numero: true },
+    { titulo: "Valor", valor: (d) => (typeof d.valor === "number" ? formatarReal(d.valor) : "—"), numero: true },
+    { titulo: "Descrição", valor: (d) => d.descricao ?? "—" },
+  ],
+};
+
+const TOM_RESULTADO: Record<string, TomSelo> = { positiva: "sucesso", negativa: "perigo", pendente: "alerta" };
+const TOM_SITUACAO: Record<string, TomSelo> = { deferido: "sucesso", indeferido: "perigo", requerido: "alerta", prejudicado: "neutro" };
+
+function SeloResultado({ valor }: { valor: string }) {
+  return <Selo tom={TOM_RESULTADO[valor] ?? "neutro"}>{RESULTADOS_CITACAO.find((item) => item.valor === valor)?.rotulo ?? valor}</Selo>;
+}
+
+function SeloSituacao({ valor, decididoEm }: { valor: string; decididoEm: string | null }) {
+  return (
+    <Selo tom={TOM_SITUACAO[valor] ?? "neutro"}>
+      {SITUACOES_PEDIDO.find((item) => item.valor === valor)?.rotulo ?? valor}
+      {decididoEm ? ` em ${formatarData(decididoEm)}` : ""}
+    </Selo>
+  );
+}
+
+/**
+ * Itens da Rec. Crédito em tabela: uma linha por item, com a página e a conferência do trecho; clicar na linha
+ * mostra o trecho dos autos. Aprovar, editar e recusar ficam na própria linha.
+ */
+function TabelaRecCredito({
+  tipo,
+  lista,
+  ocupado,
+  comPdf,
+  onAprovar,
+  onRecusar,
+  onEditar,
+  onAbrir,
+}: {
+  tipo: TipoTabela;
+  lista: Sugestao[];
+  ocupado: string;
+  comPdf: Set<string>;
+  onAprovar: (sugestao: Sugestao) => void;
+  onRecusar: (sugestao: Sugestao) => void;
+  onEditar: (sugestao: Sugestao) => void;
+  onAbrir: (sugestao: Sugestao) => void;
+}) {
+  const [aberta, setAberta] = useState<string | null>(null);
+  const colunas = COLUNAS_TABELA[tipo];
+  const ordenada = [...lista].sort((a, b) => (a.pagina ?? Infinity) - (b.pagina ?? Infinity));
+  return (
+    <div className="overflow-x-auto border-t border-[#e6eef0]">
+      <table className="w-full min-w-[44rem] text-sm">
+        <thead className="text-left text-xs text-muted-foreground">
+          <tr className="border-b border-[#e6eef0]">
+            {colunas.map((coluna) => (
+              <th key={coluna.titulo} scope="col" className={cn("px-3 py-2 font-medium", coluna.numero && "whitespace-nowrap")}>
+                {coluna.titulo}
+              </th>
+            ))}
+            <th scope="col" className="px-3 py-2 font-medium">
+              Autos
+            </th>
+            <th scope="col" className="px-3 py-2 text-right font-medium">
+              Decisão
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[#e6eef0]">
+          {ordenada.map((sugestao) => {
+            const dados = (sugestao.valor as ItemSugerido).dados;
+            const expandida = aberta === sugestao.id;
+            return (
+              <Fragment key={sugestao.id}>
+                <tr className={cn("align-top hover:bg-[#f7fbfc]", expandida && "bg-[#f7fbfc]")}>
+                  {colunas.map((coluna, indice) => (
+                    <td key={coluna.titulo} className={cn("px-3 py-2", coluna.numero && "whitespace-nowrap tabular-nums", indice === 0 && "font-medium text-[#10293a]")}>
+                      {coluna.valor(dados)}
+                    </td>
+                  ))}
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => setAberta(expandida ? null : sugestao.id)}
+                      className="inline-flex items-center gap-1 text-xs text-[#347796] underline-offset-4 hover:underline"
+                      title="Ver o trecho dos autos"
+                    >
+                      {sugestao.pagina ? `p. ${sugestao.pagina}` : "trecho"}
+                      {sugestao.trechoConferido ? <Check className="size-3 text-emerald-700" aria-label="trecho conferido no PDF" /> : <TriangleAlert className="size-3 text-amber-700" aria-label="trecho não localizado no PDF" />}
+                    </button>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                    <div className="inline-flex gap-1">
+                      <Button size="icon" className="size-8" disabled={Boolean(ocupado)} onClick={() => onAprovar(sugestao)} aria-label="Aprovar" title="Aprovar">
+                        {ocupado === `aprovar:${sugestao.id}` ? <LoaderCircle className="animate-spin" /> : <Check />}
+                      </Button>
+                      <Button size="icon" variant="outline" className="size-8" disabled={Boolean(ocupado)} onClick={() => onEditar(sugestao)} aria-label="Editar e aprovar" title="Editar e aprovar">
+                        <PencilLine />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="size-8" disabled={Boolean(ocupado)} onClick={() => onRecusar(sugestao)} aria-label="Recusar" title="Recusar">
+                        {ocupado === `recusar:${sugestao.id}` ? <LoaderCircle className="animate-spin" /> : <X />}
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+                {expandida && sugestao.trecho ? (
+                  <tr>
+                    <td colSpan={colunas.length + 2} className="px-3 pb-3">
+                      <Trecho sugestao={sugestao} onAbrir={sugestao.documentoId && comPdf.has(sugestao.documentoId) ? () => onAbrir(sugestao) : undefined} />
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /**
  * Fila de aprovação das sugestões da IA. Cada sugestão mostra o que propõe, o trecho dos autos e a
  * página; a pessoa aprova, edita antes de aprovar ou recusa. Só a aprovação grava no cadastro.
@@ -251,19 +411,27 @@ export function PainelSugestoes({
   // cabeçalho, e por fim as demais dos autos.
   const ordem = (sugestao: Sugestao) => (ehSintese(sugestao) ? 0 : ehRedigida(sugestao) ? 1 : ehDaCapa(sugestao) ? 2 : 3);
   pendentes.sort((a, b) => ordem(a) - ordem(b));
-  const daCapa = pendentes.filter(ehDaCapa);
-  // Itens da Rec. Crédito lidos nos autos: vários de uma vez (as duplicatas de uma execução, por exemplo).
-  const LOTES_REC: { chave: string; campo: string; tipo?: string; nome: string; botao: string }[] = [
-    { chave: "titulo", campo: "titulo", nome: "títulos", botao: "Aprovar os títulos" },
-    { chave: "citacao", campo: "citacao", nome: "tentativas de citação", botao: "Aprovar as citações" },
-    { chave: "pedido", campo: "pedido", nome: "pedidos de execução", botao: "Aprovar os pedidos" },
-    { chave: "guia", campo: "lancamento", tipo: "guia_paga", nome: "guias pagas", botao: "Aprovar as guias pagas" },
-    { chave: "levantamento", campo: "lancamento", tipo: "levantamento", nome: "valores levantados", botao: "Aprovar os levantamentos" },
+  // A fila em blocos, cada um com o seu "aprovar todos": textos redigidos, capa oficial, cadastro, partes e,
+  // em tabela, os itens da Rec. Crédito (títulos, citações, pedidos, guias, levantamentos).
+  const usadas = new Set<string>();
+  const pegar = (filtro: (sugestao: Sugestao) => boolean) => {
+    const lista = pendentes.filter((item) => !usadas.has(item.id) && filtro(item));
+    for (const item of lista) usadas.add(item.id);
+    return lista;
+  };
+  const dadoRec = (item: Sugestao) => (item.valor as ItemSugerido).dados;
+  const todosOsGrupos: GrupoDeSugestoes[] = [
+    { chave: "redigidas", titulo: "Síntese e situação do processo", descricao: "Redigidas pela IA com o conjunto dos autos.", lista: pegar((item) => item.tipo === "campo" && CAMPOS_REDIGIDOS.has(item.campo ?? "")), lote: false },
+    { chave: "capa", titulo: "Capa pelas fontes oficiais", descricao: "DataJud e número CNJ.", lista: pegar(ehDaCapa), lote: true, nome: "sugestões de capa" },
+    { chave: "titulos", titulo: "Títulos", descricao: "Títulos executados lidos nos autos.", lista: pegar((item) => item.tipo === "rec_credito" && item.campo === "titulo"), lote: true, nome: "títulos", tabela: "titulo" as const },
+    { chave: "citacoes", titulo: "Tentativas de citação", lista: pegar((item) => item.tipo === "rec_credito" && item.campo === "citacao"), lote: true, nome: "citações", tabela: "citacao" as const },
+    { chave: "pedidos", titulo: "Pedidos de execução", lista: pegar((item) => item.tipo === "rec_credito" && item.campo === "pedido"), lote: true, nome: "pedidos", tabela: "pedido" as const },
+    { chave: "guias", titulo: "Guias pagas", descricao: "Entram no valor atualizado, a cobrar do devedor.", lista: pegar((item) => item.tipo === "rec_credito" && item.campo === "lancamento" && dadoRec(item).tipo === "guia_paga"), lote: true, nome: "guias pagas", tabela: "guia" as const },
+    { chave: "levantamentos", titulo: "Valores levantados", descricao: "Abatidos do valor atualizado.", lista: pegar((item) => item.tipo === "rec_credito" && item.campo === "lancamento"), lote: true, nome: "levantamentos", tabela: "levantamento" as const },
+    { chave: "partes", titulo: "Partes e contatos", lista: pegar((item) => item.tipo !== "campo" && item.tipo !== "rec_credito"), lote: false },
+    { chave: "cadastro", titulo: "Cadastro", descricao: "Valores, datas e dados do processo lidos nos autos.", lista: pegar(() => true), lote: true, nome: "dados do cadastro" },
   ];
-  const lotesRec = LOTES_REC.map((lote) => ({
-    ...lote,
-    lista: pendentes.filter((item) => item.tipo === "rec_credito" && item.campo === lote.campo && (!lote.tipo || (item.valor as ItemSugerido).dados.tipo === lote.tipo)),
-  })).filter((lote) => lote.lista.length > 1);
+  const grupos = todosOsGrupos.filter((grupo) => grupo.lista.length > 0);
   const decididas = autos.sugestoes.filter((item) => item.situacao !== "pendente").sort((a, b) => (b.decididoEm ?? "").localeCompare(a.decididoEm ?? ""));
   if (!pendentes.length && !decididas.length) return null;
 
@@ -324,19 +492,50 @@ export function PainelSugestoes({
     : null;
   const itemEmEdicao = editando?.tipo === "rec_credito" ? (editando.valor as ItemSugerido) : null;
 
+  function cartao(sugestao: Sugestao) {
+    const aprovando = ocupado === `aprovar:${sugestao.id}`;
+    const recusando = ocupado === `recusar:${sugestao.id}`;
+    const parteSumiu = sugestao.tipo !== "campo" && sugestao.tipo !== "parte_nova" && sugestao.tipo !== "rec_credito" && !processo.partes.some((item) => item.id === sugestao.parteId);
+    return (
+      <li key={sugestao.id} className="grid gap-3 px-4 py-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {sugestao.fonte && sugestao.fonte !== "autos" ? (
+              <Selo tom="marca" icone={Landmark}>
+                {FONTE[sugestao.fonte]}
+              </Selo>
+            ) : null}
+            <Selo tom="ia">{sugestao.tipo === "campo" ? (ROTULO_GRUPO.get(campoPorChave(sugestao.campo ?? "")?.grupo ?? "") ?? "Cadastro") : (ROTULO_ITEM.get(sugestao.item) ?? "Cadastro")}</Selo>
+            {ehRedigida(sugestao) || !sugestao.trecho ? <Selo tom="neutro">{ehRedigida(sugestao) ? "Redigida pela IA a partir dos autos" : "Calculada"}</Selo> : <Selo tom={CONFIANCA[sugestao.confianca].tom}>{CONFIANCA[sugestao.confianca].rotulo}</Selo>}
+            {sugestao.trecho && !sugestao.trechoConferido ? (
+              <Selo tom="alerta" icone={TriangleAlert}>
+                Trecho não localizado no PDF
+              </Selo>
+            ) : null}
+          </div>
+          <div className="space-y-0.5">
+            <Proposta sugestao={sugestao} processo={processo} />
+          </div>
+          {sugestao.trecho ? <Trecho sugestao={sugestao} onAbrir={sugestao.documentoId && comPdf.has(sugestao.documentoId) ? () => abrir(sugestao) : undefined} /> : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch">
+          <Button size="sm" disabled={Boolean(ocupado) || parteSumiu} onClick={() => void decidirNaLista(sugestao, "aprovar")}>
+            {aprovando ? <LoaderCircle className="animate-spin" /> : <Check />} Aprovar
+          </Button>
+          <Button size="sm" variant="outline" disabled={Boolean(ocupado) || parteSumiu} onClick={() => setEditando(sugestao)}>
+            <PencilLine /> Editar
+          </Button>
+          <Button size="sm" variant="ghost" disabled={Boolean(ocupado)} onClick={() => void decidirNaLista(sugestao, "recusar")}>
+            {recusando ? <LoaderCircle className="animate-spin" /> : <X />} Recusar
+          </Button>
+        </div>
+      </li>
+    );
+  }
+
   return (
     <Painel aria-labelledby={tituloId}>
       <PainelTopo titulo="Sugestões" id={tituloId} descricao="Da IA lendo os autos e das fontes oficiais (DataJud e número CNJ). Nada entra no cadastro antes da sua decisão: confira, aprove, edite ou recuse.">
-        {daCapa.length > 1 ? (
-          <Button size="sm" variant="outline" disabled={Boolean(ocupado)} onClick={() => void aprovarEmLote(daCapa, "capa", "sugestões de capa")} title="Aprova de uma vez as sugestões do DataJud e do número CNJ">
-            {ocupado === "capa" ? <LoaderCircle className="animate-spin" /> : <CheckCheck />} Aprovar a capa ({daCapa.length})
-          </Button>
-        ) : null}
-        {lotesRec.map((lote) => (
-          <Button key={lote.chave} size="sm" variant="outline" disabled={Boolean(ocupado)} onClick={() => void aprovarEmLote(lote.lista, `lote:${lote.chave}`, lote.nome)} title={`Aprova de uma vez os ${lote.nome} lidos nos autos; os que derem erro ficam na fila`}>
-            {ocupado === `lote:${lote.chave}` ? <LoaderCircle className="animate-spin" /> : <CheckCheck />} {lote.botao} ({lote.lista.length})
-          </Button>
-        ))}
         {pendentes.length ? (
           <Selo tom="ia" icone={Sparkles}>
             {pendentes.length} a conferir
@@ -348,51 +547,37 @@ export function PainelSugestoes({
         )}
       </PainelTopo>
 
-      {pendentes.length ? (
-        <ul className="divide-y divide-[#e6eef0]">
-          {pendentes.map((sugestao) => {
-            const aprovando = ocupado === `aprovar:${sugestao.id}`;
-            const recusando = ocupado === `recusar:${sugestao.id}`;
-            const parteSumiu = sugestao.tipo !== "campo" && sugestao.tipo !== "parte_nova" && sugestao.tipo !== "rec_credito" && !processo.partes.some((item) => item.id === sugestao.parteId);
-            return (
-              <li key={sugestao.id} className="grid gap-3 px-4 py-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-                <div className="min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {/* No campo simples o nome do campo já vem logo abaixo: o selo diz a seção da ficha. */}
-                    {sugestao.fonte && sugestao.fonte !== "autos" ? (
-                      <Selo tom="marca" icone={Landmark}>
-                        {FONTE[sugestao.fonte]}
-                      </Selo>
-                    ) : null}
-                    <Selo tom="ia">{sugestao.tipo === "campo" ? (ROTULO_GRUPO.get(campoPorChave(sugestao.campo ?? "")?.grupo ?? "") ?? "Cadastro") : (ROTULO_ITEM.get(sugestao.item) ?? "Cadastro")}</Selo>
-                    {ehRedigida(sugestao) ? <Selo tom="neutro">Redigida pela IA a partir dos autos</Selo> : <Selo tom={CONFIANCA[sugestao.confianca].tom}>{CONFIANCA[sugestao.confianca].rotulo}</Selo>}
-                    {!sugestao.trechoConferido ? (
-                      <Selo tom="alerta" icone={TriangleAlert}>
-                        Trecho não localizado no PDF
-                      </Selo>
-                    ) : null}
-                  </div>
-                  <div className="space-y-0.5">
-                    <Proposta sugestao={sugestao} processo={processo} />
-                  </div>
-                  {sugestao.trecho ? <Trecho sugestao={sugestao} onAbrir={sugestao.documentoId && comPdf.has(sugestao.documentoId) ? () => abrir(sugestao) : undefined} /> : null}
-                </div>
-                <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch">
-                  <Button size="sm" disabled={Boolean(ocupado) || parteSumiu} onClick={() => void decidirNaLista(sugestao, "aprovar")}>
-                    {aprovando ? <LoaderCircle className="animate-spin" /> : <Check />} Aprovar
-                  </Button>
-                  <Button size="sm" variant="outline" disabled={Boolean(ocupado) || parteSumiu} onClick={() => setEditando(sugestao)}>
-                    <PencilLine /> Editar
-                  </Button>
-                  <Button size="sm" variant="ghost" disabled={Boolean(ocupado)} onClick={() => void decidirNaLista(sugestao, "recusar")}>
-                    {recusando ? <LoaderCircle className="animate-spin" /> : <X />} Recusar
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
+      {grupos.map((grupo) => (
+        <section key={grupo.chave} aria-label={grupo.titulo} className="border-t border-[#e6eef0] first:border-t-0">
+          <header className="flex flex-wrap items-center gap-x-3 gap-y-2 bg-[#f7fbfc] px-4 py-2.5">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-xs font-semibold uppercase text-[#285f7a]">
+                {grupo.titulo} <span className="font-normal tabular-nums text-muted-foreground">({grupo.lista.length})</span>
+              </h3>
+              {grupo.descricao ? <p className="text-xs text-muted-foreground">{grupo.descricao}</p> : null}
+            </div>
+            {grupo.lote && grupo.lista.length > 1 ? (
+              <Button size="sm" variant="outline" disabled={Boolean(ocupado)} onClick={() => void aprovarEmLote(grupo.lista, `lote:${grupo.chave}`, grupo.nome ?? grupo.titulo.toLowerCase())} title="Aprova de uma vez as sugestões deste bloco; as que derem erro ficam na fila">
+                {ocupado === `lote:${grupo.chave}` ? <LoaderCircle className="animate-spin" /> : <CheckCheck />} Aprovar todos ({grupo.lista.length})
+              </Button>
+            ) : null}
+          </header>
+          {grupo.tabela ? (
+            <TabelaRecCredito
+              tipo={grupo.tabela}
+              lista={grupo.lista}
+              ocupado={ocupado}
+              comPdf={comPdf}
+              onAprovar={(sugestao) => void decidirNaLista(sugestao, "aprovar")}
+              onRecusar={(sugestao) => void decidirNaLista(sugestao, "recusar")}
+              onEditar={setEditando}
+              onAbrir={abrir}
+            />
+          ) : (
+            <ul className="divide-y divide-[#e6eef0] border-t border-[#e6eef0]">{grupo.lista.map((sugestao) => cartao(sugestao))}</ul>
+          )}
+        </section>
+      ))}
 
       {decididas.length ? (
         <details className="border-t border-[#e6eef0] first:border-t-0">
