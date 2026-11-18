@@ -11,7 +11,7 @@ import { ProcessosError } from "./errors";
 import { extrairPaginas, type TextoDoPdf } from "./leitura-pdf";
 import { migracaoParaEproc } from "./migracao-eproc";
 import { detalharProcesso } from "./processos-server";
-import { sugestoesDaRecCredito, type ItemSugerido } from "./rec-credito-leitura";
+import { comoSugeridos, creditoDosTitulos, sugestoesDaRecCredito, sugestoesDoCreditoPelosTitulos, type ItemSugerido } from "./rec-credito-leitura";
 import { itensDoProcesso, tiposDeTitulo } from "./rec-credito-server";
 import { lerSistema } from "./tribunais";
 import { db, falhou } from "./server";
@@ -119,9 +119,23 @@ export async function sinteseAnterior(processoId: string, documentoId: string, d
   return separarSintese((data?.valor as { valor?: string } | undefined)?.valor ?? null).ia;
 }
 
-export async function removerSintesesPendentes(processoId: string, documentoId: string): Promise<void> {
-  const { error } = await db().from("proc_sugestoes").delete().eq("processo_id", processoId).eq("campo", "sintese").eq("situacao", "pendente").neq("documento_id", documentoId);
-  if (error) console.error("[processos] tirar as sínteses superadas:", error.message);
+/**
+ * O que a IA redige com o conjunto dos autos tem uma proposta só por processo: a leitura nova (que já
+ * consolida a anterior) tira da fila as pendentes do mesmo campo vindas de outros documentos.
+ */
+export const CAMPOS_REDIGIDOS = ["sintese", "parecer_risco", "proximos_passos", "objeto", "fase", "ultimo_andamento_texto"] as const;
+
+export async function removerRedigidasPendentes(processoId: string, documentoId: string, campos: string[]): Promise<void> {
+  if (!campos.length) return;
+  const { error } = await db()
+    .from("proc_sugestoes")
+    .delete()
+    .eq("processo_id", processoId)
+    .eq("tipo", "campo")
+    .in("campo", campos)
+    .eq("situacao", "pendente")
+    .neq("documento_id", documentoId);
+  if (error) console.error("[processos] tirar as propostas superadas:", error.message);
 }
 
 async function encerrar(documentoId: string, patch: Record<string, unknown>): Promise<void> {
@@ -245,11 +259,24 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
     ]);
     if (outros.error) falhou("carregar as sugestões anteriores", outros.error);
     const jaSugeridos = (outros.data ?? []).map((linha) => linha.valor as ItemSugerido);
-    sugestoes.push(...sugestoesDaRecCredito(leitura.rec_credito, lancados, tipos, criarConferidor(texto.paginas), jaSugeridos));
+    const daRecCredito = sugestoesDaRecCredito(leitura.rec_credito, lancados, tipos, criarConferidor(texto.paginas), jaSugeridos);
+    sugestoes.push(...daRecCredito);
+    // Com os títulos um a um (lidos agora, já lançados ou sugeridos antes), a descrição do "contrato relacionado
+    // ao crédito" só repetiria o mesmo (ex.: "Duplicatas 40123/1 a 40123/5"): não é proposta.
+    const temTitulos =
+      daRecCredito.some((item) => item.campo === "titulo") || lancados.titulos.length > 0 || jaSugeridos.some((item) => item.item === "titulo");
+    if (temTitulos) {
+      // Valor original e origem do débito saem dos títulos (soma dos valores de face e vencimento mais antigo),
+      // não de um número solto de petição ou planilha de cálculo.
+      const PELOS_TITULOS = new Set(["contrato_credito", "valor_original", "data_origem_debito"]);
+      for (let i = sugestoes.length - 1; i >= 0; i -= 1) if (sugestoes[i].tipo === "campo" && PELOS_TITULOS.has(sugestoes[i].campo ?? "")) sugestoes.splice(i, 1);
+      const credito = creditoDosTitulos([...comoSugeridos(lancados), ...jaSugeridos, ...daRecCredito.map((item) => item.valor as ItemSugerido)]);
+      if (credito) sugestoes.push(...sugestoesDoCreditoPelosTitulos(credito, processo.valores));
+    }
 
     // A síntese do processo, redigida com os fatos de todos os pedaços. Falhar aqui não derruba o resto da leitura.
     const avisos: string[] = [];
-    let substituirSinteses = false;
+    const camposRedigidos = new Set<string>();
     const fatos = fatosParaSintese(leitura.fatos);
     if (!fatos.length) {
       avisos.push("A IA não encontrou fatos suficientes nos autos para redigir a síntese.");
@@ -265,7 +292,7 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
         const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
         const daSintese = sugestoesDaSintese(redigida.sintese, contexto, documentoId, hoje, Boolean(anterior));
         sugestoes.push(...daSintese);
-        if (daSintese.some((item) => item.campo === "sintese")) substituirSinteses = true;
+        for (const item of daSintese) if (item.campo && (CAMPOS_REDIGIDOS as readonly string[]).includes(item.campo)) camposRedigidos.add(item.campo);
       } catch (erro) {
         console.error("[processos] síntese dos autos:", erro instanceof Error ? erro.message : erro);
         avisos.push("A IA não conseguiu redigir a síntese desta vez. Leia de novo para tentar outra vez.");
@@ -299,8 +326,10 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
       }
     }
     const gravadas = await gravarSugestoes(documento.processoId, documentoId, sugestoes);
-    // A síntese nova já consolida as pendentes de outros documentos: elas saem da fila.
-    if (substituirSinteses) await removerSintesesPendentes(documento.processoId, documentoId);
+    // Cada campo tem uma proposta só por processo: a desta leitura (síntese e parecer já consolidados com a
+    // anterior; valores e datas lidos de novo) tira da fila as pendentes do mesmo campo de outros documentos.
+    for (const item of sugestoes) if (item.tipo === "campo" && item.campo) camposRedigidos.add(item.campo);
+    await removerRedigidasPendentes(documento.processoId, documentoId, [...camposRedigidos]);
 
     const naoLidos = blocos.length - leituras.length;
     if (naoLidos > 0) avisos.push(`Leitura parcial: ${naoLidos} de ${blocos.length} trechos ficaram sem ler (${falhas ? "falha da IA" : "tempo esgotado"}). Leia de novo para completar.`);

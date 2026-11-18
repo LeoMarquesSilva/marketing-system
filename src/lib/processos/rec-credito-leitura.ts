@@ -327,3 +327,50 @@ export function sugestoesDaRecCredito(
     })
     .sort((a, b) => (a.pagina ?? Infinity) - (b.pagina ?? Infinity));
 }
+
+/**
+ * O crédito na origem, pelos títulos: o valor original é a soma dos valores de face (sem correção, juros nem
+ * multa) e a origem do débito é o vencimento mais antigo. Títulos repetidos (o mesmo lido duas vezes) contam uma vez.
+ */
+export function creditoDosTitulos(titulos: ItemSugerido[]): { valorOriginal: number; origem: string; quantidade: number } | null {
+  const unicos: ItemSugerido[] = [];
+  for (const titulo of titulos) {
+    if (titulo.item !== "titulo") continue;
+    const valor = Number(titulo.dados.valor);
+    if (!(valor > 0) || typeof titulo.dados.vencimento !== "string" || !DATA.test(titulo.dados.vencimento)) continue;
+    if (!unicos.some((ja) => mesmoItem(ja, titulo))) unicos.push(titulo);
+  }
+  if (!unicos.length) return null;
+  const total = unicos.reduce((soma, titulo) => soma + centavos(Number(titulo.dados.valor)), 0) / 100;
+  const origem = unicos.map((titulo) => titulo.dados.vencimento as string).sort()[0];
+  return { valorOriginal: total, origem, quantidade: unicos.length };
+}
+
+/** Sugestões do valor original e da origem do débito tiradas dos títulos (só o que difere do cadastro). */
+export function sugestoesDoCreditoPelosTitulos(credito: { valorOriginal: number; origem: string; quantidade: number }, valores: Record<string, unknown>): SugestaoNova[] {
+  const sugestoes: SugestaoNova[] = [];
+  const base = { tipo: "campo" as const, parteId: null, pagina: null, trecho: null, trechoConferido: true, confianca: "alta" as const };
+  const atualValor = valores.valor_original === null || valores.valor_original === undefined || valores.valor_original === "" ? null : Number(valores.valor_original);
+  if (atualValor === null || centavos(atualValor) !== centavos(credito.valorOriginal)) {
+    sugestoes.push({
+      ...base,
+      campo: "valor_original",
+      item: "valor_original",
+      chave: `campo:valor_original:titulos:${centavos(credito.valorOriginal)}`,
+      resumo: `Valor original do crédito: ${formatarReal(credito.valorOriginal)}, ${credito.quantidade === 1 ? "valor do único título" : `soma dos ${credito.quantidade} títulos`}`,
+      valor: { valor: Math.round(credito.valorOriginal * 100) / 100 },
+    });
+  }
+  const atualOrigem = typeof valores.data_origem_debito === "string" ? valores.data_origem_debito.slice(0, 10) : null;
+  if (atualOrigem !== credito.origem) {
+    sugestoes.push({
+      ...base,
+      campo: "data_origem_debito",
+      item: "data_origem_debito",
+      chave: `campo:data_origem_debito:titulos:${credito.origem}`,
+      resumo: `Data de origem do débito: ${formatarData(credito.origem)}, ${credito.quantidade === 1 ? "vencimento do único título" : `vencimento mais antigo entre os ${credito.quantidade} títulos`}`,
+      valor: { valor: credito.origem },
+    });
+  }
+  return sugestoes;
+}

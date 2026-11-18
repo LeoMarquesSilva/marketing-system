@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ItensRecCredito } from "./rec-credito";
-import { leituraRecCreditoVazia, sugestoesDaRecCredito, tipoDaLista, type ItemSugerido, type LeituraRecCredito } from "./rec-credito-leitura";
+import { creditoDosTitulos, leituraRecCreditoVazia, sugestoesDaRecCredito, sugestoesDoCreditoPelosTitulos, tipoDaLista, type ItemSugerido, type LeituraRecCredito } from "./rec-credito-leitura";
 
 const TIPOS = ["Nota promissória", "Duplicata", "CCB (Cédula de Crédito Bancário)"];
 const nada: ItensRecCredito = { titulos: [], citacoes: [], pedidos: [], lancamentos: [] };
@@ -108,5 +108,18 @@ describe("sugestões da Rec. Crédito", () => {
       doEsaj
     );
     expect(sugestoes.map((item) => (item.valor as ItemSugerido).dados.tipo)).toEqual(["SISBAJUD"]);
+  });
+});
+
+describe("crédito pelos títulos", () => {
+  const titulo = (valor: number, vencimento: string): ItemSugerido => ({ item: "titulo", dados: { tipo: "Duplicata", numero: null, valor, vencimento } });
+  it("valor original é a soma dos títulos e a origem é o vencimento mais antigo de todos", () => {
+    const credito = creditoDosTitulos([titulo(2929.83, "2022-08-26"), titulo(1785.97, "2022-09-06"), titulo(1785.97, "2022-09-06"), titulo(1785.97, "2022-09-16")]);
+    expect(credito).toEqual({ valorOriginal: 6501.77, origem: "2022-08-26", quantidade: 3 });
+    const sugestoes = sugestoesDoCreditoPelosTitulos(credito!, {});
+    expect(sugestoes.map((item) => item.resumo)).toEqual([
+      expect.stringMatching(/soma dos 3 títulos$/),
+      "Data de origem do débito: 26/08/2022, vencimento mais antigo entre os 3 títulos",
+    ]);
   });
 });

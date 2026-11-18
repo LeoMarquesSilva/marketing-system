@@ -258,7 +258,7 @@ describe("montarSugestoes", () => {
     expect(sugestoes[0]).toMatchObject({ pagina: 2, valor: { cep: "13000-000", uf: "MT" } });
   });
 
-  it("fica com no máximo três propostas por campo, as mais confiáveis e das primeiras páginas", () => {
+  it("fica com uma proposta só por campo: a mais confiável e das primeiras páginas", () => {
     const paginas = ["total de R$ 100,00", "nota de R$ 20,00", "nota de R$ 30,00", "nota de R$ 40,00", "nota de R$ 50,00"];
     const lido = leitura({
       campos: [
@@ -269,7 +269,7 @@ describe("montarSugestoes", () => {
         { campo: "valor_original", valor: "100.00", pagina: 1, trecho: "total de R$ 100,00", confianca: "alta" },
       ],
     });
-    expect(montarSugestoes(lido, contexto(), paginas).map((item) => (item.valor as { valor: number }).valor)).toEqual([100, 20, 30]);
+    expect(montarSugestoes(lido, contexto(), paginas).map((item) => (item.valor as { valor: number }).valor)).toEqual([100]);
   });
 
   it("reconhece o mesmo advogado pela OAB e a filial do cliente pela raiz do CNPJ", () => {
@@ -368,12 +368,9 @@ describe("síntese do processo", () => {
 
   const redigida = { sintese: `Resumo\n${"A credora executa duplicatas vencidas contra a devedora. ".repeat(3)}\n\n\n\nAndamento\n15/03/2024: citação positiva (p. 4)`, objeto: "Execução de duplicatas vencidas e não pagas", fase: null, parecer_risco: null, proximos_passos: null };
 
-  it("vira sugestão da síntese e do objeto quando os dois estão vazios", () => {
+  it("vira sugestão da síntese; o objeto (lista do VIOS) não é proposto", () => {
     const sugestoes = sugestoesDaSintese(redigida, contexto(), "doc-1", "2026-11-12");
-    expect(sugestoes.map((item) => [item.campo, item.chave])).toEqual([
-      ["sintese", "campo:sintese:doc-1"],
-      ["objeto", "campo:objeto:doc-1"],
-    ]);
+    expect(sugestoes.map((item) => [item.campo, item.chave])).toEqual([["sintese", "campo:sintese:doc-1"]]);
     const texto = (sugestoes[0].valor as { valor: string }).valor;
     expect(texto.startsWith("12/11/2026 (IA, leitura dos autos):\nResumo\nA credora executa")).toBe(true);
     expect(texto).not.toContain("\n\n\n");
@@ -414,7 +411,7 @@ describe("síntese do processo", () => {
     const parecer = "A devedora está em recuperação judicial e o bloqueio de valores foi liberado pelo tribunal. Há alienação fiduciária de semirreboques em garantia.";
     const completa = { ...redigida, fase: "Recursal" as const, parecer_risco: parecer };
     const vazio = sugestoesDaSintese(completa, contexto(), "doc-1", "2026-11-12");
-    expect(vazio.map((item) => item.campo)).toEqual(["sintese", "fase", "parecer_risco", "objeto"]);
+    expect(vazio.map((item) => item.campo)).toEqual(["sintese", "fase", "parecer_risco"]);
     expect(vazio[1].valor).toEqual({ valor: "Recursal" });
     expect(vazio[2]).toMatchObject({ chave: "campo:parecer_risco:doc-1", valor: { valor: parecer }, trecho: null });
     const preenchido = sugestoesDaSintese(completa, contexto({ fase: "Execução", parecer_risco: "Já avaliado.", objeto: "Cobrança" }), "doc-1", "2026-11-12");
@@ -508,5 +505,12 @@ describe("campos de Recuperação de Crédito lidos dos autos", () => {
     expect(sugestoes).toHaveLength(1);
     expect(sugestoes[0]).toMatchObject({ campo: "outros_numeros", trechoConferido: true });
     expect((sugestoes[0].valor as { valor: string }).valor).toBe("Outros: 583002023\n1001234-56.2022.8.26.0100\n1009999-11.2025.8.26.0100");
+  });
+});
+
+describe("valor envolvido", () => {
+  it("descarta o valor de um bloqueio", () => {
+    const leitura = { ...leituraVazia(), campos: [{ campo: "valor_envolvido" as const, valor: "1364.98", pagina: 1, trecho: "Ciência às partes do bloqueio realizado no sistema SISBAJUD – teimosinha (R$ 1.364,98).", confianca: "alta" as const }] };
+    expect(montarSugestoes(leitura, contexto(), ["Ciência às partes do bloqueio realizado no sistema SISBAJUD – teimosinha (R$ 1.364,98)."]).some((item) => item.campo === "valor_envolvido")).toBe(false);
   });
 });

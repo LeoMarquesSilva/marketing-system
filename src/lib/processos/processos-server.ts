@@ -6,7 +6,9 @@ import { chaveNome, usuarioPorSigla } from "@/lib/vistagem/agendamento";
 import { pessoasPorNome } from "@/lib/vistagem/pessoas-server";
 import { carregarCatalogoProcessos } from "@/lib/vistagem/sama";
 import { conferirEscolhas } from "./opcoes-server";
+import { tabelaTjspEmCache } from "./indices-server";
 import { ITENS_SANEAMENTO, calcularPreenchimento } from "./preenchimento";
+import { valorDaAcaoAtualizado } from "./rec-credito";
 import { db, emLotes, falhou, gravacaoSimulada, type Ator } from "./server";
 import type { Alteracao, Contato, Endereco, EnvioVios, OrigemAlteracao, Parte, ProcessoDetalhe, ProcessoResumo, StatusEnvio } from "./types";
 
@@ -214,9 +216,11 @@ export async function detalharProcesso(id: string): Promise<ProcessoDetalhe> {
   const valores = valoresDaLinha(linha);
   const partes = partesDaLinha(linha);
   const naoAplicaveis = (linha.itens_nao_aplicaveis as string[] | null) ?? [];
-  const { fotos, nomesDaEquipe } = await equipeDoProcesso(valores);
+  const [{ fotos, nomesDaEquipe }, indices] = await Promise.all([equipeDoProcesso(valores), tabelaTjspEmCache().catch(() => ({ tabela: null, indicesAte: null }))]);
+  const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
   return {
     id,
+    valorAcaoTjsp: valorDaAcaoAtualizado(indices.tabela, valores.valor_acao, valores.data_distribuicao, hoje, indices.indicesAte),
     valores,
     partes,
     fotos,

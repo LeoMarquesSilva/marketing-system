@@ -252,6 +252,18 @@ export function PainelSugestoes({
   const ordem = (sugestao: Sugestao) => (ehSintese(sugestao) ? 0 : ehRedigida(sugestao) ? 1 : ehDaCapa(sugestao) ? 2 : 3);
   pendentes.sort((a, b) => ordem(a) - ordem(b));
   const daCapa = pendentes.filter(ehDaCapa);
+  // Itens da Rec. Crédito lidos nos autos: vários de uma vez (as duplicatas de uma execução, por exemplo).
+  const LOTES_REC: { chave: string; campo: string; tipo?: string; nome: string; botao: string }[] = [
+    { chave: "titulo", campo: "titulo", nome: "títulos", botao: "Aprovar os títulos" },
+    { chave: "citacao", campo: "citacao", nome: "tentativas de citação", botao: "Aprovar as citações" },
+    { chave: "pedido", campo: "pedido", nome: "pedidos de execução", botao: "Aprovar os pedidos" },
+    { chave: "guia", campo: "lancamento", tipo: "guia_paga", nome: "guias pagas", botao: "Aprovar as guias pagas" },
+    { chave: "levantamento", campo: "lancamento", tipo: "levantamento", nome: "valores levantados", botao: "Aprovar os levantamentos" },
+  ];
+  const lotesRec = LOTES_REC.map((lote) => ({
+    ...lote,
+    lista: pendentes.filter((item) => item.tipo === "rec_credito" && item.campo === lote.campo && (!lote.tipo || (item.valor as ItemSugerido).dados.tipo === lote.tipo)),
+  })).filter((lote) => lote.lista.length > 1);
   const decididas = autos.sugestoes.filter((item) => item.situacao !== "pendente").sort((a, b) => (b.decididoEm ?? "").localeCompare(a.decididoEm ?? ""));
   if (!pendentes.length && !decididas.length) return null;
 
@@ -262,22 +274,24 @@ export function PainelSugestoes({
   }
 
   /** Aprova, uma a uma, as sugestões de capa das fontes oficiais (DataJud e número CNJ). */
-  async function aprovarCapa() {
-    setOcupado("capa");
+  /** Aprova, uma a uma, as sugestões de um grupo (a capa das fontes oficiais, os títulos lidos nos autos…). */
+  async function aprovarEmLote(lista: Sugestao[], chave: string, nome: string) {
+    setOcupado(chave);
     onErro("");
     let aprovadas = 0;
     let ultima: Decisao | null = null;
-    try {
-      for (const sugestao of daCapa) {
+    const falhas: string[] = [];
+    for (const sugestao of lista) {
+      try {
         ultima = await processosApi.post<Decisao>(`/autos/sugestoes/${sugestao.id}`, { acao: "aprovar" });
         aprovadas += 1;
+      } catch (falha) {
+        falhas.push(`${sugestao.resumo.slice(0, 80)}: ${mensagemDeErro(falha)}`);
       }
-    } catch (falha) {
-      onErro(`${aprovadas ? `${aprovadas} aprovada${aprovadas === 1 ? "" : "s"}; ` : ""}${mensagemDeErro(falha)}`);
-    } finally {
-      setOcupado("");
-      if (ultima) onDecidido(ultima, `${aprovadas} sugest${aprovadas === 1 ? "ão" : "ões"} de capa aprovada${aprovadas === 1 ? "" : "s"} e gravada${aprovadas === 1 ? "" : "s"} no cadastro.`);
     }
+    setOcupado("");
+    if (falhas.length) onErro(`${aprovadas ? `${aprovadas} aprovada${aprovadas === 1 ? "" : "s"}. ` : ""}${falhas.length} não ${falhas.length === 1 ? "entrou" : "entraram"} (edite ou recuse):\n${falhas.slice(0, 5).join("\n")}`);
+    if (ultima) onDecidido(ultima, `Aprovação em lote (${nome}): ${aprovadas} de ${lista.length} gravad${lista.length === 1 ? "a" : "as"}.`);
   }
 
   async function decidirNaLista(sugestao: Sugestao, acao: "aprovar" | "recusar") {
@@ -314,10 +328,15 @@ export function PainelSugestoes({
     <Painel aria-labelledby={tituloId}>
       <PainelTopo titulo="Sugestões" id={tituloId} descricao="Da IA lendo os autos e das fontes oficiais (DataJud e número CNJ). Nada entra no cadastro antes da sua decisão: confira, aprove, edite ou recuse.">
         {daCapa.length > 1 ? (
-          <Button size="sm" variant="outline" disabled={Boolean(ocupado)} onClick={() => void aprovarCapa()} title="Aprova de uma vez as sugestões do DataJud e do número CNJ">
+          <Button size="sm" variant="outline" disabled={Boolean(ocupado)} onClick={() => void aprovarEmLote(daCapa, "capa", "sugestões de capa")} title="Aprova de uma vez as sugestões do DataJud e do número CNJ">
             {ocupado === "capa" ? <LoaderCircle className="animate-spin" /> : <CheckCheck />} Aprovar a capa ({daCapa.length})
           </Button>
         ) : null}
+        {lotesRec.map((lote) => (
+          <Button key={lote.chave} size="sm" variant="outline" disabled={Boolean(ocupado)} onClick={() => void aprovarEmLote(lote.lista, `lote:${lote.chave}`, lote.nome)} title={`Aprova de uma vez os ${lote.nome} lidos nos autos; os que derem erro ficam na fila`}>
+            {ocupado === `lote:${lote.chave}` ? <LoaderCircle className="animate-spin" /> : <CheckCheck />} {lote.botao} ({lote.lista.length})
+          </Button>
+        ))}
         {pendentes.length ? (
           <Selo tom="ia" icone={Sparkles}>
             {pendentes.length} a conferir

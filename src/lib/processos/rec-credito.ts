@@ -1,5 +1,5 @@
 import { ProcessosError } from "./errors";
-import { IndiceAusente, atualizarCredito, duracaoDoProcesso, percentualRecuperado, type CreditoAtualizado, type TabelaTjsp } from "./calculo-tjsp";
+import { IndiceAusente, atualizarCredito, atualizarTitulo, duracaoDoProcesso, percentualRecuperado, type CreditoAtualizado, type TabelaTjsp } from "./calculo-tjsp";
 
 /**
  * Saneamento da Recuperação de Crédito: títulos executados, tentativas de citação, pedidos de execução e
@@ -377,4 +377,30 @@ export function linhaDaCarteira(dados: DadosDoProcessoNaCarteira, itens: ItensRe
     duracao: duracao ? { ...duracao, desde: dados.dataDistribuicao ? "distribuicao" : "cadastro" } : null,
     avisos,
   };
+}
+
+export interface ValorDaAcaoAtualizado {
+  valor: number;
+  /** Data da distribuição (início da conta). */
+  desde: string;
+  /** Até quando a conta foi (hoje, ou o último mês com índice publicado). */
+  ate: string;
+}
+
+/**
+ * O valor da ação atualizado pelo cálculo do TJSP, da distribuição até hoje: Tabela Prática e juros (1% a.m.
+ * até 27/08/2024, taxa legal depois), como o crédito. Nulo sem valor da ação, sem distribuição ou sem índices.
+ */
+export function valorDaAcaoAtualizado(tabela: TabelaTjsp | null, valor: unknown, distribuicao: unknown, hoje: string, indicesAte: string | null): ValorDaAcaoAtualizado | null {
+  const base = Number(valor);
+  const desde = typeof distribuicao === "string" ? distribuicao.slice(0, 10) : "";
+  if (!tabela || !(base > 0) || !DATA.test(desde)) return null;
+  const ate = limitarAosIndices(hoje, indicesAte);
+  if (ate <= desde) return null;
+  try {
+    return { valor: atualizarTitulo(tabela, { valor: base, vencimento: desde }, ate).total, desde, ate };
+  } catch (erro) {
+    if (erro instanceof IndiceAusente) return null;
+    throw erro;
+  }
 }

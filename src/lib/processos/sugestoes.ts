@@ -36,8 +36,6 @@ export const CAMPOS_DA_LEITURA = [
   "outros_numeros",
 ] as const;
 
-/** Campos em que só cabe uma proposta (texto ou data única): fica a mais confiável. Os demais seguem MAXIMO_POR_CAMPO. */
-const UMA_PROPOSTA = new Set<string>(["contrato_credito", "data_distribuicao", "data_arquivamento", "data_encerramento", "valor_acao"]);
 
 const PAPEIS_LIDOS = ["parte_ativa", "parte_passiva", "socio", "administrador", "representante", "fiador", "avalista", "corresponsavel", "advogado"] as const;
 type PapelLido = (typeof PAPEIS_LIDOS)[number];
@@ -387,7 +385,7 @@ export function instrucoesDaLeitura(): string {
     "- data_acordo e valor_acordo: acordo celebrado entre as partes (petição conjunta, termo ou homologação). Proposta não aceita não conta.",
     "- contrato_credito: a identificação do contrato ou título que deu origem ao crédito, como a peça o chama, com número e data quando houver (ex.: \"Cédula de Crédito Bancário nº 1161191, de 25/04/2022\", \"Duplicatas nº 101 a 108\", \"Contrato de prestação de serviços nº 55/2021\"). Até 200 caracteres. Sem identificação clara, não devolva.",
     "- valor_acao: o valor da causa, como declarado na petição inicial (\"Dá-se à causa o valor de...\").",
-    "- valor_envolvido: o valor em discussão hoje, isto é, o total do demonstrativo ou cálculo de débito atualizado mais recente do pedaço; num recurso sobre constrição, o valor bloqueado ou penhorado em disputa. Não repita o valor da causa nem o valor original.",
+    "- valor_envolvido: o valor em discussão hoje, isto é, o total do demonstrativo ou cálculo de débito atualizado mais recente do pedaço. Nunca é valor bloqueado, penhorado, transferido ou levantado (SISBAJUD, teimosinha, RENAJUD, penhora): esses vão em rec_credito.pedidos (valor_obtido) ou rec_credito.lancamentos. Não repita o valor da causa nem o valor original.",
     "- honorarios_sucumbencia: honorários de sucumbência fixados em sentença ou acórdão, só quando a decisão traz o valor em reais. Percentual sem valor não entra.",
     "- beneficio_economico: só quando alguma peça ou decisão declara expressamente o proveito ou benefício econômico, em reais.",
     "- data_distribuicao: data em que a ação foi distribuída ou protocolada (carimbo de protocolo, certidão de distribuição).",
@@ -657,22 +655,7 @@ export function sugestoesDaSintese(resultado: SinteseDosAutos, contexto: Context
       confianca: "media",
     });
   }
-  const objeto = limparTexto(resultado.objeto, 300);
-  if (objeto.length >= 10 && !estaPreenchido(contexto.valores.objeto)) {
-    sugestoes.push({
-      tipo: "campo",
-      campo: "objeto",
-      parteId: null,
-      item: "objeto",
-      chave: `campo:objeto:${documentoId}`,
-      resumo: `Objeto: ${objeto}`,
-      valor: { valor: objeto },
-      pagina: null,
-      trecho: null,
-      trechoConferido: true,
-      confianca: "media",
-    });
-  }
+  // O objeto é um campo de lista do VIOS: sem a lista em Cadastros, a IA não propõe (não inventa texto).
   return sugestoes;
 }
 
@@ -681,9 +664,12 @@ export function sugestoesDaSintese(resultado: SinteseDosAutos, contexto: Context
 const PESO_CONFIANCA: Record<Confianca, number> = { alta: 3, media: 2, baixa: 1 };
 
 /** Um campo recebe no máximo este número de propostas diferentes (as mais confiáveis, depois as das primeiras páginas). */
-const MAXIMO_POR_CAMPO = 3;
+const MAXIMO_POR_CAMPO = 1;
 
 /** Papéis em ordem de importância: a mesma pessoa pode aparecer como executada e como sócia. */
+/** Trecho que fala de constrição: o valor dele é bloqueio ou penhora, não o valor envolvido. */
+const TRECHO_DE_CONSTRICAO = /\b(bloque\w*|penhor\w*|sisbajud|bacenjud|teimosinha|renajud|levantamento|alvara|transferencia para conta judicial|constric\w*)\b/i;
+
 const ORDEM_DE_PAPEL: PapelLido[] = ["parte_passiva", "parte_ativa", "fiador", "avalista", "corresponsavel", "socio", "administrador", "representante", "advogado"];
 
 const ITEM_DO_PAPEL: Record<Exclude<PapelParte, "parte">, string> = {
@@ -799,6 +785,8 @@ export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLe
     const valor = coagirValor(item, bruto);
     if (valor === undefined || valor === null || Array.isArray(valor) || typeof valor === "boolean") continue;
     if (item.tipo === "valor" && Number(valor) <= 0) continue;
+    // Valor de bloqueio, penhora ou levantamento não é o valor em discussão: vai para os pedidos e lançamentos.
+    if (lido.campo === "valor_envolvido" && TRECHO_DE_CONSTRICAO.test(semAcento(lido.trecho ?? ""))) continue;
     incluir(lido, {
       tipo: "campo",
       campo: lido.campo,
@@ -963,7 +951,7 @@ export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLe
   for (const lista of porCampo.values()) {
     const nota = (item: SugestaoNova) => PESO_CONFIANCA[item.confianca] * 10 + (item.trechoConferido ? 5 : 0);
     lista.sort((a, b) => nota(b) - nota(a) || (a.pagina ?? Infinity) - (b.pagina ?? Infinity));
-    for (const sobra of lista.slice(UMA_PROPOSTA.has(lista[0].campo ?? "") ? 1 : MAXIMO_POR_CAMPO)) sugestoes.delete(sobra.chave);
+    for (const sobra of lista.slice(MAXIMO_POR_CAMPO)) sugestoes.delete(sobra.chave);
   }
 
   return [...sugestoes.values()].sort((a, b) => (a.pagina ?? Infinity) - (b.pagina ?? Infinity));

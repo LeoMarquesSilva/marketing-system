@@ -194,6 +194,8 @@ export interface ProcessoDetalhe {
   viosEditadoEm: string | null;
   /** A fila do VIOS está em modo simulado (padrão) ou gravando de verdade. */
   gravacaoSimulada: boolean;
+  /** Valor da ação atualizado pelo cálculo do TJSP, da distribuição até hoje (o do VIOS fica em `valores`). */
+  valorAcaoTjsp: { valor: number; desde: string; ate: string } | null;
 }
 
 export interface ExecucaoSync {

@@ -68,3 +68,13 @@ export async function importarIndicesTjsp(): Promise<ResultadoIndices> {
   }
   return { meses: indices.length, primeiro: indices[0]?.mes ?? null, ultimo: indices.at(-1)?.mes ?? null };
 }
+
+let emCache: { quando: number; tabela: TabelaTjsp | null; indicesAte: string | null } | null = null;
+
+/** A tabela do TJSP guardada por 10 minutos (a ficha calcula o valor da ação atualizado a cada abertura). */
+export async function tabelaTjspEmCache(): Promise<{ tabela: TabelaTjsp | null; indicesAte: string | null }> {
+  if (emCache && Date.now() - emCache.quando < 10 * 60_000) return emCache;
+  const [tabela, situacao] = await Promise.all([carregarTabelaTjsp(), situacaoDosIndices()]);
+  emCache = { quando: Date.now(), tabela: situacao.meses ? tabela : null, indicesAte: situacao.ultimoMes };
+  return emCache;
+}
