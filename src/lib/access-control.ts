@@ -10,6 +10,9 @@ import {
   canAccessGustavoContent,
   isGustavoContentPath,
 } from "@/lib/gustavo-content/access";
+import { CONTENT_CHOICES_PATH, canSeeContentChoices } from "@/lib/content-escolhas";
+import { CONTENT_SETTINGS_PATH } from "@/lib/content-generator/settings";
+import { isContentManager } from "@/lib/content-areas";
 
 export interface AccessSection {
   key: string; // rota base
@@ -484,6 +487,16 @@ export function canAccessPath(
 
   if (isDocumentarioPath(pathname)) {
     return hasDocumentarioAccess(profile);
+  }
+
+  // Escolhas da equipe: mesma regra do menu (Marketing, admin e líderes); a API recorta por área.
+  if (pathname === CONTENT_CHOICES_PATH) {
+    return canSeeContentChoices(profile);
+  }
+
+  // Configurações do Gerador de conteúdo: equipe de Marketing (admin, designer e área Marketing).
+  if (pathname === CONTENT_SETTINGS_PATH) {
+    return isContentManager(profile);
   }
 
   const isOperacoesLegaisRoute =

@@ -13,9 +13,13 @@ import {
   sendRoteiroToMarketing,
   linkRoteiroViosTask,
   updateRoteiroBoletimScore,
+  rejectRoteiro,
 } from "@/lib/content-roteiros";
+import { hasFollowupAlert, regenerateRoteiroPost, resolveFollowupAlerts } from "@/lib/content-generator/server";
 
 export const dynamic = "force-dynamic";
+// "Refazer com IA" lê a matéria e escreve o carrossel de novo (até ~1 min).
+export const maxDuration = 120;
 
 export async function GET(request: Request) {
   try {
@@ -31,7 +35,11 @@ export async function GET(request: Request) {
       const { data: item, error } = await db.from("content_roteiros").select("*").eq("id", contentId).maybeSingle();
       if (error) throw new Error("Não foi possível consultar o conteúdo.");
       if (!item) return NextResponse.json([], { status: 200 });
-      if (!canSeeContentRoteiro(auth.profile, { area: item.area, createdById: item.created_by_id })) return NextResponse.json({ error: "Sem permissão para este conteúdo." }, { status: 403 });
+      const canSee =
+        canSeeContentRoteiro(auth.profile, { area: item.area, createdById: item.created_by_id }) ||
+        // Quem recebeu o aviso de desdobramento abre a matéria mesmo sendo de outra área.
+        Boolean(auth.profile?.id && (await hasFollowupAlert(auth.profile.id, contentId)));
+      if (!canSee) return NextResponse.json({ error: "Sem permissão para este conteúdo." }, { status: 403 });
       return NextResponse.json([item]);
     }
     const status = searchParams.get("status") ?? undefined;
@@ -49,6 +57,7 @@ export async function GET(request: Request) {
       area: access.area,
       areas: access.areas ?? undefined,
       createdById: access.includeCreatedById,
+      lite: searchParams.get("lite") === "1",
     });
     return NextResponse.json(roteiros);
   } catch (err) {
@@ -99,7 +108,10 @@ export async function PATCH(request: Request) {
     ]);
     if (currentError) throw new Error("Não foi possível consultar o conteúdo.");
     if (!current) return NextResponse.json({ error: "Conteúdo não encontrado." }, { status: 404 });
-    if (!activeProfile || activeProfile.is_active === false || !canSeeContentRoteiro(auth.profile, { area: current.area, createdById: current.created_by_id })) {
+    const canAct =
+      canSeeContentRoteiro(auth.profile, { area: current.area, createdById: current.created_by_id }) ||
+      (await hasFollowupAlert(auth.profile.id, id));
+    if (!activeProfile || activeProfile.is_active === false || !canAct) {
       return NextResponse.json({ error: "Sem permissão para este conteúdo." }, { status: 403 });
     }
 
@@ -139,6 +151,16 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: true, ...result });
     }
 
+    // "Refazer com IA": reescreve com as regras e o aprendizado atuais + o pedido de quem revisa.
+    if (action === "regenerate") {
+      const instruction = (body as { instruction?: string | null }).instruction;
+      const result = await regenerateRoteiroPost(
+        id,
+        typeof instruction === "string" && instruction.trim() ? instruction.trim().slice(0, 500) : null,
+      );
+      return NextResponse.json({ success: true, ...result });
+    }
+
     // Envio ao marketing: cria card no Planner.
     if (action === "send_mkt") {
       const result = await sendRoteiroToMarketing(
@@ -160,6 +182,12 @@ export async function PATCH(request: Request) {
         { error: `status inválido.` },
         { status: 400 }
       );
+    }
+
+    // Descarte: guarda quem descartou e quando (antes ficava só o status).
+    if (status === "rejeitado") {
+      const rejected = await rejectRoteiro(id, { id: auth.profile.id, name: auth.profile.name });
+      return NextResponse.json({ success: true, ...rejected });
     }
 
     const approverId = current.approved_by_id ?? auth.profile.id;
@@ -198,6 +226,8 @@ export async function PATCH(request: Request) {
     let scheduleWarning: string | null = null;
     if (status === "em_revisao" || status === "aprovado") {
       if (!persistedApproval) throw new Error("Não foi possível confirmar a aprovação.");
+      // Matéria escolhida: os avisos de desdobramento dela estão resolvidos.
+      await resolveFollowupAlerts(current.id, "feito").catch(() => undefined);
       try {
         scheduleLink = await autoLinkContentSchedule({
           collaboratorId: persistedApproval.approved_by_id,

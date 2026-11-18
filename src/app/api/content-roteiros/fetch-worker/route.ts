@@ -19,18 +19,12 @@ export async function POST(request: Request) {
     const trigger = typeof body.trigger === "string" ? body.trigger : "manual";
     // Permite desligar a busca do artigo (texto/capa) em runs que precisam ser rápidos.
     const fetchArticle = body.fetchArticle === false ? false : true;
-    const maxCreated =
-      typeof body.maxCreated === "number"
-        ? body.maxCreated
-        : topicIds?.length === 1
-          ? 10
-          : 8;
-
+    // O volume vem do "Carrosséis por busca" das Configurações do módulo. O n8n ainda envia
+    // maxCreated (15) na busca diária; é ignorado para a tela ser o único controle.
     const result = await runFetchPipeline(topicIds, undefined, {
       monthsBack,
       limit,
       fetchArticle,
-      maxCreated,
       trigger,
     });
 

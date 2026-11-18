@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-interface GeneratedRoteiro {
+export interface GeneratedRoteiro {
   id: string;
   title: string;
   area: string;
@@ -21,6 +21,43 @@ interface GeneratedRoteiro {
  */
 export function ManualLinkCard({ onCreated }: { onCreated: () => void | Promise<void> }) {
   const [open, setOpen] = useState(false);
+
+  return (
+    <Card className="overflow-hidden">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-muted/30"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <div className="flex items-center gap-2">
+          <Link2 className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <span className="text-sm font-medium">Gerar post a partir de um link</span>
+        </div>
+        <ChevronDown
+          className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")}
+          aria-hidden
+        />
+      </button>
+
+      {open && (
+        <CardContent className="border-t px-5 pb-5 pt-4">
+          <ManualLinkForm onCreated={() => onCreated()} />
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+/** Formulário do link avulso (usado no modal "Gerar por link" da tela de Posts). */
+export function ManualLinkForm({
+  onCreated,
+  onOpen,
+}: {
+  onCreated: (roteiro: GeneratedRoteiro) => void | Promise<void>;
+  /** Abre o post recém-gerado (botão no aviso de sucesso). */
+  onOpen?: (id: string) => void;
+}) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,9 +84,10 @@ export function ManualLinkCard({ onCreated }: { onCreated: () => void | Promise<
       if (!response.ok) {
         throw new Error(payload.error ?? "Não foi possível gerar o post.");
       }
-      setResult(payload.roteiro as GeneratedRoteiro);
+      const created = payload.roteiro as GeneratedRoteiro;
+      setResult(created);
       setUrl("");
-      await onCreated();
+      await onCreated(created);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Não foi possível gerar o post.");
     } finally {
@@ -58,104 +96,76 @@ export function ManualLinkCard({ onCreated }: { onCreated: () => void | Promise<
   }
 
   return (
-    <Card className="overflow-hidden">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-muted/30"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-      >
-        <div className="flex items-center gap-2">
-          <Link2 className="h-4 w-4 text-muted-foreground" aria-hidden />
-          <span className="text-sm font-medium">Gerar post a partir de um link</span>
-        </div>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 text-muted-foreground transition-transform",
-            open && "rotate-180"
-          )}
-          aria-hidden
+    <div>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Cole o link de uma notícia. A IA lê a matéria, identifica a área do escritório e monta o
+        carrossel. O post entra como disponível, igual aos que vêm da busca, e fica registrado que
+        você trouxe a matéria. Se a área for outra, o post continua na sua lista porque você gerou.
+      </p>
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          type="url"
+          inputMode="url"
+          placeholder="https://… link da notícia"
+          aria-label="Link da notícia"
+          value={url}
+          disabled={busy}
+          onChange={(event) => setUrl(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !busy) void handleGenerate();
+          }}
         />
-      </button>
-
-      {open && (
-        <CardContent className="border-t px-5 pb-5 pt-0">
-          <p className="mb-4 mt-4 text-sm text-muted-foreground">
-            Cole o link de uma notícia. A IA lê a matéria, identifica a área do
-            escritório e monta o carrossel — o post entra como{" "}
-            <strong>aguardando aprovação</strong>, igual aos que vêm do RSS. Se
-            a área for outra, o post continua na sua lista porque você gerou.
-          </p>
-
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              type="url"
-              inputMode="url"
-              placeholder="https://… link da notícia"
-              aria-label="Link da notícia"
-              value={url}
-              disabled={busy}
-              onChange={(event) => setUrl(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !busy) void handleGenerate();
-              }}
-            />
-            <Button
-              onClick={() => void handleGenerate()}
-              disabled={busy || !url.trim()}
-              className="h-9 shrink-0 gap-2"
-            >
-              {busy ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  Gerando…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" aria-hidden />
-                  Gerar post
-                </>
-              )}
-            </Button>
-          </div>
-
-          {busy && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Lendo a matéria e escrevendo o carrossel. Pode levar até um minuto.
-            </p>
+        <Button onClick={() => void handleGenerate()} disabled={busy || !url.trim()} className="h-10 shrink-0 gap-2">
+          {busy ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Gerando…
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-4 w-4" aria-hidden />
+              Gerar post
+            </>
           )}
+        </Button>
+      </div>
 
-          {error && (
-            <p
-              role="alert"
-              className="mt-3 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900"
-            >
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              {error}
-            </p>
-          )}
-
-          {result && (
-            <div role="status" className="mt-4 rounded-md border border-emerald-200 bg-emerald-50/60 p-3">
-              <p className="text-sm font-medium text-emerald-900">Post gerado</p>
-              <dl className="mt-2 space-y-1 text-sm">
-                <div className="flex flex-wrap gap-x-2">
-                  <dt className="text-muted-foreground">Área detectada:</dt>
-                  <dd className="font-medium text-foreground">{result.area}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Título:</dt>
-                  <dd className="text-foreground">{result.title}</dd>
-                </div>
-              </dl>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Confira a área e o texto na lista abaixo antes de aprovar. O
-                post aparece para você mesmo se a área detectada for outra.
-              </p>
-            </div>
-          )}
-        </CardContent>
+      {busy && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Lendo a matéria e escrevendo o carrossel. Pode levar até um minuto.
+        </p>
       )}
-    </Card>
+
+      {error && (
+        <p role="alert" className="mt-3 flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          {error}
+        </p>
+      )}
+
+      {result && (
+        <div role="status" className="mt-4 rounded-md border border-emerald-200 bg-emerald-50/60 p-3">
+          <p className="text-sm font-medium text-emerald-900">Post gerado</p>
+          <dl className="mt-2 space-y-1 text-sm">
+            <div className="flex flex-wrap gap-x-2">
+              <dt className="text-muted-foreground">Área detectada:</dt>
+              <dd className="font-medium text-foreground">{result.area}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Título:</dt>
+              <dd className="text-foreground">{result.title}</dd>
+            </div>
+          </dl>
+          {onOpen ? (
+            <Button size="sm" className="mt-3" onClick={() => onOpen(result.id)}>
+              Abrir o post
+            </Button>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground">Confira a área e o texto na lista antes de escolher.</p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
