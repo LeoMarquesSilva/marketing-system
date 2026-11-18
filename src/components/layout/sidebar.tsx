@@ -18,6 +18,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HrNotificationsBell } from "@/components/rh/hr-notifications-bell";
 import { ContentScheduleNotificationsBell } from "@/components/conteudo/content-schedule-notifications-bell";
 import { ContentFollowupBell } from "@/components/conteudo/followup-alerts";
+import { DeliveryNoticesBell } from "@/components/planner/delivery-notices-bell";
 import { InstrucoesInstalacaoDialog, useInstalarApp } from "@/components/layout/instalar-app";
 
 type SidebarProps = {
@@ -356,6 +357,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
               <HrNotificationsBell />
               <ContentScheduleNotificationsBell />
               <ContentFollowupBell />
+              <DeliveryNoticesBell />
             </div>
             <div ref={profileMenuRef} className="relative" data-tour="profile-menu">
               {profile && (

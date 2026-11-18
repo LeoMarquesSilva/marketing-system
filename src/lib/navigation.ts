@@ -37,6 +37,7 @@ import {
   Network,
   Newspaper,
   Nfc,
+  PackageCheck,
   Palmtree,
   PartyPopper,
   PenLine,
@@ -92,6 +93,7 @@ import {
 import { isContentCollaborator, isContentManager } from "@/lib/content-areas";
 import { CONTENT_CHOICES_PATH, canSeeContentChoices } from "@/lib/content-escolhas";
 import { CONTENT_SETTINGS_PATH } from "@/lib/content-generator/settings";
+import { MY_DELIVERIES_PATH } from "@/lib/request-files/domain";
 import { canAccessGustavoContent } from "@/lib/gustavo-content/access";
 import {
   FACILITIES_ASSETS_PATH,
@@ -257,6 +259,15 @@ export const NAV_FRONTS: NavFront[] = [
         shortLabel: "Reels",
         icon: Clapperboard,
         pages: [{ href: REELS_APPROVAL_HREF, label: "Aprovação de Reels" }],
+      },
+      {
+        // O que o Marketing concluiu a partir dos pedidos da pessoa: arte em carrossel, sem aprovação.
+        // Aviso no sino quando a tarefa entra em "Concluído" no Planner.
+        id: "minhas-entregas",
+        label: "Minhas entregas",
+        shortLabel: "Entregas",
+        icon: PackageCheck,
+        pages: [{ href: MY_DELIVERIES_PATH, label: "Minhas entregas" }],
       },
       {
         id: "gerador-newsletter",
@@ -580,6 +591,7 @@ const EXTRA_HEADERS: Array<{ href: string; eyebrow: string; title: string; icon:
 export type NavProfile = AccessProfile & { department?: string | null };
 
 const ALWAYS_VISIBLE = new Set([
+  MY_DELIVERIES_PATH,
   "/pdi",
   "/minhas-fotos",
   "/fotos-eventos",
