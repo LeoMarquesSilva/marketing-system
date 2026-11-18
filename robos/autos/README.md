@@ -2,7 +2,7 @@
 
 Baixa os autos dos processos no tribunal e entrega o PDF ao ORQESTRAI, onde a IA lê e deixa sugestões para uma pessoa aprovar. Roda **fora da Vercel**, numa máquina do escritório, com Node e Playwright, ou num contêiner no servidor (Easypanel): veja [Servidor (Easypanel)](#servidor-easypanel).
 
-Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.ts`; endereços em `TRIBUNAIS_ESAJ`, em `esaj-urls.ts`) e **eproc do TJSP e do TJRJ** (`src/conectores/eproc.ts`; instalações e SSO em `TRIBUNAIS_EPROC`, em `eproc-urls.ts`). Os próximos (PJe, Projudi) entram em `src/conectores/`, um por sistema de tribunal.
+Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.ts`; endereços em `TRIBUNAIS_ESAJ`, em `esaj-urls.ts`) e **eproc do TJSP e do TJRJ** (`src/conectores/eproc.ts`; instalações e SSO em `TRIBUNAIS_EPROC`, em `eproc-urls.ts`). Os próximos (PJe, Projudi) entram em `src/conectores/`, um por sistema de tribunal. O **DCP** e o **PJe do TJRJ** têm rascunhos desligados e um modo de mapeamento: veja [DCP e PJe do TJRJ](#dcp-e-pje-do-tjrj-mapear-e-rascunhos).
 
 ## Como funciona
 
@@ -90,7 +90,7 @@ O TJRJ tem três sistemas, e o mesmo número CNJ (`…8.19.…`) pode estar em q
 - **PJe** (`tjrj.pje.jus.br`, login pelo SSO nacional da PDPJ), usado nas varas cíveis e juizados de 2019 a 2026.
 - **eproc** (`eproc1g.tjrj.jus.br` e `eproc2g.tjrj.jus.br`, login em `eproc-sso.tjrj.jus.br`): desde maio de 2026 recebe todo processo cível novo, e o tribunal está migrando para ele o acervo do DCP e do PJe, com o mesmo número CNJ (1,3 milhão de processos migrados em 18/11/2026). Os juizados cíveis entram de 10/12/2026 a 2027.
 
-Por isso o ORQESTRAI manda todo processo do TJRJ (cadastrado como "Próprio", PJe ou eproc) para o conector `eproc:TJRJ`. Se o processo ainda não migrou, a pesquisa do eproc não o acha e o pedido volta com erro dizendo que ele continua no DCP ou no PJe: anexe o PDF à mão. O robô ainda não entra no Portal de Serviços nem no PJe.
+Por isso o ORQESTRAI manda todo processo do TJRJ (cadastrado como "Próprio", PJe ou eproc) para o conector `eproc:TJRJ`. Se o processo ainda não migrou, a pesquisa do eproc não o acha e o pedido volta com erro dizendo que ele continua no DCP ou no PJe: anexe o PDF à mão. O robô ainda não baixa do Portal de Serviços nem do PJe: os conectores deles são rascunhos, à espera do mapeamento das telas (seção seguinte).
 
 - **Login:** o mesmo desenho do TJSP (SSO Keycloak com usuário e senha, ou "Certificado Digital"), com cadastro e senha próprios do advogado no TJRJ (`EPROC_TJRJ_*`). No caminho, o navegador passa pelo SSO nacional da PDPJ (`sso.cloud.pje.jus.br`), que redireciona sozinho para o SSO do TJRJ.
 - **2 fatores:** o eproc do TJRJ tem autenticação em dois fatores, como o do TJSP. Com o webhook configurado, o robô pede o código com `?sistema=eproc-tjrj` (o segredo do TOTP do TJRJ é outro); sem ele, ou se o webhook não conhecer esse sistema, a pessoa digita o código.
@@ -98,6 +98,38 @@ Por isso o ORQESTRAI manda todo processo do TJRJ (cadastrado como "Próprio", PJ
 - **Consulta pública:** existe, mas tem CAPTCHA (Cloudflare Turnstile). O robô não usa: entra sempre com a sessão do advogado.
 
 Para conferir: `npm run inspecionar -- eproc 0000000-00.0000.8.19.0000`. Para abrir só a sessão: `npm run login -- eproc TJRJ`.
+
+### DCP e PJe do TJRJ (mapear e rascunhos)
+
+Processos do TJRJ que ainda não migraram para o eproc estão no DCP ou no PJe. Os conectores desses dois sistemas são **rascunhos desligados**: `src/conectores/dcp-tjrj.ts` e `src/conectores/pje.ts`, com a parte sem navegador (e testes) em `dcp-tjrj-urls.ts` e `pje-urls.ts`. Eles não estão em `CONECTORES` (`src/index.ts`) nem em `CONECTORES_DISPONIVEIS` (`src/lib/processos/tribunais.ts`, no ORQESTRAI): ficam assim até as telas reais serem vistas. No código, o que ainda não foi visto está marcado como **SUPOSIÇÃO**.
+
+O que se sabe hoje (fontes públicas do tribunal, conferidas em 18/11/2026):
+
+| | DCP (Portal de Serviços) | PJe |
+|---|---|---|
+| Login | `www3.tjrj.jus.br/idserverjus-front` com `sgSist=PORTALSERVICOS`: usuário (geralmente o CPF) e senha, ou Certificado Digital (`www7.tjrj.jus.br/autenticadorCertDigital`). Duplo fator obrigatório para advogados; a tela carrega reCAPTCHA. | 1º grau: `tjrj.pje.jus.br/1g/login.seam` → SSO da PDPJ (`sso.cloud.pje.jus.br`): CPF/CNPJ e senha, "CERTIFICADO DIGITAL" (PJe Office) ou gov.br; código do Microsoft Authenticator. 2º grau: `tjrj.pje.jus.br/2g/login.seam`, login próprio (versão 2.1). |
+| Consulta | Menu "Consultas" > "Consultas Processuais" > aba "Por Número" → "Detalhes do Processo". | Aba "Consultar Processos" (ou "Processo" > "Consultar processo"), "Pesquisar", clicar no número: os "Autos Digitais" abrem em outra aba. |
+| Autos | "Processo Eletrônico – Novo Visualizador" > ícone "Baixar o Processo Atual em PDF" > "Salvar processo completo" (ou "Salvar documentos selecionados"). Processo volumoso só tem o Antigo Visualizador. | Ícone de download do processo, "por Id, Período ou todo o conteúdo"; download por documento; cabeçalho com "Segredo de justiça". |
+| Migrado para o eproc | Aviso com "Acessar eproc" / "Ir para o eproc". | "Processo migrado para o eproc, acesse-o através do link…"; peticionamento bloqueado. |
+
+Fontes: manual "Novo Visualizador de Processo Eletrônico" (VISPROCELET, TJRJ, 2021); manual do Portal de Serviços (TJRJ); flashcard "Processos Migrados do DCP para o eproc – Portal de Serviços" (TJRJ, v1.4); manual do usuário externo PJe Advogado/Parte (TJRJ, v1.4); "Manual de Novo Acesso ao PJe" (MFA, TJRJ); Dica de Sistema "Migração PJe x eproc" (TJRJ); manual do advogado do PJe (docs.pje.jus.br); telas públicas de login do IdServerJus e do PJe.
+
+**Mapear.** Antes de ligar os conectores, uma sessão com o advogado (ou quem tem o acesso dele):
+
+```bash
+npm run mapear -- dcp 0000000-00.0000.8.19.0000
+npm run mapear -- pje 0000000-00.0000.8.19.0000        # 1º grau; acrescente 2g para o 2º grau
+```
+
+1. Pare o robô, se estiver ligado (Ctrl+C na aba dele): o mapear usa o mesmo Chrome e o mesmo perfil, e recusa começar com o robô aberto. Ligue o robô de novo no fim.
+2. O Chrome do robô abre na tela de login. **A pessoa entra**, do jeito que preferir (senha, certificado, código do segundo fator, CAPTCHA). O robô não digita senha nem código e não resolve CAPTCHA: ele só percebe que a tela saiu do login. Se não perceber, a pessoa aperta Enter no terminal depois de entrar.
+3. O robô percorre a consulta sozinho: menu, pesquisa pelo número (o único texto que ele digita), resultado, processo, movimentos, visualizador ou autos digitais e as opções de download. Quando não acha o caminho, avisa no terminal ("MAPEAMENTO: …"): a pessoa faz aquele passo na janela e aperta Enter (ou digita `pular`).
+4. Cada tela vira captura (`.png`), HTML e um JSON com os controles (botões, links, campos, tabelas, quadros) em `diagnostico/`, com nomes `…mapa-dcp-03-pesquisa-por-numero…`. No fim, um resumo `mapa-<sistema>-00-resumo-….json` lista os passos.
+5. **Nada é baixado nem enviado.** Durante o mapa o download do navegador fica bloqueado, e o robô nunca clica no botão que conclui o download ("Download", "Salvar processo completo"…): no máximo abre a janela de opções para descrevê-la e cancela. Diálogos do tribunal depois do login (alerta de acesso, declaração) são registrados e cancelados, nunca confirmados.
+
+Se o processo já tiver migrado para o eproc, o mapa registra o aviso e para: o pedido dele vai pelo `eproc:TJRJ`.
+
+**Depois do mapa**, com as capturas: ajustar os seletores (`TELA` em cada rascunho) e as funções marcadas como SUPOSIÇÃO; para o DCP, criar o sistema "dcp" no ORQESTRAI (hoje o "Próprio" do TJRJ vira "outro" e vai ao eproc) e decidir o roteamento entre eproc, DCP e PJe; só então incluir os conectores em `CONECTORES` e em `CONECTORES_DISPONIVEIS`.
 
 ## Primeiro uso
 
@@ -155,13 +187,14 @@ O robô também roda num contêiner (`Dockerfile` nesta pasta), com o navegador 
 | `src/` | Código do robô. `conectores/esaj.ts` é o e-SAJ; `conectores/esaj-urls.ts` é a parte sem navegador, com testes (`npx vitest run robos` na raiz). | Sim |
 | `perfil/` | Perfil do Chrome do robô: sessão do tribunal e extensão Web Signer. | Não |
 | `downloads/` | PDF em trânsito; é apagado depois de subir ao ORQESTRAI. | Não |
-| `diagnostico/` | Capturas para ajustar o conector. | Não |
+| `diagnostico/` | Capturas para ajustar o conector, e os mapas do `npm run mapear`. | Não |
 | `.env` | Configuração e, no modo `senha`, a credencial do advogado. | Não |
 | `Dockerfile`, `docker/` | Imagem do servidor, script de início e exemplo de serviço. | Sim |
 | `docs/` | Estudo e guia do servidor (Easypanel). | Sim |
 
 ## Novo conector
 
-1. Crie `src/conectores/<sistema>.ts` implementando `Conector` (`src/conectores/tipos.ts`): `chave` no formato `sistema:TRIBUNAL`, `entrar` e `baixar`.
-2. Use `ambiente.aguardarPessoa(...)` em login, segundo fator e CAPTCHA, e lance `SegredoDeJustica` quando o processo for sigiloso e `pedido.segredoLiberado` for falso.
-3. Inclua o conector em `CONECTORES` (`src/index.ts`) e o tribunal em `CONECTORES_DISPONIVEIS` (`src/lib/processos/tribunais.ts`, no ORQESTRAI), que é o que libera o botão "Pedir ao robô" na ficha.
+1. Sistema que o robô nunca viu: comece pelo mapa (`npm run mapear`, seção [DCP e PJe do TJRJ](#dcp-e-pje-do-tjrj-mapear-e-rascunhos)); o roteiro de cada sistema fica no próprio conector (`mapearDcp`, `mapearPje`).
+2. Crie `src/conectores/<sistema>.ts` implementando `Conector` (`src/conectores/tipos.ts`): `chave` no formato `sistema:TRIBUNAL`, `entrar` e `baixar`.
+3. Use `ambiente.aguardarPessoa(...)` em login, segundo fator e CAPTCHA, e lance `SegredoDeJustica` quando o processo for sigiloso e `pedido.segredoLiberado` for falso.
+4. Inclua o conector em `CONECTORES` (`src/index.ts`) e o tribunal em `CONECTORES_DISPONIVEIS` (`src/lib/processos/tribunais.ts`, no ORQESTRAI), que é o que libera o botão "Pedir ao robô" na ficha.

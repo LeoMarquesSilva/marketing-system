@@ -4,10 +4,14 @@ import { setTimeout as dormir } from "node:timers/promises";
 import type { Page } from "playwright";
 import { FalhaDoCertificado, assinaturaDaFonte, diasParaVencer, lerCertificado, type CertificadoCliente } from "./certificado.ts";
 import { lerConfig, type Config } from "./config.ts";
+import { mapearDcp } from "./conectores/dcp-tjrj.ts";
 import { conectoresEproc } from "./conectores/eproc.ts";
 import { tribunalEprocDoCnj } from "./conectores/eproc-urls.ts";
 import { conectoresEsaj } from "./conectores/esaj.ts";
 import { lerCnj, nomeDoPdf, tribunalEsajDoCnj } from "./conectores/esaj-urls.ts";
+import { navegadorDoRoboAberto } from "./conectores/mapeamento.ts";
+import { lerPedidoDeMapa } from "./conectores/mapeamento-urls.ts";
+import { mapearPje } from "./conectores/pje.ts";
 import { EsperaEsgotada, FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from "./conectores/tipos.ts";
 import { Fila, PedidoEncerrado, type Pedido } from "./fila.ts";
 import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
@@ -23,9 +27,14 @@ import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
  *   npm run login -- eproc [TJRJ]  só abre a sessão do eproc (TJSP se não disser qual)
  *   npm run inspecionar -- <CNJ>   abre o processo e descreve a tela, sem baixar (com "eproc" antes do número, no eproc;
  *                                  o tribunal sai do número: 8.26 é o TJSP, 8.19 o TJRJ)
+ *   npm run mapear -- <dcp|pje> <CNJ> [2g]   sistema que o robô ainda não atende (DCP e PJe do TJRJ): abre o login,
+ *                                  espera a pessoa entrar e descreve cada tela da consulta em diagnostico/, sem baixar
  */
 
-/** Um conector por sistema e tribunal ("esaj:TJSP", "eproc:TJSP", "eproc:TJRJ"…). Os próximos (PJe, Projudi) entram aqui. */
+/**
+ * Um conector por sistema e tribunal ("esaj:TJSP", "eproc:TJSP", "eproc:TJRJ"…). Os próximos entram aqui. Os
+ * rascunhos do DCP e do PJe do TJRJ (dcp-tjrj.ts, pje.ts) ficam de fora até as telas reais serem mapeadas.
+ */
 const TODOS_OS_CONECTORES: Conector[] = [...conectoresEsaj, ...conectoresEproc];
 
 /**
@@ -55,7 +64,15 @@ function conectorDaLinhaDeComando(cnj?: string): Conector {
 }
 
 const argumentos = process.argv.slice(2);
-const modo = argumentos.includes("--login") ? "login" : argumentos.includes("--inspecionar") ? "inspecionar" : argumentos.includes("--uma-vez") ? "uma-vez" : "continuo";
+const modo = argumentos.includes("--login")
+  ? "login"
+  : argumentos.includes("--inspecionar")
+    ? "inspecionar"
+    : argumentos.includes("--mapear")
+      ? "mapear"
+      : argumentos.includes("--uma-vez")
+        ? "uma-vez"
+        : "continuo";
 
 function registrar(mensagem: string): void {
   console.log(`[${new Date().toLocaleTimeString("pt-BR")}] ${mensagem}`);
@@ -82,6 +99,14 @@ async function carregarCertificado(config: Config): Promise<CertificadoCliente |
 async function principal(): Promise<void> {
   const config = lerConfig();
   CONECTORES = conectoresDoRobo(config);
+  // O mapear confere os argumentos antes de abrir o navegador, e não divide o Chrome com o robô ligado.
+  const pedidoDeMapa = modo === "mapear" ? lerPedidoDeMapa(argumentos) : null;
+  if (typeof pedidoDeMapa === "string") throw new Error(pedidoDeMapa);
+  if (pedidoDeMapa && (await navegadorDoRoboAberto(config))) {
+    throw new Error(
+      "O Chrome do robô já está aberto (o robô está rodando em outro terminal). Pare o robô com Ctrl+C na aba dele antes de mapear e ligue de novo depois: os dois usariam a mesma janela."
+    );
+  }
   const fila = new Fila(config);
   // Sem certificado válido (o painel ainda não enviou, ou a senha não abre), o robô sobe assim mesmo: o login por
   // certificado fica com a pessoa e ele adota o certificado quando um válido chegar.
@@ -169,6 +194,17 @@ async function principal(): Promise<void> {
     if (!cnj) throw new Error("Informe o número do processo: npm run inspecionar -- 0000000-00.0000.8.26.0000 (ou -- eproc 0000000-00.0000.8.26.0000)");
     try {
       await conectorDaLinhaDeComando(cnj).inspecionar?.(ambientePara(null), cnj);
+    } finally {
+      await navegador.fechar();
+    }
+    return;
+  }
+
+  if (pedidoDeMapa) {
+    try {
+      const ambiente = ambientePara(null);
+      if (pedidoDeMapa.sistema === "dcp") await mapearDcp(ambiente, pedidoDeMapa.cnj);
+      else await mapearPje(ambiente, pedidoDeMapa.cnj, pedidoDeMapa.grau);
     } finally {
       await navegador.fechar();
     }
