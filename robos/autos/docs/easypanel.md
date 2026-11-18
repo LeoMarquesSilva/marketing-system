@@ -290,7 +290,7 @@ O servidor roda o robô em três serviços, do mesmo código e da mesma imagem, 
 - **TJRJ num serviço só:** o DCP devolve ao eproc do TJRJ o processo já migrado e usa a sessão do eproc. Separados, seriam dois logins do mesmo advogado no eproc do TJRJ.
 - **Cada serviço tem** o seu volume `/dados` (perfil do navegador e sessões), a sua tela remota (domínio próprio, com Basic Auth) e o seu `ROBO_NOME`. A pasta do certificado e a chave do robô são as mesmas nos três, montadas só leitura.
 - **Capas pelo DataJud:** só no `robo-autos-eproc-tjsp` (`CAPA_DATAJUD=sim` a partir da etapa 4); `nao` nos outros dois.
-- **Memória:** cada serviço tem o seu navegador: reserva de 1,5 GB e limite de 3 GB em cada um (de 4,5 a 9 GB no total). Confira a sobra do servidor antes de subir os três.
+- **Memória:** cada serviço tem o seu navegador: limite de 3 GB em cada um (até 9 GB no total, uso típico de 1 a 2 GB por serviço). Confira a sobra do servidor antes de subir os três.
 
 ### Migração do Mac para o servidor
 
@@ -357,11 +357,11 @@ Os três serviços são iguais, menos `ROBO_NOME`, `ROBO_CONECTORES`, `CAPA_DATA
    O segredo do TOTP **não** vai em variável: o robô lê o `segundo-fator.json` da mesma pasta do certificado. `ROBO_2FA_PASTA` só é preciso se o painel gravar o segredo em outra pasta. `NAVEGADOR_MODO`, `NAVEGADOR_CANAL`, `PASTA_DADOS`, `DISPLAY` e `TZ` já vêm do `Dockerfile`.
 3. **Mounts:**
    - **Volume** em `/dados` (perfil, PDFs em trânsito, diagnósticos), um por serviço;
-   - **Bind** de `/srv/robos/certificados` em `/certificados`, **só leitura**;
+   - **Bind** de `/srv/robos/certificados` em `/certificados` (o formulário do Easypanel 2.37 não tem opção de só leitura: o robô não escreve nessa pasta, e as permissões da pasta no servidor fazem o resto);
    - **File** em `/segredos/robo-certificado.key`, com o conteúdo de `robo-certificado.key`. O script de início copia para `/run/robo/certificado.key`, que só o `pwuser` lê, fora do volume.
 4. **Domains:** um domínio por serviço para a tela remota, HTTPS, porta **6080**; em Security, **Basic Auth** ligado, com usuário e senha diferentes da `VNC_SENHA`. O `TELA_REMOTA_URL` de cada serviço aponta para o domínio dele.
-5. **Resources:** por serviço, 1 a 2 vCPU, memória com reserva de 1,5 GB e limite de 3 GB ([Operação](#operação)).
-6. **Deploy:** 1 réplica, **sem** zero-downtime. Faça o deploy.
+5. **Resources:** por serviço, limite de 2 vCPU e 3 GB de memória, reserva 0 (uma reserva maior que a sobra do servidor impede o serviço de subir) ([Operação](#operação)).
+6. **Deploy:** 1 réplica, **sem** zero-downtime (aba Avançado; o Easypanel cria o serviço com ele ligado). **Antes do primeiro deploy**, ligue o Basic Auth do domínio (aba Segurança): sem ele, a tela remota fica protegida só pela `VNC_SENHA`.
 
 ### 4. Painel de robôs
 
