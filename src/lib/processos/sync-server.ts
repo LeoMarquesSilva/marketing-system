@@ -10,7 +10,7 @@ import { juntarFontes, lerCsvProcessos, lerEtiquetasSioe, registroDoSioe } from 
 import { chaveNome } from "./pessoas";
 import { listarEnvios } from "./processos-server";
 import { db, emLotes, falhou, gravacaoSimulada, type Ator } from "./server";
-import { chaveDaParte, estaNoRecorte, lerRecorte, mesclarComVios, type Recorte } from "./sincronizacao";
+import { chaveDaParte, estaNoRecorte, lerRecorte, mesclarComVios, poloDoDevedorDasPartes, type Recorte } from "./sincronizacao";
 import type { ExecucaoSync, ParteImportada, RegistroImportado, SituacaoImportacao } from "./types";
 
 const ENVIOS_ABERTOS = ["pendente", "enviado", "erro"];
@@ -59,15 +59,8 @@ function soGravaveis(valores: Valores): Valores {
   return saida;
 }
 
-/** Devedor de partida: quem está no polo oposto ao do cliente. Com o cliente como terceiro, alguém indica na ficha. */
-function poloDoDevedor(poloCliente: ValorCampo | undefined): string | null {
-  const texto = String(poloCliente ?? "").toLowerCase();
-  if (texto.includes("ativa")) return "passivo";
-  if (texto.includes("passiva")) return "ativo";
-  return null;
-}
 
-async function incluirPartes(porProcesso: Map<string, { partes: ParteImportada[]; poloCliente: ValorCampo | undefined }>): Promise<number> {
+async function incluirPartes(porProcesso: Map<string, { partes: ParteImportada[]; poloCliente: ValorCampo | undefined; cliente: ValorCampo | undefined }>): Promise<number> {
   const ids = [...porProcesso.keys()];
   const existentes = new Map<string, Set<string>>();
   for (const lote of emLotes(ids, 100)) {
@@ -83,9 +76,9 @@ async function incluirPartes(porProcesso: Map<string, { partes: ParteImportada[]
   }
   const pessoas: Record<string, unknown>[] = [];
   const partes: Record<string, unknown>[] = [];
-  for (const [processoId, { partes: importadas, poloCliente }] of porProcesso) {
+  for (const [processoId, { partes: importadas, poloCliente, cliente }] of porProcesso) {
     const chaves = existentes.get(processoId) ?? new Set<string>();
-    const devedor = poloDoDevedor(poloCliente);
+    const devedor = poloDoDevedorDasPartes(importadas, cliente, poloCliente);
     importadas.forEach((parte, ordem) => {
       const chave = chaveDaParte(parte.polo, parte.nome);
       if (chaves.has(chave)) return;
@@ -129,7 +122,7 @@ async function aplicar(registros: RegistroImportado[]): Promise<Pick<ResultadoSy
 
   const novos: Record<string, unknown>[] = [];
   const historico: Record<string, unknown>[] = [];
-  const partesPorProcesso = new Map<string, { partes: ParteImportada[]; poloCliente: ValorCampo | undefined }>();
+  const partesPorProcesso = new Map<string, { partes: ParteImportada[]; poloCliente: ValorCampo | undefined; cliente: ValorCampo | undefined }>();
   let atualizados = 0;
   let confirmados = 0;
 
@@ -142,7 +135,7 @@ async function aplicar(registros: RegistroImportado[]): Promise<Pick<ResultadoSy
       // Lote com as mesmas chaves em todas as linhas; lista ausente é lista vazia (colunas not null).
       for (const lista of LISTAS) linha[lista] ??= [];
       novos.push(linha);
-      if (registro.partes.length) partesPorProcesso.set(id, { partes: registro.partes, poloCliente: registro.valores.polo_cliente });
+      if (registro.partes.length) partesPorProcesso.set(id, { partes: registro.partes, poloCliente: registro.valores.polo_cliente, cliente: registro.valores.cliente });
       continue;
     }
     const id = atual.id as string;
@@ -166,7 +159,7 @@ async function aplicar(registros: RegistroImportado[]): Promise<Pick<ResultadoSy
       if (error) falhou("confirmar envios do VIOS", error);
       confirmados += resultado.confirmados.length;
     }
-    if (registro.partes.length) partesPorProcesso.set(id, { partes: registro.partes, poloCliente: registro.valores.polo_cliente });
+    if (registro.partes.length) partesPorProcesso.set(id, { partes: registro.partes, poloCliente: registro.valores.polo_cliente, cliente: registro.valores.cliente });
   }
 
   // Todas as linhas do lote com as mesmas colunas (o PostgREST exige): o que a fonte não trouxe vai nulo.

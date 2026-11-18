@@ -12,6 +12,7 @@ import {
   fatosParaSintese,
   juntarLeituras,
   leituraVazia,
+  mesmoNomeAbreviado,
   montarSugestoes,
   normalizarContato,
   normalizarNome,
@@ -512,5 +513,23 @@ describe("valor envolvido", () => {
   it("descarta o valor de um bloqueio", () => {
     const leitura = { ...leituraVazia(), campos: [{ campo: "valor_envolvido" as const, valor: "1364.98", pagina: 1, trecho: "Ciência às partes do bloqueio realizado no sistema SISBAJUD – teimosinha (R$ 1.364,98).", confianca: "alta" as const }] };
     expect(montarSugestoes(leitura, contexto(), ["Ciência às partes do bloqueio realizado no sistema SISBAJUD – teimosinha (R$ 1.364,98)."]).some((item) => item.campo === "valor_envolvido")).toBe(false);
+  });
+});
+
+describe("nome abreviado", () => {
+  it("reconhece o mesmo nome por extenso e abreviado", () => {
+    expect(mesmoNomeAbreviado("EXEMPLO COMERCIO E SERVICOS DE INSTALACAO DE FORROS E DIVISORIAS LTDA", "Exemplo Com e Serv de Instal de Forros e Divisórias Ltda Epp")).toBe(true);
+    expect(mesmoNomeAbreviado("Auto Peças Brasil Ltda", "Auto Peças Bahia Ltda")).toBe(false);
+    expect(mesmoNomeAbreviado("Comercial Silva", "Comercial Santos")).toBe(false);
+  });
+
+  it("dado de quem já está no processo vira complemento, não pessoa nova", () => {
+    const partes: Parte[] = [{ ...DEVEDOR, nome: "Exemplo Com e Serv de Instal de Forros Ltda Epp", documento: null }];
+    const paginas = ["EXEMPLO COMERCIO E SERVICOS DE INSTALACAO DE FORROS LTDA, inscrita no CNPJ 11.222.333/0001-81"];
+    const lido = leitura({
+      pessoas: [{ nome: "EXEMPLO COMERCIO E SERVICOS DE INSTALACAO DE FORROS LTDA", papel: "parte_passiva", referente_a: null, documento: "11.222.333/0001-81", oab: null, pagina: 1, trecho: paginas[0], confianca: "alta" }],
+    });
+    const sugestoes = montarSugestoes(lido, contexto({}, [CREDOR, ...partes]), paginas);
+    expect(sugestoes.map((item) => item.tipo)).toEqual(["parte_documento"]);
   });
 });

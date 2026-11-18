@@ -351,6 +351,25 @@ function poloDoCredor(partes: Parte[], poloCliente: unknown): PoloParte {
   return devedoresDoProcesso(partes, poloCliente)[0]?.polo === "ativo" ? "passivo" : "ativo";
 }
 
+const LIGACOES_DO_NOME = new Set(["DE", "DA", "DO", "DAS", "DOS", "E"]);
+
+/**
+ * O mesmo nome, um por extenso e o outro abreviado: "EXEMPLO COMERCIO E SERVICOS DE INSTALACAO DE FORROS" e
+ * "Exemplo Com e Serv de Instal de Forros Ltda Epp". Palavra a palavra (sem "de", "da"…), uma é o começo da
+ * outra; a primeira palavra tem de ser igual e as abreviações, de 3 letras ou mais.
+ */
+export function mesmoNomeAbreviado(a: string | null | undefined, b: string | null | undefined): boolean {
+  const palavras = (nome: string | null | undefined) => normalizarNome(nome).split(" ").filter((palavra) => palavra && !LIGACOES_DO_NOME.has(palavra));
+  const x = palavras(a);
+  const y = palavras(b);
+  if (x.length < 2 || x.length !== y.length || x[0] !== y[0]) return false;
+  return x.every((palavra, indice) => {
+    const outra = y[indice];
+    const [curta, longa] = palavra.length <= outra.length ? [palavra, outra] : [outra, palavra];
+    return curta === longa || (curta.length >= 3 && longa.startsWith(curta));
+  });
+}
+
 function acharParte(partes: Parte[], nome: string | null | undefined, documento?: string | null): Parte | undefined {
   const doc = chaveDoDocumento(documentoValido(documento));
   if (doc) {
@@ -361,7 +380,8 @@ function acharParte(partes: Parte[], nome: string | null | undefined, documento?
     if (daEmpresa) return daEmpresa;
   }
   const alvo = normalizarNome(nome);
-  return alvo.length < 3 ? undefined : partes.find((parte) => normalizarNome(parte.nome) === alvo);
+  if (alvo.length < 3) return undefined;
+  return partes.find((parte) => normalizarNome(parte.nome) === alvo) ?? partes.find((parte) => mesmoNomeAbreviado(parte.nome, nome));
 }
 
 /* ----------------------------------------------------------------- pedido à IA */
@@ -855,7 +875,10 @@ export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLe
     };
     // O mesmo advogado com o nome transcrito de dois jeitos: vale a OAB.
     const mesmaOab = oab ? [...novas].find(([, nova]) => chaveDaOab(nova.pessoa.oab) === chaveDaOab(oab))?.[0] : undefined;
-    const chave = mesmaOab ?? chaveDaNova(nome);
+    // A mesma pessoa com o nome escrito de outro jeito (abreviado, por extenso): vale o CPF/CNPJ, depois o nome.
+    const mesmoDocumento = documento ? [...novas].find(([, nova]) => chaveDoDocumento(nova.pessoa.documento) === chaveDoDocumento(documento))?.[0] : undefined;
+    const mesmoNome = [...novas].find(([, nova]) => mesmoNomeAbreviado(nova.pessoa.nome, nome))?.[0];
+    const chave = mesmaOab ?? mesmoDocumento ?? mesmoNome ?? chaveDaNova(nome);
     const anterior = novas.get(chave);
     if (!anterior) {
       novas.set(chave, { pessoa, origem: lida, papel: lida.papel });
@@ -876,7 +899,7 @@ export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLe
   // Endereços e contatos: de quem já está no processo (um por sugestão) ou junto da pessoa nova.
   // O mesmo endereço aparece várias vezes nos autos, com grafias diferentes: fica uma proposta por lugar, a mais completa.
   const enderecosPropostos = new Map<string, { endereco: EnderecoSugerido; origem: Origem }[]>();
-  const acharNova = (nome: string) => novas.get(chaveDaNova(nome));
+  const acharNova = (nome: string) => novas.get(chaveDaNova(nome)) ?? [...novas.values()].find((nova) => mesmoNomeAbreviado(nova.pessoa.nome, nome));
   for (const lido of leitura.enderecos) {
     const endereco = normalizarEndereco(lido);
     if (!endereco) continue;
@@ -936,7 +959,8 @@ export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLe
     incluir(origemDaPessoa, {
       tipo: "parte_nova",
       item: itemDaParte(pessoa, "nova"),
-      chave: `parte_nova:${chave}`,
+      // Com CPF/CNPJ, a proposta é a mesma em qualquer documento lido, ainda que o nome venha escrito de outro jeito.
+      chave: `parte_nova:${pessoa.documento ? `doc:${chaveDoDocumento(pessoa.documento)}` : chave}`,
       resumo: `${papel}${pessoa.referenteNome ? ` de ${pessoa.referenteNome}` : ""}: ${pessoa.nome}${complemento ? ` (${complemento})` : ""}`,
       valor: pessoa,
       deveConter: pessoa.documento ?? undefined,

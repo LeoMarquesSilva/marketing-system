@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calcularPreenchimento } from "./preenchimento";
-import { chaveDaParte, estaNoRecorte, lerRecorte, mesclarComVios } from "./sincronizacao";
+import { chaveDaParte, estaNoRecorte, lerRecorte, mesclarComVios, poloDoDevedorDasPartes } from "./sincronizacao";
 import type { Parte } from "./types";
 
 describe("mesclarComVios", () => {
@@ -135,5 +135,19 @@ describe("calcularPreenchimento", () => {
     const chaves = calcularPreenchimento({}, []).itens.map((item) => item.chave);
     expect(chaves.indexOf("parte_ativa")).toBe(chaves.indexOf("polo_cliente") + 1);
     expect(chaves[0]).toBe("ci");
+  });
+});
+
+describe("devedor ao trazer as partes", () => {
+  const partes = [
+    { polo: "ativo", nome: "Credora Exemplo Industria Ltda" },
+    { polo: "passivo", nome: "Devedora Exemplo Comercio Ltda" },
+  ];
+  it("o cliente é o credor, ainda que o polo do cliente venha trocado", () => {
+    expect(poloDoDevedorDasPartes(partes, "Credora Exemplo Industria Ltda", "Parte Passiva")).toBe("passivo");
+  });
+  it("sem a parte do cliente, vale o polo do cliente", () => {
+    expect(poloDoDevedorDasPartes(partes, "Outro Cliente SA", "Parte Ativa")).toBe("passivo");
+    expect(poloDoDevedorDasPartes(partes, null, "Parte Passiva")).toBe("ativo");
   });
 });

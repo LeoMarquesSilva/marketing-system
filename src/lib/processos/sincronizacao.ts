@@ -98,3 +98,31 @@ export function estaNoRecorte(valores: Valores, recorte: Recorte): boolean {
 export function chaveDaParte(polo: string, nome: string): string {
   return `${polo}|${normalizar(nome)}`;
 }
+
+/** Palavras do nome para comparar com o cliente: sem acento, pontuação nem ligações ("de", "e"…). */
+function palavrasDoNome(nome: string): string[] {
+  return normalizar(nome)
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(" ")
+    .filter((palavra) => palavra.length > 1 && !["de", "da", "do", "das", "dos", "e"].includes(palavra));
+}
+
+/**
+ * Polo do devedor ao trazer as partes do VIOS. Vale primeiro quem é o cliente: a parte com o nome do cliente é o
+ * credor e o devedor está no polo oposto (o "Polo do cliente" do VIOS às vezes vem trocado, num incidente ou
+ * recurso). Sem a parte do cliente na lista, vale o "Polo do cliente".
+ */
+export function poloDoDevedorDasPartes(partes: { polo: string; nome: string }[], cliente: unknown, poloCliente: unknown): "ativo" | "passivo" | null {
+  const doCliente = typeof cliente === "string" ? palavrasDoNome(cliente).slice(0, 2) : [];
+  if (doCliente.length === 2) {
+    const credor = partes.find((parte) => {
+      const palavras = palavrasDoNome(parte.nome);
+      return palavras[0] === doCliente[0] && palavras[1] === doCliente[1];
+    });
+    if (credor) return credor.polo === "ativo" ? "passivo" : "ativo";
+  }
+  const texto = String(poloCliente ?? "").toLowerCase();
+  if (texto.includes("ativa")) return "passivo";
+  if (texto.includes("passiva")) return "ativo";
+  return null;
+}
