@@ -175,7 +175,7 @@ O robô exige `formato`, `arquivo` (só o nome, na mesma pasta), `sha256` e `sen
 
 4. Manter o `.pfx` anterior até o robô adotar o novo (para voltar atrás, basta regravar o `certificado.json` antigo) e apagar os mais velhos, deixando no máximo dois.
 
-**Permissões:** pasta `0750` e arquivos `0640`, legíveis pelo usuário do robô (`pwuser` da imagem do Playwright; confira o número com `id pwuser` no console do serviço) e por mais ninguém além do painel. O robô não escreve nessa pasta.
+**Permissões:** pasta `0750` e arquivos `0640`, do usuário e grupo do painel (`1000`). O robô lê porque o script de início põe o `pwuser` no grupo da pasta; ninguém mais lê. O robô não escreve nessa pasta.
 
 ### Aviso de vencimento
 
@@ -248,13 +248,13 @@ O robô exige `formato` e `sistemas`, e de cada sistema só `segredo_cifrado`. O
 
 ### Tela de configuração no painel
 
-O que o painel precisa ter (o código do painel está fora deste repositório):
+O que o painel tem (o código está no repositório do painel, fora deste):
 
 - **Acesso:** só usuários com papel de administrador do robô de autos. Os demais não veem a tela nem as rotas (conferir no servidor, não só esconder o menu).
 - **Certificado A1:** upload do `.pfx`/`.p12` e campo de senha (`type=password`, `autocomplete=off`); botão "Validar e salvar" ([validação](#validação-no-servidor-do-painel-antes-de-gravar)). Mostra titular, emissor, validade, quem enviou e quando. Nunca mostra a senha.
 - **Segredo do 2FA, um bloco por sistema** (eproc TJSP, eproc TJRJ): campo do segredo (`type=password`, `autocomplete=off`, sem botão de "mostrar"), campo do código atual do aplicativo (conferência), botões "Salvar" e "Remover". Mostra só "configurado em … por …" ou "não configurado".
 - **Registro de alterações:** cada troca grava quem, quando e o quê ("certificado trocado", "segredo do eproc-tjrj trocado", "segredo do eproc removido"), sem valor nenhum, nem hash. Fica visível na própria tela.
-- **No servidor do painel:** HTTPS; proteção contra CSRF nos formulários; limite de tentativas; corpo da requisição fora dos logs de acesso; a chave pública do robô numa variável (`ROBO_CERTIFICADO_CHAVE_PUBLICA`); a chave privada **nunca** no painel.
+- **No servidor do painel:** HTTPS (proxy do Easypanel); envio só em JSON, com cabeçalho próprio e da mesma origem (contra envio de outro site com a senha guardada no navegador); atraso a cada senha errada; corpo da requisição fora dos logs; a chave pública do robô numa variável (`ROBO_CERTIFICADO_CHAVE_PUBLICA`); a chave privada **nunca** no painel.
 
 ## Rede e destino
 
@@ -325,10 +325,11 @@ Gerada por quem administra o servidor, fora do repositório ([comandos](#chave-d
 
 ```bash
 sudo mkdir -p /srv/robos/certificados
+sudo chown 1000:1000 /srv/robos/certificados
 sudo chmod 0750 /srv/robos/certificados
 ```
 
-Dono: o usuário com que o painel grava; grupo: um grupo que inclua o `pwuser` do robô (número com `id pwuser` no console do serviço do robô). Arquivos `0640`. Fora dos backups do volume `/dados`.
+Dono e grupo: `1000`, o usuário `node` com que o painel grava (imagem `node:22-alpine`). O painel grava os arquivos com `0640`; o script de início do robô põe o `pwuser` no grupo da pasta (o `1000`) antes de rodar o robô, e assim ele lê sem a pasta ficar aberta para todos. Fora dos backups do volume `/dados`.
 
 ### 3. Serviços do robô (App), um por linha da [tabela](#três-serviços-no-projeto-bibliotecabp)
 
@@ -365,9 +366,16 @@ Os três serviços são iguais, menos `ROBO_NOME`, `ROBO_CONECTORES`, `CAPA_DATA
 
 ### 4. Painel de robôs
 
-1. O mesmo **Bind** de `/srv/robos/certificados`, com leitura e escrita, no caminho que o painel usar.
-2. Variável `ROBO_CERTIFICADO_CHAVE_PUBLICA` com o conteúdo de `robo-certificado.pub` (não é segredo).
-3. Deploy da versão do painel com a [tela de configuração](#tela-de-configuração-no-painel).
+A tela de configuração está no repositório do painel (`painel/config.js` e `painel/config.html`, rota `/config`). No serviço `painel-robos`:
+
+1. **Bind** de `/srv/robos/certificados` em `/robos-autos` (leitura e escrita).
+2. **Variáveis:**
+   - `ROBO_AUTOS_PASTA=/robos-autos`;
+   - `ROBO_CERTIFICADO_CHAVE_PUBLICA`: o conteúdo de `robo-certificado.pub` (não é segredo), ou o mesmo em base64 (`base64 < robo-certificado.pub | tr -d '\n'`), que cabe numa linha;
+   - `PAINEL_ADMINS`: quem pode trocar certificado e segredos, cada um como `usuario=scrypt:…`, separados por vírgula. A linha de cada pessoa sai de `node painel/senha-admin.js <usuario>`, rodado por ela no próprio computador (a senha não aparece na tela e não fica em lugar nenhum; só o hash vai para a variável).
+3. Deploy do painel. Sem as três variáveis, `/config` responde que a área está desligada e o painel de leitura segue igual.
+
+A área usa um login próprio (o de `PAINEL_ADMINS`, não o do painel de leitura), e é esse usuário que fica no registro de alterações.
 
 ### 5. Certificado e segredos pelo painel
 

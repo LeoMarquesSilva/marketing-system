@@ -22,6 +22,19 @@ if [ "$(id -u)" = "0" ]; then
     install -o pwuser -g pwuser -m 0400 "$CERTIFICADO_CHAVE_PRIVADA_ARQUIVO" /run/robo/certificado.key
     export CERTIFICADO_CHAVE_PRIVADA_ARQUIVO=/run/robo/certificado.key
   fi
+  # O painel de robôs grava o certificado e os segredos com o grupo dele e permissão 0640. O pwuser entra nesse
+  # grupo (o da pasta compartilhada) para ler, sem a pasta precisar ficar aberta para todos.
+  for pasta_painel in "${CERTIFICADO_PASTA:-}" "${ROBO_2FA_PASTA:-}"; do
+    [ -n "$pasta_painel" ] && [ -d "$pasta_painel" ] || continue
+    gid="$(stat -c %g "$pasta_painel")"
+    [ "$gid" != "0" ] || continue
+    grupo="$(getent group "$gid" | cut -d: -f1)"
+    if [ -z "$grupo" ]; then
+      grupo=painel-robos
+      groupadd -g "$gid" "$grupo"
+    fi
+    usermod -aG "$grupo" pwuser
+  done
   export HOME=/home/pwuser
   exec setpriv --reuid=pwuser --regid=pwuser --init-groups "$0" "$@"
 fi
