@@ -2,12 +2,12 @@ import "server-only";
 
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { COLUNAS_PEDIDO, paraPedido, pecasBaixadas, prepararUpload, registrarDocumento } from "./autos-server";
+import { COLUNAS_PEDIDO, jaVeioDoEproc, paraPedido, pecasBaixadas, prepararUpload, registrarDocumento } from "./autos-server";
 import { MOTIVOS_ESPERA, TAMANHO_MAXIMO_AUTOS, type DocumentoAutos, type PedidoAutos } from "./autos-types";
 import { ProcessosError } from "./errors";
 import { registrarNoHistorico } from "./processos-server";
 import { db, falhou } from "./server";
-import { ROTULO_SISTEMA, type SistemaTribunal } from "./tribunais";
+import { ROTULO_SISTEMA, roboPeloJusbr, type SistemaTribunal } from "./tribunais";
 
 /**
  * O lado do servidor da fila do robô de autos (robos/autos). O robô roda fora da Vercel e fala só com
@@ -40,8 +40,19 @@ function validar<T>(esquema: z.ZodType<T>, entrada: unknown): T {
   return lido.data;
 }
 
-/** O pedido como o robô recebe: no eproc, com as peças já baixadas (ele traz só as novas). */
-export type PedidoParaRobo = PedidoAutos & { pecasBaixadas: string[] };
+/**
+ * O pedido como o robô recebe: com as peças já baixadas (ele traz só as novas) e, no pedido ao Jus.br, a reserva
+ * (o conector do tribunal, "eproc:TJSP"), que o robô usa quando o Jus.br não traz os autos.
+ */
+export type PedidoParaRobo = PedidoAutos & { pecasBaixadas: string[]; reserva: string | null };
+
+/** O conector do tribunal para o pedido ao Jus.br (o mesmo que atenderia o processo sem o Jus.br). */
+async function reservaDoPedido(pedido: PedidoAutos): Promise<string | null> {
+  if (pedido.sistema !== "jusbr") return null;
+  const { data } = await db().from("proc_processos").select("sistema_tribunal").eq("id", pedido.processoId).maybeSingle();
+  const robo = roboPeloJusbr(pedido.cnj, (await jaVeioDoEproc(pedido.processoId)) ? "eproc" : ((data?.sistema_tribunal as string | null) ?? null));
+  return robo.reserva;
+}
 
 /** Entrega ao robô o pedido mais antigo que ele sabe atender e o marca como "em andamento". */
 export async function proximoPedido(entrada: unknown): Promise<PedidoParaRobo | null> {
@@ -57,7 +68,8 @@ export async function proximoPedido(entrada: unknown): Promise<PedidoParaRobo | 
   const agora = Date.now();
   for (const linha of (data ?? []) as Record<string, unknown>[]) {
     const pedido = paraPedido(linha);
-    if (!aceitos.has(`${pedido.sistema}:${pedido.tribunal}`)) continue;
+    // O Jus.br atende todos os tribunais: o robô o anuncia como "jusbr:BR".
+    if (!aceitos.has(pedido.sistema === "jusbr" ? "jusbr:BR" : `${pedido.sistema}:${pedido.tribunal}`)) continue;
     const parado = agora - new Date(pedido.atualizadoEm).getTime();
     const livre =
       pedido.status === "pendente" ||
@@ -77,11 +89,14 @@ export async function proximoPedido(entrada: unknown): Promise<PedidoParaRobo | 
     if (tomado?.length) {
       const reservado = paraPedido(tomado[0] as Record<string, unknown>);
       // Peças já baixadas do processo (eproc: "evento:nome"; e-SAJ: "esaj:texto do documento"): o robô traz só as novas.
-      return { ...reservado, pecasBaixadas: await pecasBaixadas(reservado.processoId) };
+      return { ...reservado, pecasBaixadas: await pecasBaixadas(reservado.processoId), reserva: await reservaDoPedido(reservado) };
     }
   }
   return null;
 }
+
+/** Sistemas que podem constar como "quem atendeu" o pedido na entrega. */
+const SISTEMAS_DE_ENTREGA = ["eproc", "esaj", "pje", "dcp", "jusbr"] as const;
 
 const esquemaAtualizacao = z.discriminatedUnion("acao", [
   /** O robô parou e espera uma pessoa: login, segundo fator, CAPTCHA ou segredo de justiça sem liberação. */
@@ -94,19 +109,24 @@ const esquemaAtualizacao = z.discriminatedUnion("acao", [
     acao: z.literal("concluir"),
     path: z.string().trim().min(1).max(500),
     nome: z.string().trim().min(1).max(200),
-    /** As peças que vieram neste PDF (eproc: "evento:nome"; e-SAJ e DCP: o rótulo do índice). */
+    /** As peças que vieram neste PDF (eproc: "evento:nome"; e-SAJ e DCP: o rótulo do índice; Jus.br: "jusbr:…"). */
     pecas: z.array(z.string().trim().min(1).max(300)).max(5000).optional(),
-    /** O pedido ao DCP do TJRJ acabou atendido pelo eproc (processo migrado): os próximos vão direto ao eproc. */
-    sistema: z.literal("eproc").optional(),
+    /** Processo grande em partes (Jus.br): os outros PDFs, já enviados, cada um com as suas peças. */
+    outrasPartes: z
+      .array(z.object({ path: z.string().trim().min(1).max(500), nome: z.string().trim().min(1).max(200), pecas: z.array(z.string().trim().min(1).max(300)).max(5000).optional() }))
+      .max(19)
+      .optional(),
+    /** O pedido acabou atendido por outro sistema: o DCP seguiu pelo eproc, ou o Jus.br pelo robô do tribunal. */
+    sistema: z.enum(SISTEMAS_DE_ENTREGA).optional(),
   }),
   /** O robô conferiu os autos e não há peça nova desde o último download. */
-  z.object({ acao: z.literal("sem_novidades"), sistema: z.literal("eproc").optional() }),
+  z.object({ acao: z.literal("sem_novidades"), sistema: z.enum(SISTEMAS_DE_ENTREGA).optional() }),
 ]);
 
 export type RespostaDoRobo =
   | { pedido: PedidoAutos }
   | { pedido: PedidoAutos; upload: { supabaseUrl: string; anonKey: string; bucket: string; path: string; token: string } }
-  | { pedido: PedidoAutos; documento: DocumentoAutos };
+  | { pedido: PedidoAutos; documento: DocumentoAutos; documentos: DocumentoAutos[] };
 
 async function carregarPedidoDoRobo(pedidoId: string): Promise<PedidoAutos> {
   if (!/^[0-9a-f-]{36}$/i.test(pedidoId)) throw new ProcessosError("Pedido não encontrado.", 404);
@@ -152,14 +172,19 @@ export async function atualizarPedidoDoRobo(pedidoId: string, entrada: unknown):
       };
     }
     case "concluir": {
-      const documento = await registrarDocumento(pedido.processoId, { path: dados.path, nome: dados.nome }, { origem: "robo", pedidoId: pedido.id, robo: pedido.robo });
-      if (dados.pecas?.length) {
-        const { error } = await db().from("proc_documentos").update({ pecas: dados.pecas }).eq("id", documento.id);
-        if (error) falhou("registrar as peças do documento", error);
+      const documentos: DocumentoAutos[] = [];
+      for (const parte of [{ path: dados.path, nome: dados.nome, pecas: dados.pecas }, ...(dados.outrasPartes ?? [])]) {
+        const documento = await registrarDocumento(pedido.processoId, { path: parte.path, nome: parte.nome }, { origem: "robo", pedidoId: pedido.id, robo: pedido.robo });
+        if (parte.pecas?.length) {
+          const { error } = await db().from("proc_documentos").update({ pecas: parte.pecas }).eq("id", documento.id);
+          if (error) falhou("registrar as peças do documento", error);
+        }
+        documentos.push(documento);
       }
       return {
         pedido: await mudar(pedido, { status: "concluido", motivo_espera: null, erro: null, concluido_em: new Date().toISOString(), ...(dados.sistema ? { sistema: dados.sistema } : {}) }),
-        documento,
+        documento: documentos[0],
+        documentos,
       };
     }
     case "sem_novidades": {

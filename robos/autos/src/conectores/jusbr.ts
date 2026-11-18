@@ -13,7 +13,6 @@ import {
   motivoDaResposta,
   textoParaPdf,
   urlDaApi,
-  chaveDoDocumentoJusbr,
   type DocumentoJusbr,
   type FichaJusbr,
 } from "./jusbr-urls.ts";
@@ -24,6 +23,8 @@ const SISTEMA = "Jus.br (Portal de Serviços do CNJ)";
 /** Intervalo entre os documentos: o Jus.br é um serviço nacional e o robô não deve martelar. */
 const INTERVALO_MS = 250;
 const TENTATIVAS = 3;
+/** Conteúdo de origem por parte do PDF (o arquivo final fica abaixo dos 200 MB que o ORQESTRAI aceita). */
+const LIMITE_PARTE_BYTES = (Number(process.env.JUSBR_PARTE_MB) > 0 ? Number(process.env.JUSBR_PARTE_MB) : 80) * 1024 * 1024;
 
 /**
  * PROTÓTIPO (18/11/2026), fora da fila: um conector único pelo Jus.br, para qualquer tribunal integrado à PDPJ.
@@ -92,7 +93,18 @@ export class ConectorJusbr implements Conector {
   private async get(ambiente: Ambiente, digitos: string, url: string, semSeguir = false): Promise<APIResponse> {
     for (let tentativa = 1; tentativa <= TENTATIVAS; tentativa += 1) {
       if (!this.autorizacao) await this.buscarPelaTela(ambiente, digitos);
-      const resposta = await ambiente.contexto.request.get(url, { headers: { authorization: this.autorizacao ?? "" }, timeout: 120_000, ...(semSeguir ? { maxRedirects: 0 } : {}) });
+      let resposta: APIResponse;
+      try {
+        resposta = await ambiente.contexto.request.get(url, { headers: { authorization: this.autorizacao ?? "" }, timeout: 120_000, ...(semSeguir ? { maxRedirects: 0 } : {}) });
+      } catch (erro) {
+        // Rede fora (sem DNS, conexão caída, tempo esgotado): espera e tenta de novo; persistindo, o pedido falha
+        // inteiro e volta para a fila (nunca sai um PDF parcial por queda de rede).
+        if (tentativa < TENTATIVAS) {
+          await new Promise((r) => setTimeout(r, 10_000 * tentativa));
+          continue;
+        }
+        throw new FalhaDoConector(`A conexão com o ${SISTEMA} caiu (${erro instanceof Error ? erro.message.split("\n")[0].slice(0, 80) : "erro de rede"}). O pedido volta para a fila.`);
+      }
       if (resposta.status() === 401) {
         this.autorizacao = null;
         continue;
@@ -143,34 +155,38 @@ export class ConectorJusbr implements Conector {
       }
       return null;
     } catch (erro) {
+      // Queda de rede não vira "peça sem arquivo": o pedido inteiro falha e volta para a fila.
+      if (erro instanceof FalhaDoConector) throw erro;
       ambiente.registrar(`Jus.br: o arquivo de "${documento.nome ?? "documento"}" falhou (${erro instanceof Error ? erro.message.split("\n")[0].slice(0, 80) : "erro"}); usa o texto.`);
       return null;
     }
   }
 
   /** Acrescenta o documento ao PDF: o próprio PDF, ou o texto extraído (o que não é PDF, como HTML ou vídeo). */
-  private async acrescentar(ambiente: Ambiente, digitos: string, saida: PDFDocument, documento: DocumentoJusbr): Promise<"pdf" | "texto" | "falhou"> {
+  private async acrescentar(ambiente: Ambiente, digitos: string, saida: PDFDocument, documento: DocumentoJusbr): Promise<{ como: "pdf" | "texto" | "falhou"; bytes: number }> {
     const pdf = await this.arquivoEmPdf(ambiente, digitos, documento);
     if (pdf) {
       try {
         const origem = await PDFDocument.load(pdf, { ignoreEncryption: true });
         const paginas = await saida.copyPages(origem, origem.getPageIndices());
         for (const pagina of paginas) saida.addPage(pagina);
-        return "pdf";
+        return { como: "pdf", bytes: pdf.length };
       } catch {
         // PDF corrompido: cai para o texto.
       }
     }
-    if (!documento.hrefTexto) return "falhou";
+    const falhou = { como: "falhou" as const, bytes: 0 };
+    if (!documento.hrefTexto) return falhou;
     let texto: string;
     try {
       const resposta = await this.get(ambiente, digitos, urlDaApi(documento.hrefTexto));
-      if (!resposta.ok()) return "falhou";
+      if (!resposta.ok()) return falhou;
       texto = textoParaPdf(await resposta.text());
-    } catch {
-      return "falhou";
+    } catch (erro) {
+      if (erro instanceof FalhaDoConector) throw erro;
+      return falhou;
     }
-    if (!texto.trim()) return "falhou";
+    if (!texto.trim()) return falhou;
     this.fonte ??= await saida.embedFont(StandardFonts.Helvetica);
     const titulo = textoParaPdf(`${documento.sequencia ?? ""} - ${documento.nome ?? documento.tipo?.nome ?? "Documento"} (${(documento.dataHoraJuntada ?? "").slice(0, 10)})`);
     const linhas = [titulo, "", ...texto.split("\n").flatMap((linha) => linha.match(/.{1,95}(\s|$)|\S+/g) ?? [""])];
@@ -178,7 +194,7 @@ export class ConectorJusbr implements Conector {
       const pagina = saida.addPage([595, 842]);
       linhas.slice(i, i + 55).forEach((linha, n) => pagina.drawText(linha, { x: 40, y: 800 - n * 13.5, size: 10, font: this.fonte!, color: rgb(0, 0, 0) }));
     }
-    return "texto";
+    return { como: "texto", bytes: texto.length };
   }
 
   async baixar(ambiente: Ambiente, pedido: Pedido, destino: string): Promise<ResultadoDoDownload> {
@@ -192,21 +208,39 @@ export class ConectorJusbr implements Conector {
       return { semNovidades: true };
     }
     ambiente.registrar(`${novos.length} documentos ${novos.length < documentos.length ? `novos de ${documentos.length} ` : ""}no Jus.br (${fichas.map((f) => f.siglaTribunal).join(", ")}). Baixando um a um.`);
-    const saida = await PDFDocument.create();
+    // Processo grande sai em partes (o ORQESTRAI aceita até 200 MB por arquivo): cada parte fecha perto de
+    // LIMITE_PARTE_BYTES de conteúdo de origem. A primeira parte é o `destino`; as outras, "<destino>-parte2.pdf"…
+    const partes: { caminho: string; pecas: string[]; paginas: number }[] = [];
+    let saida = await PDFDocument.create();
+    let pecasDaParte: string[] = [];
+    let bytesDaParte = 0;
     this.fonte = null;
-    const vieram: string[] = [];
+    const fecharParte = async () => {
+      if (!saida.getPageCount()) return;
+      const caminho = partes.length ? destino.replace(/\.pdf$/i, `-parte${partes.length + 1}.pdf`) : destino;
+      await writeFile(caminho, await saida.save());
+      await conferirPdf(caminho);
+      partes.push({ caminho, pecas: pecasDaParte, paginas: saida.getPageCount() });
+      saida = await PDFDocument.create();
+      this.fonte = null;
+      pecasDaParte = [];
+      bytesDaParte = 0;
+    };
     const contagem = { pdf: 0, texto: 0, falhou: 0 };
     for (const documento of novos) {
-      const como = await this.acrescentar(ambiente, digitos, saida, documento);
+      const { como, bytes } = await this.acrescentar(ambiente, digitos, saida, documento);
       contagem[como] += 1;
-      if (como !== "falhou") vieram.push(chaveDoDocumentoJusbr(documento) ?? "");
+      if (como !== "falhou") pecasDaParte.push(documento.chave);
+      bytesDaParte += bytes;
+      if (bytesDaParte >= LIMITE_PARTE_BYTES) await fecharParte();
       await new Promise((r) => setTimeout(r, INTERVALO_MS));
     }
-    if (!saida.getPageCount()) throw new FalhaDoConector(`${pedido.cnj}: nenhum documento do Jus.br pôde ser baixado.`);
-    await writeFile(destino, await saida.save());
-    await conferirPdf(destino);
-    ambiente.registrar(`Jus.br: ${contagem.pdf} em PDF, ${contagem.texto} pelo texto, ${contagem.falhou} sem arquivo; ${saida.getPageCount()} páginas.`);
-    return { pecas: vieram.filter(Boolean) };
+    await fecharParte();
+    if (!partes.length) throw new FalhaDoConector(`${pedido.cnj}: nenhum documento do Jus.br pôde ser baixado.`);
+    const paginas = partes.reduce((total, parte) => total + parte.paginas, 0);
+    ambiente.registrar(`Jus.br: ${contagem.pdf} em PDF, ${contagem.texto} pelo texto, ${contagem.falhou} sem arquivo; ${paginas} páginas${partes.length > 1 ? ` em ${partes.length} partes` : ""}.`);
+    const pecas = partes.flatMap((parte) => parte.pecas);
+    return partes.length > 1 ? { pecas, arquivos: partes.map(({ caminho, pecas: daParte }) => ({ caminho, pecas: daParte })) } : { pecas };
   }
 
   async inspecionar(ambiente: Ambiente, cnj: string): Promise<void> {

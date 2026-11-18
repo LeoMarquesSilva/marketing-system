@@ -56,27 +56,42 @@ export interface FichaJusbr {
   tramitacoes?: TramitacaoJusbr[];
 }
 
-/** Identidade de um documento: o id do Codex (base nacional), senão o da origem, senão o link do arquivo. */
-export function chaveDoDocumentoJusbr(documento: DocumentoJusbr): string | null {
-  const id = documento.idCodex ?? documento.idOrigem ?? documento.hrefBinario;
-  return id === undefined || id === null || id === "" ? null : `jusbr:${id}`;
+export interface DocumentoComChave extends DocumentoJusbr {
+  /** "jusbr:<juntada>|<nome>|<n>": igual para a cópia do mesmo documento em outra tramitação (1º e 2º grau). */
+  chave: string;
+}
+
+/** Nome e momento da juntada: o que identifica o mesmo documento copiado de uma tramitação para outra. */
+function identidade(documento: DocumentoJusbr): string {
+  const nome = (documento.nome ?? documento.tipo?.nome ?? "").normalize("NFC").replace(/\s+/g, " ").trim().slice(0, 180);
+  return `${(documento.dataHoraJuntada ?? "").slice(0, 19)}|${nome}`;
 }
 
 /**
  * Todos os documentos da ficha (tramitação atual e as outras, como 1º e 2º grau ou o sistema antigo de um processo
- * migrado), sem repetir, na ordem de juntada. Só os que têm arquivo ou texto.
+ * migrado), na ordem de juntada, só os que têm arquivo ou texto. O 2º grau repete os documentos do 1º com outro id
+ * (visto no TRT15 em 18/11/2026: 99 dos 100 eram cópias): entre tramitações, o mesmo nome e momento de juntada é o
+ * mesmo documento e entra uma vez. Dentro de uma tramitação, tudo entra (dois anexos podem ter o mesmo nome).
  */
-export function documentosDaFicha(fichas: FichaJusbr[]): DocumentoJusbr[] {
-  const vistos = new Set<string>();
-  const todos: DocumentoJusbr[] = [];
+export function documentosDaFicha(fichas: FichaJusbr[]): DocumentoComChave[] {
+  const jaVistas = new Set<string>();
+  const todos: DocumentoComChave[] = [];
   for (const ficha of fichas) {
     for (const tramitacao of [ficha.tramitacaoAtual, ...(ficha.tramitacoes ?? [])]) {
+      const nesta = new Map<string, number>();
+      const daTramitacao: DocumentoComChave[] = [];
       for (const documento of tramitacao?.documentos ?? []) {
-        const chave = chaveDoDocumentoJusbr(documento);
-        if (!chave || vistos.has(chave) || (!documento.hrefBinario && !documento.hrefTexto)) continue;
-        vistos.add(chave);
+        if (!documento.hrefBinario && !documento.hrefTexto) continue;
+        const base = identidade(documento);
+        const n = (nesta.get(base) ?? 0) + 1;
+        nesta.set(base, n);
+        daTramitacao.push({ ...documento, chave: `jusbr:${base}|${n}` });
+      }
+      for (const documento of daTramitacao) {
+        if (jaVistas.has(documento.chave)) continue;
         todos.push(documento);
       }
+      for (const documento of daTramitacao) jaVistas.add(documento.chave);
     }
   }
   const momento = (documento: DocumentoJusbr) => documento.dataHoraJuntada ?? "";
@@ -84,9 +99,9 @@ export function documentosDaFicha(fichas: FichaJusbr[]): DocumentoJusbr[] {
 }
 
 /** Os documentos que ainda não vieram em downloads anteriores (chaves de outros sistemas não contam). */
-export function documentosNovosJusbr(documentos: DocumentoJusbr[], baixadas: readonly string[] | undefined): DocumentoJusbr[] {
+export function documentosNovosJusbr<T extends DocumentoComChave>(documentos: T[], baixadas: readonly string[] | undefined): T[] {
   const ja = new Set((baixadas ?? []).filter((chave) => chave.startsWith("jusbr:")));
-  return ja.size ? documentos.filter((documento) => !ja.has(chaveDoDocumentoJusbr(documento) ?? "")) : documentos;
+  return ja.size ? documentos.filter((documento) => !ja.has(documento.chave)) : documentos;
 }
 
 /** Endereço absoluto de um link da ficha ("/processos/.../binario"). */

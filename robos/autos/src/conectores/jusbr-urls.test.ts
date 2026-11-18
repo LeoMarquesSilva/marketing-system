@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chaveDoDocumentoJusbr, digitosDoCnj, documentosDaFicha, documentosNovosJusbr, ehAreaLogadaJusbr, ehLoginPdpj, motivoDaResposta, textoParaPdf, urlDaApi } from "./jusbr-urls";
+import { digitosDoCnj, documentosDaFicha, documentosNovosJusbr, ehAreaLogadaJusbr, ehLoginPdpj, motivoDaResposta, textoParaPdf, urlDaApi } from "./jusbr-urls";
 
 // Números fictícios (dígito verificador inválido de propósito). Nenhum dado real.
 const doc = (sequencia: number, idCodex: number, data: string, extra: Record<string, unknown> = {}) => ({
@@ -36,24 +36,29 @@ describe("Jus.br: telas e endereços", () => {
 });
 
 describe("Jus.br: documentos", () => {
-  it("junta as tramitações sem repetir e ordena pela juntada", () => {
+  it("junta as tramitações, tira as cópias entre graus e ordena pela juntada", () => {
     const fichas = [
       {
-        tramitacaoAtual: { documentos: [doc(2, 20, "2024-02-01T10:00:00"), doc(1, 10, "2024-01-01T10:00:00")] },
-        tramitacoes: [{ documentos: [doc(1, 10, "2024-01-01T10:00:00"), doc(3, 30, "2023-12-01T10:00:00"), { sequencia: 9, idCodex: 90 }] }],
+        // 2º grau: cópia do documento do 1º (outro id, mesmo nome e juntada) e um documento próprio.
+        tramitacaoAtual: { documentos: [doc(1, 110, "2024-01-01T10:00:00"), doc(5, 150, "2024-03-01T10:00:00")] },
+        tramitacoes: [{ documentos: [doc(1, 10, "2024-01-01T10:00:00"), doc(2, 20, "2023-12-01T10:00:00"), { sequencia: 9, idCodex: 90 }] }],
       },
     ];
-    expect(documentosDaFicha(fichas).map((d) => d.idCodex)).toEqual([30, 10, 20]);
+    const lista = documentosDaFicha(fichas);
+    expect(lista.map((d) => d.idCodex)).toEqual([20, 110, 150]);
+    expect(lista[1].chave).toBe("jusbr:2024-01-01T10:00:00|doc1.pdf|1");
   });
 
-  it("chave estável e só os documentos novos (chaves de outro sistema não contam)", () => {
-    expect(chaveDoDocumentoJusbr(doc(1, 10, "2024-01-01"))).toBe("jusbr:10");
-    expect(chaveDoDocumentoJusbr({ idOrigem: "ABC_1" })).toBe("jusbr:ABC_1");
-    expect(chaveDoDocumentoJusbr({})).toBeNull();
-    const documentos = [doc(1, 10, "2024-01-01"), doc(2, 20, "2024-02-01")];
+  it("dois anexos com o mesmo nome na mesma juntada entram os dois", () => {
+    const lista = documentosDaFicha([{ tramitacaoAtual: { documentos: [doc(1, 10, "2024-01-01T10:00:00", { nome: "anexo.pdf" }), doc(2, 20, "2024-01-01T10:00:00", { nome: "anexo.pdf" })] } }]);
+    expect(lista.map((d) => d.chave)).toEqual(["jusbr:2024-01-01T10:00:00|anexo.pdf|1", "jusbr:2024-01-01T10:00:00|anexo.pdf|2"]);
+  });
+
+  it("só os documentos novos (chaves de outro sistema não contam)", () => {
+    const documentos = documentosDaFicha([{ tramitacaoAtual: { documentos: [doc(1, 10, "2024-01-01"), doc(2, 20, "2024-02-01")] } }]);
     expect(documentosNovosJusbr(documentos, undefined)).toHaveLength(2);
     expect(documentosNovosJusbr(documentos, ["pje:10"])).toHaveLength(2);
-    expect(documentosNovosJusbr(documentos, ["jusbr:10"]).map((d) => d.idCodex)).toEqual([20]);
+    expect(documentosNovosJusbr(documentos, [documentos[0].chave]).map((d) => d.idCodex)).toEqual([20]);
   });
 
   it("deixa o texto desenhável pela fonte padrão do PDF", () => {
