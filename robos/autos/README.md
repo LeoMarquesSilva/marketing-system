@@ -94,7 +94,7 @@ Por isso o ORQESTRAI manda o "Próprio" do TJRJ ao conector `dcp:TJRJ`, o PJe ao
 
 - **Login:** o mesmo desenho do TJSP (SSO Keycloak com usuário e senha, ou "Certificado Digital"), com cadastro e senha próprios do advogado no TJRJ (`EPROC_TJRJ_*`). No caminho, o navegador passa pelo SSO nacional da PDPJ (`sso.cloud.pje.jus.br`), que redireciona sozinho para o SSO do TJRJ.
 - **2 fatores:** o eproc do TJRJ tem autenticação em dois fatores, como o do TJSP. O segredo do TOTP do TJRJ é outro: no painel de robôs ele fica no sistema `eproc-tjrj`, e no webhook o robô pede `?sistema=eproc-tjrj`. Sem nenhum dos dois, ou se falharem, a pessoa digita o código.
-- **Certificado em arquivo (servidor):** o endereço que pede o certificado no login do TJRJ não foi conferido. Ache-o no primeiro teste (a captura do `diagnostico/` mostra o endereço) e acrescente a origem em `CERTIFICADO_ORIGENS`, junto com a do TJSP.
+- **Certificado em arquivo (servidor):** `certificado-eproc-sso.tjrj.jus.br` pede o certificado de cliente na conexão (conferido em 18/11/2026, sem login). Acrescente `https://certificado-eproc-sso.tjrj.jus.br` em `CERTIFICADO_ORIGENS`, junto com a do TJSP; o login de verdade ainda não foi testado.
 - **Consulta pública:** existe, mas tem CAPTCHA (Cloudflare Turnstile). O robô não usa: entra sempre com a sessão do advogado.
 
 Para conferir: `npm run inspecionar -- eproc 0000000-00.0000.8.19.0000`. Para abrir só a sessão: `npm run login -- eproc TJRJ`.

@@ -4,13 +4,15 @@ Estudo de 17/11/2026 (2 fatores pelo painel em 18/11/2026) sobre rodar o robô d
 
 ## Veredito
 
-**Dá, para o eproc do TJSP. Para o e-SAJ, ainda não com certificado.**
+**Decisão do usuário (18/11/2026): o servidor atende todos os sistemas e o Mac é desligado, mas só depois de tudo funcionar no Easypanel.** A troca é feita sistema por sistema ([Migração](#migração-do-mac-para-o-servidor)).
 
-- **eproc do TJSP:** dá para rodar inteiro no servidor. O Playwright apresenta o certificado A1 (.pfx) ao SSO do tribunal sozinho, sem a lista de certificados do Chrome. Depois do certificado vem o código de 2 fatores, que o robô gera sozinho com o segredo do TOTP cadastrado no painel de robôs (sem ele, busca no webhook do n8n; sem os dois, uma pessoa digita pela tela remota). Testado localmente com um servidor que exige certificado de cliente; falta o teste com o certificado e o tribunal de verdade.
-- **e-SAJ (TJSP, TJCE, TJAL, TJMS):** o login por certificado depende do Web Signer da Softplan (extensão e aplicativo do computador). Não achei fonte oficial atual de que ele funcione em Linux, e muito menos num contêiner. As saídas são: (1) deixar o e-SAJ no robô do Mac e o eproc no servidor (o robô agora aceita `ROBO_CONECTORES` para dividir o trabalho); (2) entrar no e-SAJ por CPF e senha, com o código que o tribunal manda por e-mail digitado por uma pessoa pela tela remota; (3) testar o Web Signer em Linux num piloto separado.
-- **Pessoa no circuito:** quando o robô precisa de alguém (login, código, CAPTCHA), a pessoa abre a tela do robô no navegador (noVNC), protegida por HTTPS e senha no Easypanel. O robô continua sem resolver CAPTCHA sozinho.
+- **eproc do TJSP e do TJRJ:** rodam inteiros no servidor. O Playwright apresenta o certificado A1 (.pfx) ao SSO do tribunal sozinho, sem a lista de certificados do Chrome. Depois do certificado vem o código de 2 fatores, que o robô gera sozinho com o segredo do TOTP cadastrado no painel de robôs (sem ele, busca no webhook do n8n; sem os dois, uma pessoa digita pela tela remota). Testado localmente com um servidor que exige certificado de cliente; falta o teste com o certificado e os tribunais de verdade.
+- **PJe do TJRJ:** no servidor não há PJe Office (o certificado do PJe passa por ele). A pessoa entra pela tela remota com CPF e senha e o código do Microsoft Authenticator do advogado. Depois (fase 2), o robô pode entrar sozinho com senha e segredo do código guardados no painel.
+- **DCP do TJRJ:** a pessoa entra pela tela remota. O login por certificado do tribunal (`www7.tjrj.jus.br`) pede o certificado de cliente numa renegociação TLS; se o Playwright apresentar o A1 ali (a testar), o certificado deixa de depender da pessoa. O duplo fator vem por e-mail, ou pelo Microsoft Authenticator se o advogado trocar (aí o robô pode gerar o código).
+- **e-SAJ (TJSP, TJCE, TJAL, TJMS):** o login por certificado depende do Web Signer da Softplan, sem uso confirmado em Linux. No servidor o login é feito pela pessoa, pela tela remota, com CPF e senha (`ESAJ_LOGIN=manual`); no TJSP o tribunal manda um código por e-mail a cada login, que a pessoa digita. Automatizar a leitura desse código ou testar o Web Signer em Linux são decisões para depois.
+- **Pessoa no circuito:** quando o robô precisa de alguém (login, código, CAPTCHA), a pessoa abre a tela do robô no navegador (noVNC), protegida por HTTPS e senha no Easypanel. É o mesmo que acontecia na janela do Mac, só que pelo navegador. O robô continua sem resolver CAPTCHA sozinho.
 - **Certificado e 2 fatores no servidor:** decidido pelo usuário: a cópia do A1 vai também para o servidor, enviada pelo painel de robôs, e o segredo do TOTP de cada eproc fica configurado no painel. O robô lê os dois de uma pasta que o painel grava (contrato na seção [Painel de robôs](#painel-de-robôs-certificado-e-segredo-do-2fa)).
-- **Depende de outra entrega:** as rotas `/api/robos/autos/*` só existem nesta branch. O robô do servidor só funciona depois que ela estiver em produção no ORQESTRAI.
+- **Depende de outra entrega:** as rotas `/api/robos/autos/*` só existem na branch `feat/processos-linha-do-tempo`. O robô do servidor só funciona depois que ela estiver em produção no ORQESTRAI.
 
 ## O que foi verificado e o que não foi
 
@@ -19,6 +21,8 @@ Estudo de 17/11/2026 (2 fatores pelo painel em 18/11/2026) sobre rodar o robô d
 | `clientCertificates` do Playwright (desde a v1.46; o robô usa a 1.65.0) com `.pfx` e senha, no navegador e nas requisições do contexto (`contexto.request`, usado pelo eproc para baixar documentos) | **Testado aqui**, com um servidor TLS local que exige certificado de cliente e um certificado de teste descartável: o servidor recebeu o certificado nas duas vias. |
 | O intermediário do Playwright confere o certificado do servidor do tribunal | **Testado aqui**: com um servidor de certificado não confiável, ele recusou a conexão. |
 | `certificado-sso.tjsp.jus.br` pede certificado de cliente já no aperto de mão TLS, aceita autoridades da ICP-Brasil, e tem certificado de servidor numa cadeia pública (o Node confia sem configuração extra) | **Verificado** com uma conexão TLS pública ao endereço, sem login. `sso.tjsp.jus.br` e `esaj.tjsp.jus.br` não pedem certificado de cliente. |
+| `certificado-eproc-sso.tjrj.jus.br` (login por certificado do eproc do TJRJ) pede certificado de cliente no aperto de mão TLS | **Verificado** em 18/11/2026 com uma conexão TLS pública, sem login (o servidor manda o pedido de certificado, sem lista de autoridades). |
+| `www7.tjrj.jus.br/autenticadorCertDigital` (login por certificado do DCP) pede o certificado de cliente por **renegociação** TLS 1.2, depois do aperto de mão | **Verificado** que o servidor renegocia (conexão pública, sem login). **Não verificado** se o intermediário do Playwright atende a renegociação com o A1: testar no servidor antes de contar com isso. |
 | Senha errada e `.pfx` com cifra antiga (RC2) | **Testado aqui**: o robô recusa com mensagem clara e sem mostrar a senha. Um `.pfx` exportado com RC2 não abre no Node; com AES-256, abre. |
 | Contrato do painel (pasta, `certificado.json`, senha cifrada) e troca do certificado | **Testado aqui** (teste automático em `src/certificado.test.ts` e teste local de ponta a ponta). |
 | Código TOTP gerado pelo robô (RFC 6238) e contrato `segundo-fator.json` | **Testado aqui** com os vetores das RFCs 4226 e 6238 e segredos fictícios (`src/segundo-fator.test.ts`). |
@@ -86,7 +90,7 @@ Por que pesar tanto: quem entra na tela remota vê o navegador **logado como o a
 - O Web Signer não instala com o navegador aberto pelo Playwright (a Chrome Web Store recusa navegador em modo de automação; é por isso que o Mac usa o modo comum).
 - Em Linux: a página de pré-requisitos do e-SAJ lista "Linux 32 bits ou 64 bits de distribuição baseada no Ubuntu", ligado ao Firefox 32 bits, sem data. A ajuda da Softplan sobre instalação no Chrome não fala de Linux. A página de download da Softplan não abriu neste estudo. **Não dá para afirmar que funciona num contêiner.**
 - **Alternativas, em ordem de simplicidade:**
-  1. **Dividir o trabalho:** robô do servidor com `ROBO_CONECTORES=eproc` e robô do Mac com `ROBO_CONECTORES=esaj`. O Mac continua com o Web Signer e o certificado no Acesso às Chaves. Nada muda para o e-SAJ.
+  1. **Dividir o trabalho:** robô do servidor com `ROBO_CONECTORES=eproc` e robô do Mac com `ROBO_CONECTORES=esaj`. O Mac continua com o Web Signer e o certificado no Acesso às Chaves. **Vale só durante a migração**: o usuário decidiu desligar o Mac quando tudo funcionar no servidor, e aí o e-SAJ fica com a alternativa 2.
   2. **CPF e senha no servidor** (`ESAJ_LOGIN=senha`): desde 24/03/2025 o e-SAJ do TJSP pede um código de verificação enviado ao e-mail do advogado no login por CPF e senha (o login por certificado não pede). Hoje o robô espera a pessoa digitar esse código pela tela remota. Automatizar a leitura do código no e-mail (pelo n8n, como no TOTP do eproc) é possível, mas é decisão dos advogados, porque o n8n passaria a ler a caixa de e-mail do advogado. A sessão do e-SAJ cai quando o navegador fecha: um login por reinício do robô.
   3. **Piloto do Web Signer em Linux:** um contêiner à parte com o Google Chrome no modo comum, a extensão e o aplicativo do Web Signer (se a Softplan oferecer pacote Linux) e o certificado no repositório de certificados do sistema. Trabalho exploratório, sem garantia.
 
@@ -102,7 +106,7 @@ A decisão de levar uma cópia do A1 ao servidor é do usuário e já foi tomada
   - quem entra na tela remota usa a sessão já aberta, sem ver o certificado.
 - **Riscos:**
   - O A1 permite agir como o advogado (peticionar, assinar) até vencer ou ser revogado. Uma cópia vazada vale como o próprio advogado.
-  - Passam a existir duas cópias (Mac e servidor): as duas precisam ser trocadas no vencimento e revogadas se houver vazamento.
+  - Passam a existir duas cópias (Mac e servidor): as duas precisam ser trocadas no vencimento e revogadas se houver vazamento. Quando o Mac for desligado, decida se a cópia dele continua no Acesso às Chaves (o advogado pode usá-la no dia a dia) ou sai.
   - O intermediário do Playwright guarda o `.pfx` e a senha na memória do processo do robô enquanto ele roda.
 - **O que reduz o risco:** acesso ao Easypanel só para quem precisa; senha forte e única no painel de robôs; tela remota com Basic Auth; pasta de certificados fora dos backups do volume; registro de quem enviou cada certificado; revogação imediata na autoridade certificadora se houver suspeita.
 
@@ -273,16 +277,29 @@ O que o painel precisa ter (o código do painel está fora deste repositório):
 
 Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)). Nenhum valor real vai para o repositório: senhas, token, chave privada, certificado e segredos entram só no Easypanel e no painel.
 
-### Divisão do trabalho entre o servidor e o Mac
+### Migração do Mac para o servidor
 
-| Robô | `ROBO_CONECTORES` | Por quê |
-|---|---|---|
-| Servidor (Easypanel) | `eproc` (TJSP e TJRJ) | Certificado em arquivo e código de 2 fatores gerado pelo robô: não precisa de ninguém no dia a dia. |
-| Mac | `esaj,dcp,pje` | e-SAJ depende do Web Signer; DCP e PJe do TJRJ entram sempre com a pessoa. |
+O alvo é um robô só, no servidor, atendendo todos os sistemas. O Mac continua ligado e atendendo o que ainda não passou, e cada sistema muda de lado só depois de funcionar no servidor. Quem divide o trabalho é `ROBO_CONECTORES`: a fila reserva cada pedido para um robô, e cada um só pede o que está na sua lista. Um sistema nunca fica nas duas listas ao mesmo tempo (seriam dois logins do mesmo advogado no mesmo tribunal).
 
-- A fila reserva cada pedido para um robô; com essa divisão, cada um só pede o que atende.
-- O DCP do TJRJ pode devolver um processo já migrado ao eproc do TJRJ; nesse caso o robô do Mac usa a sessão do eproc do TJRJ dele (login e código pela pessoa ou pelo webhook). O segredo do painel fica só no servidor.
-- `CAPA_DATAJUD` ligado em um só robô (o DataJud recusa consultas em sequência).
+| Etapa | Servidor (`ROBO_CONECTORES`) | Mac (`ROBO_CONECTORES`) | Login no servidor |
+|---|---|---|---|
+| 1 | `eproc` | `esaj,dcp,pje` | Sozinho: certificado A1 e código do segredo do painel |
+| 2 | `eproc,pje` | `esaj,dcp` | Pessoa pela tela remota: CPF, senha e código do Authenticator |
+| 3 | `eproc,pje,dcp` | `esaj` | Pessoa pela tela remota (certificado do DCP sozinho, se o teste da renegociação passar) |
+| 4 | vazio (todos) | robô desligado | e-SAJ pela pessoa: CPF, senha e código do e-mail |
+
+**Para passar de uma etapa à seguinte:**
+
+1. No Easypanel, acrescente o sistema em `ROBO_CONECTORES` do robô do servidor e faça o deploy (a sessão dos tribunais recomeça: novos logins).
+2. No mesmo momento, tire o sistema do `ROBO_CONECTORES` do `.env` do Mac e reinicie o robô do Mac.
+3. Acompanhe os primeiros pedidos desse sistema nos logs do servidor e na ficha do processo (o nome do robô, `ROBO_NOME`, aparece em cada pedido). Para considerar o sistema funcionando no servidor: pelo menos um login completo pela tela remota (ou sozinho), e alguns pedidos concluídos sem erro, incluindo um com documentos novos.
+4. Deu problema? Volte o sistema para o Mac (o inverso dos passos 1 e 2) e anote o motivo; os diagnósticos ficam em `/dados/diagnostico` no servidor.
+
+**Etapa 4, desligar o Mac:** só quando os quatro sistemas tiverem passado pelo passo 3 no servidor. Antes de desligar, mude `CAPA_DATAJUD` para o servidor (ligue lá e desligue no Mac): só um robô completa capas pelo DataJud. Guarde o `.env` do Mac fora do repositório, para voltar se for preciso.
+
+**Durante a migração:**
+- O DCP do TJRJ pode devolver ao eproc do TJRJ um processo já migrado. Enquanto o DCP estiver no Mac, o robô do Mac abre a sessão do eproc do TJRJ dele (login e código pela pessoa ou pelo webhook) nesses casos.
+- Conectores que ainda não foram rodados no servidor (DCP, PJe e e-SAJ no modo do contêiner) podem estranhar o navegador do Playwright em algum detalhe (janela nova, download). Por isso a etapa de teste existe: o que aparecer vira ajuste no conector antes de passar o próximo sistema.
 
 ### 1. Gerar a chave do robô
 
@@ -307,17 +324,17 @@ Dono: o usuário com que o painel grava; grupo: um grupo que inclua o `pwuser` d
    | `ORQESTRAI_URL` | endereço de produção do ORQESTRAI |
    | `ROBO_AUTOS_TOKEN` | o mesmo da Vercel |
    | `ROBO_NOME` | ex. `servidor-easypanel` |
-   | `ROBO_CONECTORES` | `eproc` |
+   | `ROBO_CONECTORES` | conforme a [etapa da migração](#migração-do-mac-para-o-servidor): começa em `eproc`; vazio no fim (todos) |
    | `EPROC_LOGIN` | `certificado` |
-   | `EPROC_TJRJ_LOGIN` | `certificado` (ou `manual`, até a origem do certificado do TJRJ ser conferida) |
-   | `ESAJ_LOGIN` | `manual` (o e-SAJ não roda aqui) |
+   | `EPROC_TJRJ_LOGIN` | `certificado` |
+   | `ESAJ_LOGIN` | `manual` (sem Web Signer no servidor: a pessoa entra com CPF, senha e o código do e-mail pela tela remota) |
    | `CERTIFICADO_PASTA` | `/certificados` |
    | `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO` | `/segredos/robo-certificado.key` |
-   | `CERTIFICADO_ORIGENS` | padrão (TJSP); acrescente a do TJRJ quando conferida |
+   | `CERTIFICADO_ORIGENS` | `https://certificado-sso.tjsp.jus.br,https://certificado-eproc-sso.tjrj.jus.br`; na etapa 3, para testar o certificado do DCP, acrescente `,https://www7.tjrj.jus.br` |
    | `ROBO_2FA_WEBHOOK_URL`, `ROBO_2FA_WEBHOOK_TOKEN` | os do n8n, só se quiser a alternativa ao segredo do painel |
    | `VNC_SENHA` | senha da tela remota |
    | `TELA_REMOTA_URL` | `https://<domínio da tela>/vnc.html` |
-   | `CAPA_DATAJUD` | `nao`, se o robô do Mac já completa as capas |
+   | `CAPA_DATAJUD` | `nao` enquanto o Mac completa as capas; `sim` na etapa 4 |
 
    O segredo do TOTP **não** vai em variável: o robô lê o `segundo-fator.json` da mesma pasta do certificado. `ROBO_2FA_PASTA` só é preciso se o painel gravar o segredo em outra pasta. `NAVEGADOR_MODO`, `NAVEGADOR_CANAL`, `PASTA_DADOS`, `DISPLAY` e `TZ` já vêm do `Dockerfile`.
 3. **Mounts:**
@@ -325,7 +342,7 @@ Dono: o usuário com que o painel grava; grupo: um grupo que inclua o `pwuser` d
    - **Bind** de `/srv/robos/certificados` em `/certificados`, **só leitura**;
    - **File** em `/segredos/robo-certificado.key`, com o conteúdo de `robo-certificado.key`. O script de início copia para `/run/robo/certificado.key`, que só o `pwuser` lê, fora do volume.
 4. **Domains:** um domínio para a tela remota, HTTPS, porta **6080**; em Security, **Basic Auth** ligado, com usuário e senha diferentes da `VNC_SENHA`.
-5. **Resources:** 2 vCPU, memória com reserva de 1,5 GB e limite de 3 GB ([Operação](#operação)).
+5. **Resources:** 2 vCPU, memória com reserva de 2 GB e limite de 4 GB: no fim da migração o mesmo navegador segura as sessões de todos os sistemas ([Operação](#operação)).
 6. **Deploy:** 1 réplica, **sem** zero-downtime. Faça o deploy.
 
 ### 4. Painel de robôs
@@ -344,27 +361,31 @@ Quem administra o robô entra no painel e envia:
 
 O robô adota o certificado em até ~30 s (com a fila vazia) e lê os segredos no próximo login. Nos logs: "Certificado em arquivo carregado (…)", sem conteúdo.
 
-### 6. Robô do Mac
+### 6. Robô do Mac (etapa 1)
 
-No `.env` do Mac: `ROBO_CONECTORES=esaj,dcp,pje` e, se as capas ficarem no servidor, `CAPA_DATAJUD=nao`. Reinicie o robô do Mac.
+No `.env` do Mac: `ROBO_CONECTORES=esaj,dcp,pje` e `CAPA_DATAJUD` como está (o Mac segue completando as capas até a etapa 4). Reinicie o robô do Mac. Daqui em diante, siga a [migração](#migração-do-mac-para-o-servidor).
 
-### 7. Primeiro teste
+### 7. Primeiro teste (eproc)
 
 1. Com um pedido do eproc do TJSP na fila, acompanhe os logs do serviço. O esperado: "Sessão do eproc … fechada: iniciando o login (certificado)", depois "Código de 2 fatores gerado pelo segredo do painel e aceito. Login concluído."
 2. Se aparecer "PRECISA DE UMA PESSOA", abra a tela remota e resolva; o log diz antes o motivo (certificado não aceito, segredo não aceito, CAPTCHA).
 3. Repita com um pedido do eproc do TJRJ.
 4. Encerre o robô de propósito uma vez e confira se o serviço volta sozinho ([Operação](#operação)).
 
+### 8. Etapas seguintes
+
+PJe, DCP e e-SAJ, um de cada vez, como na [migração](#migração-do-mac-para-o-servidor). Em cada uma, a pessoa que faz o login precisa do endereço da tela remota e das senhas do Basic Auth e do VNC.
+
 ### Voltar atrás
 
-Pare o serviço do robô no Easypanel e tire `ROBO_CONECTORES` do `.env` do Mac (volta a atender tudo). Um pedido que o servidor tinha reservado quando parou pode precisar ser liberado na ficha do processo.
+Enquanto o Mac não foi desligado: volte para ele o sistema com problema (ou todos, tirando `ROBO_CONECTORES` do `.env` do Mac) e tire o mesmo sistema do servidor, ou pare o serviço do robô no Easypanel. Um pedido que o servidor tinha reservado quando parou pode precisar ser liberado na ficha do processo.
 
 `docker/compose.exemplo.yml` reúne o mesmo serviço em formato compose, para referência.
 
 ## Decisões que ficam com o usuário e os advogados
 
-1. **e-SAJ:** manter no Mac (dividindo com `ROBO_CONECTORES`), passar para CPF e senha com código por e-mail digitado pela tela remota, ou investir num piloto do Web Signer em Linux.
-2. **Código do e-SAJ por e-mail:** se for automatizar, autorizar o n8n a ler a caixa do advogado (exige ajuste pequeno no robô, não feito).
+1. **Código do e-SAJ por e-mail:** no servidor, a pessoa digita pela tela remota a cada login. Para automatizar: uma regra na caixa do advogado encaminha só os e-mails de código do e-SAJ para uma caixa que o robô lê (exige ajuste no robô, não feito); ou um piloto do Web Signer em Linux.
+2. **Login sem pessoa no PJe e no DCP (fase 2):** guardar no painel, cifrados para o robô, CPF e senha do PJe e o segredo do Microsoft Authenticator da PDPJ; no DCP, trocar o duplo fator do advogado do e-mail para o aplicativo.
 3. **Quem acessa a tela remota** e quem guarda as senhas do Basic Auth e do VNC.
 4. **Quem pode enviar ou trocar o certificado e os segredos do 2FA no painel**, e o procedimento se houver suspeita de vazamento (revogar o certificado; desativar e reativar o 2FA no eproc, o que troca o segredo).
 5. **Ritmo e piloto:** quantos processos no primeiro teste no servidor, para observar bloqueio ou lentidão do tribunal.
