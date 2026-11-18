@@ -34,7 +34,8 @@ export type EmailRecipientStatus =
   | "clicked"
   | "bounced"
   | "complained"
-  | "failed";
+  | "failed"
+  | "skipped";
 
 export interface EmailPerson {
   id: string;
@@ -150,6 +151,7 @@ export interface EmailList {
   contactCount?: number;
 }
 
+/** Funil cumulativo: `delivered` inclui quem abriu/clicou; `opened` inclui quem clicou. */
 export interface EmailCampaignStats {
   total: number;
   sent: number;
@@ -159,6 +161,8 @@ export interface EmailCampaignStats {
   bounced: number;
   complained: number;
   failed: number;
+  skipped: number;
+  queued: number;
 }
 
 export interface EmailCampaign {
@@ -179,6 +183,11 @@ export interface EmailCampaign {
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
+  /** broadcast = Marketing do Resend (padrão); batch = lotes transacionais (100/dia no grátis). */
+  sendMode: "broadcast" | "batch";
+  resendBroadcastId: string | null;
+  /** Último erro do envio (ex.: domínio não verificado), mostrado na campanha. */
+  lastError: string | null;
   stats?: EmailCampaignStats;
 }
 
@@ -365,6 +374,9 @@ function mapCampaign(row: Record<string, unknown>): EmailCampaign {
     createdBy: (row.created_by as string | null) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+    sendMode: ((row.send_mode as string | null) ?? "broadcast") as EmailCampaign["sendMode"],
+    resendBroadcastId: (row.resend_broadcast_id as string | null) ?? null,
+    lastError: (row.last_error as string | null) ?? null,
   };
 }
 
@@ -925,34 +937,54 @@ export async function fetchEmailCampaigns(): Promise<EmailCampaign[]> {
   });
 }
 
+const EMPTY_STATS: EmailCampaignStats = {
+  total: 0,
+  sent: 0,
+  delivered: 0,
+  opened: 0,
+  clicked: 0,
+  bounced: 0,
+  complained: 0,
+  failed: 0,
+  skipped: 0,
+  queued: 0,
+};
+
+function mapStats(row: Record<string, unknown> | null | undefined): EmailCampaignStats {
+  if (!row) return { ...EMPTY_STATS };
+  const n = (key: keyof EmailCampaignStats) => Number(row[key] ?? 0);
+  return {
+    total: n("total"),
+    sent: n("sent"),
+    delivered: n("delivered"),
+    opened: n("opened"),
+    clicked: n("clicked"),
+    bounced: n("bounced"),
+    complained: n("complained"),
+    failed: n("failed"),
+    skipped: n("skipped"),
+    queued: n("queued"),
+  };
+}
+
+/** Funil cumulativo da campanha (view email_campaign_stats: quem clicou também abriu). */
 export async function fetchEmailCampaignStats(campaignId: string): Promise<EmailCampaignStats> {
   const { data, error } = await supabase
-    .from("email_campaign_recipients")
-    .select("status")
-    .eq("campaign_id", campaignId);
+    .from("email_campaign_stats")
+    .select("*")
+    .eq("campaign_id", campaignId)
+    .maybeSingle();
   if (error) throw new Error(error.message);
-  const stats: EmailCampaignStats = {
-    total: data?.length ?? 0,
-    sent: 0,
-    delivered: 0,
-    opened: 0,
-    clicked: 0,
-    bounced: 0,
-    complained: 0,
-    failed: 0,
-  };
-  for (const row of data ?? []) {
-    const status = row.status as EmailRecipientStatus;
-    if (status === "sent") stats.sent++;
-    if (status === "delivered") stats.delivered++;
-    if (status === "opened") stats.opened++;
-    if (status === "clicked") stats.clicked++;
-    if (status === "bounced") stats.bounced++;
-    if (status === "complained") stats.complained++;
-    if (status === "failed") stats.failed++;
-  }
-  // aberto/clicado contam também os que avançaram de estágio
-  return stats;
+  return mapStats(data as Record<string, unknown> | null);
+}
+
+/** Funil de todas as campanhas, para a lista. */
+export async function fetchAllEmailCampaignStats(): Promise<Record<string, EmailCampaignStats>> {
+  const { data, error } = await supabase.from("email_campaign_stats").select("*");
+  if (error) throw new Error(error.message);
+  return Object.fromEntries(
+    (data ?? []).map((row) => [row.campaign_id as string, mapStats(row as Record<string, unknown>)])
+  );
 }
 
 export async function fetchEmailCampaignRecipients(
@@ -1044,14 +1076,44 @@ export async function deleteEmailCampaign(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-/** Volta uma campanha agendada para rascunho (não afeta campanhas já em envio/enviadas). */
+/** Volta uma campanha agendada para rascunho (no Broadcast, apaga o agendado no Resend). */
 export async function cancelScheduledCampaign(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("email_campaigns")
-    .update({ status: "draft", scheduled_at: null })
-    .eq("id", id)
-    .eq("status", "scheduled");
-  if (error) throw new Error(error.message);
+  const res = await fetch(`/api/email-marketing/campaigns/${id}/cancel`, { method: "POST" });
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Erro ao cancelar o agendamento.");
+}
+
+export interface CampaignSendProgress {
+  mode: "broadcast" | "batch";
+  phase?: "syncing" | "scheduled" | "sent";
+  total?: number;
+  synced?: number;
+  skipped?: number;
+  finished?: boolean;
+  processed?: number;
+  totalRecipients?: number;
+}
+
+/**
+ * Dispara ou agenda a campanha. No Broadcast a API prepara os destinatários em levas:
+ * esta função chama de novo até terminar e avisa o progresso a cada leva.
+ */
+export async function sendEmailCampaign(
+  id: string,
+  options: { scheduledAt?: string | null; onProgress?: (progress: CampaignSendProgress) => void } = {}
+): Promise<CampaignSendProgress> {
+  for (let round = 0; round < 40; round++) {
+    const res = await fetch(`/api/email-marketing/campaigns/${id}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scheduledAt: options.scheduledAt ?? null }),
+    });
+    const data = (await res.json().catch(() => ({}))) as CampaignSendProgress & { error?: string };
+    if (!res.ok) throw new Error(data.error ?? "Erro ao enviar a campanha.");
+    options.onProgress?.(data);
+    if (data.mode === "batch" || data.phase !== "syncing") return data;
+  }
+  throw new Error("O envio demorou mais que o esperado. Abra a campanha de novo para continuar.");
 }
 
 export const EMAIL_CAMPAIGN_STATUS_LABEL: Record<EmailCampaignStatus, string> = {
@@ -1061,6 +1123,18 @@ export const EMAIL_CAMPAIGN_STATUS_LABEL: Record<EmailCampaignStatus, string> = 
   sent: "Enviada",
   paused: "Pausada",
   failed: "Falhou",
+};
+
+export const EMAIL_RECIPIENT_STATUS_LABEL: Record<EmailRecipientStatus, string> = {
+  queued: "Na fila",
+  sent: "Enviado",
+  delivered: "Entregue",
+  opened: "Abriu",
+  clicked: "Clicou",
+  bounced: "Retornou",
+  complained: "Marcou como spam",
+  failed: "Falhou",
+  skipped: "Descadastrado",
 };
 
 export const EMAIL_CONTACT_STATUS_LABEL: Record<EmailContactStatus, string> = {

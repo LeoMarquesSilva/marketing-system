@@ -96,6 +96,9 @@ import {
 import { hasHrAccess } from "@/lib/rh/access";
 import { REELS_APPROVAL_HREF } from "@/hooks/use-reel-deliveries-pending";
 
+/** E-mail marketing: abas Campanhas/Contatos/Empresas/Listas/Progresso + engrenagem de Configurações. */
+const EMAIL_MARKETING_KEY = "/email-marketing";
+
 export type NavPage = {
   href: string;
   /** Nome da página nas abas do cabeçalho. */
@@ -294,7 +297,15 @@ export const NAV_FRONTS: NavFront[] = [
         label: "E-mail marketing",
         shortLabel: "E-mail",
         icon: Mail,
-        pages: [{ href: "/email-marketing", label: "E-mail marketing" }],
+        pages: [
+          { href: EMAIL_MARKETING_KEY, label: "Campanhas" },
+          { href: `${EMAIL_MARKETING_KEY}/contatos`, label: "Contatos" },
+          { href: `${EMAIL_MARKETING_KEY}/empresas`, label: "Empresas" },
+          { href: `${EMAIL_MARKETING_KEY}/listas`, label: "Listas" },
+          { href: `${EMAIL_MARKETING_KEY}/progresso`, label: "Progresso" },
+        ],
+        // Domínio de envio (DNS), rastreio, plano do Resend e integrações (RD, SIOE).
+        configuracoes: { href: `${EMAIL_MARKETING_KEY}/configuracoes`, label: "Configurações" },
       },
       {
         id: "certificados",
@@ -593,6 +604,8 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
       if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
+      // As abas do e-mail marketing vêm junto com a permissão do módulo.
+      if (href.startsWith(`${EMAIL_MARKETING_KEY}/`)) return allowed.includes(EMAIL_MARKETING_KEY);
       if (href === "/conteudo/gustavo") return gustavo;
       if (href === TEAM_POSTS_PATH) return teamPosts;
       if (href === "/rh/ferias") return rhFull || feriasView;

@@ -48,7 +48,7 @@ function getResendClient(): Resend {
 }
 
 export function getDefaultFromName(): string {
-  return process.env.EMAIL_MARKETING_DEFAULT_FROM_NAME?.trim() || "Bismarchi Pires";
+  return process.env.EMAIL_MARKETING_DEFAULT_FROM_NAME?.trim() || "Bismarchi | Pires";
 }
 
 export function getFromDomain(): string | null {
@@ -97,7 +97,7 @@ function buildUnsubscribeHeaders(unsubscribeUrl: string, fromEmail: string): Rec
   };
 }
 
-interface CampaignRow {
+export interface CampaignRow {
   id: string;
   name: string;
   subject: string;
@@ -109,9 +109,14 @@ interface CampaignRow {
   list_id: string | null;
   status: string;
   total_recipients: number;
+  send_mode: "broadcast" | "batch";
+  resend_segment_id: string | null;
+  resend_broadcast_id: string | null;
+  scheduled_at: string | null;
+  sent_at: string | null;
 }
 
-async function loadCampaign(campaignId: string): Promise<CampaignRow> {
+export async function loadCampaign(campaignId: string): Promise<CampaignRow> {
   const admin = getAdminClient();
   const { data, error } = await admin
     .from("email_campaigns")
@@ -130,7 +135,7 @@ export async function sendTestEmail(campaignId: string, testEmail: string): Prom
   const fakeUnsubscribeUrl = `${getBaseUrl()}/api/email-marketing/unsubscribe?token=teste`;
   const ctx = { ...SAMPLE_MERGE_CONTEXT, email: testEmail };
   const html = wrapCampaignHtml(
-    applyMergeTags(campaign.html_body, ctx),
+    applyMergeTags(campaign.html_body.replace(/^<!-- newsletter-bp:[A-Za-z0-9+/=]+ -->\n?/, ""), ctx),
     fakeUnsubscribeUrl,
     applyMergeTags(campaign.preview_text ?? "", ctx)
   );
@@ -374,8 +379,10 @@ export async function processScheduledEmailCampaigns(): Promise<{
     .from("email_campaigns")
     .select("id")
     .eq("status", "scheduled")
+    .eq("send_mode", "batch")
     .lte("scheduled_at", new Date().toISOString());
 
+  // Campanhas por Broadcast são agendadas no próprio Resend (ver settleScheduledBroadcasts).
   for (const row of due ?? []) {
     await prepareCampaignRecipients(row.id as string);
     await admin.from("email_campaigns").update({ status: "sending" }).eq("id", row.id as string);
@@ -386,6 +393,7 @@ export async function processScheduledEmailCampaigns(): Promise<{
     .from("email_campaigns")
     .select("id")
     .eq("status", "sending")
+    .eq("send_mode", "batch")
     .limit(MAX_CAMPAIGNS_PER_CRON_RUN);
 
   let batchesSent = 0;
@@ -416,16 +424,97 @@ export function verifyResendWebhook(rawBody: string, headers: Headers): WebhookE
   });
 }
 
-export async function handleResendWebhookEvent(event: WebhookEventPayload): Promise<void> {
-  const admin = getAdminClient();
-  const emailId = (event.data as { email_id?: string }).email_id;
-  if (!emailId) return;
+/** Ordem do funil: um evento atrasado (ex.: "entregue" depois de "abriu") não faz o status voltar. */
+const RECIPIENT_STATUS_RANK: Record<string, number> = {
+  queued: 0,
+  skipped: 0,
+  sent: 1,
+  delivered: 2,
+  opened: 3,
+  clicked: 4,
+  failed: 5,
+  bounced: 6,
+  complained: 7,
+};
 
+interface WebhookRecipient {
+  id: string;
+  contact_id: string;
+  status: string;
+  open_count: number | null;
+  click_count: number | null;
+  first_clicked_at: string | null;
+}
+
+/** E-mails de broadcast chegam com `broadcast_id` + destinatário; o ID do e-mail é guardado no 1º evento. */
+async function findBroadcastRecipient(
+  admin: ReturnType<typeof getAdminClient>,
+  broadcastId: string,
+  to: string | undefined,
+  emailId: string
+): Promise<WebhookRecipient | null> {
+  if (!to) return null;
+  const { data: campaign } = await admin
+    .from("email_campaigns")
+    .select("id")
+    .eq("resend_broadcast_id", broadcastId)
+    .maybeSingle();
+  if (!campaign) return null;
+  const { data: contacts } = await admin.from("email_contacts").select("id").ilike("email", to.trim());
+  const contactIds = (contacts ?? []).map((c) => c.id as string);
+  if (contactIds.length === 0) return null;
   const { data: recipient } = await admin
     .from("email_campaign_recipients")
-    .select("id, contact_id, open_count, click_count")
+    .select("id, contact_id, status, open_count, click_count, first_clicked_at")
+    .eq("campaign_id", campaign.id as string)
+    .in("contact_id", contactIds)
+    .limit(1)
+    .maybeSingle();
+  if (!recipient) return null;
+  await admin.from("email_campaign_recipients").update({ resend_email_id: emailId }).eq("id", recipient.id);
+  return recipient as WebhookRecipient;
+}
+
+/** Descadastro feito pelo link do Resend (ou contato apagado lá) volta para a base do ORQESTRAI. */
+async function handleResendContactEvent(event: WebhookEventPayload): Promise<void> {
+  const admin = getAdminClient();
+  const data = event.data as unknown as { id?: string; email?: string; unsubscribed?: boolean };
+  if (!data.email && !data.id) return;
+  const filter = admin.from("email_contacts");
+  if (event.type === "contact.deleted") {
+    if (data.id) await filter.update({ resend_contact_id: null }).eq("resend_contact_id", data.id);
+    return;
+  }
+  if (event.type === "contact.updated" && data.unsubscribed && data.email) {
+    await filter
+      .update({ status: "unsubscribed", unsubscribed_at: new Date().toISOString() })
+      .ilike("email", data.email.trim())
+      .eq("status", "subscribed");
+  }
+}
+
+export async function handleResendWebhookEvent(event: WebhookEventPayload): Promise<void> {
+  if (event.type.startsWith("contact.")) {
+    await handleResendContactEvent(event);
+    return;
+  }
+
+  const admin = getAdminClient();
+  const eventData = event.data as { email_id?: string; broadcast_id?: string; to?: string[] };
+  const emailId = eventData.email_id;
+  if (!emailId) return;
+
+  const { data: byEmailId } = await admin
+    .from("email_campaign_recipients")
+    .select("id, contact_id, status, open_count, click_count, first_clicked_at")
     .eq("resend_email_id", emailId)
     .maybeSingle();
+
+  const recipient =
+    (byEmailId as WebhookRecipient | null) ??
+    (eventData.broadcast_id
+      ? await findBroadcastRecipient(admin, eventData.broadcast_id, eventData.to?.[0], emailId)
+      : null);
 
   if (!recipient) return; // pode ser um envio de teste, sem correspondência
 
@@ -439,6 +528,10 @@ export async function handleResendWebhookEvent(event: WebhookEventPayload): Prom
   const patch: Record<string, unknown> = {};
 
   switch (event.type) {
+    case "email.sent":
+      patch.status = "sent";
+      patch.sent_at = (event.data as { created_at?: string }).created_at ?? now;
+      break;
     case "email.delivered":
       patch.status = "delivered";
       break;
@@ -450,13 +543,16 @@ export async function handleResendWebhookEvent(event: WebhookEventPayload): Prom
     case "email.clicked":
       patch.status = "clicked";
       patch.click_count = (recipient.click_count ?? 0) + 1;
-      patch.first_clicked_at = now;
+      if (!recipient.first_clicked_at) patch.first_clicked_at = now;
       break;
     case "email.bounced":
       patch.status = "bounced";
       patch.bounced_at = now;
       patch.bounce_type = (event.data as { bounce?: { type?: string } }).bounce?.type ?? null;
-      await admin.from("email_contacts").update({ status: "bounced" }).eq("id", recipient.contact_id);
+      // Só o retorno definitivo (endereço inexistente) tira o contato da base; caixa cheia é temporário.
+      if (String(patch.bounce_type ?? "").toLowerCase() !== "transient") {
+        await admin.from("email_contacts").update({ status: "bounced" }).eq("id", recipient.contact_id);
+      }
       break;
     case "email.complained":
       patch.status = "complained";
@@ -478,6 +574,13 @@ export async function handleResendWebhookEvent(event: WebhookEventPayload): Prom
       .eq("id", recipient.id)
       .maybeSingle();
     if (!current?.first_opened_at) patch.first_opened_at = now;
+  }
+
+  // Contadores e datas sempre entram; o status só muda se avançar no funil.
+  if (typeof patch.status === "string") {
+    const current = RECIPIENT_STATUS_RANK[recipient.status] ?? 0;
+    const next = RECIPIENT_STATUS_RANK[patch.status] ?? 0;
+    if (next < current) delete patch.status;
   }
 
   if (Object.keys(patch).length > 0) {

@@ -89,6 +89,34 @@ export function applyMergeTags(text: string, ctx: EmailMergeContext): string {
   });
 }
 
+/**
+ * No envio por Broadcasts o Resend monta cada e-mail com os dados do contato que guardamos lá
+ * (nome, sobrenome, e-mail e a propriedade `empresa`). Variáveis sem equivalente saem em branco.
+ */
+const BROADCAST_PLACEHOLDERS: Record<string, string> = {
+  primeiro_nome: "{{{contact.first_name}}}",
+  nome: "{{{contact.first_name}}} {{{contact.last_name}}}",
+  email: "{{{contact.email}}}",
+  empresa: "{{{contact.empresa}}}",
+  unsubscribe_url: "{{{RESEND_UNSUBSCRIBE_URL}}}",
+};
+
+export function toBroadcastPlaceholders(text: string): { text: string; unsupported: string[] } {
+  const unsupported = new Set<string>();
+  const converted = text.replace(MERGE_TAG_RE, (_match, key: string) => {
+    const placeholder = BROADCAST_PLACEHOLDERS[key.toLowerCase()];
+    if (placeholder) return placeholder;
+    unsupported.add(key);
+    return "";
+  });
+  return { text: converted, unsupported: [...unsupported] };
+}
+
+/** Variáveis usadas no texto que o envio por Broadcasts não preenche (avisadas na revisão). */
+export function unsupportedBroadcastTags(...texts: string[]): string[] {
+  return [...new Set(texts.flatMap((t) => toBroadcastPlaceholders(t).unsupported))];
+}
+
 export function hasMergeTags(text: string): boolean {
   MERGE_TAG_RE.lastIndex = 0;
   return MERGE_TAG_RE.test(text);
