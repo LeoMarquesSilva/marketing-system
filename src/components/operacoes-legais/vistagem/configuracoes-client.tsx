@@ -552,7 +552,7 @@ function UsoDaSugestao({ painel }: { painel: PainelDeRegras }) {
 
 function ChavesDaIa({ painel, salvando, onSalvar }: { painel: PainelDeRegras; salvando: boolean; onSalvar: (chave: ChaveConfiguracao, valor: boolean) => void }) {
   const linhas: { chave: "iaSugestaoTarefa" | "iaSugestaoTriagem"; titulo: string; texto: string }[] = [
-    { chave: "iaSugestaoTarefa", titulo: "Sugestão de tarefas (todas as áreas, menos Operações Legais)", texto: "Desligada, o cron não gera e a tela não pede novas sugestões; as já geradas continuam aparecendo." },
+    { chave: "iaSugestaoTarefa", titulo: "Sugestão de tarefas (todas as áreas)", texto: "Desligada, o cron não gera e a tela não pede novas sugestões; as já geradas continuam aparecendo." },
     { chave: "iaSugestaoTriagem", titulo: "Sugestão de pasta (Triagem Manual)", texto: "Desligada, valem só as buscas por número de processo e por parte, que não usam IA." },
   ];
   return (

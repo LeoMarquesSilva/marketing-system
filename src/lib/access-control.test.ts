@@ -9,8 +9,10 @@ import {
   firstAllowedPath,
   hasCafeCulturaAccess,
   hasIcpAccess,
+  hasProcessosAccess,
   canEditPe27,
   canEditDocumentario,
+  canUploadDocumentarioAcervo,
   hasDocumentarioAccess,
   hasOperacoesLegaisAccess,
   hasOpsPlannerAccess,
@@ -313,6 +315,25 @@ describe("access-control permissions catalog", () => {
   });
 });
 
+describe("processos e pessoas", () => {
+  const liberado = { role: null, permissions: ["/meus-clientes", "/operacoes-legais/vistagem", "/operacoes-legais/processos"] };
+  it("admin ou liberação manual; a liberação de Operações Legais não basta", () => {
+    expect(hasProcessosAccess({ role: "admin" })).toBe(true);
+    expect(hasProcessosAccess(liberado)).toBe(true);
+    expect(hasProcessosAccess({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toBe(false);
+    expect(hasProcessosAccess({ role: null, permissions: ["/operacoes-legais"] })).toBe(false);
+  });
+
+  it("abre Processos e Pessoas, e nada mais de Operações Legais", () => {
+    for (const rota of ["/operacoes-legais/processos", "/operacoes-legais/processos/carteira", "/operacoes-legais/pessoas/abc"]) {
+      expect(canAccessPath(liberado, rota)).toBe(true);
+      expect(canAccessPath({ role: null, permissions: ["/operacoes-legais/vistagem"] }, rota)).toBe(false);
+    }
+    expect(canAccessPath(liberado, "/operacoes-legais")).toBe(false);
+    expect(canAccessPath(liberado, "/operacoes-legais/pesquisas")).toBe(false);
+  });
+});
+
 describe("pesquisas com a equipe", () => {
   it("gestão e resultados só para admin, mesmo com a chave salva no cadastro", () => {
     const comChave = { role: null, permissions: ["/operacoes-legais/pesquisas"] };
@@ -341,6 +362,15 @@ describe("Minidocumentário 10 anos", () => {
     expect(firstAllowedPath({ role: null, permissions: ["/documentario/editar"] })).toBe("/");
     expect(isManualOnlyKey("/documentario")).toBe(true);
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/documentario");
+    expect(canUploadDocumentarioAcervo({ role: "admin" })).toBe(true);
+    expect(canUploadDocumentarioAcervo(producao)).toBe(true);
+    expect(canUploadDocumentarioAcervo(socio)).toBe(false);
+    // Chave só do acervo: sobe fotos, mas não edita o projeto; sem a chave de ver, não vale.
+    const acervo = { role: null, permissions: ["/rh", "/documentario", "/documentario/acervo/enviar"] };
+    expect(canUploadDocumentarioAcervo(acervo)).toBe(true);
+    expect(canEditDocumentario(acervo)).toBe(false);
+    expect(canUploadDocumentarioAcervo({ role: null, permissions: ["/documentario/acervo/enviar"] })).toBe(false);
+    expect(isManualOnlyKey("/documentario/acervo/enviar")).toBe(true);
   });
 });
 

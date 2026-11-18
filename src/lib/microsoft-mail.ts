@@ -6,13 +6,23 @@ import "server-only";
  * que precisa da permissão de aplicativo Mail.Send com consentimento do admin.
  * Sai da caixa da Controladoria (respostas chegam lá); MICROSOFT_MAIL_SENDER troca
  * a caixa sem mexer no código.
- * Não serve para envio em massa: campanhas seguem pelo Resend.
+ * Campanhas de produto também podem sair por aqui, da caixa do próprio sócio, um e-mail por
+ * pessoa e com intervalo (ver email-marketing-mailbox.ts); newsletters em volume seguem pelo Resend.
  */
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 const DEFAULT_SENDER = "controladoria@bismarchipires.com.br";
 
-export class MicrosoftMailError extends Error {}
+export class MicrosoftMailError extends Error {
+  constructor(
+    message: string,
+    /** HTTP do Graph (403 = sem permissão na caixa, 429 = limite de envio por minuto). */
+    readonly status?: number,
+    readonly code?: string
+  ) {
+    super(message);
+  }
+}
 
 export function microsoftMailConfigurado(): boolean {
   return Boolean(
@@ -46,15 +56,29 @@ async function tokenGraph(): Promise<string> {
   return corpo.access_token;
 }
 
+// O token do app vale ~1h: reaproveitar evita uma chamada de login por e-mail nos envios em sequência.
+let tokenCache: { valor: string; expiraEm: number } | null = null;
+
+async function tokenGraphReaproveitado(): Promise<string> {
+  if (tokenCache && tokenCache.expiraEm > Date.now()) return tokenCache.valor;
+  const valor = await tokenGraph();
+  tokenCache = { valor, expiraEm: Date.now() + 45 * 60 * 1000 };
+  return valor;
+}
+
 export async function enviarEmailMicrosoft(params: {
   para: string;
   assunto: string;
   html: string;
   /** Para onde vão as respostas (ex.: a pessoa do RH que enviou). Sem ele, voltam para o remetente. */
   responderPara?: string | null;
+  /** Caixa que envia (ex.: o sócio de uma campanha de produto). Padrão: Controladoria. */
+  remetente?: string | null;
+  /** Guarda a cópia nos Itens Enviados do remetente (campanhas: sim, para ele ver o que saiu). */
+  salvarEmEnviados?: boolean;
 }): Promise<void> {
-  const remetente = process.env.MICROSOFT_MAIL_SENDER?.trim() || DEFAULT_SENDER;
-  const token = await tokenGraph();
+  const remetente = params.remetente?.trim() || process.env.MICROSOFT_MAIL_SENDER?.trim() || DEFAULT_SENDER;
+  const token = await tokenGraphReaproveitado();
   const responderPara = params.responderPara?.trim();
   const resposta = await fetch(`${GRAPH}/users/${encodeURIComponent(remetente)}/sendMail`, {
     method: "POST",
@@ -66,7 +90,7 @@ export async function enviarEmailMicrosoft(params: {
         toRecipients: [{ emailAddress: { address: params.para } }],
         ...(responderPara ? { replyTo: [{ emailAddress: { address: responderPara } }] } : {}),
       },
-      saveToSentItems: false,
+      saveToSentItems: params.salvarEmEnviados ?? false,
     }),
     cache: "no-store",
   });
@@ -74,6 +98,7 @@ export async function enviarEmailMicrosoft(params: {
   if (resposta.status !== 202) {
     const corpo = (await resposta.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
     const detalhe = corpo?.error ? `${corpo.error.code}: ${corpo.error.message}` : String(resposta.status);
-    throw new MicrosoftMailError(`O Microsoft 365 recusou o envio (${detalhe}).`);
+    if (resposta.status === 401) tokenCache = null;
+    throw new MicrosoftMailError(`O Microsoft 365 recusou o envio (${detalhe}).`, resposta.status, corpo?.error?.code);
   }
 }

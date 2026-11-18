@@ -277,7 +277,10 @@ export interface TarefaPrevista {
    * regra da insolvência (o Enviar e o Revisar vão 2 dias úteis antes e o Protocolar fica 1 dia útil antes da fatal).
    */
   ajustada?: "fatal" | "hoje" | "antecipada";
-  /** 1. CIÊNCIA DOS AGENDAMENTOS repetida na vistagem: o robô cancela no VIOS (fica a da primeira tarefa). */
+  /**
+   * Repetida na vistagem: a 1. CIÊNCIA DOS AGENDAMENTOS, o EMBARGOS DE DECLARAÇÃO ou uma que ele cria (2. REVISAR,
+   * 3. PROTOCOLAR). O robô cancela no VIOS; fica a da primeira tarefa (`repetidasNaVistagem`).
+   */
   repetida?: boolean;
   responsaveis: string;
   /** O jurídico escolheu quem fica (no lugar da regra do robô); os nomes vão para o robô. */

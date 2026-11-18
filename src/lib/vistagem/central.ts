@@ -1,6 +1,6 @@
 import { paraDataVios, type EtiquetaAgendamento } from "./agendamento";
 import { escritorioNoBkp, tiposDoAgendamento } from "./bkp-sioe";
-import { ehCienciaDosAgendamentos, ehCienciaNf } from "./ciencia-agendamentos";
+import { ehCienciaDosAgendamentos, ehCienciaNf, type Repetida } from "./ciencia-agendamentos";
 import { agendaNoVios, partesDaData, type LinhaNoVios } from "./como-fica-no-vios";
 import type { DataDoFluxo, TarefaPrevista } from "./types";
 
@@ -116,6 +116,13 @@ function diaComSemana(iso: string): string {
   return `${paraDataVios(iso)} (${partesDaData(iso).semana})`;
 }
 
+/** Quem agenda à mão cancela no VIOS o que o robô cancelaria (Duplicidade). */
+const REPETIDA_NA_CENTRAL: Record<Repetida, string> = {
+  ciencia: "repetida nesta vistagem: cancelar no VIOS (fica a da primeira tarefa)",
+  embargos: "repetido nesta vistagem: cancelar no VIOS, com o que ele cria (fica o da primeira tarefa)",
+  do_embargos: "do Embargos repetido: cancelar no VIOS",
+};
+
 /** Uma tarefa da árvore: data, nome e quem fica, com o que difere do VIOS (quem agenda à mão precisa repetir). */
 function linhaDoFluxo(linha: LinhaNoVios, etiqueta: EtiquetaAgendamento): string {
   const nome = linha.principal ? `${linha.nome} (${etiqueta === "PRAZO" ? "Enviar" : "esta tarefa"})` : linha.nome;
@@ -123,7 +130,7 @@ function linhaDoFluxo(linha: LinhaNoVios, etiqueta: EtiquetaAgendamento): string
     linha.criadaPor ? `criada por ${linha.criadaPor}` : null,
     linha.nota,
     !linha.principal && linha.data && linha.dataVios && linha.data !== linha.dataVios ? `o VIOS daria ${paraDataVios(linha.dataVios)}: mudar a data` : null,
-    linha.repetida ? "repetida nesta vistagem: cancelar no VIOS (fica a da primeira tarefa)" : null,
+    linha.repetida ? REPETIDA_NA_CENTRAL[linha.repetida] : null,
   ].filter(Boolean);
   const partes = [
     `${linha.data ? diaComSemana(linha.data) : "data do VIOS"}${linha.hora ? ` às ${linha.hora}` : ""}`,

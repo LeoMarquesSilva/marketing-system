@@ -1,21 +1,33 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Camera, ChevronLeft, ChevronRight, ExternalLink, ImagePlus, X } from "lucide-react";
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, ExternalLink, Film, ImagePlus, Play, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { imageFilesFrom } from "@/lib/rh/boas-praticas/photos-client";
-import { FEEDBACK_PHOTOS_MAX, type FeedbackPhoto } from "@/lib/rh/boas-praticas/types";
+import { formatDuration, formatMegabytes, isVideoFile } from "@/lib/rh/boas-praticas/media";
+import { mediaFilesFrom } from "@/lib/rh/boas-praticas/photos-client";
+import {
+  FEEDBACK_PHOTOS_MAX,
+  FEEDBACK_VIDEOS_MAX,
+  isFeedbackVideo,
+  type FeedbackPhoto,
+} from "@/lib/rh/boas-praticas/types";
 import { cn } from "@/lib/utils";
 
-/** Foto escolhida no formulário e ainda não enviada (vai junto ao salvar). */
+/** Foto ou vídeo escolhido no formulário e ainda não enviado (vai junto ao salvar). */
 export interface PendingPhoto {
   key: string;
   file: File;
   preview: string;
+  video: boolean;
 }
 
 export function toPendingPhotos(files: File[]): PendingPhoto[] {
-  return files.map((file) => ({ key: crypto.randomUUID(), file, preview: URL.createObjectURL(file) }));
+  return files.map((file) => ({
+    key: crypto.randomUUID(),
+    file,
+    preview: URL.createObjectURL(file),
+    video: isVideoFile(file),
+  }));
 }
 
 function takenAtLabel(iso: string | null): string | null {
@@ -33,6 +45,50 @@ function takenAtLabel(iso: string | null): string | null {
 }
 
 const TILE = "relative aspect-square overflow-hidden rounded-md bg-[#eef3f5] ring-1 ring-inset ring-black/5";
+
+/** Selo de vídeo sobre a miniatura: play no centro e duração no canto. */
+function VideoBadge({ duration, compact = false }: { duration: number | null; compact?: boolean }) {
+  const label = formatDuration(duration);
+  return (
+    <>
+      <span
+        className={cn(
+          "absolute left-1/2 top-1/2 grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/55 text-white",
+          compact ? "size-6" : "size-9"
+        )}
+        aria-hidden
+      >
+        <Play className={cn("translate-x-px fill-current", compact ? "size-3" : "size-4")} />
+      </span>
+      {label && !compact && (
+        <span className="absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-xs font-medium tabular-nums text-white">
+          {label}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Miniatura da foto ou do vídeo já enviado. */
+function MediaThumb({ media, compact = false }: { media: FeedbackPhoto; compact?: boolean }) {
+  if (!isFeedbackVideo(media)) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={media.url} alt="" className="size-full object-cover" />;
+  }
+  return (
+    <>
+      {media.poster_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={media.poster_url} alt="" className="size-full object-cover" />
+      ) : (
+        <span className="grid size-full place-items-center bg-[#10293a] text-white/70" aria-hidden>
+          <Film className={compact ? "size-4" : "size-6"} />
+        </span>
+      )}
+      <VideoBadge duration={media.duration_seconds} compact={compact} />
+    </>
+  );
+}
 
 /* ------------------------------------------------------------ galeria */
 
@@ -66,14 +122,15 @@ export function PhotoGallery({
           key={photo.id}
           type="button"
           onClick={() => onOpen(index)}
-          aria-label={`Ver foto ${index + 1} de ${photos.length}`}
+          aria-label={`Ver ${isFeedbackVideo(photo) ? "vídeo" : "foto"} ${index + 1} de ${photos.length}`}
           className={cn(
             TILE,
             "group transition-shadow duration-150 hover:ring-[#3e84a8]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
           )}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={photo.url} alt="" className="size-full object-cover transition-opacity duration-150 group-hover:opacity-90" />
+          <span className="block size-full transition-opacity duration-150 group-hover:opacity-90">
+            <MediaThumb media={photo} />
+          </span>
         </button>
       ))}
     </div>
@@ -82,7 +139,32 @@ export function PhotoGallery({
 
 /* ------------------------------------------------------- visualizador */
 
-/** Foto em tamanho grande dentro do próprio modal (sem abrir outro por cima). */
+/** Player do vídeo; avisa quando o navegador não toca o formato (ex.: HEVC do iPhone). */
+function VideoPlayer({ media, index }: { media: FeedbackPhoto; index: number }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div className="flex max-w-sm flex-col items-center gap-2 px-6 text-center text-sm text-white/80">
+        <Film className="size-8 text-white/60" aria-hidden />
+        Este navegador não toca o formato deste vídeo. Use &quot;Abrir em nova aba&quot; para baixar e assistir no computador.
+      </div>
+    );
+  }
+  return (
+    <video
+      src={media.url}
+      poster={media.poster_url ?? undefined}
+      controls
+      playsInline
+      preload="metadata"
+      aria-label={`Vídeo ${index + 1} da ocorrência`}
+      onError={() => setFailed(true)}
+      className="max-h-full max-w-full"
+    />
+  );
+}
+
+/** Foto ou vídeo em tamanho grande dentro do próprio modal (sem abrir outro por cima). */
 export function PhotoViewer({
   photos,
   index,
@@ -100,6 +182,8 @@ export function PhotoViewer({
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      // Setas dentro do player avançam o vídeo; não trocam de arquivo.
+      if ((event.target as HTMLElement | null)?.tagName === "VIDEO") return;
       if (event.key === "ArrowLeft" && photos.length > 1) onIndex((index - 1 + photos.length) % photos.length);
       if (event.key === "ArrowRight" && photos.length > 1) onIndex((index + 1) % photos.length);
     }
@@ -108,7 +192,9 @@ export function PhotoViewer({
   }, [index, photos.length, onIndex]);
 
   if (!photo) return null;
+  const video = isFeedbackVideo(photo);
   const taken = takenAtLabel(photo.taken_at);
+  const duration = formatDuration(photo.duration_seconds);
 
   return (
     <div className="space-y-3 px-6 py-5">
@@ -117,13 +203,17 @@ export function PhotoViewer({
         Voltar ao feedback
       </Button>
       <div className="relative flex h-[min(60dvh,520px)] items-center justify-center overflow-hidden rounded-md bg-[#0f1b24]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={photo.url} alt={`Foto ${index + 1} da ocorrência`} className="max-h-full max-w-full object-contain" />
+        {video ? (
+          <VideoPlayer key={photo.id} media={photo} index={index} />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={photo.url} alt={`Foto ${index + 1} da ocorrência`} className="max-h-full max-w-full object-contain" />
+        )}
         {hasMany && (
           <>
             <button
               type="button"
-              aria-label="Foto anterior"
+              aria-label="Anterior"
               onClick={() => go(-1)}
               className="absolute left-2 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-white transition-colors hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
             >
@@ -131,7 +221,7 @@ export function PhotoViewer({
             </button>
             <button
               type="button"
-              aria-label="Próxima foto"
+              aria-label="Próximo"
               onClick={() => go(1)}
               className="absolute right-2 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-white transition-colors hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
             >
@@ -142,7 +232,9 @@ export function PhotoViewer({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
         <span className="tabular-nums">
-          Foto {index + 1} de {photos.length}
+          {video ? "Vídeo" : "Foto"} {index + 1} de {photos.length}
+          {video && duration ? ` · ${duration}` : ""}
+          {video ? ` · ${formatMegabytes(photo.size_bytes)}` : ""}
           {taken ? ` · tirada em ${taken}` : ""}
         </span>
         <a
@@ -161,16 +253,15 @@ export function PhotoViewer({
             <button
               key={entry.id}
               type="button"
-              aria-label={`Ir para a foto ${position + 1}`}
+              aria-label={`Ir para ${isFeedbackVideo(entry) ? "o vídeo" : "a foto"} ${position + 1}`}
               aria-current={position === index}
               onClick={() => onIndex(position)}
               className={cn(
-                "size-14 shrink-0 overflow-hidden rounded-md ring-2 ring-offset-1 transition-opacity",
+                "relative size-14 shrink-0 overflow-hidden rounded-md ring-2 ring-offset-1 transition-opacity",
                 position === index ? "ring-[#347796]" : "opacity-60 ring-transparent hover:opacity-100"
               )}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={entry.url} alt="" className="size-full object-cover" />
+              <MediaThumb media={entry} compact />
             </button>
           ))}
         </div>
@@ -213,26 +304,33 @@ export function PhotoField({
       onDrop={(event) => {
         event.preventDefault();
         setDragging(false);
-        const files = imageFilesFrom(event.dataTransfer.files);
+        const files = mediaFilesFrom(event.dataTransfer.files);
         if (files.length) onAdd(files);
       }}
     >
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
         {existing.map((photo) => (
           <div key={photo.id} className={TILE}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={photo.url} alt="" className="size-full object-cover" />
-            <RemoveButton onClick={() => onRemoveExisting(photo.id)} />
+            <MediaThumb media={photo} />
+            <RemoveButton video={isFeedbackVideo(photo)} onClick={() => onRemoveExisting(photo.id)} />
           </div>
         ))}
         {pending.map((photo) => (
           <div key={photo.key} className={TILE}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={photo.preview} alt="" className="size-full object-cover" />
+            {photo.video ? (
+              <>
+                {/* #t=0.5: o navegador mostra um quadro do começo em vez da tela preta. */}
+                <video src={`${photo.preview}#t=0.5`} muted playsInline preload="metadata" className="size-full object-cover" />
+                <VideoBadge duration={null} />
+              </>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photo.preview} alt="" className="size-full object-cover" />
+            )}
             <span className="absolute inset-x-1 bottom-1 rounded bg-black/55 px-1.5 py-0.5 text-center text-xs font-medium text-white">
-              Nova
+              {photo.video ? `Novo · ${formatMegabytes(photo.file.size)}` : "Nova"}
             </span>
-            <RemoveButton onClick={() => onRemovePending(photo.key)} />
+            <RemoveButton video={photo.video} onClick={() => onRemovePending(photo.key)} />
           </div>
         ))}
         {loading &&
@@ -247,37 +345,37 @@ export function PhotoField({
             )}
           >
             {total ? <ImagePlus className="size-5" aria-hidden /> : <Camera className="size-5" aria-hidden />}
-            {total ? "Mais fotos" : "Adicionar fotos"}
+            {total ? "Mais fotos ou vídeos" : "Adicionar fotos ou vídeos"}
           </button>
         )}
       </div>
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/mp4,video/quicktime,video/webm,.mov,.mp4,.m4v,.webm"
         multiple
         className="sr-only"
         tabIndex={-1}
         aria-hidden
         onChange={(event) => {
-          const files = imageFilesFrom(event.target.files);
+          const files = mediaFilesFrom(event.target.files);
           if (files.length) onAdd(files);
           event.target.value = "";
         }}
       />
       <p className="text-xs text-muted-foreground">
-        {total} de {FEEDBACK_PHOTOS_MAX} · arraste ou cole (Ctrl+V) para adicionar. Fotografe o local ou o objeto e evite
-        rostos; a localização da foto é apagada no envio.
+        {total} de {FEEDBACK_PHOTOS_MAX} · até {FEEDBACK_VIDEOS_MAX} vídeos de 200 MB · arraste ou cole (Ctrl+V) para
+        adicionar. Fotografe ou filme o local ou o objeto e evite rostos; a localização das fotos é apagada no envio.
       </p>
     </div>
   );
 }
 
-function RemoveButton({ onClick }: { onClick: () => void }) {
+function RemoveButton({ video, onClick }: { video: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
-      aria-label="Remover foto"
+      aria-label={video ? "Remover vídeo" : "Remover foto"}
       onClick={onClick}
       className="absolute right-1 top-1 grid size-7 place-items-center rounded-full bg-black/55 text-white transition-colors hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
     >

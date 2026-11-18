@@ -53,6 +53,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/vios-tarefas", label: "Planner de Marketing (tarefas do VIOS)" },
   { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
   { key: "/operacoes-legais/vistagem", label: "Vistagem de Publicações BP", manualOnly: true },
+  { key: "/operacoes-legais/processos", label: "Processos e Pessoas (cadastro, autos, Rec. Crédito)", manualOnly: true },
   { key: "/operacoes-legais/planner", label: "Planner de Operações Legais", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
   { key: "/facilities", label: "Gestão de Fornecedores e Prestadores de Serviços (Facilities)", manualOnly: true },
@@ -70,6 +71,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/pe27/editar", label: "PE27 · editar decisões, alavancas e metas", manualOnly: true },
   { key: "/documentario", label: "Minidocumentário 10 anos (ver e aprovar)", manualOnly: true },
   { key: "/documentario/editar", label: "Minidocumentário 10 anos · editar, gravar e subir acervo", manualOnly: true },
+  { key: "/documentario/acervo/enviar", label: "Minidocumentário 10 anos · só subir e catalogar fotos do acervo (junto com “ver e aprovar”)", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
@@ -81,6 +83,9 @@ export const MEUS_CLIENTES_KEY = "/meus-clientes";
 export const CAFE_CULTURA_KEY = "/cafe-cultura";
 export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
 export const VISTAGEM_KEY = "/operacoes-legais/vistagem";
+export const PROCESSOS_KEY = "/operacoes-legais/processos";
+/** Cadastro de pessoas: parte do módulo de Processos (mesma liberação). */
+export const PESSOAS_PATH = "/operacoes-legais/pessoas";
 export const OPS_PLANNER_KEY = "/operacoes-legais/planner";
 export const TEAM_SURVEYS_KEY = "/operacoes-legais/pesquisas";
 export const ICP_KEY = "/icp";
@@ -92,6 +97,8 @@ export const PE27_EDIT_KEY = "/pe27/editar";
 export const DOCUMENTARIO_KEY = "/documentario";
 /** Chave de permissão (não é rota): editar, conduzir a gravação e subir acervo. */
 export const DOCUMENTARIO_EDIT_KEY = "/documentario/editar";
+/** Chave de permissão (não é rota): só subir e catalogar o acervo, junto com a de ver. */
+export const DOCUMENTARIO_ACERVO_KEY = "/documentario/acervo/enviar";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -312,6 +319,17 @@ export function canEditDocumentario(profile: AccessProfile | null | undefined): 
   return Boolean(profile.permissions?.includes(DOCUMENTARIO_EDIT_KEY));
 }
 
+/**
+ * Subir, catalogar e excluir arquivos do acervo: quem edita o projeto, ou quem vê
+ * o documentário e tem a chave só do acervo (não mexe no documento, nas gravações
+ * nem nas decisões dos sócios).
+ */
+export function canUploadDocumentarioAcervo(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (canEditDocumentario(profile)) return true;
+  return hasDocumentarioAccess(profile) && Boolean(profile.permissions?.includes(DOCUMENTARIO_ACERVO_KEY));
+}
+
 export function isDocumentarioPath(pathname: string): boolean {
   return pathname === DOCUMENTARIO_KEY || pathname.startsWith(`${DOCUMENTARIO_KEY}/`);
 }
@@ -321,6 +339,17 @@ export function isDocumentarioPath(pathname: string): boolean {
  * de 10 anos (os consultores foram convidados e confirmam pela mesma página da equipe).
  */
 const PE27_ONLY_EXTRA_PATHS = ["/alterar-senha", "/festa-10-anos"];
+
+/** Processos e Pessoas (substituto do VIOS): admin ou liberação manual em Usuários. */
+export function hasProcessosAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(PROCESSOS_KEY));
+}
+
+export function isProcessosPath(pathname: string): boolean {
+  return [PROCESSOS_KEY, PESSOAS_PATH].some((base) => pathname === base || pathname.startsWith(`${base}/`));
+}
 
 /** Painel de Vistagem e agendamento: admin ou liberação manual em Usuários. */
 export function hasVistagemAccess(profile: AccessProfile | null | undefined): boolean {
@@ -469,6 +498,10 @@ export function canAccessPath(
     return hasTeamSurveysAccess(profile);
   }
 
+  if (isProcessosPath(pathname)) {
+    return hasProcessosAccess(profile);
+  }
+
   if (isPe27Path(pathname)) {
     return hasPe27Access(profile);
   }
@@ -565,7 +598,7 @@ export function firstAllowedPath(profile: AccessProfile | null | undefined): str
   const primeiro = allowed.includes(MARKETING_DASHBOARD_PATH) ? MARKETING_DASHBOARD_PATH : allowed[0];
   // A chave de edição do PE27 não é uma página: entra pela Visão geral do módulo.
   if (primeiro === PE27_EDIT_KEY) return PE27_KEY;
-  if (primeiro === DOCUMENTARIO_EDIT_KEY) return DOCUMENTARIO_KEY;
+  if (primeiro === DOCUMENTARIO_EDIT_KEY || primeiro === DOCUMENTARIO_ACERVO_KEY) return DOCUMENTARIO_KEY;
   // O jurídico entra direto na aba Vistagem, onde está o trabalho dele.
   return primeiro === VISTAGEM_KEY ? entradaDaVistagem(profile) : primeiro;
 }

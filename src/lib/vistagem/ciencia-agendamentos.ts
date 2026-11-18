@@ -1,4 +1,4 @@
-import { HORA_LIMITE_DO_DIA, chaveNome, escritorioDaArea } from "./agendamento";
+import { HORA_LIMITE_DO_DIA, chaveDoCaminho, chaveNome, escritorioDaArea } from "./agendamento";
 import { somarDiasUteis } from "./dias-uteis";
 import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
 
@@ -69,27 +69,114 @@ export function fluxoCriaCiencia(fluxo: FluxoDaTarefa | null | undefined): boole
   return Boolean(fluxo && cria(fluxo.criacao));
 }
 
+/** "EMBARGOS DE DECLARAÇÃO" (19, 450 e 462 no VIOS), e não a RESPOSTA AOS EMBARGOS DE DECLARAÇÃO. */
+export function ehEmbargosDeDeclaracao(nome: string | null | undefined): boolean {
+  return chaveNome(nome).replace(/^\d+\s*\.\s*/, "") === "EMBARGOS DE DECLARACAO";
+}
+
+/** Uma tarefa da vistagem com o fluxo do VIOS dela, na ordem em que foi incluída. */
+export interface TarefaComFluxo<T> {
+  chave: T;
+  nome: string;
+  fluxo: FluxoDaTarefa | null | undefined;
+}
+
+/** Qual fica: a própria tarefa (caminho null) ou o caminho no fluxo dela; null quando nenhuma tem. */
+export type QualFica<T> = { chave: T; caminho: string[] | null } | null;
+
+/**
+ * A primeira na ordem das tarefas: a própria tarefa ou, no fluxo dela, a mais perto (menor nível; no empate, a
+ * primeira do fluxo). `fora` tira um ramo do fluxo (o Embargos repetido, com o que ele cria).
+ */
+function primeiraNaOrdem<T>(
+  tarefas: TarefaComFluxo<T>[],
+  procurada: (nome: string) => boolean,
+  fora: (chave: T, caminho: string[]) => boolean = () => false
+): QualFica<T> {
+  for (const tarefa of tarefas) {
+    if (procurada(tarefa.nome)) return { chave: tarefa.chave, caminho: null };
+    const dentro = (itens: { tarefa: TarefaDoFluxo; caminho: string[] }[]) => itens.filter((item) => !fora(tarefa.chave, item.caminho));
+    let nivel = dentro((tarefa.fluxo?.criacao ?? []).map((filha) => ({ tarefa: filha, caminho: [filha.nome] })));
+    for (let profundidade = 0; nivel.length && profundidade < 10; profundidade++) {
+      const achada = nivel.find((item) => procurada(item.tarefa.nome));
+      if (achada) return { chave: tarefa.chave, caminho: achada.caminho };
+      nivel = dentro(nivel.flatMap((item) => item.tarefa.filhas.map((filha) => ({ tarefa: filha, caminho: [...item.caminho, filha.nome] }))));
+    }
+  }
+  return null;
+}
+
+function mesmaTarefa<T>(fica: QualFica<T>, chave: T, caminho: string[] | null): boolean {
+  if (!fica || fica.chave !== chave) return false;
+  return caminho === null ? fica.caminho === null : fica.caminho !== null && chaveDoCaminho(fica.caminho) === chaveDoCaminho(caminho);
+}
+
+/**
+ * Um Embargos de Declaração só por vistagem (pedido de 17/11/2026): o AIRR e o AGRAVO INTERNO (e o Recurso de
+ * Revista, o Agravo de Petição…) criam cada um o seu no fluxo do VIOS. Fica o da primeira tarefa incluída (o mais
+ * perto dela no fluxo) e o robô cancela os outros no VIOS (tipo Duplicidade), com o 2. REVISAR e o 3. PROTOCOLAR
+ * que cada um cria. Quando o jurídico pede o Embargos como tarefa, fica o pedido (com a data que ele escolheu) e os
+ * do fluxo são cancelados; o pedido nunca é cancelado. O robô segue a mesma regra no lançamento (sama-rpa).
+ */
+export function embargosQueFica<T>(tarefas: TarefaComFluxo<T>[]): QualFica<T> {
+  const pedido = tarefas.find((tarefa) => ehEmbargosDeDeclaracao(tarefa.nome));
+  return pedido ? { chave: pedido.chave, caminho: null } : primeiraNaOrdem(tarefas, ehEmbargosDeDeclaracao);
+}
+
+/** O caminho passa por um Embargos de Declaração do fluxo que não é o que fica (o robô cancela o ramo inteiro)? */
+function noEmbargosRepetido<T>(embargos: QualFica<T>, chave: T, caminho: string[]): boolean {
+  return caminho.some((nome, indice) => ehEmbargosDeDeclaracao(nome) && !mesmaTarefa(embargos, chave, caminho.slice(0, indice + 1)));
+}
+
 /**
  * Uma Ciência dos Agendamentos só por vistagem: quando o fluxo do VIOS cria mais de uma (a Apelação cria a dela e
  * um Embargos de Declaração que cria outra; ou duas tarefas pedidas, cada uma com a sua), fica a da primeira tarefa
  * incluída e o robô cancela as outras no VIOS (tipo Duplicidade). Dentro do fluxo de uma tarefa, fica a mais perto
- * dela (menor nível; no empate, a primeira do fluxo). Devolve qual fica: a própria tarefa (caminho null, quando ela
- * é a Ciência) ou o caminho no fluxo dela; null quando nenhuma cria Ciência.
- * O robô segue a mesma regra no lançamento (sama-rpa).
+ * dela (menor nível; no empate, a primeira do fluxo). A que está num Embargos repetido não conta: sai com ele.
+ * Devolve qual fica: a própria tarefa (caminho null, quando ela é a Ciência) ou o caminho no fluxo dela; null
+ * quando nenhuma cria Ciência. O robô segue a mesma regra no lançamento (sama-rpa).
  */
-export function cienciaQueFica<T>(
-  tarefas: { chave: T; nome: string; fluxo: FluxoDaTarefa | null | undefined }[]
-): { chave: T; caminho: string[] | null } | null {
-  for (const tarefa of tarefas) {
-    if (ehCienciaDosAgendamentos(tarefa.nome)) return { chave: tarefa.chave, caminho: null };
-    let nivel: { tarefa: TarefaDoFluxo; caminho: string[] }[] = (tarefa.fluxo?.criacao ?? []).map((filha) => ({ tarefa: filha, caminho: [filha.nome] }));
-    for (let profundidade = 0; nivel.length && profundidade < 10; profundidade++) {
-      const achada = nivel.find((item) => ehCienciaDosAgendamentos(item.tarefa.nome));
-      if (achada) return { chave: tarefa.chave, caminho: achada.caminho };
-      nivel = nivel.flatMap((item) => item.tarefa.filhas.map((filha) => ({ tarefa: filha, caminho: [...item.caminho, filha.nome] })));
+export function cienciaQueFica<T>(tarefas: TarefaComFluxo<T>[]): QualFica<T> {
+  const embargos = embargosQueFica(tarefas);
+  return primeiraNaOrdem(tarefas, ehCienciaDosAgendamentos, (chave, caminho) => noEmbargosRepetido(embargos, chave, caminho));
+}
+
+/**
+ * O que o robô cancela no VIOS depois de lançar (tipo Duplicidade): a Ciência dos Agendamentos e o Embargos de
+ * Declaração repetidos (`cienciaQueFica`, `embargosQueFica`), este com tudo o que ele cria. Diz, para a tarefa
+ * pedida (caminho null) ou para uma do fluxo dela, se fica repetida.
+ */
+export function repetidasNaVistagem<T>(tarefas: TarefaComFluxo<T>[]): (chave: T, caminho: string[] | null) => boolean {
+  const embargos = embargosQueFica(tarefas);
+  const ciencia = cienciaQueFica(tarefas);
+  return (chave, caminho) => {
+    if (caminho === null) {
+      const pedida = tarefas.find((tarefa) => tarefa.chave === chave);
+      return Boolean(pedida && ehCienciaDosAgendamentos(pedida.nome) && !mesmaTarefa(ciencia, chave, null));
     }
-  }
-  return null;
+    if (noEmbargosRepetido(embargos, chave, caminho)) return true;
+    return ehCienciaDosAgendamentos(caminho[caminho.length - 1]) && !mesmaTarefa(ciencia, chave, caminho);
+  };
+}
+
+/** Por que a tarefa do fluxo sai: é a Ciência repetida, o Embargos repetido ou uma que o Embargos repetido cria. */
+export type Repetida = "ciencia" | "embargos" | "do_embargos";
+
+/** Qual repetida é a tarefa do fluxo neste caminho (já marcada como repetida). */
+export function repetidaDoCaminho(caminho: string[]): Repetida {
+  if (ehEmbargosDeDeclaracao(caminho[caminho.length - 1])) return "embargos";
+  return caminho.some(ehEmbargosDeDeclaracao) ? "do_embargos" : "ciencia";
+}
+
+/** O que a tela diz da tarefa repetida (o robô cancela no VIOS depois de lançar). */
+export const TEXTO_DA_REPETIDA: Record<Repetida, string> = {
+  ciencia: "repetida: o robô cancela no VIOS (Duplicidade); fica a da primeira tarefa",
+  embargos: "repetido: o robô cancela no VIOS (Duplicidade), com o que ele cria; fica o da primeira tarefa",
+  do_embargos: "do Embargos repetido: o robô cancela no VIOS (Duplicidade)",
+};
+
+export function textoDaRepetida(caminho: string[]): string {
+  return TEXTO_DA_REPETIDA[repetidaDoCaminho(caminho)];
 }
 
 export function ehReestruturacao(area: string | null | undefined): boolean {

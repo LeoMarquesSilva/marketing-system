@@ -259,5 +259,46 @@ describe("BlocoDoRobo", () => {
       expect(html).toContain("libere em");
       expect(html).not.toContain("Simular a abertura no VIOS");
     });
+
+    it("pasta aberta: mostra a ATUALIZAÇÃO DE CADASTRO que o robô criou, com a CI, a data e quem ficou", () => {
+      const html = comReal(
+        [
+          pedido({
+            simulado: false,
+            resultado: {
+              ci_pasta: "61402",
+              tarefas: [{ tarefa: "ATUALIZAÇÃO DE CADASTRO", ci_vios: "941500", data: "18/11/2026", responsaveis: ["Ana Controle", "Davi Gestor"] }],
+            },
+          }),
+        ],
+        { pastaAberta: { ci: "61402", naTriagem: true, liberada: false } }
+      );
+      expect(html).toContain("ATUALIZAÇÃO DE CADASTRO");
+      expect(html).toContain("CI 941500");
+      expect(html).toContain("para 18/11/2026");
+      expect(html).toContain("Ana Controle, Davi Gestor");
+    });
+
+    it("a tarefa que não foi criada aparece com o motivo, para criar à mão", () => {
+      const html = comReal(
+        [pedido({ simulado: false, resultado: { ci_pasta: "61402", tarefas: [{ tarefa: "ATUALIZAÇÃO DE CADASTRO", ci_vios: null, data: "18/11/2026", erro: "sem tempo" }] } })],
+        { pastaAberta: { ci: "61402", naTriagem: true, liberada: false } }
+      );
+      expect(html).toContain("Não foi criada: sem tempo. Crie à mão no VIOS.");
+    });
+  });
+
+  it("a simulação diz o que a abertura de verdade agendaria", () => {
+    const html = bloco([
+      pedido({
+        resultado: {
+          preenchidos: { cnj: "x" },
+          nao_encontrados: [],
+          recusaria: [],
+          avisos: ["Simulação: nada foi gravado no VIOS.", "Na abertura de verdade, a pasta nova também leva a ATUALIZAÇÃO DE CADASTRO para 18/11/2026, com Ana Controle (regra do tipo no VIOS)."],
+        },
+      }),
+    ]);
+    expect(html).toContain("Na abertura de verdade, a pasta nova também leva a ATUALIZAÇÃO DE CADASTRO para 18/11/2026");
   });
 });

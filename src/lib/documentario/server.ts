@@ -3,7 +3,7 @@ import "server-only";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createClient as createSsrClient } from "@/utils/supabase/server";
-import { canEditDocumentario, hasDocumentarioAccess, isAdminRole } from "@/lib/access-control";
+import { canEditDocumentario, canUploadDocumentarioAcervo, hasDocumentarioAccess, isAdminRole } from "@/lib/access-control";
 import { resolveEmployeeAvatarUrl } from "@/lib/ferias/filters";
 import {
   ARCHIVE_USES,
@@ -75,6 +75,8 @@ interface ViewerBase {
   name: string;
   is_admin: boolean;
   can_edit: boolean;
+  /** Sobe, cataloga e exclui arquivos do acervo (quem edita, ou a chave só do acervo). */
+  can_upload: boolean;
 }
 
 /** Sessão + acesso ao documentário (admin ou chave /documentario). */
@@ -94,11 +96,16 @@ async function requireViewer(db: SupabaseClient): Promise<ViewerBase> {
     name: (data.name as string) ?? "",
     is_admin: isAdminRole(profile),
     can_edit: canEditDocumentario(profile),
+    can_upload: canUploadDocumentarioAcervo(profile),
   };
 }
 
 function requireEditor(viewer: ViewerBase): void {
   if (!viewer.can_edit) throw new DocHttpError("Só a equipe de produção altera o projeto.", 403, "READ_ONLY");
+}
+
+function requireUploader(viewer: ViewerBase): void {
+  if (!viewer.can_upload) throw new DocHttpError("Você não tem permissão para mexer no acervo.", 403, "READ_ONLY");
 }
 
 async function loadProject(db: SupabaseClient, slug = DOC_DEFAULT_SLUG): Promise<DocProject> {
@@ -1061,7 +1068,7 @@ export async function runDocAction(raw: unknown): Promise<Record<string, unknown
       return { shootChecks: checklist.checks };
     }
     case "archive.create": {
-      requireEditor(viewer);
+      requireUploader(viewer);
       const prefix = `acervo/${project.id}/`;
       if (input.items.some((item) => !item.storage_path.startsWith(prefix) || (item.thumb_path && !item.thumb_path.startsWith(prefix)))) {
         throw new DocHttpError("Arquivo fora da pasta do projeto.", 400, "INVALID");
@@ -1073,7 +1080,7 @@ export async function runDocAction(raw: unknown): Promise<Record<string, unknown
     }
     case "archive.update":
     case "archive.bulk": {
-      requireEditor(viewer);
+      requireUploader(viewer);
       const ids = input.action === "archive.update" ? [input.id] : input.ids;
       const fields = Object.fromEntries(Object.entries(input.fields).filter(([, value]) => value !== undefined));
       if (!Object.keys(fields).length) throw new DocHttpError("Nada para salvar.", 400, "INVALID");
@@ -1087,7 +1094,7 @@ export async function runDocAction(raw: unknown): Promise<Record<string, unknown
       return { items: await mapArchive(db, (data ?? []) as Record<string, unknown>[]) };
     }
     case "archive.delete": {
-      requireEditor(viewer);
+      requireUploader(viewer);
       const { data, error } = await db
         .from("documentary_archive_items")
         .select("id, storage_path, thumb_path")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
@@ -39,6 +39,7 @@ import { marcarEnviosSincronizados, sincronizarEnvios } from "@/lib/vistagem/env
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
 import { vaiParaCentral } from "@/lib/vistagem/central";
+import { textoDaRepetida } from "@/lib/vistagem/ciencia-agendamentos";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { ROTULO_AJUSTE_CURTO } from "@/lib/vistagem/fluxo-previsto";
 import { MAX_TEXTO_INCONSISTENCIA, TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
@@ -82,6 +83,9 @@ import {
 } from "./ui";
 
 type Aba = "conferir" | "enviadas" | "aberturas" | "inconsistencias";
+
+/** Depois de validar, a fila de "A conferir" só é pedida de novo se a última carga tiver mais que isto. */
+const RECARREGAR_FILA_MS = 5 * 60_000;
 
 /** Retorno de uma ação da tela (sucesso, alerta, informação ou erro). */
 type Retorno = { tom: "sucesso" | "erro" | "alerta" | "info"; texto: string };
@@ -334,7 +338,7 @@ function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
               >
                 <span className={cn("font-medium", tarefa.repetida ? "text-muted-foreground line-through" : "text-foreground")}>{tarefa.nome}</span>
                 {tarefa.repetida ? (
-                  <span className="text-muted-foreground">repetida: o robô cancela no VIOS (Duplicidade)</span>
+                  <span className="text-muted-foreground">{textoDaRepetida(tarefa.caminho)}</span>
                 ) : (
                   <>
                     <span className={cn("tabular-nums", tarefa.data ? "text-foreground" : "text-muted-foreground")}>
@@ -1055,8 +1059,18 @@ function Conferencia() {
   /** Abertura de pasta aberta no detalhe (tarefas, fluxo, datas e responsáveis). */
   const [aberturaAberta, setAberturaAberta] = useState<string | null>(null);
 
+  /**
+   * Validar ou devolver só tira a publicação de "A conferir": a lista inteira (~25 consultas no servidor) não é pedida
+   * de novo a cada uma. Ela é recarregada ao ir para outra aba, quando a fila esvazia ou quando a última carga tem mais
+   * de 5 min (para entrar o que o jurídico mandou nesse meio-tempo).
+   */
+  const carregadaEm = useRef(0);
+  const [listaVelha, setListaVelha] = useState(false);
+
   const carregar = useCallback(async () => {
     setErro("");
+    carregadaEm.current = Date.now();
+    setListaVelha(false);
     try {
       const resposta = await authFetch("/api/operacoes-legais/vistagem/conferencia");
       const corpo = await resposta.json();
@@ -1155,9 +1169,22 @@ function Conferencia() {
     const posicao = ids.indexOf(id);
     if (posicao >= 0) setSelecionada(ids[posicao + 1] ?? ids[posicao - 1] ?? null);
     setRetorno({ tom: "sucesso", texto: mensagem });
-    void carregar();
-    setDados((atual) => (atual ? { ...atual, aConferir: atual.aConferir.filter((item) => item.publicacao.id !== id) } : atual));
     avisarContagensVistagem();
+    const daFila = dados?.aConferir.some((item) => item.publicacao.id === id) ?? false;
+    const restantes = (dados?.aConferir.length ?? 0) - (daFila ? 1 : 0);
+    // Reenviar ou rodar de novo (Enviadas ao robô) muda o status da própria publicação: essa lista recarrega na hora.
+    if (!daFila || restantes <= 0 || Date.now() - carregadaEm.current > RECARREGAR_FILA_MS) {
+      void carregar();
+    } else {
+      setListaVelha(true);
+    }
+    setDados((atual) => (atual ? { ...atual, aConferir: atual.aConferir.filter((item) => item.publicacao.id !== id) } : atual));
+  }
+
+  function trocarAba(nova: Aba) {
+    setAba(nova);
+    // Validou e foi ver as enviadas ou as aberturas: elas ainda não têm o que acabou de ser validado.
+    if (listaVelha && nova !== "inconsistencias") void carregar();
   }
 
   const lista = aba === "conferir" ? dados?.aConferir : aba === "enviadas" ? dados?.enviadas : [];
@@ -1285,7 +1312,7 @@ function Conferencia() {
               { value: "aberturas", label: !dados ? "Abertura de pasta" : aberturasSemItem ? `Abertura de pasta ${aberturas.length} (${aberturasSemItem} sem item)` : `Abertura de pasta ${aberturas.length}` },
               { value: "inconsistencias", label: "Inconsistências" },
             ]}
-            onChange={setAba}
+            onChange={trocarAba}
           />
           </div>
         }

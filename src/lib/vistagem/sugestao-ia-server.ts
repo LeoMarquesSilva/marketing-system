@@ -27,6 +27,7 @@ import {
   costumesDaArea,
   custoDaChamada,
   ehAreaTrabalhista,
+  ehOperacoesLegais,
   entradaDaSugestao,
   esocialDaResposta,
   instrucoesDaSugestao,
@@ -138,8 +139,8 @@ async function montarHistorico(escritorio: string, { ate, excluirProcesso }: { a
 }
 
 /**
- * Pede à OpenAI as tarefas da publicação, escolhidas só da lista do VIOS da área, com as instruções da área (Trabalhista
- * ou CPC) e o costume do escritório. Fora do Trabalhista não há eSocial.
+ * Pede à OpenAI as tarefas da publicação, escolhidas só da lista do VIOS da área, com as instruções da área (Trabalhista,
+ * CPC ou Operações Legais) e o costume do escritório. Fora do Trabalhista não há eSocial.
  */
 export async function pedirSugestao(
   publicacao: PublicacaoComArea,
@@ -149,10 +150,11 @@ export async function pedirSugestao(
   const apiKey = openAIKey("analisePublicacao");
   if (!apiKey) throw new VistagemError("A chave da OpenAI não está configurada.", 503);
   const modelo = OPENAI_DEFAULT_MODEL;
-  const trabalhista = ehAreaTrabalhista(catalogo.area);
+  const opsLegais = ehOperacoesLegais(publicacao.escritorio_responsavel);
+  const trabalhista = ehAreaTrabalhista(catalogo.area, publicacao.escritorio_responsavel);
   const listas = catalogo.tarefas;
-  const chaveDaArea = chaveNome(catalogo.area).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  const instrucoes = instrucoesDaSugestao(listas, { area: catalogo.area, historico });
+  const chaveDaArea = chaveNome(opsLegais ? "Operações Legais" : catalogo.area).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const instrucoes = instrucoesDaSugestao(listas, { area: catalogo.area, escritorio: publicacao.escritorio_responsavel, historico });
   // modelos de raciocínio recusam temperature; nos outros, 0 para a resposta variar pouco
   const raciocinio = isOpenAIReasoningModel(modelo);
   const { object, usage } = await generateObject({
@@ -215,7 +217,7 @@ export async function sugestaoDaPublicacao(id: string, areas: AreasVistagem = nu
   if (publicacao.sugestao_ia) return publicacao.sugestao_ia;
   if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
   const catalogo = catalogoParaPublicacao(await carregarCatalogoProcessos(), publicacao);
-  if (!catalogo || !areaComSugestaoIa(catalogo.area, publicacao.escritorio_responsavel)) {
+  if (!catalogo || !areaComSugestaoIa(catalogo.area)) {
     throw new VistagemError("A sugestão da IA não está disponível para esta área.", 422);
   }
   if (!(await lerConfiguracoes()).iaSugestaoTarefa) throw new VistagemError("A sugestão da IA está desligada nas configurações da Vistagem.", 422);
@@ -225,7 +227,7 @@ export async function sugestaoDaPublicacao(id: string, areas: AreasVistagem = nu
 }
 
 /**
- * No cron da Kurier: gera as sugestões das publicações que ainda não têm (todas as áreas, menos Operações Legais),
+ * No cron da Kurier: gera as sugestões das publicações que ainda não têm (todas as áreas),
  * 4 por vez, até o tempo acabar (as que sobrarem a tela gera ao abrir).
  */
 export async function gerarSugestoesPendentes(prazoMs: number): Promise<{ pendentes: number; geradas: number; erros: number; custoUS: number }> {
@@ -243,7 +245,7 @@ export async function gerarSugestoesPendentes(prazoMs: number): Promise<{ penden
   const catalogos = await carregarCatalogoProcessos();
   const fila = ((data ?? []) as PublicacaoComArea[])
     .map((publicacao) => ({ publicacao, catalogo: catalogoParaPublicacao(catalogos, publicacao) }))
-    .filter((item) => item.catalogo && areaComSugestaoIa(item.catalogo.area, item.publicacao.escritorio_responsavel));
+    .filter((item) => item.catalogo && areaComSugestaoIa(item.catalogo.area));
   let geradas = 0;
   let erros = 0;
   let custoUS = 0;

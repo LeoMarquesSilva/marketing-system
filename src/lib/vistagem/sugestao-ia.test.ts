@@ -5,6 +5,7 @@ import { ESOCIAL_PADRAO } from "./esocial";
 import {
   areaComSugestaoIa,
   compararComSugestao,
+  ehAreaTrabalhista,
   costumesDaArea,
   custoDaChamada,
   entradaDaSugestao,
@@ -88,14 +89,24 @@ describe("Recurso Ordinário vira a tarefa SENTENÇA (fluxo interno)", () => {
 });
 
 describe("areaComSugestaoIa", () => {
-  it("todas as áreas, menos Operações Legais (pela área do catálogo ou pelo escritório)", () => {
+  it("todas as áreas, inclusive Operações Legais; sem lista de tarefas, não", () => {
     expect(areaComSugestaoIa("Trabalhista")).toBe(true);
-    expect(areaComSugestaoIa("Cível", "Cível")).toBe(true);
-    expect(areaComSugestaoIa("Cível | Insolvência", "Cível | Insolvência")).toBe(true);
-    expect(areaComSugestaoIa("Insolvência")).toBe(true);
-    expect(areaComSugestaoIa("Operações Legais")).toBe(false);
-    expect(areaComSugestaoIa("Trabalhista", "Operações Legais")).toBe(false);
+    expect(areaComSugestaoIa("Cível")).toBe(true);
+    expect(areaComSugestaoIa("Cível | Insolvência")).toBe(true);
+    expect(areaComSugestaoIa("Operações Legais")).toBe(true);
     expect(areaComSugestaoIa(null)).toBe(false);
+  });
+
+  it("Operações Legais: instruções de ex-cliente (VERIFICAR RENÚNCIA), qualquer que seja a área da pasta", () => {
+    const comRenuncia = { ...LISTAS, PROVIDENCIA: [...LISTAS.PROVIDENCIA, { id: "700", nome: "VERIFICAR RENÚNCIA" }] };
+    const texto = instrucoesDaSugestao(comRenuncia, { area: "Trabalhista", escritorio: "Operações Legais" });
+    expect(texto).toContain("SOMENTE a tarefa 700 | VERIFICAR RENÚNCIA");
+    expect(texto).toContain("SOMENTE a tarefa 316 | CIÊNCIA NF");
+    expect(texto).toContain("Nunca sugira prazo processual");
+    expect(texto).not.toContain("CLT");
+    expect(texto).not.toContain("452 | COMPROVAR PAGAMENTO");
+    expect(ehAreaTrabalhista("Trabalhista", "Operações Legais")).toBe(false);
+    expect(ehAreaTrabalhista("Trabalhista", "Trabalhista")).toBe(true);
   });
 });
 

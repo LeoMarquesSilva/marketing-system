@@ -3,11 +3,18 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarClock, FileSpreadsheet, LoaderCircle, Scale, SquareKanban, StickyNote, Tags } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { CalendarClock, FileSpreadsheet, Gavel, LoaderCircle, Scale, SquareKanban, StickyNote, Tags } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { hasOperacoesLegaisAccess } from "@/lib/access-control";
 
-const MODULES: Array<{ title: string; description: string; icon: typeof Scale; href?: string }> = [
+const MODULES = [
+  {
+    title: "Processos",
+    description: "Cadastro de processos, partes e saneamento (piloto: Recuperação de Crédito).",
+    icon: Gavel,
+    href: "/operacoes-legais/processos",
+  },
   {
     title: "Planner de Operações Legais",
     description: "Espaços das equipes, minhas tarefas, gestão e rotinas recorrentes com alarme.",
@@ -35,7 +42,7 @@ const MODULES: Array<{ title: string; description: string; icon: typeof Scale; h
     description: "Incluir a etiqueta de pasta Demanda de risco no VIOS.",
     icon: Tags,
   },
-];
+] as const satisfies readonly { title: string; description: string; icon: LucideIcon; href?: string }[];
 
 export function OperacoesLegaisClient() {
   const { user, profile, loading } = useAuth();
@@ -76,13 +83,14 @@ export function OperacoesLegaisClient() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         {MODULES.map((item) => {
-          const body = (
+          const href = "href" in item ? item.href : null;
+          const conteudo = (
             <>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <span className="flex size-10 items-center justify-center rounded-lg bg-muted text-foreground">
                   <item.icon className="size-5" />
                 </span>
-                {!item.href && (
+                {href ? null : (
                   <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                     Em breve
                   </span>
@@ -92,17 +100,17 @@ export function OperacoesLegaisClient() {
               <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
             </>
           );
-          return item.href ? (
+          return href ? (
             <Link
               key={item.title}
-              href={item.href}
-              className="rounded-lg border bg-card p-5 shadow-sm transition-colors hover:border-[#47cdd0]/70"
+              href={href}
+              className="rounded-lg border bg-card p-5 shadow-sm transition-colors hover:border-[#47cdd0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50"
             >
-              {body}
+              {conteudo}
             </Link>
           ) : (
             <div key={item.title} className="rounded-lg border bg-card p-5 shadow-sm">
-              {body}
+              {conteudo}
             </div>
           );
         })}

@@ -41,6 +41,8 @@ import {
   PartyPopper,
   PenLine,
   Scale,
+  Gavel,
+  BookUser,
   Settings,
   Sparkles,
   Sprout,
@@ -76,6 +78,8 @@ import {
   hasIcpAccess,
   hasOperacoesLegaisAccess,
   hasOpsPlannerAccess,
+  hasProcessosAccess,
+  isProcessosPath,
   canSeeVistagemPath,
   entradaDaVistagem,
   isAdminRole,
@@ -98,6 +102,9 @@ import {
 } from "@/lib/facilities/types";
 import { hasHrAccess } from "@/lib/rh/access";
 import { REELS_APPROVAL_HREF } from "@/hooks/use-reel-deliveries-pending";
+
+/** E-mail marketing: abas Campanhas/Contatos/Empresas/Listas/Progresso + engrenagem de Configurações. */
+const EMAIL_MARKETING_KEY = "/email-marketing";
 
 export type NavPage = {
   href: string;
@@ -298,7 +305,15 @@ export const NAV_FRONTS: NavFront[] = [
         label: "E-mail marketing",
         shortLabel: "E-mail",
         icon: Mail,
-        pages: [{ href: "/email-marketing", label: "E-mail marketing" }],
+        pages: [
+          { href: EMAIL_MARKETING_KEY, label: "Campanhas" },
+          { href: `${EMAIL_MARKETING_KEY}/contatos`, label: "Contatos" },
+          { href: `${EMAIL_MARKETING_KEY}/empresas`, label: "Empresas" },
+          { href: `${EMAIL_MARKETING_KEY}/listas`, label: "Listas" },
+          { href: `${EMAIL_MARKETING_KEY}/progresso`, label: "Progresso" },
+        ],
+        // Domínio de envio (DNS), rastreio, plano do Resend e integrações (RD, SIOE).
+        configuracoes: { href: `${EMAIL_MARKETING_KEY}/configuracoes`, label: "Configurações" },
       },
       {
         id: "certificados",
@@ -469,6 +484,31 @@ export const NAV_FRONTS: NavFront[] = [
         entrada: entradaDaVistagem,
       },
       {
+        // Cadastro de processos do ORQESTRAI (1º módulo do sistema que substitui o VIOS). Admin ou liberação em Usuários.
+        id: "processos",
+        label: "Processos",
+        shortLabel: "Processos",
+        icon: Gavel,
+        pages: [
+          { href: "/operacoes-legais/processos", label: "Processos" },
+          { href: "/operacoes-legais/processos/saneamento", label: "Saneamento" },
+          { href: "/operacoes-legais/processos/carteira", label: "Carteira Rec. Crédito" },
+          { href: "/operacoes-legais/processos/cadastros", label: "Cadastros" },
+        ],
+        configuracoes: { href: "/operacoes-legais/processos/importacao", label: "Importação e VIOS" },
+      },
+      {
+        // Cadastro único de pessoas (clientes, partes, sócios, fiadores, advogados), usado por Processos.
+        id: "cadastro-pessoas",
+        label: "Pessoas",
+        shortLabel: "Pessoas",
+        icon: BookUser,
+        pages: [
+          { href: "/operacoes-legais/pessoas", label: "Pessoas" },
+          { href: "/operacoes-legais/pessoas/duplicadas", label: "Repetidas" },
+        ],
+      },
+      {
         // Escuta do time (1º uso: PE27); a resposta fica em /pesquisa/<link>, aberta ao público de cada pesquisa.
         id: "pesquisas-equipe",
         label: "Pesquisas com a equipe",
@@ -609,9 +649,12 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
       if (isOpsPlannerPath(href)) return opsPlanner;
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
       if (isPe27Path(href)) return hasPe27Access(profile);
+      if (isProcessosPath(href)) return hasProcessosAccess(profile);
       if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
+      // As abas do e-mail marketing vêm junto com a permissão do módulo.
+      if (href.startsWith(`${EMAIL_MARKETING_KEY}/`)) return allowed.includes(EMAIL_MARKETING_KEY);
       if (href === "/conteudo/gustavo") return gustavo;
       if (href === TEAM_POSTS_PATH) return teamPosts;
       if (href === "/rh/ferias") return rhFull || feriasView;
@@ -642,6 +685,7 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
     if (isOpsPlannerPath(href)) return opsPlanner;
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
     if (isPe27Path(href)) return hasPe27Access(profile);
+    if (isProcessosPath(href)) return hasProcessosAccess(profile);
     if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {

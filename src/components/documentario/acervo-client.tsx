@@ -623,7 +623,7 @@ function DetailDialog({
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[#e6eef0] px-5 py-3">
-          {board.viewer.can_edit && !editing && (
+          {board.viewer.can_upload && !editing && (
             confirmDelete ? (
               <span className="mr-auto flex items-center gap-2 text-sm">
                 Excluir o arquivo de vez?
@@ -682,7 +682,7 @@ function DetailDialog({
               </Button>
             </>
           ) : (
-            board.viewer.can_edit && (
+            board.viewer.can_upload && (
               <Button size="sm" onClick={() => setEditing(true)}>
                 <Pencil className="size-4" />
                 Editar
@@ -835,7 +835,7 @@ export function DocAcervoClient({ initialBoard, initialItems }: { initialBoard: 
   const [dragging, setDragging] = useState(false);
   const [message, setMessage] = useState<{ type: "ok" | "erro"; text: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const canEdit = board.viewer.can_edit;
+  const canEdit = board.viewer.can_upload;
   const chapters = useMemo(() => parseChapters(board.sections.find((section) => section.slug === "estrutura")?.body ?? ""), [board.sections]);
 
   // Links assinados vencem em 2 h: renova a lista a cada 90 min com a tela aberta.

@@ -71,7 +71,7 @@ interface CampaignFormDialogProps {
 type WizardStep = CampaignFormStep;
 
 const SENDER_FALLBACK = {
-  fromName: "Bismarchi Pires",
+  fromName: "Bismarchi | Pires",
   fromEmail: "",
 };
 
@@ -154,6 +154,8 @@ export function CampaignFormDialog({
   const [savedCampaignId, setSavedCampaignId] = useState<string | null>(null);
   const [senderConfig, setSenderConfig] = useState<EmailSenderConfig | null>(null);
   const [name, setName] = useState("");
+  const [fromName, setFromName] = useState("");
+  const [replyTo, setReplyTo] = useState("");
   const [subject, setSubject] = useState("");
   const [previewText, setPreviewText] = useState("");
   const [listId, setListId] = useState("__all__");
@@ -179,6 +181,8 @@ export function CampaignFormDialog({
     setStep(initialStep === "editor" && campaign ? "editor" : "setup");
     setSavedCampaignId(campaign?.id ?? null);
     setName(campaign?.name ?? "");
+    setFromName(campaign?.fromName ?? "");
+    setReplyTo(campaign?.replyTo ?? "");
     setSubject(campaign?.subject ?? "");
     setPreviewText(campaign?.previewText ?? "");
     setListId(campaign?.listId ?? "__all__");
@@ -235,7 +239,7 @@ export function CampaignFormDialog({
     fetchEmailSenderConfig()
       .then(setSenderConfig)
       .catch(() =>
-        setSenderConfig({ fromName: "Bismarchi Pires", fromEmail: "", replyTo: null })
+        setSenderConfig({ fromName: "Bismarchi | Pires", fromEmail: "", replyTo: null })
       );
   }, [open]);
 
@@ -272,9 +276,9 @@ export function CampaignFormDialog({
       name: name.trim(),
       subject: subject.trim(),
       previewText: previewText.trim() || null,
-      fromName: sender.fromName,
+      fromName: fromName.trim() || sender.fromName,
       fromEmail: sender.fromEmail,
-      replyTo: sender.replyTo,
+      replyTo: replyTo.trim() || sender.replyTo,
       htmlBody: isNewsletter ? packNewsletterCampaignHtml(newsletterData) : htmlBody,
       listId: listId === "__all__" ? null : listId,
     };
@@ -283,6 +287,9 @@ export function CampaignFormDialog({
   const validateSetup = (): string | null => {
     if (!name.trim()) return "Informe o nome interno da campanha.";
     if (!subject.trim()) return "Informe o assunto do e-mail.";
+    if (replyTo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo.trim())) {
+      return "O e-mail de resposta não parece válido.";
+    }
     if (!resolveSenderFields(senderConfig).fromEmail.trim()) {
       return "Configure o e-mail remetente padrão na aba Configurações antes de salvar.";
     }
@@ -467,7 +474,8 @@ export function CampaignFormDialog({
     );
   }
 
-  const sender = resolveSenderFields(senderConfig);
+  const resolvedSender = resolveSenderFields(senderConfig);
+  const sender = { ...resolvedSender, fromName: fromName.trim() || resolvedSender.fromName };
   const senderInitial = (sender.fromName || "?").trim().charAt(0).toUpperCase();
 
   return (
@@ -555,6 +563,34 @@ export function CampaignFormDialog({
                     Aparece ao lado do assunto no Gmail/Outlook. Deixe em branco para usar o início do e-mail.
                   </p>
                 </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase text-muted-foreground">Remetente</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="campaign-from-name">Nome que aparece</Label>
+                    <Input
+                      id="campaign-from-name"
+                      value={fromName}
+                      onChange={(e) => setFromName(e.target.value)}
+                      placeholder={resolveSenderFields(senderConfig).fromName}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="campaign-reply-to">Respostas vão para</Label>
+                    <Input
+                      id="campaign-reply-to"
+                      type="email"
+                      value={replyTo}
+                      onChange={(e) => setReplyTo(e.target.value)}
+                      placeholder={resolveSenderFields(senderConfig).replyTo ?? "ex.: socio@bismarchipires.com.br"}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Sai de {resolveSenderFields(senderConfig).fromEmail || "o e-mail de envio configurado"}; quem responder fala direto com o e-mail acima.
+                </p>
               </div>
 
               <div className="space-y-3">

@@ -16,6 +16,8 @@ import {
   situacaoDaAberturaReal,
   problemasParaOVios,
   resumoDaCapa,
+  tarefasDaAbertura,
+  TAREFA_DA_PASTA_NOVA,
   urlDoEsaj,
   type AjustesDaCapa,
   type CapaDoDataJud,
@@ -37,11 +39,14 @@ import {
   carregarMateriasVios,
   carregarSistemasVios,
   enfileirarAberturaDePasta,
+  tipoDeTarefaPorNome,
   type CatalogoArea,
 } from "./sama";
 import { lerConfiguracoes } from "./configuracoes-server";
+import { criarCalendario } from "./dias-uteis";
+import { carregarFeriados } from "./feriados";
 import { admin, falhou, hojeEmSaoPaulo } from "./server";
-import { buscarPastasPorCnj, carregarTodasAsPastas } from "./sioe";
+import { buscarPastasDoGrupo, buscarPastasPorCnj, carregarTodasAsPastas } from "./sioe";
 import { escritorioDaAreaDoProcesso, pastaAtiva } from "./triagem";
 import type { SugestaoTriagem } from "./sugestao-triagem";
 
@@ -97,7 +102,8 @@ async function buscarNoEsaj(url: string): Promise<{ capa: CapaDoEsaj | null; sta
  */
 async function parDasPastasDoGrupo(grupo: string | null, area: string | null, usuarios: CatalogoArea["usuarios"]): Promise<ParDaPasta | null> {
   if (!grupo || !area) return null;
-  const pastas = (await carregarTodasAsPastas()).filter(
+  // Só as pastas do grupo no SIOE (não as ~35 mil): o filtro abaixo é o mesmo de antes.
+  const pastas = (await buscarPastasDoGrupo(grupo)).filter(
     (pasta) => chaveNome(pasta.grupoCliente) === chaveNome(grupo) && escritorioDaAreaDoProcesso(pasta.area) === area && pastaAtiva(pasta)
   );
   if (!pastas.length) return null;
@@ -156,19 +162,43 @@ async function lerPublicacaoDaCapa(id: string): Promise<{ linha: LinhaDaCapa; po
   return { linha: data as LinhaDaCapa, podeEditar: !semColuna };
 }
 
-/** Capa para a abertura de uma publicação (prévia): DJEN, e-SAJ, triagem, pastas do grupo e as edições da controladoria. */
-export async function capaParaAbertura(id: string): Promise<CapaParaAbertura> {
-  const { linha: data, podeEditar } = await lerPublicacaoDaCapa(id);
-  const numero = (data.numero_processo ?? data.numero_processo_original) as string;
-  const cnj = lerCnj(numero);
-  if (!cnj) throw new VistagemError("Número de processo inválido para buscar a capa.", 422);
-  const sugestao = data.sugestao_triagem;
-  const area = data.escritorio_responsavel ?? sugestao?.escritorio ?? null;
-  const grupo = data.grupo_cliente ?? sugestao?.grupo ?? null;
-  const url = urlDoEsaj(cnj);
-  const [djen, esaj, usuarios, materias, sistemas, doProcessoCompleto] = await Promise.all([
-    buscarNoDjen(cnj.digitos),
-    url ? buscarNoEsaj(url) : Promise.resolve(null),
+/** Guarda no mapa (o mais novo no fim) e tira o mais antigo quando passa do limite. */
+function guardarNoLimite<T>(mapa: Map<string, T>, chave: string, valor: T, limite = 300): void {
+  mapa.delete(chave);
+  mapa.set(chave, valor);
+  if (mapa.size > limite) {
+    const maisAntigo = mapa.keys().next().value;
+    if (maisAntigo !== undefined) mapa.delete(maisAntigo);
+  }
+}
+
+type FontesDoProcesso = {
+  em: number;
+  djen: Awaited<ReturnType<typeof buscarNoDjen>>;
+  esaj: Awaited<ReturnType<typeof buscarNoEsaj>> | null;
+};
+
+/** DJEN e e-SAJ de cada processo, guardados nesta instância por 30 min: reabrir a capa não busca de novo. */
+const FONTES_MS = 30 * 60 * 1000;
+const fontesEmCache = new Map<string, FontesDoProcesso>();
+
+async function fontesDoProcesso(digitos: string, url: string | null, fresco: boolean): Promise<FontesDoProcesso> {
+  const guardado = fontesEmCache.get(digitos);
+  if (!fresco && guardado && Date.now() - guardado.em < FONTES_MS) return guardado;
+  const [djen, esaj] = await Promise.all([buscarNoDjen(digitos), url ? buscarNoEsaj(url) : Promise.resolve(null)]);
+  const fontes: FontesDoProcesso = { em: Date.now(), djen, esaj };
+  // Sem resposta de nenhuma das duas (fora do ar, sem tempo): a próxima abertura tenta de novo.
+  if (djen.status.ok || esaj?.status.ok) guardarNoLimite(fontesEmCache, digitos, fontes);
+  return fontes;
+}
+
+/**
+ * As listas do VIOS da capa (usuários, matérias, sistemas, clientes, ações e etiquetas). São iguais para toda
+ * publicação e as de clientes, ações e etiquetas saem das ~35 mil pastas do SIOE: a tela pede à parte, uma vez, e o
+ * navegador guarda.
+ */
+export async function listasDaCapa(): Promise<ListasDoVios> {
+  const [usuarios, materias, sistemas, doProcessoCompleto] = await Promise.all([
     usuariosDoVios(),
     carregarMateriasVios().catch(() => []),
     carregarSistemasVios().catch(() => []),
@@ -178,17 +208,35 @@ export async function capaParaAbertura(id: string): Promise<CapaParaAbertura> {
       return { clientes: [], acoes: [], etiquetas: [] };
     }),
   ]);
-  const par = await parDasPastasDoGrupo(grupo, area, usuarios).catch((erro: unknown) => {
-    console.error("[vistagem] par das pastas do grupo", mensagem(erro));
-    return null;
-  });
-  const listas: ListasDoVios = {
+  return {
     usuarios: usuarios.map((usuario) => usuario.nome).sort((a, b) => a.localeCompare(b, "pt-BR")),
     // O VIOS repete nomes de matéria (ids diferentes): na sugestão, cada nome uma vez.
     materias: [...new Set(materias.map((materia) => materia.nome))],
     sistemas: [...new Set(sistemas.map((sistema) => sistema.nome))],
     ...doProcessoCompleto,
   };
+}
+
+/** A capa sem as listas do VIOS (a tela junta com `listasDaCapa`). */
+export type CapaSemListas = Omit<CapaParaAbertura, "listas">;
+
+/**
+ * Capa para a abertura de uma publicação (prévia): DJEN, e-SAJ, triagem, pastas do grupo e as edições da controladoria,
+ * sem as listas do VIOS. `fresco` ("Buscar de novo") consulta o DJEN e o e-SAJ mesmo que estejam guardados.
+ */
+export async function capaSemListas(id: string, { fresco = false }: { fresco?: boolean } = {}): Promise<CapaSemListas> {
+  const { linha: data, podeEditar } = await lerPublicacaoDaCapa(id);
+  const numero = (data.numero_processo ?? data.numero_processo_original) as string;
+  const cnj = lerCnj(numero);
+  if (!cnj) throw new VistagemError("Número de processo inválido para buscar a capa.", 422);
+  const sugestao = data.sugestao_triagem;
+  const area = data.escritorio_responsavel ?? sugestao?.escritorio ?? null;
+  const grupo = data.grupo_cliente ?? sugestao?.grupo ?? null;
+  const [{ djen, esaj }, usuarios] = await Promise.all([fontesDoProcesso(cnj.digitos, urlDoEsaj(cnj), fresco), usuariosDoVios()]);
+  const par = await parDasPastasDoGrupo(grupo, area, usuarios).catch((erro: unknown) => {
+    console.error("[vistagem] par das pastas do grupo", mensagem(erro));
+    return null;
+  });
   return {
     dados: {
       numero,
@@ -204,9 +252,14 @@ export async function capaParaAbertura(id: string): Promise<CapaParaAbertura> {
     fontes: { djen: djen.status, esaj: esaj?.status ?? null },
     ajustes: data.capa_ajustes ?? {},
     podeEditar,
-    listas,
     geradaEm: new Date().toISOString(),
   };
+}
+
+/** Capa completa, com as listas do VIOS, consultando as fontes na hora (o pedido ao robô usa esta). */
+export async function capaParaAbertura(id: string): Promise<CapaParaAbertura> {
+  const [capa, listas] = await Promise.all([capaSemListas(id, { fresco: true }), listasDaCapa()]);
+  return { ...capa, listas };
 }
 
 /**
@@ -253,13 +306,42 @@ type FonteDataJud = {
   assuntos?: ({ nome?: string } | { nome?: string }[])[] | null;
 };
 
-/** O processo no DataJud (complemento: sistema, ajuizamento e assuntos). Falha e demora não travam nada. */
-export async function capaNoDataJud(numero: string): Promise<CapaDoDataJud & { ms: number }> {
+export const SEM_PROCESSO_NO_DATAJUD = "processo ainda não está no DataJud";
+const FORA_DO_DATAJUD = "tribunal fora do DataJud";
+
+/**
+ * Por quantos segundos a resposta do DataJud vale: achou (ou tribunal fora dele), 12 h; processo ainda não indexado,
+ * 2 h (o CNJ indexa com atraso); falha ou sobrecarga, 0 (a próxima abertura tenta de novo).
+ */
+export function validadeDoDataJud(resultado: CapaDoDataJud): number {
+  if (resultado.achou || resultado.erro === FORA_DO_DATAJUD) return 12 * 60 * 60;
+  if (resultado.erro === SEM_PROCESSO_NO_DATAJUD) return 2 * 60 * 60;
+  return 0;
+}
+
+/** O DataJud de cada processo, guardado nesta instância pela validade acima (a consulta leva de 15 s a 1 min). */
+const dataJudEmCache = new Map<string, { ate: number; resultado: CapaDoDataJud & { ms: number } }>();
+
+/**
+ * O processo no DataJud (complemento: sistema, ajuizamento e assuntos). Falha e demora não travam nada. `fresco`
+ * ("Buscar de novo") consulta mesmo que esteja guardado.
+ */
+export async function capaNoDataJud(numero: string, { fresco = false }: { fresco?: boolean } = {}): Promise<CapaDoDataJud & { ms: number }> {
+  const chave = lerCnj(numero)?.digitos ?? numero;
+  const guardado = dataJudEmCache.get(chave);
+  if (!fresco && guardado && guardado.ate > Date.now()) return guardado.resultado;
+  const resultado = await consultarDataJud(numero);
+  const validade = validadeDoDataJud(resultado);
+  if (validade) guardarNoLimite(dataJudEmCache, chave, { ate: Date.now() + validade * 1000, resultado });
+  return resultado;
+}
+
+async function consultarDataJud(numero: string): Promise<CapaDoDataJud & { ms: number }> {
   const cnj = lerCnj(numero);
   const alias = aliasDoDataJud(cnj);
   const inicio = Date.now();
   const vazio = { achou: false, sistema: null, ajuizamento: null, assuntos: [], classe: null };
-  if (!cnj || !alias) return { ...vazio, erro: "tribunal fora do DataJud", ms: 0 };
+  if (!cnj || !alias) return { ...vazio, erro: FORA_DO_DATAJUD, ms: 0 };
   try {
     const graus = await comPrazo(75_000, async (signal) => {
       const resposta = await fetch(`https://api-publica.datajud.cnj.jus.br/api_publica_${alias}/_search`, {
@@ -275,7 +357,7 @@ export async function capaNoDataJud(numero: string): Promise<CapaDoDataJud & { m
       return (corpo.hits?.hits ?? []).map((hit) => hit._source);
     });
     const g = graus.find((item) => item.grau === "G1") ?? graus[0];
-    if (!g) return { ...vazio, erro: "processo ainda não está no DataJud", ms: Date.now() - inicio };
+    if (!g) return { ...vazio, erro: SEM_PROCESSO_NO_DATAJUD, ms: Date.now() - inicio };
     return {
       achou: true,
       erro: null,
@@ -401,13 +483,20 @@ export async function pedirAberturaDaPasta(
     const situacao = situacaoDaAberturaReal(anteriores, { conferidoNoVios });
     if (!situacao.pode) throw new VistagemError(situacao.motivo, 409);
   }
-  const { data: usuario } = await admin().from("users").select("name").eq("auth_id", authUserId).maybeSingle();
+  const [{ data: usuario }, tipo, feriados] = await Promise.all([
+    admin().from("users").select("name").eq("auth_id", authUserId).maybeSingle(),
+    tipoDeTarefaPorNome(TAREFA_DA_PASTA_NOVA),
+    carregarFeriados().catch(() => [] as string[]),
+  ]);
+  const hoje = hojeEmSaoPaulo();
   await enfileirarAberturaDePasta({
     publicacaoId: id,
     capa: paraOVios,
     autor: (usuario?.name as string | null) ?? "Controladoria",
-    data: paraDataVios(hojeEmSaoPaulo()),
+    data: paraDataVios(hoje),
     simular: modo !== "abrir",
+    // A pasta nova já leva a ATUALIZAÇÃO DE CADASTRO, para o dia útil seguinte (pedido de 17/11/2026).
+    tarefas: tarefasDaAbertura(tipo, hoje, criarCalendario(feriados)),
   });
   return pedidosDeAbertura(id);
 }
