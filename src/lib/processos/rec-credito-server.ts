@@ -4,13 +4,16 @@ import { ProcessosError } from "./errors";
 import { carregarTabelaTjsp, situacaoDosIndices } from "./indices-server";
 import { registrarNoHistorico } from "./processos-server";
 import {
+  SEM_ATUALIZACAO,
   TABELA_DO_ITEM,
+  atualizacaoDosAutos,
   calcularCredito,
   colunasDoItem,
   descreverItem,
   linhaDaCarteira,
   processoEncerrado,
   type Citacao,
+  type AtualizacaoDosAutos,
   type DadosDoProcessoNaCarteira,
   type ItensRecCredito,
   type Lancamento,
@@ -170,10 +173,52 @@ export async function carregarCarteira(ids: string[] | null = null): Promise<{ l
     }
   }
   const doCredito = processos.filter((linha) => /recupera[cç][aã]o de cr[eé]dito/i.test(String(linha.area ?? "")));
-  const [itens, { tabela, indicesAte }] = await Promise.all([itensPorProcesso(ids ? doCredito.map((linha) => linha.id as string) : null), tabelaEIndices()]);
+  const idsDoCredito = doCredito.map((linha) => linha.id as string);
+  const [itens, { tabela, indicesAte }, autos] = await Promise.all([itensPorProcesso(ids ? idsDoCredito : null), tabelaEIndices(), autosPorProcesso(idsDoCredito)]);
   const dia = hoje();
   const vazio: ItensRecCredito = { titulos: [], citacoes: [], pedidos: [], lancamentos: [] };
-  return { linhas: doCredito.map((linha) => linhaDaCarteira(dadosDoProcesso(linha), itens.get(linha.id as string) ?? vazio, tabela, dia, indicesAte)), indicesAte };
+  return {
+    linhas: doCredito.map((linha) => linhaDaCarteira(dadosDoProcesso(linha), itens.get(linha.id as string) ?? vazio, tabela, dia, indicesAte, autos.get(linha.id as string) ?? SEM_ATUALIZACAO)),
+    indicesAte,
+  };
+}
+
+/** Pedidos ao robô e leituras da IA de cada processo, para a carteira mostrar quem foi atualizado e quando. */
+async function autosPorProcesso(processos: string[]): Promise<Map<string, AtualizacaoDosAutos>> {
+  const ler = async (tabela: string, colunas: string) => {
+    const linhas: Linha[] = [];
+    for (const lote of emLotes(processos, 200)) {
+      for (let inicio = 0; ; inicio += 1000) {
+        const { data, error } = await db().from(tabela).select(colunas).in("processo_id", lote).range(inicio, inicio + 999);
+        if (error) falhou("carregar a atualização dos autos", error);
+        linhas.push(...((data ?? []) as unknown as Linha[]));
+        if (!data || data.length < 1000) break;
+      }
+    }
+    return linhas;
+  };
+  const [pedidos, documentos] = await Promise.all([
+    ler("proc_autos_pedidos", "processo_id, status, criado_em, concluido_em, erro"),
+    ler("proc_documentos", "processo_id, leitura_status, lido_em"),
+  ]);
+  const agrupar = (linhas: Linha[]) => {
+    const mapa = new Map<string, Linha[]>();
+    for (const linha of linhas) mapa.set(linha.processo_id as string, [...(mapa.get(linha.processo_id as string) ?? []), linha]);
+    return mapa;
+  };
+  const pedidosDe = agrupar(pedidos);
+  const documentosDe = agrupar(documentos);
+  const resultado = new Map<string, AtualizacaoDosAutos>();
+  for (const id of new Set([...pedidosDe.keys(), ...documentosDe.keys()])) {
+    resultado.set(
+      id,
+      atualizacaoDosAutos(
+        (pedidosDe.get(id) ?? []).map((linha) => ({ status: linha.status as string, criadoEm: linha.criado_em as string, concluidoEm: texto(linha.concluido_em), erro: texto(linha.erro) })),
+        (documentosDe.get(id) ?? []).map((linha) => ({ leituraStatus: linha.leitura_status as string, lidoEm: texto(linha.lido_em) }))
+      )
+    );
+  }
+  return resultado;
 }
 
 /** Saneamento da Rec. Crédito de um processo, com o cálculo no ajuizamento e na data final. */

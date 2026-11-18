@@ -4,7 +4,20 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Banknote, FileSpreadsheet, FolderSearch, LoaderCircle, Percent, Receipt, RefreshCw, Scale, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ROTULO_SITUACAO_CITACAO, SITUACOES_PEDIDO, formatarData, formatarReal, type LinhaCarteira, type SituacaoCitacao } from "@/lib/processos/rec-credito";
+import {
+  ROTULO_ROBO_AGORA,
+  ROTULO_SITUACAO_CITACAO,
+  SITUACOES_DA_ATUALIZACAO,
+  SITUACOES_PEDIDO,
+  diaEmBrasilia,
+  formatarData,
+  formatarMomento,
+  formatarReal,
+  situacaoDaAtualizacao,
+  type AtualizacaoDosAutos,
+  type LinhaCarteira,
+  type SituacaoCitacao,
+} from "@/lib/processos/rec-credito";
 import { LogoGrupo } from "../vistagem/marcas";
 import { Seletor, SeletorBusca, type OpcaoSeletor } from "../vistagem/seletor";
 import { Aviso, BarraAba, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, type TomSelo } from "../vistagem/ui";
@@ -24,6 +37,7 @@ const SITUACOES: OpcaoSeletor[] = [
   { valor: "ativos", rotulo: "Ativos" },
   { valor: "encerrados", rotulo: "Encerrados" },
 ];
+const ATUALIZACOES: OpcaoSeletor[] = SITUACOES_DA_ATUALIZACAO.map((item) => ({ valor: item.valor, rotulo: item.rotulo }));
 const real = (valor: number | null) => (valor === null ? "—" : formatarReal(valor));
 const situacaoPedido = (valor: string) => SITUACOES_PEDIDO.find((item) => item.valor === valor)?.rotulo ?? valor;
 
@@ -34,6 +48,7 @@ function Carteira() {
   const [busca, setBusca] = useState("");
   const [grupo, setGrupo] = useState("");
   const [situacao, setSituacao] = useState("");
+  const [atualizacao, setAtualizacao] = useState("");
   const [baixando, setBaixando] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
   const [feito, setFeito] = useState("");
@@ -61,6 +76,14 @@ function Carteira() {
     .sort((a, b) => a.localeCompare(b, "pt-BR"))
     .map((valor) => ({ valor, rotulo: valor, contagem: todas.filter((linha) => linha.grupoCliente === valor).length }));
 
+  const hoje = diaEmBrasilia(new Date());
+  // Enquanto o robô ou a IA trabalham em algum processo, a carteira se recarrega sozinha a cada 30 s.
+  const trabalhando = todas.some((linha) => situacaoDaAtualizacao(linha.autos, hoje) === "em_andamento");
+  useEffect(() => {
+    if (!trabalhando) return;
+    const relogio = window.setInterval(() => setTentativa((atual) => atual + 1), 30_000);
+    return () => window.clearInterval(relogio);
+  }, [trabalhando]);
   const filtradas = useMemo(() => {
     const digitos = busca.replace(/\D/g, "");
     const termo = busca.trim().toLowerCase();
@@ -68,11 +91,12 @@ function Carteira() {
       if (grupo && linha.grupoCliente !== grupo) return false;
       if (situacao === "ativos" && linha.encerrado) return false;
       if (situacao === "encerrados" && !linha.encerrado) return false;
+      if (atualizacao && situacaoDaAtualizacao(linha.autos, hoje) !== atualizacao) return false;
       if (!termo) return true;
       if (digitos.length >= 4 && ((linha.cnj ?? "").replace(/\D/g, "").includes(digitos) || (linha.ci ?? "").includes(digitos))) return true;
       return [linha.devedor, linha.cliente].some((campo) => campo?.toLowerCase().includes(termo));
     });
-  }, [todas, busca, grupo, situacao]);
+  }, [todas, busca, grupo, situacao, atualizacao, hoje]);
 
   if (!dados && !erro) return <Carregando rotulo="Calculando a carteira" />;
 
@@ -101,6 +125,7 @@ function Carteira() {
           .filter(Boolean)
           .join(" ")
       );
+      setTentativa((atual) => atual + 1);
     } catch (falha) {
       setErro(mensagemDeErro(falha));
     } finally {
@@ -111,7 +136,7 @@ function Carteira() {
   async function baixar() {
     setBaixando(true);
     try {
-      const filtrado = Boolean(busca || grupo || situacao);
+      const filtrado = Boolean(busca || grupo || situacao || atualizacao);
       await processosApi.baixarCarteira(filtrado ? filtradas.map((linha) => linha.id) : null);
     } catch (falha) {
       setErro(mensagemDeErro(falha));
@@ -162,6 +187,7 @@ function Carteira() {
         <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="CNJ, CI, devedor ou cliente" aria-label="Buscar processo" />
         <SeletorBusca valor={grupo} onChange={setGrupo} opcoes={opcoesGrupo} todos={{ rotulo: "Todos os grupos" }} rotulo="Grupo do cliente" className="sm:w-52" />
         <Seletor valor={situacao} onChange={setSituacao} opcoes={SITUACOES} todos={{ rotulo: "Ativos e encerrados" }} rotulo="Situação" className="sm:w-48" />
+        <Seletor valor={atualizacao} onChange={setAtualizacao} opcoes={ATUALIZACOES} todos={{ rotulo: "Toda atualização" }} rotulo="Atualização dos autos" className="sm:w-56" />
         <Button
           variant="outline"
           onClick={() => void atualizarAutos()}
@@ -187,6 +213,7 @@ function Carteira() {
                 <tr>
                   {[
                     "Processo",
+                    "Robô e IA",
                     "Situação",
                     "Tipo do crédito",
                     "Valor original",
@@ -220,6 +247,9 @@ function Carteira() {
                           </span>
                         </span>
                       </Link>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-xs">
+                      <AtualizacaoDosAutosNaLinha autos={linha.autos} hoje={hoje} />
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5">
                       <Selo tom={linha.encerrado ? "neutro" : "marca"}>{linha.encerrado ? "Encerrado" : "Ativo"}</Selo>
@@ -291,6 +321,31 @@ function Carteira() {
           </div>
         )}
       </Painel>
+    </div>
+  );
+}
+
+const TOM_ROBO_AGORA: Record<NonNullable<AtualizacaoDosAutos["roboAgora"]>, TomSelo> = { na_fila: "alerta", baixando: "marca", aguardando_pessoa: "alerta", erro: "perigo" };
+
+/** Quando o robô conferiu o tribunal e quando a IA leu: verde se foi hoje, cinza se antes, âmbar se nunca. */
+function AtualizacaoDosAutosNaLinha({ autos, hoje }: { autos: AtualizacaoDosAutos; hoje: string }) {
+  const cor = (iso: string | null) => (!iso ? "text-amber-700" : diaEmBrasilia(iso) === hoje ? "text-emerald-700" : "text-muted-foreground");
+  const ia = autos.iaEm ? formatarMomento(autos.iaEm) : autos.documentos ? "não lida" : "sem autos";
+  const extras = [autos.iaPendentes ? `${autos.iaPendentes} por ler` : "", autos.iaErros ? `${autos.iaErros} com erro` : "", autos.iaSemTexto ? `${autos.iaSemTexto} sem texto` : ""].filter(Boolean);
+  return (
+    <div className="space-y-1">
+      {autos.roboAgora ? (
+        <Selo tom={TOM_ROBO_AGORA[autos.roboAgora]} titulo={autos.roboErro ?? undefined}>
+          {ROTULO_ROBO_AGORA[autos.roboAgora]}
+        </Selo>
+      ) : null}
+      <p className={cor(autos.roboEm)}>
+        <span className="font-medium">Robô</span> <span className="tabular-nums">{autos.roboEm ? formatarMomento(autos.roboEm) : "nunca baixou"}</span>
+      </p>
+      <p className={cor(autos.iaEm)}>
+        <span className="font-medium">IA</span> <span className="tabular-nums">{ia}</span>
+        {extras.length ? <span className="text-amber-700"> · {extras.join(" · ")}</span> : null}
+      </p>
     </div>
   );
 }

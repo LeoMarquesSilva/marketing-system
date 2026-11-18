@@ -3,7 +3,7 @@ import "server-only";
 import type { CellObject, CellStyle, WorkSheet } from "xlsx-js-style";
 import * as XLSX from "xlsx-js-style";
 import { cabecalho, dado, estiloLegenda, estiloTitulo } from "./export-excel";
-import { ROTULO_SITUACAO_CITACAO, SITUACOES_PEDIDO, formatarData, type LinhaCarteira } from "./rec-credito";
+import { ROTULO_ROBO_AGORA, ROTULO_SITUACAO_CITACAO, SITUACOES_PEDIDO, formatarData, formatarMomento, type LinhaCarteira } from "./rec-credito";
 
 /** Planilha da carteira de Recuperação de Crédito: uma linha por processo, valores como número. */
 
@@ -47,6 +47,23 @@ const COLUNAS: Coluna[] = [
   { rotulo: "Encerramento", largura: 13, valor: (linha) => data(linha.dataEncerramento) },
   { rotulo: "Duração", largura: 18, valor: (linha) => (linha.duracao ? `${linha.duracao.rotulo}${linha.duracao.desde === "cadastro" ? " (desde o cadastro)" : ""}` : "") },
   { rotulo: "Próximos passos", largura: 48, valor: (linha) => linha.proximosPassos },
+  {
+    rotulo: "Robô: última conferência",
+    largura: 20,
+    valor: (linha) => [linha.autos.roboEm ? formatarMomento(linha.autos.roboEm) : "nunca", linha.autos.roboAgora ? ROTULO_ROBO_AGORA[linha.autos.roboAgora] : ""].filter(Boolean).join("\n"),
+  },
+  {
+    rotulo: "IA: última leitura",
+    largura: 20,
+    valor: (linha) =>
+      [
+        linha.autos.iaEm ? formatarMomento(linha.autos.iaEm) : linha.autos.documentos ? "não lida" : "sem autos",
+        linha.autos.iaPendentes ? `${linha.autos.iaPendentes} por ler` : "",
+        linha.autos.iaErros ? `${linha.autos.iaErros} com erro` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+  },
   { rotulo: "Observações do cálculo", largura: 40, valor: (linha) => linha.avisos.join("\n") },
 ];
 
