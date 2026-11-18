@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   areaBand,
+  areaCountsInMonth,
   businessDaysToResponse,
+  canonicalFeedbackArea,
   flowStatus,
   repeatOffenders,
   suggestAreaFromDepartment,
+  summarizeArea,
   summarizeMonth,
   summarizeYear,
 } from "./metrics";
@@ -77,11 +80,23 @@ describe("areaBand", () => {
   });
 });
 
+describe("canonicalFeedbackArea", () => {
+  it("põe as áreas de apoio em Operações Legais, como em Férias", () => {
+    for (const area of ["Marketing", "Comercial", "Financeiro", "Facilities", "RH", "Operações Legais"]) {
+      expect(canonicalFeedbackArea(area)).toBe("Operações Legais");
+    }
+    expect(canonicalFeedbackArea("Insolvência")).toBe("Reestruturação");
+    expect(canonicalFeedbackArea("Distressed Deals")).toBe("ADD");
+    expect(canonicalFeedbackArea("Cível")).toBe("Cível");
+    expect(canonicalFeedbackArea("Gestores")).toBe("Gestores");
+  });
+});
+
 describe("suggestAreaFromDepartment", () => {
   it("usa a grafia canônica do RH", () => {
     expect(suggestAreaFromDepartment("Contratos")).toBe("Societário e Contratos");
     expect(suggestAreaFromDepartment("Insolvência")).toBe("Reestruturação");
-    expect(suggestAreaFromDepartment("Distressed Deals")).toBe("ADD");
+    expect(suggestAreaFromDepartment("Distressed Deals")).toBeNull();
     expect(suggestAreaFromDepartment("Sócio")).toBeNull();
   });
 });
@@ -90,7 +105,7 @@ describe("summarizeMonth", () => {
   const items = [
     feedback({ sent_on: "2026-10-01", area: "Reestruturação", manager_name: "Ana", responded_on: "2026-10-02" }),
     feedback({ sent_on: "2026-10-09", area: "Reestruturação", manager_name: "Ana" }),
-    feedback({ sent_on: "2026-10-20", area: "Comercial", manager_name: "Ricardo", viewed: true }),
+    feedback({ sent_on: "2026-10-20", area: "Operações Legais", manager_name: "Ricardo", viewed: true }),
     feedback({ sent_on: "2026-09-10", area: "Reestruturação" }),
     feedback({ sent_on: "2026-09-11", area: "Cível" }),
   ];
@@ -131,6 +146,56 @@ describe("summarizeMonth", () => {
     const summary = summarizeMonth(items, { year: 2026, month: 9 });
     expect(summary.viewedBase).toBe(0);
     expect(summary.areas.find((row) => row.area === "Cível")?.viewed).toBeNull();
+  });
+});
+
+describe("summarizeArea", () => {
+  const items = [
+    feedback({ sent_on: "2026-10-02", area: "Cível", employee_id: "e1", employee_name: "Ana", category: "Uso da cozinha", responded_on: "2026-10-05" }),
+    feedback({ sent_on: "2026-10-20", area: "Cível", employee_id: "e1", employee_name: "Ana", category: "Estacionamento" }),
+    feedback({ sent_on: "2026-10-09", area: "Cível", employee_id: "e2", employee_name: "Bruno", category: "Uso da cozinha" }),
+    feedback({ sent_on: "2026-10-11", area: "Cível", employee_name: "Equipe Cível", is_team: true, category: "Uso da cozinha" }),
+    feedback({ sent_on: "2026-09-15", area: "Cível", employee_id: "e1", employee_name: "Ana" }),
+    feedback({ sent_on: "2026-11-03", area: "Cível", employee_id: "e1", employee_name: "Ana" }),
+    feedback({ sent_on: "2026-10-04", area: "Trabalhista", employee_id: "e3", employee_name: "Carla" }),
+  ];
+
+  it("lista quem recebeu no mês, com temas, datas e o acumulado até o mês", () => {
+    const report = summarizeArea(items, "Cível", { year: 2026, month: 10 });
+    expect(report.total).toBe(4);
+    expect(report.previousTotal).toBe(1);
+    expect(report.yearToDate).toBe(5);
+    expect(report.items.map((item) => item.sent_on)).toEqual(["2026-10-02", "2026-10-09", "2026-10-11", "2026-10-20"]);
+    expect(report.people[0]).toMatchObject({
+      name: "Ana",
+      sent: 2,
+      yearToDate: 3,
+      dates: ["2026-10-02", "2026-10-20"],
+      responded: 1,
+      categories: [
+        { category: "Estacionamento", sent: 1 },
+        { category: "Uso da cozinha", sent: 1 },
+      ],
+    });
+    expect(report.people.find((row) => row.isTeam)).toMatchObject({ key: "equipe:Cível", sent: 1, employeeId: null });
+    expect(report.categories[0]).toMatchObject({ category: "Uso da cozinha", sent: 3 });
+    expect(report.respondedFast).toBe(1);
+  });
+
+  it("usa o total do escritório no mês para a faixa", () => {
+    // 4 na área (Atenção: 3 ou 4) e 5 no escritório (não passa de 10).
+    expect(summarizeArea(items, "Cível", { year: 2026, month: 10 }).band).toBe("atencao");
+    expect(summarizeArea(items, "Cível", { year: 2026, month: 8 })).toMatchObject({ total: 0, band: null, people: [] });
+  });
+
+  it("conta as áreas do mês para os botões", () => {
+    const counts = areaCountsInMonth(items, { year: 2026, month: 10 });
+    expect(counts.find((row) => row.area === "Cível")?.sent).toBe(4);
+    expect(counts.find((row) => row.area === "Trabalhista")?.sent).toBe(1);
+    expect(counts.find((row) => row.area === "Tributário")?.sent).toBe(0);
+    // Gestores entra como grupo no fim; área fora da lista oficial (ADD) não ganha botão.
+    expect(counts[counts.length - 1].area).toBe("Gestores");
+    expect(areaCountsInMonth([feedback({ sent_on: "2026-02-05", area: "ADD" })], { year: 2026, month: 2 }).some((row) => row.area === "ADD")).toBe(false);
   });
 });
 

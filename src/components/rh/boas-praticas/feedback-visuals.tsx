@@ -3,6 +3,7 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
 import {
   Bath,
+  BriefcaseBusiness,
   Car,
   Cigarette,
   CigaretteOff,
@@ -26,7 +27,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getAreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { getInitials } from "@/lib/ferias/filters";
-import type { FeedbackPerson, GoodPracticeFeedback } from "@/lib/rh/boas-praticas/types";
+import { LEADERS_GROUP, type FeedbackPerson, type GoodPracticeFeedback } from "@/lib/rh/boas-praticas/types";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ pessoas */
@@ -169,8 +170,9 @@ export function CategoryIcon({ category, className }: { category: string; classN
 
 /* -------------------------------------------------------------------- áreas */
 
+/** Ícone da área; o grupo Gestores (todos os gestores juntos) usa a maleta. */
 export function AreaGlyph({ area, className }: { area: string; className?: string }) {
-  return createElement(getAreaIcon(area), { className, "aria-hidden": true });
+  return createElement(area === LEADERS_GROUP ? BriefcaseBusiness : getAreaIcon(area), { className, "aria-hidden": true });
 }
 
 export function AreaIconTile({ area, className }: { area: string; className?: string }) {

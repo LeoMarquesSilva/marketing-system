@@ -7,6 +7,7 @@ import { resolveCanonicalAreaLabel } from "@/lib/ferias/filters";
 import {
   FEEDBACK_AREAS,
   FEEDBACK_CATEGORIES,
+  LEADERS_GROUP,
   categoryInfo,
   type AreaBand,
   type FeedbackFlowStatus,
@@ -65,10 +66,21 @@ export function worstBand(bands: (AreaBand | null)[]): AreaBand | null {
 }
 
 /** Área sugerida pelo departamento do cadastro (o RH pode trocar). */
+/**
+ * Área do feedback pela mesma regra de Férias e das fotos: Marketing, Comercial,
+ * Financeiro, Facilities, RH e as demais áreas de apoio ficam em Operações Legais.
+ */
+export function canonicalFeedbackArea(area: string): string {
+  const trimmed = area.trim();
+  if (/distressed/i.test(trimmed)) return "ADD";
+  return resolveCanonicalAreaLabel(trimmed) ?? trimmed;
+}
+
 export function suggestAreaFromDepartment(department: string | null | undefined): string | null {
   const trimmed = department?.trim();
   if (!trimmed) return null;
-  if (/distressed/i.test(trimmed)) return "ADD";
+  // ADD (Distressed Deals) não existe mais: não sugere área.
+  if (/distressed/i.test(trimmed)) return null;
   const canonical = resolveCanonicalAreaLabel(trimmed);
   if (!canonical || canonical === "Sócio") return null;
   return canonical;
@@ -170,11 +182,10 @@ export function summarizeMonth(items: GoodPracticeFeedback[], ref: MonthRef): Mo
   const total = current.length;
 
   const viewedBase = current.filter((item) => item.viewed !== null).length;
-  const byArea = countBy(current, (item) => item.area);
   const previousByArea = countBy(previous, (item) => item.area);
 
-  const areaNames = [...new Set([...FEEDBACK_AREAS, ...byArea.keys(), ...previousByArea.keys()])];
-  const areas: AreaRow[] = areaNames
+  // Só as áreas oficiais ganham linha (padrão de Férias): ADD e o grupo Gestores contam no total do mês.
+  const areas: AreaRow[] = [...FEEDBACK_AREAS]
     .map((area) => {
       const ofArea = current.filter((item) => item.area === area);
       const sent = ofArea.length;
@@ -279,7 +290,7 @@ export interface YearSummary {
 export function summarizeYear(items: GoodPracticeFeedback[], year: number): YearSummary {
   const ofYear = items.filter((item) => item.sent_on.startsWith(`${year}-`));
   const monthIndex = (item: GoodPracticeFeedback) => Number(item.sent_on.slice(5, 7)) - 1;
-  const areaNames = [...new Set([...FEEDBACK_AREAS, ...ofYear.map((item) => item.area)])];
+  const areaNames = [...FEEDBACK_AREAS];
   const rows = areaNames
     .map((area) => {
       const months = Array<number>(12).fill(0);
@@ -335,6 +346,109 @@ export function repeatOffenders(items: GoodPracticeFeedback[], year: number): Re
       };
     })
     .sort((a, b) => b.count - a.count || b.lastSentOn.localeCompare(a.lastSentOn));
+}
+
+/* --------------------------------------------------- visão de uma área */
+
+export interface AreaPersonRow {
+  /** employee_id, ou o nome gravado quando não há vínculo (equipe inteira fica em "equipe:<área>"). */
+  key: string;
+  name: string;
+  employeeId: string | null;
+  isTeam: boolean;
+  /** Feedbacks no mês. */
+  sent: number;
+  /** De janeiro até o fim do mês escolhido, na área. */
+  yearToDate: number;
+  categories: { category: string; sent: number }[];
+  /** Datas de envio no mês (yyyy-mm-dd), em ordem. */
+  dates: string[];
+  responded: number;
+}
+
+export interface AreaReport {
+  area: string;
+  month: MonthRef;
+  total: number;
+  previousTotal: number;
+  yearToDate: number;
+  band: AreaBand | null;
+  people: AreaPersonRow[];
+  categories: CategoryRow[];
+  /** Feedbacks do mês na área, do mais antigo ao mais recente. */
+  items: GoodPracticeFeedback[];
+  responded: number;
+  respondedFast: number;
+}
+
+/**
+ * Uma área num mês, para o gestor: quem recebeu, quantos, de que tema, o
+ * acumulado do ano e a faixa da regra (que depende do total do escritório no mês).
+ */
+export function summarizeArea(items: GoodPracticeFeedback[], area: string, ref: MonthRef): AreaReport {
+  const ofArea = items.filter((item) => item.area === area);
+  const current = ofArea
+    .filter((item) => inMonth(item.sent_on, ref))
+    .sort((a, b) => a.sent_on.localeCompare(b.sent_on) || a.created_at.localeCompare(b.created_at));
+  const previousTotal = ofArea.filter((item) => inMonth(item.sent_on, previousMonth(ref))).length;
+  const monthEnd = `${monthKey(ref)}-${String(daysInMonth(ref)).padStart(2, "0")}`;
+  const yearItems = ofArea.filter((item) => item.sent_on.startsWith(`${ref.year}-`) && item.sent_on <= monthEnd);
+  const officeTotal = items.filter((item) => inMonth(item.sent_on, ref)).length;
+
+  const personKey = (item: GoodPracticeFeedback) =>
+    item.is_team ? `equipe:${item.area}` : (item.employee_id ?? item.employee_name.trim().toLowerCase());
+  const yearByPerson = countBy(yearItems, personKey);
+  const groups = new Map<string, GoodPracticeFeedback[]>();
+  for (const item of current) groups.set(personKey(item), [...(groups.get(personKey(item)) ?? []), item]);
+
+  const people: AreaPersonRow[] = [...groups.entries()]
+    .map(([key, group]) => {
+      const latest = group[group.length - 1];
+      return {
+        key,
+        name: latest.employee_name,
+        employeeId: latest.is_team ? null : latest.employee_id,
+        isTeam: latest.is_team,
+        sent: group.length,
+        yearToDate: yearByPerson.get(key) ?? group.length,
+        categories: [...countBy(group, (item) => item.category).entries()]
+          .map(([category, sent]) => ({ category, sent }))
+          .sort((a, b) => b.sent - a.sent || a.category.localeCompare(b.category, "pt-BR")),
+        dates: group.map((item) => item.sent_on),
+        responded: group.filter((item) => item.responded_on).length,
+      };
+    })
+    .sort((a, b) => b.sent - a.sent || b.yearToDate - a.yearToDate || a.name.localeCompare(b.name, "pt-BR"));
+
+  // Temas: mesma conta do dashboard, recortada na área.
+  const { categories } = summarizeMonth(
+    items.filter((item) => item.area === area),
+    ref
+  );
+
+  return {
+    area,
+    month: ref,
+    total: current.length,
+    previousTotal,
+    yearToDate: yearItems.length,
+    band: areaBand(current.length, previousTotal, officeTotal),
+    people,
+    categories: categories.filter((row) => row.sent > 0),
+    items: current,
+    responded: current.filter((item) => item.responded_on).length,
+    respondedFast: current.filter(withinTwoBusinessDays).length,
+  };
+}
+
+/** Quantos feedbacks cada área teve no mês (para os botões de área). */
+export function areaCountsInMonth(items: GoodPracticeFeedback[], ref: MonthRef): { area: string; sent: number }[] {
+  const counts = countBy(
+    items.filter((item) => inMonth(item.sent_on, ref)),
+    (item) => item.area
+  );
+  // Áreas oficiais e, no fim, o grupo Gestores (feedback para todos os gestores juntos).
+  return [...FEEDBACK_AREAS, LEADERS_GROUP].map((area) => ({ area, sent: counts.get(area) ?? 0 }));
 }
 
 /** Mês corrente no fuso do escritório. */

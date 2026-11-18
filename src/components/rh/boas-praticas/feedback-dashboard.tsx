@@ -368,40 +368,47 @@ function MonthSummaryBand({
 
 /* ------------------------------------------------------ onde aconteceu */
 
-function AreasPanel({ summary }: { summary: MonthSummary }) {
+function AreasPanel({ summary, onOpenArea }: { summary: MonthSummary; onOpenArea: (area: string) => void }) {
   const rows = summary.areas.filter((row) => row.sent > 0 || row.previous > 0);
   const max = Math.max(1, ...rows.map((row) => Math.max(row.sent, row.previous)));
   return (
-    <Panel icon={Building2} title="Por área" meta="faixa da regra no mês">
+    <Panel icon={Building2} title="Por área" meta="clique na área para ver quem recebeu">
       {rows.length === 0 ? (
         <EmptyLine>Nenhum feedback neste mês nem no anterior.</EmptyLine>
       ) : (
         <ul className="divide-y divide-[#eef3f5]">
           {rows.map((row) => (
-            <li key={row.area} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-2.5 sm:grid-cols-[minmax(0,1fr)_140px_auto]">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <AreaIconTile area={row.area} />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{row.area}</p>
-                  <p className="text-xs text-muted-foreground">
-                    <span className="font-semibold tabular-nums text-foreground">{dashIfZero(row.sent)}</span> no mês · ant.{" "}
-                    <span className="tabular-nums">{dashIfZero(row.previous)}</span>
-                    {row.sent > 0 && (
-                      <>
-                        {" "}· {row.responded}/{row.sent} resp.
-                        {row.viewed === null ? " · Feedz s/d" : ` · ${row.viewed} vistos`}
-                      </>
-                    )}
-                  </p>
-                </div>
-              </div>
-              <div className="relative hidden h-2 rounded-full bg-[#eef3f5] sm:block" aria-hidden title={`Mês anterior: ${row.previous}`}>
-                <span className="absolute inset-y-0 left-0 rounded-full bg-[#3e84a8]" style={{ width: `${(row.sent / max) * 100}%` }} />
-                {row.previous > 0 && (
-                  <span className="absolute -inset-y-1 w-0.5 rounded-full bg-[#10293a]/35" style={{ left: `calc(${(row.previous / max) * 100}% - 1px)` }} />
-                )}
-              </div>
-              <BandBadge band={row.band} />
+            <li key={row.area}>
+              <button
+                type="button"
+                onClick={() => onOpenArea(row.area)}
+                title={`Ver quem recebeu feedback em ${row.area}`}
+                className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-2.5 text-left transition-colors duration-150 hover:bg-[#f6fafb] focus-visible:bg-[#f2f8f9] focus-visible:outline-none sm:grid-cols-[minmax(0,1fr)_140px_auto]"
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <AreaIconTile area={row.area} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-foreground">{row.area}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      <span className="font-semibold tabular-nums text-foreground">{dashIfZero(row.sent)}</span> no mês · ant.{" "}
+                      <span className="tabular-nums">{dashIfZero(row.previous)}</span>
+                      {row.sent > 0 && (
+                        <>
+                          {" "}· {row.responded}/{row.sent} resp.
+                          {row.viewed === null ? " · Feedz s/d" : ` · ${row.viewed} vistos`}
+                        </>
+                      )}
+                    </span>
+                  </span>
+                </span>
+                <span className="relative hidden h-2 rounded-full bg-[#eef3f5] sm:block" aria-hidden title={`Mês anterior: ${row.previous}`}>
+                  <span className="absolute inset-y-0 left-0 rounded-full bg-[#3e84a8]" style={{ width: `${(row.sent / max) * 100}%` }} />
+                  {row.previous > 0 && (
+                    <span className="absolute -inset-y-1 w-0.5 rounded-full bg-[#10293a]/35" style={{ left: `calc(${(row.previous / max) * 100}% - 1px)` }} />
+                  )}
+                </span>
+                <BandBadge band={row.band} />
+              </button>
             </li>
           ))}
         </ul>
@@ -741,12 +748,15 @@ export function FeedbackDashboard({
   lastImport,
   onMonthChange,
   onOpenRecords,
+  onOpenArea,
 }: {
   items: GoodPracticeFeedback[];
   month: MonthRef;
   lastImport: FeedzImportLog | null;
   onMonthChange: (month: MonthRef) => void;
   onOpenRecords: () => void;
+  /** Abre a aba Por área já na área clicada. */
+  onOpenArea: (area: string) => void;
 }) {
   const summary = useMemo(() => summarizeMonth(items, month), [items, month]);
   const years = useMemo(() => {
@@ -777,7 +787,7 @@ export function FeedbackDashboard({
 
       <Group title="Onde aconteceu" description={`Áreas e tipos de feedback de ${monthName.toLowerCase()}, com o mês anterior como referência.`}>
         <div className="grid gap-3 xl:grid-cols-2">
-          <AreasPanel summary={summary} />
+          <AreasPanel summary={summary} onOpenArea={onOpenArea} />
           <CategoriesPanel summary={summary} />
         </div>
       </Group>
