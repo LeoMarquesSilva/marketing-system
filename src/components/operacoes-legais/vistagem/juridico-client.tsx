@@ -1543,11 +1543,12 @@ export function EditorVistagem({
                           {
                             hoje: primeiroDia,
                             datas: Object.values(linha.fluxoDatas),
-                            // Regra da insolvência: o VIOS cria o Protocolar 2 dias depois do Enviar antecipado; ele fica 1 dia útil antes da fatal.
+                            // Regras da insolvência: o VIOS cria o Protocolar 2 dias depois do Enviar antecipado (ou 4 dias
+                            // depois do Enviar adiado, no prazo curto); ele fica 1 dia útil antes da fatal.
                             apertada: cadeia?.ajustada
                               ? { revisar: cadeia.revisar, protocolar: cadeia.protocolar }
-                              : cadeia && cadeiaFluxo?.antecipada
-                                ? { revisar: null, protocolar: cadeia.protocolar, motivo: "antecipada" }
+                              : cadeia && (cadeiaFluxo?.antecipada || cadeiaFluxo?.adiada)
+                                ? { revisar: null, protocolar: cadeia.protocolar, motivo: cadeiaFluxo.antecipada ? "antecipada" : "adiada" }
                                 : null,
                           }
                         ).map((tarefa) =>
@@ -1766,6 +1767,12 @@ export function EditorVistagem({
                                   <p className="text-xs text-muted-foreground">
                                     Regra da insolvência: o Enviar e o Revisar vão {cadeiaFluxo.antecipada} dias úteis antes; o Protocolar e a fatal não
                                     mudam (o robô grava o Protocolar no VIOS).
+                                  </p>
+                                ) : null}
+                                {cadeiaFluxo?.adiada && cadeia && !cadeia.ajustada ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    Regra da insolvência, prazo de menos de 10 dias: o Enviar e o Revisar vão {cadeiaFluxo.adiada} dias úteis depois do que o
+                                    VIOS criaria (5 dias antes da fatal); o Protocolar e a fatal não mudam (o robô grava o Protocolar no VIOS).
                                   </p>
                                 ) : null}
                               </div>

@@ -3,6 +3,7 @@ import { datasDoPrazo, fatalPorContagem, somarDiasCorridos, somarDiasUteis, type
 import {
   ANTECIPACAO_INSOLVENCIA,
   PESSOA_FIXA_PROTOCOLAR,
+  PRAZO_CURTO_INSOLVENCIA,
   cadeiaDoFluxo,
   cadeiaDoVios,
   type FluxoDaTarefa,
@@ -40,12 +41,31 @@ export function prazoMarcadoLongo(prazo: PrazoMarcado, publicacao: PrazoDaPublic
 }
 
 /**
- * O fluxo da tarefa para o prazo marcado: a antecipação da insolvência (`antecipaEnviar`, posta pela árvore da área)
- * só fica com prazo de 10 dias ou mais; com menos (ex.: 5 dias), o Enviar, o Revisar e o Protocolar são os do VIOS.
+ * Prazo marcado de menos de 10 dias, sabido: pelos dias do atalho ou pela fatal no calendário antes de onde iria um
+ * prazo de 10 dias. Sem os dias nem a data da publicação, não dá para saber (false: fica como o VIOS cria).
+ */
+export function prazoMarcadoCurto(prazo: PrazoMarcado, publicacao: PrazoDaPublicacao | null): boolean {
+  if (prazo.diasPrazo) return prazo.diasPrazo < PRAZO_CURTO_INSOLVENCIA.prazoMarcadoLimite;
+  if (!prazo.dataFatal || !publicacao?.dataPublicacao) return false;
+  return !prazoMarcadoLongo(prazo, publicacao);
+}
+
+/**
+ * O fluxo da tarefa para o prazo marcado (regras da insolvência, postas pela árvore da área):
+ * - a antecipação (`antecipaEnviar`) só fica com prazo de 10 dias ou mais; com menos (ex.: 5 dias), fica o VIOS;
+ * - o prazo curto (`adiaEnviar`) só fica com prazo de menos de 10 dias, sabido; com 10 ou mais, fica o VIOS.
  */
 export function fluxoDoPrazo(fluxo: FluxoDaTarefa | null, prazo: PrazoMarcado, publicacao: PrazoDaPublicacao | null): FluxoDaTarefa | null {
-  if (!fluxo?.antecipaEnviar || prazoMarcadoLongo(prazo, publicacao)) return fluxo;
-  return { criacao: fluxo.criacao, conclusao: fluxo.conclusao };
+  if (!fluxo || (!fluxo.antecipaEnviar && !fluxo.adiaEnviar)) return fluxo;
+  const antecipa = fluxo.antecipaEnviar && prazoMarcadoLongo(prazo, publicacao) ? fluxo.antecipaEnviar : 0;
+  const adia = fluxo.adiaEnviar && prazoMarcadoCurto(prazo, publicacao) ? fluxo.adiaEnviar : 0;
+  if (antecipa === (fluxo.antecipaEnviar ?? 0) && adia === (fluxo.adiaEnviar ?? 0)) return fluxo;
+  return {
+    criacao: fluxo.criacao,
+    conclusao: fluxo.conclusao,
+    ...(antecipa ? { antecipaEnviar: antecipa } : {}),
+    ...(adia ? { adiaEnviar: adia } : {}),
+  };
 }
 
 /** O Orquestra não sabe o nome do estagiário da pasta: o VIOS põe quem está na pasta. */
@@ -226,6 +246,7 @@ export const ROTULO_AJUSTE_CURTO: Record<MotivoDoAjuste, string> = {
   fatal: "apertada antes da fatal",
   hoje: "VIOS daria antes de hoje",
   antecipada: "regra da insolvência",
+  adiada: "regra da insolvência (prazo curto)",
 };
 
 /** O mesmo, por extenso, na lista do fluxo da vistagem. */
@@ -233,16 +254,18 @@ export const ROTULO_AJUSTE: Record<MotivoDoAjuste, string> = {
   fatal: "apertada para caber antes da fatal",
   hoje: "o VIOS daria antes de hoje: vai hoje",
   antecipada: "regra da insolvência: fica 1 dia útil antes da fatal",
+  adiada: "regra da insolvência, prazo curto: fica 1 dia útil antes da fatal",
 };
 
 /**
  * Revisar e Protocolar da agendada fora da conta do VIOS a partir do Enviar (`fluxoPrevisto` › `apertada`; null =
- * fica a do VIOS). Sem `motivo`, o prazo curto; `"antecipada"`, a regra da insolvência (`ANTECIPACAO_INSOLVENCIA`).
+ * fica a do VIOS). Sem `motivo`, o prazo curto a partir de hoje; `"antecipada"` e `"adiada"`, as regras da insolvência
+ * (`ANTECIPACAO_INSOLVENCIA` e `PRAZO_CURTO_INSOLVENCIA`).
  */
 export interface DatasFixasDoFluxo {
   revisar: string | null;
   protocolar: string | null;
-  motivo?: "antecipada";
+  motivo?: "antecipada" | "adiada";
 }
 
 /**
@@ -254,7 +277,9 @@ export interface DatasFixasDoFluxo {
  *
  * Regra da insolvência (`cadeia.antecipada`), quando não aperta: o Enviar é o da tarefa e o VIOS cria o Revisar 1 dia
  * útil depois dele, como deve; o Protocolar ele criaria 2 dias depois, então vai 1 dia útil antes da fatal
- * (`motivo: "antecipada"`), onde estaria sem a regra. O robô grava no VIOS só se ficar diferente.
+ * (`motivo: "antecipada"`), onde estaria sem a regra. O robô grava no VIOS só se ficar diferente. No prazo curto da
+ * insolvência (`cadeia.adiada`), o mesmo: o VIOS criaria o Protocolar 4 dias depois do Enviar, depois da fatal; vai 1
+ * dia útil antes dela (`motivo: "adiada"`).
  */
 export function prazoApertado(
   agendamento: { etiqueta: string; dataFatal: string | null; data?: string | null },
@@ -267,10 +292,11 @@ export function prazoApertado(
   const datas = datasDoPrazo(agendamento.dataFatal, ehDiaUtil, cadeia, hoje);
   const futuro = Boolean(agendamento.data && agendamento.data > hoje);
   if (datas.ajustada && !futuro) return { enviar: datas.enviar, revisar: datas.revisar, protocolar: datas.protocolar };
-  if (!cadeia?.antecipada) return null;
+  const motivo = cadeia?.antecipada ? "antecipada" : cadeia?.adiada ? "adiada" : null;
+  if (!motivo) return null;
   const enviar = agendamento.data || datas.enviar;
   const protocolar = somarDiasUteis(agendamento.dataFatal, -1, ehDiaUtil);
-  return protocolar >= enviar ? { enviar, revisar: null, protocolar, motivo: "antecipada" } : null;
+  return protocolar >= enviar ? { enviar, revisar: null, protocolar, motivo } : null;
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   fluxoParaOVios,
   fluxoPrevisto,
   prazoApertado,
+  prazoMarcadoCurto,
   prazoMarcadoLongo,
   quemFicaNoFluxo,
 } from "./fluxo-previsto";
@@ -393,6 +394,77 @@ describe("regra da insolvência no fluxo e no robô (pedido de 11/11/2026)", () 
       enviar: "2026-11-12",
       protocolar: "2026-11-19",
       motivo: "antecipada",
+    });
+  });
+});
+
+describe("prazo curto na insolvência (pedido de 18/11/2026, 4008806-15: 'pulando 2 dias em prazo de 5 dias')", () => {
+  // Fluxo com o 3. PROTOCOLAR de 4 dias (482): o VIOS cria o Enviar 5 dias úteis antes da fatal.
+  // A cadeia sai do prazo do catálogo ("4 dias"), como o 3. PROTOCOLAR 482 vem do VIOS.
+  const arvore = new Map(ARVORE)
+    .set(482, { ...tipo("3. PROTOCOLAR", uteis(4)), prazo: "4 dias" })
+    .set(314, { ...tipo("2. REVISAR", uteis(1)), prazo: "1 dia" })
+    .set(492, tipo("RESPOSTA AOS EMBARGOS DE DECLARAÇÃO", uteis(2), [[321, "atual"], [314, "pai"], [482, "pai"]]))
+    .set(612, tipo("MANIFESTAÇÃO - FLUXO D5", null, [[321, "atual"], [314, "pai"], [482, "pai"]]));
+  const todos = [...arvore.keys()];
+  const fluxoNa = (id: string, area: string) => montarFluxo(id, arvoreDaArea(arvore, todos, area));
+  // Publicada em 17/11/2026, prazo de 5 dias úteis: fatal 25/11 (feriado 20/11).
+  const daPublicacao = { dataPublicacao: "2026-11-17", contagem: "uteis" as const, ehDiaDePrazo: ehDiaUtil };
+  const prazo = { etiqueta: "PRAZO", dataFatal: "2026-11-25" };
+  const cinco = { dataFatal: prazo.dataFatal, diasPrazo: 5 };
+  const doFluxo = (previstas: ReturnType<typeof fluxoPrevisto>, nome: string) => previstas.find((tarefa) => tarefa.nome === nome);
+  const enviarDe = (fluxo: ReturnType<typeof montarFluxo>, fatal = prazo.dataFatal) => datasDoPrazo(fatal, ehDiaUtil, cadeiaDoFluxo(fluxo), "2026-11-17").enviar;
+
+  it("4008806-15 (5 dias): Enviar 19/11; o VIOS cria o Revisar 23/11 e o robô grava o Protocolar 24/11", () => {
+    const fluxo = fluxoDoPrazo(fluxoNa("492", "Cível | Insolvência"), cinco, daPublicacao);
+    const enviar = enviarDe(fluxo);
+    expect(enviar).toBe("2026-11-19");
+    const ajuste = prazoApertado({ ...prazo, data: enviar }, fluxo, ehDiaUtil, "2026-11-17");
+    expect(ajuste).toEqual({ enviar: "2026-11-19", revisar: null, protocolar: "2026-11-24", motivo: "adiada" });
+    const previstas = fluxoPrevisto({ ...pessoas, data: enviar }, fluxo, ehDiaUtil, { hoje: "2026-11-17", apertada: ajuste });
+    expect(doFluxo(previstas, "2. REVISAR")).toMatchObject({ data: "2026-11-23", dataVios: "2026-11-23" });
+    expect(doFluxo(previstas, "2. REVISAR")?.ajustada).toBeUndefined();
+    // Pela conta do VIOS, o Protocolar cairia depois da fatal (26/11): vai 1 dia útil antes dela.
+    expect(doFluxo(previstas, "3. PROTOCOLAR")).toMatchObject({ data: "2026-11-24", dataVios: "2026-11-26", ajustada: "adiada" });
+    expect(fluxoParaOVios(previstas)).toEqual([{ caminho: ["3. PROTOCOLAR"], data: "2026-11-24" }]);
+  });
+
+  it("os EMBARGOS DE DECLARAÇÃO da insolvência (o caso mais comum, 5 dias) também", () => {
+    expect(enviarDe(fluxoDoPrazo(fluxoNa("487", "Insolvência"), cinco, daPublicacao))).toBe("2026-11-19");
+  });
+
+  it("com 10 dias ou mais fica como o VIOS cria: Enviar 5 dias úteis antes da fatal", () => {
+    const dez = { dataFatal: "2026-12-02", diasPrazo: 10 };
+    const fluxo = fluxoDoPrazo(fluxoNa("492", "Cível | Insolvência"), dez, daPublicacao);
+    expect(fluxo?.adiaEnviar).toBeUndefined();
+    expect(enviarDe(fluxo, dez.dataFatal)).toBe("2026-11-25");
+    expect(prazoApertado({ etiqueta: "PRAZO", dataFatal: dez.dataFatal, data: "2026-11-25" }, fluxo, ehDiaUtil, "2026-11-17")).toBeNull();
+  });
+
+  it("fatal no calendário: conta da publicação (10 dias úteis de 17/11 vão até 02/12); sem como saber, fica o VIOS", () => {
+    expect(prazoMarcadoCurto({ dataFatal: "2026-11-25" }, daPublicacao)).toBe(true);
+    expect(prazoMarcadoCurto({ dataFatal: "2026-12-02" }, daPublicacao)).toBe(false);
+    expect(prazoMarcadoCurto({ dataFatal: "2026-11-25" }, null)).toBe(false);
+    expect(fluxoDoPrazo(fluxoNa("492", "Insolvência"), { dataFatal: "2026-11-25" }, null)?.adiaEnviar).toBeUndefined();
+    expect(fluxoDoPrazo(fluxoNa("492", "Insolvência"), { dataFatal: "2026-11-25" }, daPublicacao)?.adiaEnviar).toBe(2);
+  });
+
+  it("a MANIFESTAÇÃO - FLUXO D5 e as outras áreas ficam como o VIOS cria, mesmo com 5 dias", () => {
+    const d5 = fluxoDoPrazo(fluxoNa("612", "Insolvência"), cinco, daPublicacao);
+    expect(d5?.adiaEnviar).toBeUndefined();
+    expect(enviarDe(d5)).toBe("2026-11-17");
+    const civel = fluxoDoPrazo(fluxoNa("492", "Cível"), cinco, daPublicacao);
+    expect(civel?.adiaEnviar).toBeUndefined();
+    expect(enviarDe(civel)).toBe("2026-11-17");
+  });
+
+  it("o Enviar escolhido à mão na Conferência vale; o Protocolar continua 1 dia útil antes da fatal", () => {
+    const fluxo = fluxoDoPrazo(fluxoNa("492", "Insolvência"), cinco, daPublicacao);
+    expect(prazoApertado({ ...prazo, data: "2026-11-18" }, fluxo, ehDiaUtil, "2026-11-17")).toEqual({
+      enviar: "2026-11-18",
+      revisar: null,
+      protocolar: "2026-11-24",
+      motivo: "adiada",
     });
   });
 });

@@ -437,7 +437,7 @@ export function validarAgendamentos(
     ehDiaUtil: (iso: string) => boolean;
     /**
      * Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). Recebe o prazo marcado: a regra
-     * da insolvência só antecipa o Enviar com 10 dias ou mais (`fluxoDoPrazo`).
+     * da insolvência antecipa o Enviar com 10 dias ou mais e o adia no prazo curto, com menos de 10 (`fluxoDoPrazo`).
      */
     cadeiaDaTarefa: (tarefaId: string, prazo: { dataFatal: string | null; diasPrazo: number | null }) => CadeiaDoPrazo | null;
     /** Tarefas que o fluxo do tipo cria junto (chaveDoCaminho), para aceitar só datas delas. */

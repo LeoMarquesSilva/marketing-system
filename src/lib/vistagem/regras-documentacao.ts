@@ -295,6 +295,15 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         origem: "codigo",
       },
       {
+        id: "prazo-curto-insolvencia",
+        titulo: "Prazo curto na insolvência",
+        quando:
+          "a pasta for de Insolvência ou Cível | Insolvência, o fluxo da tarefa no VIOS tiver o Protocolar 4 dias úteis depois do Enviar (EMBARGOS DE DECLARAÇÃO, RESPOSTA AOS EMBARGOS e outras; não vale para a MANIFESTAÇÃO - FLUXO D5) e o prazo marcado na vistagem for de menos de 10 dias (com a fatal no calendário, contado da publicação até ela, na contagem da área)",
+        entao:
+          "o Enviar e o Revisar vão 2 dias úteis depois do que o VIOS criaria e o Protocolar fica 1 dia útil antes da fatal, como no fluxo comum (Enviar 3 dias úteis antes da fatal, Revisar 2, Protocolar 1). Ex.: fatal 25/11 → Enviar 19/11, Revisar 23/11, Protocolar 24/11. O robô grava o Protocolar no VIOS. A MANIFESTAÇÃO - FLUXO D5 fica sempre como o VIOS cria.",
+        origem: "codigo",
+      },
+      {
         id: "feriados",
         titulo: "Feriados",
         quando: "o sistema contar dias úteis",
