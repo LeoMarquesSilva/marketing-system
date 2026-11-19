@@ -1,4 +1,4 @@
-import { CAMPO_DATA_FATAL } from "./ajuste-conferencia";
+import { CAMPO_DATA_FATAL, CAMPO_DIAS_DO_PRAZO } from "./ajuste-conferencia";
 import type { OrigemPrazo } from "./agendamento";
 import { ROTULO_CONTAGEM, type ContagemPrazo } from "./dias-uteis";
 import type { AjusteNaTarefa } from "./types";
@@ -28,8 +28,17 @@ export interface TarefaComFatal {
   ajustes?: AjusteNaTarefa[] | null;
 }
 
+/**
+ * Os dias que o vistador escolheu: os da tarefa ou, se a Conferência mudou a fatal (e apagou os dias), os que o ajuste
+ * guardou (`CAMPO_DIAS_DO_PRAZO`, pedido de 19/11/2026).
+ */
 function dias(item: TarefaComFatal): string | null {
-  return item.diasPrazo ? `${item.diasPrazo} ${ROTULO_CONTAGEM[item.contagemPrazo ?? "uteis"]}` : null;
+  if (item.diasPrazo) return `${item.diasPrazo} ${ROTULO_CONTAGEM[item.contagemPrazo ?? "uteis"]}`;
+  for (const ajuste of item.ajustes ?? []) {
+    const guardados = ajuste.mudancas.find((mudanca) => mudanca.campo === CAMPO_DIAS_DO_PRAZO);
+    if (guardados?.de) return guardados.de;
+  }
+  return null;
 }
 
 /** Null fora do Prazo com data fatal (Providência, Compromisso, Prazo sem fatal como a SENTENÇA). */

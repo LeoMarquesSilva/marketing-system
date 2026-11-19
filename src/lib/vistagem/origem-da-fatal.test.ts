@@ -40,3 +40,30 @@ describe("origemDaFatal: botão ou calendário, explícito (pedido de 18/11/2026
     expect(origemDaFatal(prazo({ dataFatal: null, origemPrazo: "atalho" }))).toBeNull();
   });
 });
+
+describe("botão usado mesmo com a fatal mudada na Conferência (pedido de 19/11/2026)", () => {
+  // A Conferência apaga os dias da tarefa ao mudar a fatal; o ajuste guarda quais eram.
+  const comDias = [
+    {
+      por: "Giovanna",
+      em: "2026-11-18T14:00:00Z",
+      mudancas: [
+        { campo: "Data fatal", de: "09/12/2026", para: "11/12/2026" },
+        { campo: "Dias do prazo", de: "15 dias úteis", para: "fatal mudada na Conferência" },
+      ],
+    },
+  ];
+
+  it("o selo diz qual botão o vistador usou", () => {
+    const origem = origemDaFatal(prazo({ origemPrazo: "atalho", diasPrazo: null, contagemPrazo: null, ajustes: comDias }));
+    expect(origem).toMatchObject({ rotulo: "Botão 15 dias úteis", mudadaNaConferencia: true });
+    expect(origem?.descricao).toContain("botão de 15 dias úteis");
+    expect(origem?.descricao).toContain("Depois, a Conferência mudou a data fatal.");
+  });
+
+  it("vale também para a sugestão da IA e o prazo da tarefa; sem os dias guardados, fica \"Botões de dias\"", () => {
+    expect(origemDaFatal(prazo({ origemPrazo: "sugestao_ia", ajustes: comDias }))?.rotulo).toBe("Sugestão da IA (15 dias úteis)");
+    expect(origemDaFatal(prazo({ origemPrazo: "tarefa", ajustes: comDias }))?.rotulo).toBe("Prazo legal da tarefa (15 dias úteis)");
+    expect(origemDaFatal(prazo({ origemPrazo: "atalho", ajustes: mudouFatal }))?.rotulo).toBe("Botões de dias");
+  });
+});

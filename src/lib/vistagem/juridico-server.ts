@@ -21,7 +21,7 @@ import {
   type OrigemPrazo,
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
-import { enviarDoPrazo, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
+import { enviarDoPrazo, mudancaDosDias, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
 import { MINIMO_BUSCA_NO_BANCO, camposDoCheck, combinaCampos, digitosDoTermo, normalizarBusca, padraoDoTermo, termosDaBusca } from "./busca";
 import { CHECK_AUTOMATICO, CONFERENCIA_AUTOMATICA, foiCheckAutomatico, foiConferenciaAutomatica, notaDoCheckAutomatico } from "./check";
 import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
@@ -1395,6 +1395,9 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
   // como o vistador escolheu a fatal (botão ou calendário), que todos os históricos mostram (pedido de 18/11/2026); o
   // ajuste registra a fatal nova.
   const mesmaFatal = item.dataFatal === row.data_fatal;
+  // Os dias da vistagem (botão 5/10/15…) saem da tarefa, mas ficam no ajuste: o selo da fatal mostra qual foi.
+  const dosDias = mudancaDosDias({ dataFatal: row.data_fatal, diasPrazo: row.dias_prazo, contagemPrazo: row.contagem_prazo }, item.dataFatal);
+  const mudancasGravadas = dosDias ? [...mudancas, dosDias] : mudancas;
   const { data: atualizada, error: erroGravar } = await db
     .from("vistagem_agendamentos")
     .update({
@@ -1411,7 +1414,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       revisor: item.revisor,
       revisor_id: item.revisorId,
       fluxo_datas: item.fluxoDatas.length ? item.fluxoDatas : null,
-      ajustes: [...(row.ajustes ?? []), { por: nomes.get(authUserId) || null, em: new Date().toISOString(), mudancas } satisfies AjusteNaTarefa],
+      ajustes: [...(row.ajustes ?? []), { por: nomes.get(authUserId) || null, em: new Date().toISOString(), mudancas: mudancasGravadas } satisfies AjusteNaTarefa],
     })
     .eq("id", row.id)
     // A mesma situação de quando leu: se outra pessoa validou nesse meio-tempo, não muda o que já foi para o robô.
