@@ -26,7 +26,8 @@ async function fetchUnseenDeliveries(): Promise<number | null> {
   }
 }
 
-export function DeliveryNoticesBell({ className }: { className?: string }) {
+/** Entregas novas do Marketing da pessoa logada (usado também no sino único da sidebar). */
+export function useUnseenDeliveries(): number {
   const { profile } = useAuth();
   const [unseen, setUnseen] = useState(0);
 
@@ -56,6 +57,11 @@ export function DeliveryNoticesBell({ className }: { className?: string }) {
     };
   }, [profile?.id]);
 
+  return unseen;
+}
+
+export function DeliveryNoticesBell({ className }: { className?: string }) {
+  const unseen = useUnseenDeliveries();
   if (unseen === 0) return null;
 
   return (

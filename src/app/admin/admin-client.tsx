@@ -220,7 +220,7 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
           {(
             [
               { id: "workflow" as ConfigTab, label: "Workflow" },
-              { id: "planner" as ConfigTab, label: "Planner" },
+              { id: "planner" as ConfigTab, label: "Planner de Marketing" },
               { id: "kanban" as ConfigTab, label: "Kanban" },
             ] as const
           ).map(({ id, label }) => (
