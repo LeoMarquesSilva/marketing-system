@@ -42,7 +42,7 @@ export function DrinkThumb({ drink, size = "sm" }: { drink: Pick<TastingDrink, "
 }
 
 /** Nota de uma pessoa: quadradinho colorido pela escala, ou traço sem nota. */
-function ScoreChip({ score, size = "md" }: { score: Score | null; size?: "sm" | "md" }) {
+export function ScoreChip({ score, size = "md" }: { score: Score | null; size?: "sm" | "md" }) {
   const box = size === "sm" ? "h-6 min-w-6 text-xs" : "size-8 text-sm";
   return score == null ? (
     <span className={cn(box, "inline-grid place-items-center rounded-md text-muted-foreground/60")} aria-label="Sem nota">

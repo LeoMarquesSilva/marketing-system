@@ -430,12 +430,20 @@ export function EventoCardapioTab({
 
         {!food && drinkData && drinkData.drinks.length > 0 && (
           <div className="space-y-2">
-            <div>
-              <h4 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <Star className="size-4 text-[#3e84a8]" aria-hidden />
-                Notas das degustações
-              </h4>
-              <p className="text-xs leading-5 text-muted-foreground">Cada drink com a média do grupo que provou. &quot;Levar ao cardápio&quot; lança o drink como bebida aprovada.</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-0 flex-1">
+                <h4 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Star className="size-4 text-[#3e84a8]" aria-hidden />
+                  Notas das degustações
+                </h4>
+                <p className="text-xs leading-5 text-muted-foreground">Cada drink com a média do grupo que provou. &quot;Levar ao cardápio&quot; lança o drink como bebida aprovada.</p>
+              </div>
+              <Button size="sm" variant="secondary" asChild>
+                <a href={`/degustacao/proposta/${eventId}`} target="_blank" rel="noreferrer">
+                  <ExternalLink className="size-4" />
+                  Proposta para a escolha
+                </a>
+              </Button>
             </div>
             <OverallRankingList
               tastings={drinkData.tastings}

@@ -38,6 +38,25 @@ function toDrink(row: Row): TastingDrink {
     menuItemId: (row.menu_item_id as string | null) ?? null,
     sortOrder: Number(row.sort_order ?? 0),
     createdAt: String(row.created_at ?? ""),
+    isVolante: Boolean(row.is_volante),
+    included: Boolean(row.included),
+    chosenAt: (row.chosen_at as string | null) ?? null,
+    chosenBy: (row.chosen_by as string | null) ?? null,
+  };
+}
+
+/** O que a proposta mostra de cada degustação além do cadastro: pontos fortes e quantos drinks entram à escolha. */
+export interface TastingExtras {
+  highlights: string[];
+  choiceLimit: number | null;
+}
+
+function toExtras(row: Row): TastingExtras {
+  const list = Array.isArray(row.highlights) ? row.highlights : [];
+  const limit = Number(row.choice_limit);
+  return {
+    highlights: list.filter((item): item is string => typeof item === "string" && item.trim().length > 0),
+    choiceLimit: Number.isInteger(limit) && limit > 0 ? limit : null,
   };
 }
 
@@ -69,6 +88,8 @@ export interface DrinkTastingData {
   drinks: TastingDrink[];
   votes: TastingVote[];
   faces: Record<string, TastingFace>;
+  /** Por id da degustação. */
+  extras: Record<string, TastingExtras>;
 }
 
 /** Degustações de drinks do evento, com drinks, notas e fotos das pessoas. */
@@ -81,11 +102,21 @@ export async function fetchDrinkTastings(eventId: string): Promise<DrinkTastingD
   if (tastings.error) throw new Error("Não foi possível carregar as degustações.");
   if (drinks.error) throw new Error("Não foi possível carregar os drinks.");
   const tastingList = (tastings.data ?? []).map((row) => toTasting(row as Row));
+  const extras: Record<string, TastingExtras> = {};
+  for (const row of (tastings.data ?? []) as Row[]) extras[String(row.id)] = toExtras(row);
+  const drinkList = (drinks.data ?? []).map((row) => toDrink(row as Row));
   const ids = tastingList.map((tasting) => tasting.id);
   const votes = ids.length > 0 ? await supabase.from("event_tasting_votes").select("*").in("tasting_id", ids) : { data: [], error: null };
   if (votes.error) throw new Error("Não foi possível carregar as notas.");
 
-  const userIds = [...new Set(tastingList.flatMap((tasting) => tasting.participants.map((person) => person.userId)).filter((id): id is string => Boolean(id)))];
+  // Rostos de quem participou e de quem escolheu na proposta.
+  const userIds = [
+    ...new Set(
+      [...tastingList.flatMap((tasting) => tasting.participants.map((person) => person.userId)), ...drinkList.map((drink) => drink.chosenBy)].filter(
+        (id): id is string => Boolean(id)
+      )
+    ),
+  ];
   const faces: Record<string, TastingFace> = {};
   if (userIds.length > 0) {
     const { data } = await supabase.from("users").select("id, name, avatar_url, photo_onedrive_url").in("id", userIds);
@@ -101,10 +132,23 @@ export async function fetchDrinkTastings(eventId: string): Promise<DrinkTastingD
   return {
     eventName: (event.data?.name as string | undefined) ?? null,
     tastings: tastingList,
-    drinks: (drinks.data ?? []).map((row) => toDrink(row as Row)),
+    drinks: drinkList,
     votes: (votes.data ?? []).map((row) => toVote(row as Row)).filter((vote): vote is TastingVote => vote !== null),
     faces,
+    extras,
   };
+}
+
+/** Marca ou desmarca o drink como escolhido para a festa (página de proposta). */
+export async function setDrinkChosen(drinkId: string, chosen: boolean, by: string | null): Promise<TastingDrink> {
+  const { data, error } = await supabase
+    .from("event_tasting_drinks")
+    .update({ chosen_at: chosen ? new Date().toISOString() : null, chosen_by: chosen ? by : null, updated_at: new Date().toISOString() })
+    .eq("id", drinkId)
+    .select("*")
+    .single();
+  if (error || !data) throw new Error("A escolha não foi salva. Confira a internet e toque de novo.");
+  return toDrink(data as Row);
 }
 
 /** Evento de uma degustação (a página do celular abre pela degustação). */

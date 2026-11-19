@@ -21,7 +21,23 @@ const people: TastingParticipant[] = [
 ];
 
 function drink(id: string, name: string, sortOrder = 0): TastingDrink {
-  return { id, tastingId: "t1", eventId: "e1", name, photoPath: null, photoUrl: null, note: null, shortlisted: false, menuItemId: null, sortOrder, createdAt: `2026-11-18T21:0${sortOrder}:00Z` };
+  return {
+    id,
+    tastingId: "t1",
+    eventId: "e1",
+    name,
+    photoPath: null,
+    photoUrl: null,
+    note: null,
+    shortlisted: false,
+    menuItemId: null,
+    sortOrder,
+    createdAt: `2026-11-18T21:0${sortOrder}:00Z`,
+    isVolante: false,
+    included: false,
+    chosenAt: null,
+    chosenBy: null,
+  };
 }
 
 function vote(drinkId: string, person: TastingParticipant, score: Score, tastingId = "t1"): TastingVote {

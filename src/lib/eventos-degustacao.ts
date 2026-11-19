@@ -28,6 +28,13 @@ export interface TastingDrink {
   menuItemId: string | null;
   sortOrder: number;
   createdAt: string;
+  /** Drink volante (circula fora do bar). */
+  isVolante: boolean;
+  /** Já incluso no combinado com a casa (não conta entre os à escolha). */
+  included: boolean;
+  /** Escolhido para a festa na página de proposta. */
+  chosenAt: string | null;
+  chosenBy: string | null;
 }
 
 export interface TastingVote {
