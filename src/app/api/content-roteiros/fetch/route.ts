@@ -94,7 +94,7 @@ export async function POST(request: Request) {
       {
         started: true,
         message:
-          "Busca iniciada em segundo plano. Os conteúdos aparecerão em Conteúdo para Post em alguns minutos.",
+          "Busca iniciada em segundo plano. As matérias novas aparecem em Disponíveis em alguns minutos.",
       },
       { status: 202 }
     );

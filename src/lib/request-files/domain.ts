@@ -1,5 +1,8 @@
 import { PUBLIC_APP_ORIGIN } from "@/lib/public-origin";
 
+/** O que o Marketing concluiu para a pessoa logada (arte em carrossel, sem aprovação). */
+export const MY_DELIVERIES_PATH = "/minhas-entregas";
+
 /** Bucket PRIVADO das artes do planner (a página pública recebe URL assinada). */
 export const REQUEST_FILES_BUCKET = "MARKETING-SYSTEM-ARTES";
 export const REQUEST_FILE_MAX_BYTES = 500 * 1024 * 1024;

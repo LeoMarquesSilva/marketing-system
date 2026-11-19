@@ -29,6 +29,34 @@ export interface RoteiroItem {
   sent_to_mkt_by_name?: string | null;
   marketing_request_id?: string | null;
   vios_task_id?: string | null;
+  /** Quem escolheu a matéria ("Escolher e enviar ao gestor"). */
+  approved_by_id?: string | null;
+  approved_by_name?: string | null;
+  approved_at?: string | null;
+  reviewer_approved_at?: string | null;
+  edited_by_id?: string | null;
+  /** "manual" = alguém colou o link; senão veio da busca de notícias. */
+  source?: string | null;
+  created_by_id?: string | null;
+  created_by_name?: string | null;
+  rejected_by_id?: string | null;
+  rejected_by_name?: string | null;
+  rejected_at?: string | null;
+  /** Nota de potencial (0–10) dada pela IA antes de escrever o carrossel, e o motivo. */
+  relevance_score?: number | null;
+  relevance_reason?: string | null;
+  /** "Já falamos disso?": novo, repetido (sem fato novo) ou desdobramento de um assunto nosso. */
+  related_kind?: "novo" | "repetido" | "desdobramento" | null;
+  related_note?: string | null;
+  related_ref?: {
+    source: "instagram" | "roteiro";
+    id: string;
+    title: string;
+    url: string | null;
+    date: string | null;
+    /** Quem fez o post original (recebe o aviso de desdobramento). */
+    people?: { id: string; name: string }[];
+  } | null;
 }
 
 interface RoteiroCardProps {

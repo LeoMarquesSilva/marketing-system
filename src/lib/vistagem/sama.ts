@@ -6,6 +6,7 @@ import { VistagemError } from "./errors";
 import { cisDoResultado, tarefasViosDoResultado, type LinhaFilaSama, type ModoAgendamento, type TarefaNoVios } from "./fila-vios";
 import type { BaseDaData, ResponsabilidadeDoTipo, TipoNaArvore } from "./fluxo-vios";
 import type { CapaDoVios, PedidoDeAbertura, TarefaDaAbertura, TipoDaTarefaNova } from "./capa-abertura";
+import type { PastaNoSama } from "./triagem";
 import type { MateriaVios, SintesePedida } from "./types";
 
 /**
@@ -53,7 +54,8 @@ export interface CatalogoArea {
   atualizadoEm: string;
 }
 
-let cacheCatalogo: { carregadoEm: number; areas: CatalogoArea[] } | null = null;
+/** Catálogos por tipo de pasta (Processo e Atendimento têm listas de tarefas diferentes no VIOS). */
+const cacheCatalogo = new Map<"Processo" | "Atendimento", { carregadoEm: number; areas: CatalogoArea[] }>();
 /** Etiquetas e responsáveis fixos de cada tipo de tarefa do VIOS. */
 interface DadosDoTipo {
   etiquetas: number[];
@@ -88,10 +90,24 @@ async function carregarEtiquetasDosTipos(): Promise<Map<string, DadosDoTipo>> {
 }
 
 /** Catálogo das pastas de Processo, por área (tarefas que o VIOS aceita, com as etiquetas, e usuários). */
-export async function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
-  if (cacheCatalogo && Date.now() - cacheCatalogo.carregadoEm < CACHE_MS) return cacheCatalogo.areas;
+export function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
+  return carregarCatalogo("Processo");
+}
+
+/**
+ * Catálogo das pastas de Atendimento, por área: a publicação ligada a uma pasta de atendimento informada na Triagem
+ * Manual (18/11/2026) é vistada com as tarefas que o VIOS aceita no atendimento (ex.: CIÊNCIA NF é 316 lá, 796 no
+ * processo; MANIFESTAÇÃO - FLUXO D5 só existe no processo).
+ */
+export function carregarCatalogoAtendimentos(): Promise<CatalogoArea[]> {
+  return carregarCatalogo("Atendimento");
+}
+
+async function carregarCatalogo(pastaTipo: "Processo" | "Atendimento"): Promise<CatalogoArea[]> {
+  const guardado = cacheCatalogo.get(pastaTipo);
+  if (guardado && Date.now() - guardado.carregadoEm < CACHE_MS) return guardado.areas;
   const [{ data, error }, etiquetasPorTipo] = await Promise.all([
-    sama().from("vios_catalogo_tarefas").select("area, etapas, usuarios, atualizado_em").eq("pasta_tipo", "Processo"),
+    sama().from("vios_catalogo_tarefas").select("area, etapas, usuarios, atualizado_em").eq("pasta_tipo", pastaTipo),
     carregarEtiquetasDosTipos(),
   ]);
   if (error) throw new VistagemError(`Falha ao carregar o catálogo de tarefas do SAMA: ${error.message}`, 502);
@@ -116,8 +132,55 @@ export async function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
       502
     );
   }
-  cacheCatalogo = { carregadoEm: Date.now(), areas };
+  cacheCatalogo.set(pastaTipo, { carregadoEm: Date.now(), areas });
   return areas;
+}
+
+/**
+ * O que a SAMA sabe de uma pasta do VIOS pela CI: o tipo e a área (vios_pastas, das pastas que o robô já abriu); pelas
+ * tarefas da pasta (vios_tarefas, cópia de madrugada de todas as tarefas do VIOS), o cliente, o grupo, a área e o número
+ * do processo; e, se foi o robô que abriu a pasta pela Triagem Manual (fila abrir_pasta), que é processo, com o número
+ * (ex.: a CI 61595, aberta em 18/11, antes da cópia da madrugada). Null quando nenhuma conhece a CI.
+ */
+export async function pastaNoSama(ci: string): Promise<PastaNoSama | null> {
+  const numero = ci.replace(/\D/g, "");
+  if (!numero) return null;
+  const db = sama();
+  const [pasta, tarefa, aberta] = await Promise.all([
+    db.from("vios_pastas").select("pasta_tipo, area, cnj").eq("ci", numero).limit(1).maybeSingle(),
+    db
+      .from("vios_tarefas")
+      .select("cliente, grupo_cliente, area_do_processo, nro_cnj")
+      .eq("ci_do_processo", numero)
+      .order("data_para_conclusao", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("vios_agendamentos")
+      .select("pasta, abertura")
+      .eq("operacao", "abrir_pasta")
+      .eq("status", "concluido")
+      .eq("resultado->>ci_pasta", numero)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (pasta.error && tarefa.error) throw new VistagemError(`Falha ao consultar a pasta ${numero} no SAMA: ${pasta.error.message}`, 502);
+  const pelaAbertura = aberta.error ? null : (aberta.data as { pasta: string | null; abertura: { capa?: { area?: string | null; cliente?: string | null } } | null } | null);
+  const doCadastro = pasta.error ? null : (pasta.data as { pasta_tipo: string | null; area: string | null; cnj: string | null } | null);
+  const daTarefa = tarefa.error
+    ? null
+    : (tarefa.data as { cliente: string | null; grupo_cliente: string | null; area_do_processo: string | null; nro_cnj: string | null } | null);
+  if (!doCadastro && !daTarefa && !pelaAbertura) return null;
+  const tipo =
+    doCadastro?.pasta_tipo === "Atendimento" || doCadastro?.pasta_tipo === "Processo" ? doCadastro.pasta_tipo : pelaAbertura ? "Processo" : null;
+  const capa = pelaAbertura?.abertura?.capa;
+  return {
+    tipo,
+    area: doCadastro?.area?.trim() || daTarefa?.area_do_processo?.trim() || capa?.area?.trim() || null,
+    cnj: doCadastro?.cnj?.trim() || daTarefa?.nro_cnj?.trim() || pelaAbertura?.pasta?.trim() || null,
+    cliente: daTarefa?.cliente?.trim() || capa?.cliente?.trim() || null,
+    grupoCliente: daTarefa?.grupo_cliente?.trim() || null,
+  };
 }
 
 let cacheArvore: { carregadoEm: number; arvore: Map<number, TipoNaArvore> } | null = null;

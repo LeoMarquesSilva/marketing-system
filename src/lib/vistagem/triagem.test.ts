@@ -7,6 +7,9 @@ import {
   citaAdvogadoDoEscritorio,
   escritorioDaAreaDoProcesso,
   ehExCliente,
+  ehPastaDeAtendimento,
+  pastaInformada,
+  tipoDaPastaDaPublicacao,
   triar,
   type PastaSioe,
 } from "./triagem";
@@ -166,5 +169,38 @@ describe("ex-cliente sem advogado do escritório", () => {
       "Ricardo Viscardi Pires",
     ]);
     expect(advogadosDoEscritorioCitados("ADV: OUTRO ADVOGADO (OAB 123456/SP)")).toEqual([]);
+  });
+});
+
+describe("pasta informada pela CI na Triagem Manual (18/11/2026)", () => {
+  it("atendimento pela SAMA: o tipo, a área, o cliente e o grupo da pasta (CI 51762)", () => {
+    const pasta = pastaInformada("51762", {
+      tipo: "Atendimento",
+      area: "Operações Legais",
+      cnj: null,
+      cliente: "Área Controladoria",
+      grupoCliente: "Grupo Operações Legais",
+    });
+    expect(pasta).toMatchObject({ ci: "51762", cnj: "", tipoPasta: "Atendimento", area: "Operações Legais", cliente: "Área Controladoria", grupoCliente: "Grupo Operações Legais" });
+    expect(ehPastaDeAtendimento(pasta.tipoPasta)).toBe(true);
+  });
+
+  it("sem tipo na SAMA: com número de processo nas tarefas é processo; sem, atendimento; sem nada, desconhecida", () => {
+    const base = { tipo: null, area: "Cível", cliente: null, grupoCliente: null };
+    expect(pastaInformada("61595", { ...base, cnj: "4170594-71.2026.8.26.0000" }).tipoPasta).toBe("Processo");
+    expect(pastaInformada("52091", { ...base, cnj: null }).tipoPasta).toBe("Atendimento");
+    expect(pastaInformada("99999", null)).toMatchObject({ ci: "99999", tipoPasta: "Desconhecido", area: null, cliente: null });
+    expect(ehPastaDeAtendimento("Desconhecido")).toBe(true);
+    expect(ehPastaDeAtendimento("Processo")).toBe(false);
+    expect(ehPastaDeAtendimento(undefined)).toBe(false);
+  });
+
+  it("o tipo da pasta da publicação vem da candidata com a CI; as do SIOE (sem tipo) são processo", () => {
+    const atendimento = pastaInformada("51762", null);
+    const doSioe = { ci: "56927", cnj: "4008196-14.2025.8.26.0001" } as PastaSioe;
+    expect(tipoDaPastaDaPublicacao({ pasta_ci: "51762", pastas_candidatas: [doSioe, atendimento] })).toBe("Desconhecido");
+    expect(tipoDaPastaDaPublicacao({ pasta_ci: "56927", pastas_candidatas: [doSioe, atendimento] })).toBe("Processo");
+    expect(tipoDaPastaDaPublicacao({ pasta_ci: "56927", pastas_candidatas: null })).toBe("Processo");
+    expect(tipoDaPastaDaPublicacao({ pasta_ci: null, pastas_candidatas: [atendimento] })).toBe("Processo");
   });
 });

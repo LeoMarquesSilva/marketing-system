@@ -366,6 +366,25 @@ export interface AwardFinalist {
   citation: string | null;
 }
 
+/** Nota da IA (0 a 10) e resumo de um indicado em um valor do hub, lendo todos os relatos dele. */
+export interface AwardAiReview {
+  hub: AwardHubKey;
+  category: AwardCategoryKey;
+  employee_id: string;
+  score: number;
+  summary: string;
+}
+
+/** Sugestão da IA para um valor do hub: vencedor, por quê, quem entra no lugar e pontos de atenção. */
+export interface AwardAiSlot {
+  hub: AwardHubKey;
+  category: AwardCategoryKey;
+  suggested_employee_id: string | null;
+  reason: string;
+  alternative_employee_ids: string[];
+  attention: string;
+}
+
 export interface CommitteeView {
   edition: AwardEdition;
   phase: AwardPhase;
@@ -374,6 +393,9 @@ export interface CommitteeView {
   finalists: AwardFinalist[];
   people: AwardPerson[];
   overrides: ParticipantOverride[];
+  /** Leitura da IA para a aba Reunião (apoio ao debate; quem decide é o comitê). */
+  aiReviews: AwardAiReview[];
+  aiSlots: AwardAiSlot[];
 }
 
 /** Vencedores esperados: 5 valores em cada hub. */

@@ -1,4 +1,4 @@
-import { HORA_LIMITE_DO_DIA, chaveDoCaminho, chaveNome, escritorioDaArea } from "./agendamento";
+import { HORA_LIMITE_DO_DIA, chaveDoCaminho, chaveNome, escritorioDaArea, renunciaComDataFixa } from "./agendamento";
 import { somarDiasUteis } from "./dias-uteis";
 import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
 
@@ -53,6 +53,15 @@ export function ehCienciaNf(nome: string | null | undefined): boolean {
 /** VERIFICAR RENÚNCIA (Providência): segue a CIÊNCIA NF, sem a Ciência dos Agendamentos e com o check automático (pedido de 10/11/2026). */
 export function ehVerificarRenuncia(nome: string | null | undefined): boolean {
   return chaveNome(nome) === "VERIFICAR RENUNCIA";
+}
+
+/**
+ * Publicação de Operações Legais só com a VERIFICAR RENÚNCIA (pedido de 18/11/2026): vai direto ao robô, sem a
+ * Conferência da controladoria, e o check é o automático (`notaDoCheckAutomatico`). Com outra tarefa junto, ou em
+ * outra área, segue a esteira de sempre.
+ */
+export function vaiDiretoAoRobo(area: string | null | undefined, tarefas: { tarefa: string }[]): boolean {
+  return tarefas.length === 1 && renunciaComDataFixa(tarefas[0].tarefa, area);
 }
 
 /**

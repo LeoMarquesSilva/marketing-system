@@ -10,6 +10,9 @@ import {
   canAccessGustavoContent,
   isGustavoContentPath,
 } from "@/lib/gustavo-content/access";
+import { CONTENT_CHOICES_PATH, canSeeContentChoices } from "@/lib/content-escolhas";
+import { CONTENT_SETTINGS_PATH } from "@/lib/content-generator/settings";
+import { isContentManager } from "@/lib/content-areas";
 
 export interface AccessSection {
   key: string; // rota base
@@ -137,6 +140,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   MEUS_CLIENTES_KEY,
   // Peças de campanha do planner para quem vai postar (ex.: sócios).
   "/entregas",
+  // O que o Marketing concluiu para a própria pessoa (a API só devolve o que ela pediu).
+  "/minhas-entregas",
   // Atualização da própria ficha cadastral (Pessoas e Cultura).
   "/minha-ficha",
   // Links de boas-vindas da própria área (Pessoas e Cultura).
@@ -151,6 +156,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/festa-10-anos",
   // Envio dos convites da festa aos clientes: cada remetente vê só os seus (o servidor confere).
   "/convites-festa",
+  // Votação das degustações de drinks no celular (quem foi ao bar vota; a lista fica na degustação).
+  "/degustacao",
 ];
 
 /**
@@ -502,6 +509,16 @@ export function canAccessPath(
 
   if (isDocumentarioPath(pathname)) {
     return hasDocumentarioAccess(profile);
+  }
+
+  // Escolhas da equipe: mesma regra do menu (Marketing, admin e líderes); a API recorta por área.
+  if (pathname === CONTENT_CHOICES_PATH) {
+    return canSeeContentChoices(profile);
+  }
+
+  // Configurações do Gerador de conteúdo: equipe de Marketing (admin, designer e área Marketing).
+  if (pathname === CONTENT_SETTINGS_PATH) {
+    return isContentManager(profile);
   }
 
   const isOperacoesLegaisRoute =

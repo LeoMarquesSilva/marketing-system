@@ -25,6 +25,15 @@ import {
   fetchPerformancePostsWindow,
 } from "@/lib/content-performance";
 import { getContentCutoffDate } from "@/lib/content-utils";
+import { collaboratorHintForArea } from "@/lib/content-generator/learning";
+import { fetchAllPages } from "@/lib/supabase-pages";
+import {
+  createFollowupAlerts,
+  loadGenerationContext,
+  loadRelatedCandidates,
+  scoreNewsRelevance,
+} from "@/lib/content-generator/server";
+import { isSameStory, rankRelatedCandidates, relatedCarouselGuidance, storyTerms } from "@/lib/content-generator/related";
 
 /**
  * URL de notícia aceita. O protocolo é validado explicitamente: `z.url()` do
@@ -117,10 +126,16 @@ export async function createRoteiroFromLink(
 
   // Evita post duplicado do mesmo link/manchete numa janela recente.
   const titleKey = normalizeTitleKey(title);
-  const { data: existing } = await supabase
-    .from("content_roteiros")
-    .select("id, title, link")
-    .gte("created_at", getContentCutoffDate(120).toISOString());
+  // Paginado: o Supabase corta em 1.000 linhas e a janela tem mais que isso.
+  const existing = await fetchAllPages<{ id: string; title: string | null; link: string | null; created_at: string }>((from, to) =>
+    supabase
+      .from("content_roteiros")
+      .select("id, title, link, created_at")
+      .gte("created_at", getContentCutoffDate(120).toISOString())
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
 
   for (const row of existing ?? []) {
     const rowLink = (row.link as string | null) ?? "";
@@ -132,6 +147,20 @@ export async function createRoteiroFromLink(
         "ALREADY_EXISTS"
       );
     }
+  }
+
+  // A mesma notícia por outro veículo nas últimas 3 semanas também já está na lista.
+  const storySince = getContentCutoffDate(21).toISOString();
+  const itemStory = storyTerms(title);
+  const sameStory = existing.find(
+    (row) => row.created_at >= storySince && row.title && isSameStory(storyTerms(row.title), itemStory)
+  );
+  if (sameStory) {
+    throw new ManualLinkError(
+      `Essa notícia já está na lista, vinda de outro veículo: "${sameStory.title}". Procure por ela em Posts.`,
+      409,
+      "ALREADY_EXISTS"
+    );
   }
 
   const openai = createOpenAI({ apiKey });
@@ -148,17 +177,30 @@ export async function createRoteiroFromLink(
   }
   const area = resolved.area;
 
-  // Mesmo contexto de performance usado no pipeline de RSS.
+  // Mesmas regras e aprendizado da busca; sem aprendizado, a dica antiga das legendas.
+  const generation = await loadGenerationContext();
   let performanceBlock: string | undefined;
-  let collaboratorHint: string | null = null;
+  let collaboratorHint: string | null = collaboratorHintForArea(generation.learning, area);
   try {
-    const posts = await fetchPerformancePostsWindow();
-    const context = posts.length > 0 ? buildAreaPerformanceContext(posts, area) : null;
-    performanceBlock = context?.promptBlock;
-    collaboratorHint = context?.collaboratorHint ?? null;
+    if (!generation.learning) {
+      const posts = await fetchPerformancePostsWindow();
+      const context = posts.length > 0 ? buildAreaPerformanceContext(posts, area) : null;
+      performanceBlock = context?.promptBlock;
+      collaboratorHint = collaboratorHint ?? context?.collaboratorHint ?? null;
+    }
   } catch {
     // Histórico é opcional: sem ele o post ainda é gerado.
   }
+  const learningBlock = generation.learningFor(area) || performanceBlock;
+
+  // Quem colou o link já escolheu: a nota (e o "já falamos disso?") só informa, não barra a geração.
+  const relatedCandidates = await loadRelatedCandidates().catch(() => []);
+  const related = rankRelatedCandidates({ title, snippet }, relatedCandidates);
+  const relevance = await scoreNewsRelevance(
+    openai,
+    { title, snippet, area, learningBlock, areaGuideline: generation.settings.areaGuidelines[area] },
+    related
+  ).catch(() => null);
 
   const post = await generateCarousel(
     openai,
@@ -166,8 +208,10 @@ export async function createRoteiroFromLink(
     snippet,
     link,
     area,
-    performanceBlock,
-    article.text
+    learningBlock,
+    article.text,
+    generation.settings,
+    relatedCarouselGuidance(relevance?.related.kind, relevance?.related.ref, relevance?.related.note)
   );
 
   const { data: inserted, error } = await supabase
@@ -183,6 +227,11 @@ export async function createRoteiroFromLink(
       published_at: null,
       performance_hint: collaboratorHint,
       image_url: article.imageUrl,
+      relevance_score: relevance?.score ?? null,
+      relevance_reason: relevance?.reason ?? null,
+      related_kind: relevance?.related.kind ?? null,
+      related_ref: relevance?.related.ref ?? null,
+      related_note: relevance?.related.note ?? null,
       source: "manual",
       created_by_id: actor.id,
       created_by_name: actor.name,
@@ -196,6 +245,16 @@ export async function createRoteiroFromLink(
       500,
       "SAVE_FAILED"
     );
+  }
+
+  // Desdobramento de post de outra pessoa: ela é avisada (quem trouxe o link não se avisa).
+  if (relevance?.related.kind === "desdobramento") {
+    await createFollowupAlerts({
+      roteiroId: inserted.id as string,
+      ref: relevance.related.ref,
+      note: relevance.related.note,
+      excludeUserId: actor.id,
+    }).catch(() => undefined);
   }
 
   return {

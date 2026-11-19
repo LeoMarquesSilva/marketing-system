@@ -10,12 +10,14 @@ import { KurierArquivoInvalidoError, lerNomeArquivoKurier, lerPlanilhaKurier } f
 import { baixarArquivoSharePoint, listarArquivosKurierSharePoint } from "./sharepoint";
 import { buscarPastasVios } from "./pastas-vios";
 import { buscarPastaPorCi, buscarPastasPorCnj, carregarAreasDasPessoas } from "./sioe";
+import { pastaNoSama } from "./sama";
 import {
   ESCRITORIOS,
   ESCRITORIO_EX_CLIENTE,
   MOTIVO_EX_CLIENTE_SEM_ESCRITORIO,
   PREFIXO_DESCARTE_CONTROLADORIA,
   citaAdvogadoDoEscritorio,
+  pastaInformada,
   temDemandaDeRisco,
   triar,
   type PastaSioe,
@@ -806,10 +808,50 @@ export async function listarPendenciasControladoria(limite = 300): Promise<Pende
   };
 }
 
-/** Prévia de uma pasta do SIOE para a controladoria escolher. */
+/**
+ * A pasta da CI que a controladoria informou na Triagem Manual: a de processo do SIOE ou, fora dele, a que a SAMA
+ * conhece (atendimento, ou processo aberto hoje) ou só a CI (`tipoPasta` Desconhecido). Toda CI informada vale
+ * (pedido de 18/11/2026: a pasta de atendimento dava "CI não encontrada no VIOS", porque o SIOE só copia processos).
+ */
+export async function buscarPastaInformada(ci: string): Promise<PastaSioe> {
+  const numero = ci.replace(/\D/g, "");
+  const doSioe = await buscarPastaPorCi(numero);
+  if (doSioe) return doSioe;
+  const noSama = await pastaNoSama(numero).catch((erro: unknown) => {
+    console.error("[vistagem] pasta informada no SAMA:", erro instanceof Error ? erro.message : erro);
+    return null;
+  });
+  return pastaInformada(numero, noSama);
+}
+
+/** Escritório que a pasta informada (fora do SIOE) sugere: a área dela, se for um dos escritórios da vistagem. */
+function escritorioDaPastaInformada(pasta: PastaSioe): string | null {
+  const area = pasta.area?.trim();
+  return area && (ESCRITORIOS as readonly string[]).includes(area) ? area : null;
+}
+
+/** Campos da publicação com a pasta informada fora do SIOE: só o que se sabe dela; o resto fica em branco. */
+function camposDaPastaInformada(pasta: PastaSioe) {
+  return {
+    pendencia: null,
+    pasta_ci: pasta.ci,
+    pasta_vinculo: null,
+    cliente: pasta.cliente,
+    area_processo: pasta.area,
+    advogado_responsavel: null,
+    situacao_processo: null,
+    acao_processo: null,
+    fase_processual: null,
+    valor_acao: null,
+    valor_acao_atualizado: null,
+    etiquetas: null,
+  };
+}
+
+/** Prévia da pasta (CI) para a controladoria escolher: do SIOE ou, fora dele, a pasta informada. */
 export async function consultarPastaSioe(ci: string): Promise<{ pasta: PastaSioe; escritorioSugerido: string | null }> {
-  const pasta = await buscarPastaPorCi(ci);
-  if (!pasta) throw new VistagemError(`CI ${ci} não encontrada no VIOS.`, 404);
+  const pasta = await buscarPastaInformada(ci);
+  if (pasta.tipoPasta) return { pasta, escritorioSugerido: escritorioDaPastaInformada(pasta) };
   const resultado = triar([pasta], await carregarAreasDasPessoas(), { etiquetasDeRisco: (await lerConfiguracoes()).etiquetasDeRisco });
   return { pasta, escritorioSugerido: resultado.escritorio };
 }
@@ -830,16 +872,16 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
   if (atual.status !== "triagem_pendente") throw new VistagemError("Esta publicação não está pendente de triagem.", 409);
 
   const ci = entrada.ci?.replace(/\D/g, "") || atual.pasta_ci || "";
+  const candidatas = (atual.pastas_candidatas ?? []) as PastaSioe[];
   let pasta: PastaSioe | null = null;
-  if (ci) {
-    const candidatas = (atual.pastas_candidatas ?? []) as PastaSioe[];
-    pasta = candidatas.find((candidata) => candidata.ci === ci) ?? (await buscarPastaPorCi(ci));
-    if (!pasta) throw new VistagemError(`CI ${ci} não encontrada no VIOS.`, 404);
-  }
+  if (ci) pasta = candidatas.find((candidata) => candidata.ci === ci) ?? (await buscarPastaInformada(ci));
+  // Pasta informada fora do SIOE (atendimento, ou que nenhuma base conhece): não passa pela triagem automática; o
+  // escritório e o grupo vêm da tela (ou do que a SAMA sabe) e a pasta fica entre as candidatas, com o tipo dela.
+  const informada = pasta?.tipoPasta ? pasta : null;
 
   const { etiquetasDeRisco } = await lerConfiguracoes();
-  const automatico = pasta ? triar([pasta], await carregarAreasDasPessoas(), { etiquetasDeRisco }) : null;
-  const escritorio = entrada.escritorio?.trim() || automatico?.escritorio || null;
+  const automatico = pasta && !informada ? triar([pasta], await carregarAreasDasPessoas(), { etiquetasDeRisco }) : null;
+  const escritorio = entrada.escritorio?.trim() || automatico?.escritorio || (informada ? escritorioDaPastaInformada(informada) : null) || null;
   const grupo = entrada.grupo?.trim() || pasta?.grupoCliente?.trim() || null;
   if (!escritorio) throw new VistagemError("Informe o escritório responsável.");
   if (entrada.escritorio && !(ESCRITORIOS as readonly string[]).includes(escritorio)) {
@@ -848,7 +890,7 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
   // A controladoria (Operações Legais) pode ficar com a publicação sem saber o grupo; as outras áreas precisam dele.
   if (!grupo && escritorio !== ESCRITORIO_EX_CLIENTE) throw new VistagemError("Informe o grupo do cliente.");
 
-  const campos = pasta && automatico ? camposDaTriagem(automatico) : {};
+  const campos = informada ? camposDaPastaInformada(informada) : pasta && automatico ? camposDaTriagem(automatico) : {};
   const { data: final, error: erroUpdate } = await db
     .from("vistagem_publicacoes")
     .update({
@@ -857,8 +899,8 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
       motivo_descarte: null,
       escritorio_responsavel: escritorio,
       grupo_cliente: grupo,
-      demanda_risco: entrada.demandaRisco ?? (pasta ? temDemandaDeRisco(pasta, etiquetasDeRisco) : false),
-      pastas_candidatas: (atual.pastas_candidatas ?? []) as PastaSioe[],
+      demanda_risco: entrada.demandaRisco ?? (pasta && !informada ? temDemandaDeRisco(pasta, etiquetasDeRisco) : false),
+      pastas_candidatas: informada ? [...candidatas.filter((candidata) => candidata.ci !== informada.ci), informada] : candidatas,
       triagem_resolvida_por: authUserId,
       triagem_resolvida_em: new Date().toISOString(),
     })

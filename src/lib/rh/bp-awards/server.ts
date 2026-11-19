@@ -23,6 +23,8 @@ import {
   resolveAwardPhase,
   resolveParticipant,
   slotKey,
+  type AwardAiReview,
+  type AwardAiSlot,
   type AwardCategoryKey,
   type AwardEdition,
   type AwardFinalist,
@@ -422,7 +424,7 @@ export async function getCommitteeView(): Promise<CommitteeView> {
   const db = createAwardsAdminClient();
   const edition = await requireCurrentEdition(db);
 
-  const [people, ballotsResult, nominationsResult, finalists, rules] = await Promise.all([
+  const [people, ballotsResult, nominationsResult, finalists, rules, aiReviewsResult, aiSlotsResult] = await Promise.all([
     loadPeopleDirectory(db, LOG),
     db.from("hr_award_ballots").select("id, voter_user_id, voter_employee_id, submitted_at").eq("edition_id", edition.id),
     db
@@ -431,11 +433,25 @@ export async function getCommitteeView(): Promise<CommitteeView> {
       .eq("edition_id", edition.id),
     loadFinalists(db, edition.id),
     loadRules(db, edition),
+    db.from("hr_award_ai_reviews").select("hub, category, employee_id, score, summary").eq("edition_id", edition.id),
+    db
+      .from("hr_award_ai_slots")
+      .select("hub, category, suggested_employee_id, reason, alternative_employee_ids, attention")
+      .eq("edition_id", edition.id),
   ]);
   if (ballotsResult.error || nominationsResult.error) {
     console.error(`[${LOG}] apuração:`, ballotsResult.error ?? nominationsResult.error);
     throw new RhHttpError("Falha ao carregar as indicações.", 500, "QUERY_FAILED");
   }
+  // A leitura da IA é apoio: se faltar, a tela segue sem ela.
+  if (aiReviewsResult.error || aiSlotsResult.error) {
+    console.error(`[${LOG}] leitura da IA:`, aiReviewsResult.error ?? aiSlotsResult.error);
+  }
+  const aiReviews = (aiReviewsResult.error ? [] : (aiReviewsResult.data ?? [])) as AwardAiReview[];
+  const aiSlots = ((aiSlotsResult.error ? [] : (aiSlotsResult.data ?? [])) as AwardAiSlot[]).map((slot) => ({
+    ...slot,
+    alternative_employee_ids: slot.alternative_employee_ids ?? [],
+  }));
   const ballots = (ballotsResult.data ?? []) as BallotRow[];
   const nominations = (nominationsResult.data ?? []) as NominationRow[];
 
@@ -508,6 +524,8 @@ export async function getCommitteeView(): Promise<CommitteeView> {
     finalists,
     people: people.filter((person) => person.is_active).map((person) => toAwardPerson(person, rules)),
     overrides: [...rules.overrides.values()],
+    aiReviews,
+    aiSlots,
   };
 }
 

@@ -95,7 +95,7 @@ export async function POST(request: Request, context: RouteContext) {
       areas,
       veRisco
     );
-    return NextResponse.json({ ok: true, central: resultado.central });
+    return NextResponse.json({ ok: true, central: resultado.central, direto: resultado.direto === true });
   } catch (error) {
     return respostaDeErro(error, "Não foi possível salvar a vistagem.");
   }

@@ -33,7 +33,8 @@ export function prazoDaPublicacao(publicacao: AreaDaPublicacao, areas: CatalogoA
 
 /**
  * A árvore do VIOS como vale para a pasta da publicação: só os tipos da lista de tarefas da área dela e, na
- * Insolvência e na Cível | Insolvência, a antecipação do Enviar e do Revisar (`ANTECIPACAO_INSOLVENCIA`).
+ * Insolvência e na Cível | Insolvência, a antecipação do Enviar e do Revisar (`ANTECIPACAO_INSOLVENCIA`) e o prazo
+ * curto (`PRAZO_CURTO_INSOLVENCIA`).
  */
 export function arvoreDaPublicacao(arvore: Map<number, TipoNaArvore>, areas: CatalogoArea[], publicacao: AreaDaPublicacao): Map<number, TipoNaArvore> {
   const catalogo = catalogoDaPublicacao(areas, publicacao);

@@ -27,7 +27,7 @@ export function ContentTourRoteiroDemo() {
       <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
         <div className="bg-gradient-to-br from-[#04202f] to-[#1c1c1c] px-4 py-5 text-white">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-white/60 mb-1">
-            Trabalhista · A validar
+            Trabalhista · Disponível
           </p>
           <p className="text-sm font-semibold leading-snug">
             Exemplo: STF decide sobre prazo para ação trabalhista
@@ -56,7 +56,7 @@ export function ContentTourRoteiroDemo() {
             data-tour="demo-approve-review"
           >
             <Check className="h-3.5 w-3.5" />
-            Aprovar e enviar p/ revisão
+            Escolher e enviar ao gestor
           </Button>
         </div>
 

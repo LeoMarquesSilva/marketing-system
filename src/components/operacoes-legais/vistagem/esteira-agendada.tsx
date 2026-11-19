@@ -4,6 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import { BadgeCheck, Bot, CalendarCheck, Check, CircleAlert, FolderPlus, SearchCheck, Stamp, TriangleAlert, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
+import { CONFERENCIA_AUTOMATICA } from "@/lib/vistagem/check";
 import { vaiParaCentral } from "@/lib/vistagem/central";
 import type { ConferenciaItem, PublicacaoStatus } from "@/lib/vistagem/types";
 import { AvatarPessoa } from "./combobox-busca";
@@ -97,7 +98,11 @@ function etapasDaCentral(item: ConferenciaItem, naConferencia = false): EtapaEst
   const conferida: EtapaEsteira[] = naConferencia
     ? [{ ...etapaConferencia, estado: "atual", texto: "Na conferência da controladoria", quem: null, quando: null, devolvida: devolucoesDe(item) > 0 }]
     : item.conferidoPor || publicacao.conferidoEm
-      ? [{ ...etapaConferencia, estado: "feita", texto: "Conferida pela controladoria", quem: item.conferidoPor, quando: publicacao.conferidoEm }]
+      ? [
+          item.conferidoPor === CONFERENCIA_AUTOMATICA
+            ? { ...etapaConferencia, estado: "feita", texto: "Sem a Conferência (VERIFICAR RENÚNCIA da Operações Legais)", quem: null, quando: publicacao.conferidoEm }
+            : { ...etapaConferencia, estado: "feita", texto: "Conferida pela controladoria", quem: item.conferidoPor, quando: publicacao.conferidoEm },
+        ]
       : [];
   if (naConferencia) {
     return [
@@ -177,8 +182,13 @@ export function etapasDaEsteira(item: ConferenciaItem): EtapaEsteira[] {
       rotulo: "Conferência",
       curto: "Conferência",
       icone: SearchCheck,
-      texto: atual === 1 ? "Na conferência da controladoria" : "Conferida e enviada ao robô",
-      quem: atual > 1 ? item.conferidoPor : null,
+      texto:
+        atual === 1
+          ? "Na conferência da controladoria"
+          : item.conferidoPor === CONFERENCIA_AUTOMATICA
+            ? "Foi direto ao robô, sem a Conferência"
+            : "Conferida e enviada ao robô",
+      quem: atual > 1 && item.conferidoPor !== CONFERENCIA_AUTOMATICA ? item.conferidoPor : null,
       quando: atual > 1 ? publicacao.conferidoEm : null,
       devolvida,
     },

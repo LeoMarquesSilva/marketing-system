@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CONFERENCIA_AUTOMATICA } from "./check";
 import { montarHistorico, type DadosDoHistorico, type TarefaNoHistorico } from "./historico";
 
 const base = (extra: Partial<DadosDoHistorico> = {}): DadosDoHistorico => ({
@@ -180,5 +181,22 @@ describe("montarHistorico: como a fatal foi escolhida (pedido de 18/11/2026)", (
   it("fora do Prazo com fatal, a tarefa fica só com data e responsável", () => {
     const eventos = montarHistorico(base({ ...vistada, tarefas: [tarefa({ etiqueta: "PROVIDENCIA", dataFatal: null, origemPrazo: null })] }));
     expect(eventos.find((evento) => evento.tipo === "vistagem")?.tarefas).toEqual([{ tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Ligia" }]);
+  });
+});
+
+describe("VERIFICAR RENÚNCIA da Operações Legais sem a Conferência (pedido de 18/11/2026)", () => {
+  it("o evento diz que foi direto ao robô, sem pessoa", () => {
+    const eventos = montarHistorico(
+      base({
+        status: "agendado",
+        escritorio: "Operações Legais",
+        vistagem: { por: "Giovanna", em: "2026-11-18T12:00:00Z", observacao: null },
+        conferencia: { por: CONFERENCIA_AUTOMATICA, em: "2026-11-18T12:00:01Z" },
+      })
+    );
+    expect(eventos.find((evento) => evento.tipo === "conferencia")).toMatchObject({
+      titulo: "Sem a Conferência: enviada direto ao robô (VERIFICAR RENÚNCIA da Operações Legais)",
+      por: null,
+    });
   });
 });

@@ -6,7 +6,7 @@ import { Bot, CalendarCheck, CalendarDays, ChevronRight, CircleAlert, Flag, Laye
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas } from "@/lib/vistagem/agendamento";
+import { RESPONSAVEL_PELO_VIOS, ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, responsavelFicaComOVios } from "@/lib/vistagem/agendamento";
 import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
 import { compararTarefa } from "@/lib/vistagem/check";
 import { nomeCurto, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
@@ -135,9 +135,9 @@ function FiltroSituacao({ valor, onChange, contagens, total }: { valor: Filtro; 
 /* ------------------------------------------------------------ cartão */
 
 /** Responsável da tarefa: fotos sobrepostas e o nome curto (o inteiro no título). */
-function Responsavel({ texto, fotos }: { texto: string; fotos: Record<string, string> }) {
+function Responsavel({ texto, fotos, vazio = "Não informado" }: { texto: string; fotos: Record<string, string>; vazio?: string }) {
   const nomes = nomesDasPessoas(texto);
-  if (!nomes.length) return <span className="text-xs text-muted-foreground">Não informado</span>;
+  if (!nomes.length) return <span className="text-xs text-muted-foreground">{vazio}</span>;
   return (
     <span className="flex min-w-0 items-center gap-1.5" title={`Responsável: ${nomes.join(", ")}`}>
       <span className="flex shrink-0 -space-x-1.5">
@@ -200,7 +200,7 @@ function LinhaTarefa({ item, fotos, hoje, semRobo = false }: { item: Agendamento
           <DiaNaAgenda data={item.data} hoje={hoje} />
           {item.hora ? <span className="text-xs tabular-nums text-muted-foreground">às {item.hora}</span> : null}
         </span>
-        <Responsavel texto={item.responsavel} fotos={fotos} />
+        <Responsavel texto={item.responsavel} fotos={fotos} vazio={responsavelFicaComOVios(item.tarefa, item.responsavel) ? RESPONSAVEL_PELO_VIOS : undefined} />
         {semRobo ? null : (
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           {simulada ? (

@@ -23,7 +23,7 @@ async function loadPageData(): Promise<PageData> {
 export default async function BoasPraticasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ aba?: string; mes?: string }>;
+  searchParams: Promise<{ aba?: string; mes?: string; area?: string }>;
 }) {
   const [data, params] = await Promise.all([loadPageData(), searchParams]);
   if (data.forbidden) return <FeriasAcessoNegado />;
@@ -31,8 +31,9 @@ export default async function BoasPraticasPage({
     <BoasPraticasClient
       initialItems={data.items}
       people={data.people}
-      initialTab={params.aba === "registros" ? "registros" : "dashboard"}
+      initialTab={params.aba === "registros" ? "registros" : params.aba === "areas" ? "areas" : "dashboard"}
       initialMonth={params.mes}
+      initialArea={params.area}
       initialFeedzImport={data.lastImport}
     />
   );

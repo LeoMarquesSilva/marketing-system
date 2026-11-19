@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function ProcessoPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  return <FichaClient id={id} />;
+export default async function ProcessoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ de?: string | string[] }> }) {
+  const [{ id }, { de }] = await Promise.all([params, searchParams]);
+  return <FichaClient id={id} de={typeof de === "string" ? de : null} />;
 }

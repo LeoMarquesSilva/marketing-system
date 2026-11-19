@@ -15,6 +15,8 @@ import {
   CornerDownRight,
   FileCheck2,
   FileText,
+  FolderCheck,
+  FolderPlus,
   ListPlus,
   MessageSquareText,
   Pencil,
@@ -61,6 +63,7 @@ import {
   observacaoObrigatoria,
   pedeDataLimite,
   primeiroDiaDaTarefa,
+  renunciaComDataFixa,
   revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
@@ -93,7 +96,7 @@ import { ROTULO_AJUSTE, emOrdemDeArvore, fluxoDoPrazo, fluxoPrevisto } from "@/l
 import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
-import { vaiParaCentral } from "@/lib/vistagem/central";
+import { ehAberturaDePasta, vaiParaCentral } from "@/lib/vistagem/central";
 import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { SeloAberturaDePasta } from "./abertura-pasta";
@@ -834,7 +837,8 @@ export function EditorVistagem({
   navegacao: Navegacao | null;
   onAbrir: (id: string) => void;
   /** `central`: a publicação não tem pasta e virou pedido de abertura na Central do SharePoint. */
-  onConcluida: (id: string, central: ResultadoCentral | null) => void;
+  /** `direto`: foi direto ao robô, sem a Conferência (VERIFICAR RENÚNCIA sozinha da Operações Legais). */
+  onConcluida: (id: string, central: ResultadoCentral | null, direto?: boolean) => void;
   onTransferida: (destino: string) => void;
   onVoltar: () => void;
   /** "Agendar Direto" da controladoria: a pendência ainda na triagem, com escritório, grupo, risco e CI escolhidos. */
@@ -996,7 +1000,9 @@ export function EditorVistagem({
     // Depois das 18h, a data escolhida para hoje não deixa vistar (o Prazo com fatal tem o Enviar calculado).
     const dataEscolhida = linha.etiqueta !== "PRAZO" || semFatal(linha);
     if (depoisDoHorario && dataEscolhida && linha.data && linha.data < primeiroDia) return false;
-    return linhaCompleta(linha, semFatal(linha), pedeObservacao(linha), pedeLimite(linha));
+    // VERIFICAR RENÚNCIA da Operações Legais: o responsável não é escolhido (o VIOS divide entre as estagiárias).
+    const conferida = dataFixa(linha.etiqueta, linha.tarefa) ? { ...linha, responsavel: "VIOS" } : linha;
+    return linhaCompleta(conferida, semFatal(linha), pedeObservacao(linha), pedeLimite(linha));
   }
 
   function dataSemFatal(): string {
@@ -1064,7 +1070,14 @@ export function EditorVistagem({
   function dataPadrao(etiqueta: Etiqueta, tarefa: string): string | null {
     if (!detalhe || !tarefa || etiqueta === "PRAZO") return null;
     const opcao = detalhe.catalogo?.tarefas[etiqueta].find((item) => item.nome === tarefa);
-    return dataPadraoDaTarefa(opcao ? opcao.nomeVios ?? opcao.nome : tarefa, detalhe.hoje, ehDiaUtil);
+    return dataPadraoDaTarefa(opcao ? opcao.nomeVios ?? opcao.nome : tarefa, detalhe.hoje, ehDiaUtil, areaDaPublicacao);
+  }
+
+  /** Operações Legais: a VERIFICAR RENÚNCIA tem a data fixa, 2 dias úteis depois de hoje; null nas outras tarefas. */
+  function dataFixa(etiqueta: Etiqueta, tarefa: string): string | null {
+    if (!detalhe || !tarefa || etiqueta === "PRAZO") return null;
+    const opcao = detalhe.catalogo?.tarefas[etiqueta].find((item) => item.nome === tarefa);
+    return renunciaComDataFixa(opcao ? opcao.nomeVios ?? opcao.nome : tarefa, areaDaPublicacao) ? dataPadrao(etiqueta, tarefa) : null;
   }
 
   /**
@@ -1072,6 +1085,9 @@ export function EditorVistagem({
    * por cima de data escolhida à mão; só troca a que veio do tipo anterior, e a tira ao trocar para um tipo sem data.
    */
   function dataDoTipo(linha: Linha, nome: string): Partial<Linha> {
+    // Operações Legais: a data da VERIFICAR RENÚNCIA é fixa (2 dias úteis depois de hoje), mesmo com outra já escolhida.
+    const fixa = dataFixa(linha.etiqueta, nome);
+    if (fixa) return { data: fixa };
     const anterior = dataPadrao(linha.etiqueta, linha.tarefa);
     const veioDoTipo = anterior !== null && linha.data === anterior;
     if (linha.data && !veioDoTipo) return {};
@@ -1197,7 +1213,7 @@ export function EditorVistagem({
             etiqueta: linha.etiqueta,
             tarefa: linha.tarefa,
             tarefaId: detalhe?.catalogo?.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null,
-            data: linha.etiqueta === "PRAZO" && !semFatal(linha) ? "" : linha.data,
+            data: linha.etiqueta === "PRAZO" && !semFatal(linha) ? "" : dataFixa(linha.etiqueta, linha.tarefa) ?? linha.data,
             dataFatal: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.dataFatal : null,
             diasPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.diasPrazo : null,
             contagemPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) && linha.diasPrazo ? linha.contagemPrazo : null,
@@ -1205,7 +1221,8 @@ export function EditorVistagem({
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             horaFim: linha.etiqueta === "COMPROMISSO" ? linha.horaFim || null : null,
             dataLimite: pedeLimite(linha) ? linha.dataLimite || linha.data || null : null,
-            responsavel: linha.responsavel,
+            // VERIFICAR RENÚNCIA da Operações Legais: ninguém; o VIOS define e divide entre as estagiárias.
+            responsavel: dataFixa(linha.etiqueta, linha.tarefa) ? "" : linha.responsavel,
             revisor: linha.etiqueta === "PROVIDENCIA" ? null : linha.revisor || null,
             observacao: linha.observacao || null,
             fluxoDatas: Object.values(linha.fluxoDatas),
@@ -1214,7 +1231,7 @@ export function EditorVistagem({
       });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao enviar.");
-      onConcluida(id, corpo.central ?? null);
+      onConcluida(id, corpo.central ?? null, corpo.direto === true);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao enviar.");
     } finally {
@@ -1541,11 +1558,12 @@ export function EditorVistagem({
                           {
                             hoje: primeiroDia,
                             datas: Object.values(linha.fluxoDatas),
-                            // Regra da insolvência: o VIOS cria o Protocolar 2 dias depois do Enviar antecipado; ele fica 1 dia útil antes da fatal.
+                            // Regras da insolvência: o VIOS cria o Protocolar 2 dias depois do Enviar antecipado (ou 4 dias
+                            // depois do Enviar adiado, no prazo curto); ele fica 1 dia útil antes da fatal.
                             apertada: cadeia?.ajustada
                               ? { revisar: cadeia.revisar, protocolar: cadeia.protocolar }
-                              : cadeia && cadeiaFluxo?.antecipada
-                                ? { revisar: null, protocolar: cadeia.protocolar, motivo: "antecipada" }
+                              : cadeia && (cadeiaFluxo?.antecipada || cadeiaFluxo?.adiada)
+                                ? { revisar: null, protocolar: cadeia.protocolar, motivo: cadeiaFluxo.antecipada ? "antecipada" : "adiada" }
                                 : null,
                           }
                         ).map((tarefa) =>
@@ -1766,21 +1784,39 @@ export function EditorVistagem({
                                     mudam (o robô grava o Protocolar no VIOS).
                                   </p>
                                 ) : null}
+                                {cadeiaFluxo?.adiada && cadeia && !cadeia.ajustada ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    Regra da insolvência, prazo de menos de 10 dias: o Enviar e o Revisar vão {cadeiaFluxo.adiada} dias úteis depois do que o
+                                    VIOS criaria (5 dias antes da fatal); o Protocolar e a fatal não mudam (o robô grava o Protocolar no VIOS).
+                                  </p>
+                                ) : null}
                               </div>
                             ) : (
                               <div className="flex flex-wrap items-end gap-3">
                                 <div className="w-[11rem] space-y-1.5">
                                   <span className="block text-xs font-medium text-muted-foreground">Data no VIOS</span>
-                                  <CampoData
-                                    rotulo={`Data da tarefa ${indice + 1} no VIOS`}
-                                    valor={linha.data}
-                                    ehDiaUtil={ehDiaUtil}
-                                    // Depois das 18h, hoje (e antes) fica bloqueado no calendário.
-                                    min={depoisDoHorario ? primeiroDia : undefined}
-                                    invalido={dataAntesDoPermitido}
-                                    onChange={(data) => alterar(linha.chave, { data })}
-                                  />
+                                  {dataFixa(linha.etiqueta, linha.tarefa) ? (
+                                    <p className={cn(campo, "flex items-center bg-[#f7fbfc] tabular-nums text-foreground")} aria-label={`Data da tarefa ${indice + 1} no VIOS`}>
+                                      {formatarData(dataFixa(linha.etiqueta, linha.tarefa))}
+                                    </p>
+                                  ) : (
+                                    <CampoData
+                                      rotulo={`Data da tarefa ${indice + 1} no VIOS`}
+                                      valor={linha.data}
+                                      ehDiaUtil={ehDiaUtil}
+                                      // Depois das 18h, hoje (e antes) fica bloqueado no calendário.
+                                      min={depoisDoHorario ? primeiroDia : undefined}
+                                      invalido={dataAntesDoPermitido}
+                                      onChange={(data) => alterar(linha.chave, { data })}
+                                    />
+                                  )}
                                 </div>
+                                {dataFixa(linha.etiqueta, linha.tarefa) ? (
+                                  <p className="min-w-[14rem] flex-1 text-xs text-muted-foreground">
+                                    Operações Legais: a VERIFICAR RENÚNCIA vai sempre para 2 dias úteis depois da vistagem, e o VIOS divide entre as
+                                    estagiárias. Sozinha na publicação, vai direto ao robô, sem a Conferência e sem o check da controladoria.
+                                  </p>
+                                ) : null}
                                 {prazo ? (
                                   <p className="min-w-[14rem] flex-1 text-xs text-muted-foreground">
                                     Sem prazo próprio no VIOS: a data já vem preenchida, e as tarefas do fluxo contam a partir dela.
@@ -1851,6 +1887,11 @@ export function EditorVistagem({
                             <div className={cn("grid gap-3", linha.etiqueta !== "PROVIDENCIA" && "@md:grid-cols-2")}>
                               <div className="space-y-1.5">
                                 <span className="block text-xs font-medium text-muted-foreground">Responsável</span>
+                                {dataFixa(linha.etiqueta, linha.tarefa) ? (
+                                  <p className={cn(campo, "flex items-center bg-[#f7fbfc] text-muted-foreground")} aria-label={`Responsável da tarefa ${indice + 1}`}>
+                                    Distribuída pelo VIOS entre as estagiárias
+                                  </p>
+                                ) : (
                                 <CampoResponsaveis
                                   pessoas={pessoasDoCampo}
                                   valor={linha.responsavel}
@@ -1863,6 +1904,7 @@ export function EditorVistagem({
                                       : null
                                   }
                                 />
+                                )}
                               </div>
                               {linha.etiqueta === "PROVIDENCIA" ? null : (
                               <div className="space-y-1.5">
@@ -2134,6 +2176,9 @@ function CampoVazio({ icone, texto }: { icone: ReactNode; texto: string }) {
 /** Vazio mostra todas; clicar de novo no filtro escolhido volta a mostrar todas. */
 type FiltroRisco = "" | "risco" | "normal";
 
+/** Pelo selo "Abertura de pasta" (sem pasta no VIOS: vai para a Central): só as com o selo, só as com pasta ou todas. */
+type FiltroPasta = "" | "abertura" | "com_pasta";
+
 interface GrupoFila {
   /** Dia do recebimento + grupo: o mesmo grupo pode aparecer em dois dias. */
   chave: string;
@@ -2265,6 +2310,8 @@ function Juridico() {
   const [busca, setBusca] = useState("");
   const [grupo, setGrupo] = useState("");
   const [risco, setRisco] = useState<FiltroRisco>("");
+  /** Selo "Abertura de pasta"; vazio mostra todas. */
+  const [pasta, setPasta] = useState<FiltroPasta>("");
   /** Tribunal; vazio é "Todos os tribunais". */
   const [tribunal, setTribunal] = useState("");
   /** Etiqueta da pasta no VIOS (ex.: RC-Insolvência); vazio é "Todas as etiquetas". */
@@ -2333,10 +2380,13 @@ function Juridico() {
       if (etiquetaAtiva && !(publicacao.etiquetas ?? []).includes(etiquetaAtiva)) return false;
       if (risco === "risco" && !publicacao.demandaRisco) return false;
       if (risco === "normal" && publicacao.demandaRisco) return false;
+      if (pasta === "abertura" && !ehAberturaDePasta(publicacao)) return false;
+      if (pasta === "com_pasta" && ehAberturaDePasta(publicacao)) return false;
       return combinaCampos(camposDeBusca.get(publicacao.id) ?? [], busca);
     });
-  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, etiquetaAtiva, risco, importacaoAtiva, camposDeBusca]);
-  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || etiquetaAtiva || risco || importacaoAtiva);
+  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, etiquetaAtiva, risco, pasta, importacaoAtiva, camposDeBusca]);
+  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || etiquetaAtiva || risco || pasta || importacaoAtiva);
+  const aberturas = useMemo(() => (publicacoes ?? []).filter(ehAberturaDePasta).length, [publicacoes]);
   const grupos = useMemo(() => agruparFila(filtradas), [filtradas]);
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
   const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
@@ -2375,6 +2425,7 @@ function Juridico() {
     setVisao("fila");
     setGrupo("");
     setRisco("");
+    setPasta("");
     setTribunal("");
     setDataImportacao("");
     setAviso("Vistagem reaberta: altere o que precisar e vista de novo para ela voltar à Conferência.");
@@ -2429,6 +2480,7 @@ function Juridico() {
     setTribunal("");
     setEtiqueta("");
     setRisco("");
+    setPasta("");
     setDataImportacao("");
   }
 
@@ -2439,7 +2491,7 @@ function Juridico() {
     void carregar(escritorio);
   }
 
-  function concluida(id: string, central: ResultadoCentral | null) {
+  function concluida(id: string, central: ResultadoCentral | null, direto = false) {
     // Segue para a próxima da fila (ou a anterior, se era a última).
     const posicao = ordem.indexOf(id);
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
@@ -2447,7 +2499,9 @@ function Juridico() {
     avisarContagensVistagem();
     setAviso(
       !central
-        ? "Vistagem enviada para a conferência da controladoria."
+        ? direto
+          ? "VERIFICAR RENÚNCIA da Operações Legais: foi direto ao robô, sem a Conferência."
+          : "Vistagem enviada para a conferência da controladoria."
         : central.itemId
           ? `Sem pasta no VIOS: pedido de abertura de pasta criado na Central do SharePoint (item ${central.itemId}).`
           : "Vistagem salva. A Central do SharePoint não respondeu: a controladoria vê o pedido na Conferência e o sistema tenta de novo."
@@ -2536,6 +2590,29 @@ function Juridico() {
                 contagem: quantidade,
                 icone: <IconeOpcao icone={Tag} className={etiquetasEmDestaque([nome]).length ? ICONE_ETIQUETA_DESTAQUE : undefined} />,
               }))}
+            />
+            <Seletor
+              rotulo="Abertura de pasta"
+              className={FILTRO_COMPACTO}
+              valor={pasta}
+              onChange={(valor) => setPasta(valor as FiltroPasta)}
+              todos={{ rotulo: "Com e sem pasta", contagem: publicacoes?.length, icone: <IconeOpcao icone={FolderPlus} /> }}
+              rotuloVazio={<CampoVazio icone={<IconeOpcao icone={FolderPlus} />} texto="Abertura de pasta" />}
+              opcoes={[
+                {
+                  valor: "abertura",
+                  rotulo: "Abertura de pasta",
+                  descricao: "Sem pasta no VIOS: vai para a Central",
+                  contagem: aberturas,
+                  icone: <IconeOpcao icone={FolderPlus} />,
+                },
+                {
+                  valor: "com_pasta",
+                  rotulo: "Com pasta no VIOS",
+                  contagem: (publicacoes?.length ?? 0) - aberturas,
+                  icone: <IconeOpcao icone={FolderCheck} />,
+                },
+              ]}
             />
           </>
         ) : null}

@@ -1,4 +1,5 @@
 import type { EtiquetaAgendamento, OrigemPrazo } from "./agendamento";
+import { CONFERENCIA_AUTOMATICA } from "./check";
 import type { ContagemPrazo } from "./dias-uteis";
 import { esperandoOVios } from "./situacao-robo";
 import type { Pendencia } from "./triagem";
@@ -364,11 +365,19 @@ export function montarHistorico(dados: DadosDoHistorico): EventoHistorico[] {
 
   const paraCentral = dados.status === "abertura_pasta" || Boolean(dados.central);
   if (dados.conferencia) {
+    // VERIFICAR RENÚNCIA sozinha da Operações Legais: não passa pela Conferência (pedido de 18/11/2026).
+    const direto = dados.conferencia.por === CONFERENCIA_AUTOMATICA;
     eventos.push({
       tipo: "conferencia",
       em: dados.conferencia.em,
-      titulo: paraCentral ? "Conferida e enviada à Central (abertura de pasta)" : "Conferida e enviada ao robô",
-      por: dados.conferencia.por,
+      titulo: direto
+        ? paraCentral
+          ? "Sem a Conferência: enviada à Central (abertura de pasta)"
+          : "Sem a Conferência: enviada direto ao robô (VERIFICAR RENÚNCIA da Operações Legais)"
+        : paraCentral
+          ? "Conferida e enviada à Central (abertura de pasta)"
+          : "Conferida e enviada ao robô",
+      por: direto ? null : dados.conferencia.por,
       detalhes: [],
     });
   }

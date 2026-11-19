@@ -11,6 +11,7 @@ import {
   repetidaDoCaminho,
   repetidasNaVistagem,
   textoDaRepetida,
+  vaiDiretoAoRobo,
   type TarefaParaCiencia,
 } from "./ciencia-agendamentos";
 import { criarCalendario } from "./dias-uteis";
@@ -293,5 +294,21 @@ describe("data da Ciência dos Agendamentos (pedido de 13/11/2026)", () => {
     expect(dataDaCienciaNoEnvio("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-16", "2026-11-13")).toBe("2026-11-16");
     expect(dataDaCienciaNoEnvio("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-13", "2026-11-13")).toBe("2026-11-13");
     expect(dataDaCienciaNoEnvio("INFORMAR CLIENTE", "2026-11-12", "2026-11-13")).toBe("2026-11-12");
+  });
+});
+
+describe("vaiDiretoAoRobo: Operações Legais só com a VERIFICAR RENÚNCIA (pedido de 18/11/2026)", () => {
+  const renuncia = { tarefa: "VERIFICAR RENÚNCIA" };
+
+  it("sozinha na Operações Legais: sem a Conferência", () => {
+    expect(vaiDiretoAoRobo("Operações Legais", [renuncia])).toBe(true);
+  });
+
+  it("com outra tarefa junto, em outra área ou outra tarefa sozinha: a esteira de sempre", () => {
+    expect(vaiDiretoAoRobo("Operações Legais", [renuncia, { tarefa: "CIÊNCIA NF" }])).toBe(false);
+    expect(vaiDiretoAoRobo("Trabalhista", [renuncia])).toBe(false);
+    expect(vaiDiretoAoRobo(null, [renuncia])).toBe(false);
+    expect(vaiDiretoAoRobo("Operações Legais", [{ tarefa: "CIÊNCIA NF" }])).toBe(false);
+    expect(vaiDiretoAoRobo("Operações Legais", [])).toBe(false);
   });
 });

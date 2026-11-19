@@ -2,7 +2,16 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BookOpen, FileSpreadsheet, LayoutDashboard, ListChecks, LockKeyhole, Plus, type LucideIcon } from "lucide-react";
+import {
+  BookOpen,
+  Building2,
+  FileSpreadsheet,
+  LayoutDashboard,
+  ListChecks,
+  LockKeyhole,
+  Plus,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { feedzPrefill, type FeedzRow } from "@/lib/rh/boas-praticas/feedz";
 import { currentMonthRef, monthKey, type MonthRef } from "@/lib/rh/boas-praticas/metrics";
@@ -14,6 +23,7 @@ import {
   type GoodPracticeFeedback,
 } from "@/lib/rh/boas-praticas/types";
 import { cn } from "@/lib/utils";
+import { FeedbackAreaReport } from "./feedback-area-report";
 import { FeedbackDashboard } from "./feedback-dashboard";
 import { FeedbackRecords } from "./feedback-records";
 import { FeedbackDialog } from "./feedback-dialog";
@@ -21,10 +31,11 @@ import { FeedbackPeopleProvider } from "./feedback-visuals";
 import { FeedzImportDialog } from "./feedz-import-dialog";
 import { FeedzPendingPanel } from "./feedz-pending-panel";
 
-type Tab = "dashboard" | "registros";
+type Tab = "dashboard" | "areas" | "registros";
 
 const TABS: Array<{ key: Tab; label: string; icon: LucideIcon }> = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "areas", label: "Por área", icon: Building2 },
   { key: "registros", label: "Registros", icon: ListChecks },
 ];
 
@@ -47,12 +58,14 @@ export function BoasPraticasClient({
   people,
   initialTab,
   initialMonth,
+  initialArea,
   initialFeedzImport,
 }: {
   initialItems: GoodPracticeFeedback[];
   people: FeedbackPerson[];
   initialTab: Tab;
   initialMonth?: string;
+  initialArea?: string;
   initialFeedzImport: FeedzImportLog | null;
 }) {
   const router = useRouter();
@@ -60,6 +73,8 @@ export function BoasPraticasClient({
   const [items, setItems] = useState(initialItems);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [month, setMonth] = useState<MonthRef>(() => parseMonth(initialMonth));
+  // Aba Por área: sem área abre o resumo de todas (quadro do Felipe); com área, o detalhe dela.
+  const [area, setArea] = useState<string | null>(() => initialArea?.trim() || null);
   // Filtro de mês da aba Registros: "Ver registros do mês" abre já filtrado; a aba abre com tudo.
   const [recordsMonth, setRecordsMonth] = useState<string>("all");
   const [dialog, setDialog] = useState<{ item: GoodPracticeFeedback | null; key: number; fromFeedz?: FeedzRow } | null>(
@@ -80,9 +95,11 @@ export function BoasPraticasClient({
     router.replace(query ? `?${query}` : "?", { scroll: false });
   }
 
-  function chooseTab(next: Tab) {
+  function chooseTab(next: Tab, nextArea: string | null = area) {
     setTab(next);
-    replaceParams({ aba: next === "dashboard" ? null : next });
+    if (next === "areas") setArea(nextArea);
+    // ?aba=areas&area=Cível: o link abre direto na área (para mandar a outra pessoa do RH).
+    replaceParams({ aba: next === "dashboard" ? null : next, area: next === "areas" ? nextArea : null });
   }
 
   function chooseMonth(next: MonthRef) {
@@ -103,8 +120,13 @@ export function BoasPraticasClient({
   return (
     <FeedbackPeopleProvider people={people}>
       <div className="space-y-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:border-b sm:border-[#dce9eb]">
-          <div role="tablist" aria-label="Visões" className="order-2 flex gap-1 border-b border-[#dce9eb] sm:order-1 sm:border-b-0">
+        {/* Abas e ações dividem a linha só a partir de lg; abaixo disso as ações ficam numa linha acima das abas. */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:border-b lg:border-[#dce9eb]">
+          <div
+            role="tablist"
+            aria-label="Visões"
+            className="order-2 flex flex-wrap gap-1 border-b border-[#dce9eb] lg:order-1 lg:border-b-0"
+          >
             {TABS.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -116,7 +138,7 @@ export function BoasPraticasClient({
                   chooseTab(key);
                 }}
                 className={cn(
-                  "-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-colors duration-150",
+                  "-mb-px inline-flex min-h-11 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors duration-150",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#47cdd0]/50",
                   tab === key
                     ? "border-[#347796] text-foreground"
@@ -131,11 +153,11 @@ export function BoasPraticasClient({
               </button>
             ))}
           </div>
-          <div className="order-1 flex items-center justify-end gap-3 sm:order-2 sm:pb-2">
-            <span className="hidden items-center gap-1.5 text-xs text-muted-foreground lg:flex">
+          <div className="order-1 flex items-center justify-end gap-3 lg:order-2 lg:pb-2">
+            <span className="hidden items-center gap-1.5 text-xs text-muted-foreground xl:flex">
               <LockKeyhole className="size-3.5 shrink-0" aria-hidden />
               <span>
-                Só Pessoas e Cultura vê<span className="hidden xl:inline"> · nada é enviado ao colaborador</span>
+                Só Pessoas e Cultura vê<span className="hidden 2xl:inline"> · nada é enviado ao colaborador</span>
               </span>
             </span>
             <div className="flex items-center gap-2">
@@ -175,6 +197,15 @@ export function BoasPraticasClient({
             lastImport={lastImport}
             onMonthChange={chooseMonth}
             onOpenRecords={openRecordsOfMonth}
+            onOpenArea={(next) => chooseTab("areas", next)}
+          />
+        ) : tab === "areas" ? (
+          <FeedbackAreaReport
+            items={items}
+            month={month}
+            area={area}
+            onMonthChange={chooseMonth}
+            onAreaChange={(next) => chooseTab("areas", next)}
           />
         ) : (
           <FeedbackRecords

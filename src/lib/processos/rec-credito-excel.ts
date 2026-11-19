@@ -3,7 +3,8 @@ import "server-only";
 import type { CellObject, CellStyle, WorkSheet } from "xlsx-js-style";
 import * as XLSX from "xlsx-js-style";
 import { cabecalho, dado, estiloLegenda, estiloTitulo } from "./export-excel";
-import { ROTULO_SITUACAO_CITACAO, SITUACOES_PEDIDO, formatarData, type LinhaCarteira } from "./rec-credito";
+import { ROTULO_SITUACAO_ACORDO } from "./acordos";
+import { ROTULO_ROBO_AGORA, ROTULO_SITUACAO_CITACAO, SITUACOES_PEDIDO, formatarData, formatarMomento, formatarReal, type LinhaCarteira } from "./rec-credito";
 
 /** Planilha da carteira de Recuperação de Crédito: uma linha por processo, valores como número. */
 
@@ -39,6 +40,20 @@ const COLUNAS: Coluna[] = [
     largura: 56,
     valor: (linha) => linha.pedidos.map((pedido) => `${pedido.data ? `${data(pedido.data)} ` : ""}${pedido.tipo}: ${situacaoPedido(pedido.situacao)}${pedido.resultado ? ` (${pedido.resultado})` : ""}`).join("\n"),
   },
+  {
+    rotulo: "Acordo",
+    largura: 30,
+    valor: (linha) =>
+      linha.acordo
+        ? [
+            `${ROTULO_SITUACAO_ACORDO[linha.acordo.resumo.situacao]}: ${formatarReal(linha.acordo.valorTotal)}`,
+            `${linha.acordo.resumo.pagas} de ${linha.acordo.resumo.parcelas} parcelas pagas (${formatarReal(linha.acordo.resumo.valorPago)})`,
+            linha.acordo.resumo.vencidas ? `${linha.acordo.resumo.vencidas} vencida(s), ${linha.acordo.resumo.diasDeAtraso} dia(s) de atraso` : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : "",
+  },
   { rotulo: "Pedidos deferidos", largura: 10, valor: (linha) => linha.pedidosDeferidos || null },
   { rotulo: "Guias pagas", largura: 16, formato: "real", valor: (linha) => linha.guiasPagas || null },
   { rotulo: "Valor recuperado", largura: 16, formato: "real", valor: (linha) => linha.valorRecuperado || null },
@@ -47,6 +62,23 @@ const COLUNAS: Coluna[] = [
   { rotulo: "Encerramento", largura: 13, valor: (linha) => data(linha.dataEncerramento) },
   { rotulo: "Duração", largura: 18, valor: (linha) => (linha.duracao ? `${linha.duracao.rotulo}${linha.duracao.desde === "cadastro" ? " (desde o cadastro)" : ""}` : "") },
   { rotulo: "Próximos passos", largura: 48, valor: (linha) => linha.proximosPassos },
+  {
+    rotulo: "Robô: última conferência",
+    largura: 20,
+    valor: (linha) => [linha.autos.roboEm ? formatarMomento(linha.autos.roboEm) : "nunca", linha.autos.roboAgora ? ROTULO_ROBO_AGORA[linha.autos.roboAgora] : ""].filter(Boolean).join("\n"),
+  },
+  {
+    rotulo: "IA: última leitura",
+    largura: 20,
+    valor: (linha) =>
+      [
+        linha.autos.iaEm ? formatarMomento(linha.autos.iaEm) : linha.autos.documentos ? "não lida" : "sem autos",
+        linha.autos.iaPendentes ? `${linha.autos.iaPendentes} por ler` : "",
+        linha.autos.iaErros ? `${linha.autos.iaErros} com erro` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+  },
   { rotulo: "Observações do cálculo", largura: 40, valor: (linha) => linha.avisos.join("\n") },
 ];
 

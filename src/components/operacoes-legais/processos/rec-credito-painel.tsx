@@ -184,7 +184,8 @@ export function PainelRecCredito({
 
   const { calculo } = dados;
   const guias = dados.lancamentos.filter((item) => item.tipo === "guia_paga").reduce((soma, item) => soma + item.valor, 0);
-  const levantado = dados.lancamentos.filter((item) => item.tipo === "levantamento").reduce((soma, item) => soma + item.valor, 0);
+  // Recuperado: valores levantados e parcelas pagas dos acordos em que o cliente recebe.
+  const levantado = dados.lancamentos.filter((item) => item.tipo === "levantamento").reduce((soma, item) => soma + item.valor, 0) + dados.recebidoEmAcordos;
   const saving = calculo.atual?.total ? (levantado / calculo.atual.total) * 100 : null;
   const situacaoCitacao = situacaoDaCitacao(dados.citacoes);
   const incluir = (tipo: TipoItem) => (
@@ -237,7 +238,10 @@ export function PainelRecCredito({
             {formatarReal(levantado)}
             {saving !== null ? <span className="ml-1.5 font-normal text-muted-foreground">({saving.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)</span> : null}
           </p>
-          <p className="text-xs text-muted-foreground tabular-nums">guias pagas {formatarReal(guias)}</p>
+          <p className="text-xs text-muted-foreground tabular-nums">
+            guias pagas {formatarReal(guias)}
+            {dados.recebidoEmAcordos ? ` · ${formatarReal(dados.recebidoEmAcordos)} em acordos` : ""}
+          </p>
         </Celula>
         {calculo.avisos.length ? (
           <div className="sm:col-span-2 xl:col-span-4">

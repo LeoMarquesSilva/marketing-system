@@ -237,6 +237,14 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         origem: "codigo",
       },
       {
+        id: "renuncia-operacoes-legais",
+        titulo: "VERIFICAR RENÚNCIA na Operações Legais",
+        quando: "a publicação for da Operações Legais e tiver a tarefa VERIFICAR RENÚNCIA",
+        entao:
+          "a data é sempre 2 dias úteis depois da vistagem (não muda na tela), e ela vai sem responsável: o VIOS define e divide entre as estagiárias. Se for a única tarefa da publicação, ela vai direto ao robô, sem a Conferência, e o check é o automático.",
+        origem: "codigo",
+      },
+      {
         id: "esocial",
         titulo: "eSocial (Trabalhista)",
         quando: `a classificação eSocial for ${lista(ESOCIAL_COM_TAREFA)}`,
@@ -292,6 +300,15 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
           "a pasta for de Insolvência ou Cível | Insolvência, a tarefa, compartilhada com outras áreas, tiver prazo de 10 dias ou mais no VIOS (Protocolar 2 dias depois do Enviar) e o prazo marcado na vistagem também for de 10 dias ou mais (com a fatal no calendário, contado da publicação até ela, na contagem da área)",
         entao:
           "o Enviar e o Revisar vão 2 dias úteis antes e o Protocolar e a fatal não mudam, como na MANIFESTAÇÃO - FLUXO D5 (Enviar 5 dias úteis antes da fatal, Revisar 4, Protocolar 1). O robô grava o Protocolar no VIOS. As tarefas próprias da insolvência já vêm assim do VIOS.",
+        origem: "codigo",
+      },
+      {
+        id: "prazo-curto-insolvencia",
+        titulo: "Prazo curto na insolvência",
+        quando:
+          "a pasta for de Insolvência ou Cível | Insolvência, o fluxo da tarefa no VIOS tiver o Protocolar 4 dias úteis depois do Enviar (EMBARGOS DE DECLARAÇÃO, RESPOSTA AOS EMBARGOS e outras; não vale para a MANIFESTAÇÃO - FLUXO D5) e o prazo marcado na vistagem for de menos de 10 dias (com a fatal no calendário, contado da publicação até ela, na contagem da área)",
+        entao:
+          "o Enviar e o Revisar vão 2 dias úteis depois do que o VIOS criaria e o Protocolar fica 1 dia útil antes da fatal, como no fluxo comum (Enviar 3 dias úteis antes da fatal, Revisar 2, Protocolar 1). Ex.: fatal 25/11 → Enviar 19/11, Revisar 23/11, Protocolar 24/11. O robô grava o Protocolar no VIOS. A MANIFESTAÇÃO - FLUXO D5 fica sempre como o VIOS cria.",
         origem: "codigo",
       },
       {
@@ -370,7 +387,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "check",
         titulo: "Check do agendamento",
         quando: "a tarefa já estiver no VIOS",
-        entao: `o sistema compara o pedido com o VIOS (data, hora, responsável, fluxo). Erro é registrado como ${lista(SUBTIPOS_AGENDAMENTO_EM_USO)}.`,
+        entao: `o sistema compara o pedido com o VIOS (data, hora, responsável, fluxo). Erro é registrado como ${lista(SUBTIPOS_AGENDAMENTO_EM_USO)}. Na VERIFICAR RENÚNCIA, vale a responsável que o VIOS distribuiu. A CIÊNCIA NF e a VERIFICAR RENÚNCIA sozinhas, gravadas como pedidas, têm o check automático.`,
         origem: "codigo",
         metrica: "checadas",
         rotuloDaMetrica: "checadas",

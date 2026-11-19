@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, type OrigemPrazo } from "@/lib/vistagem/agendamento";
+import { RESPONSAVEL_PELO_VIOS, ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, responsavelFicaComOVios, type OrigemPrazo } from "@/lib/vistagem/agendamento";
 import { TEXTO_DA_REPETIDA } from "@/lib/vistagem/ciencia-agendamentos";
 import { agendaNoVios, nomeCurto, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
@@ -463,7 +463,7 @@ export function CartoesTarefas({
                 <div className="min-w-0 space-y-1">
                   <Rotulo>Responsável</Rotulo>
                   <dd>
-                    <Pessoas texto={item.responsavel} fotos={fotos} />
+                    <Pessoas texto={item.responsavel} fotos={fotos} vazio={responsavelFicaComOVios(item.tarefa, item.responsavel) ? RESPONSAVEL_PELO_VIOS : "—"} />
                   </dd>
                 </div>
                 <div className="min-w-0 space-y-1">

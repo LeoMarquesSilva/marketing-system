@@ -139,7 +139,8 @@ function FormularioDaTarefa({
   const comLimite = pedeDataLimite(tarefa.tarefa);
   // Corridos na Insolvência e nas pastas RC-Insolvência, como na vistagem.
   const contagemDaArea = contagemPadraoDaPublicacao(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area, dados.publicacao.etiquetas);
-  // Regra da insolvência: só antecipa o Enviar com prazo marcado de 10 dias ou mais. Os dias da vistagem valem enquanto
+  // Regra da insolvência: antecipa o Enviar com prazo marcado de 10 dias ou mais e, no fluxo com o Protocolar 4 dias
+  // depois, o adia com menos de 10 (prazo curto). Os dias da vistagem valem enquanto
   // a fatal for a mesma; mudada aqui, conta da publicação até a nova (como o servidor ao gravar).
   const fluxoPara = (dataFatal: string | null) =>
     fluxoDoPrazo(

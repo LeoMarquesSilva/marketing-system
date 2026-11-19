@@ -94,7 +94,8 @@ function usedFamilies(root: Element): Set<string> {
   return families;
 }
 
-export async function renderArtboardPng(node: HTMLElement, width: number, height: number): Promise<Blob> {
+/** `scale` multiplica os pixels da imagem (2 = nítida em tela retina) sem mudar o desenho. */
+export async function renderArtboardPng(node: HTMLElement, width: number, height: number, scale = 1): Promise<Blob> {
   await iconsReady();
   if (document.fonts) await document.fonts.ready;
   const images = Array.from(node.querySelectorAll("img"));
@@ -134,11 +135,11 @@ export async function renderArtboardPng(node: HTMLElement, width: number, height
   await new Promise((resolve) => setTimeout(resolve, 80));
 
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("O navegador não deixou desenhar a imagem.");
-  ctx.drawImage(image, 0, 0, width, height);
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("Não foi possível gerar a imagem.");
   return blob;
