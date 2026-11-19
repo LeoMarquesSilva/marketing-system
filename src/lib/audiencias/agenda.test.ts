@@ -34,7 +34,7 @@ function aud(p: Partial<Audiencia>): Audiencia {
     grupoCliente: "Grupo Exemplo",
     ciProcesso: null,
     reclamanteIniciais: null,
-    titularId: "laura",
+    titularId: "carla",
     backupId: "vera",
     substituiId: null,
     mudancas: [],
@@ -53,7 +53,7 @@ function aud(p: Partial<Audiencia>): Audiencia {
 }
 
 const pessoas = new Map(
-  [pessoa("laura", "Laura Mendes"), pessoa("vera", "Vera Souto"), pessoa("clara", "Clara Antunes"), pessoa("lucia", "Lúcia Zanetti"), pessoa("marina", "Marina Assis", { fazAudiencia: false })].map(
+  [pessoa("carla", "Carla Nunes"), pessoa("vera", "Vera Souto"), pessoa("clara", "Clara Antunes"), pessoa("helena", "Helena Prado"), pessoa("marina", "Marina Assis", { fazAudiencia: false })].map(
     (p) => [p.id, p]
   )
 );
@@ -78,27 +78,27 @@ describe("conflitos", () => {
     const presencial = aud({ inicio: "2026-11-19T12:00:00.000Z", tipo: "inicial", modalidadeTribunal: "presencial", orgao: "CON1 - Campinas" });
     const video = aud({ inicio: "2026-11-19T13:20:00.000Z", tipo: "instrucao" });
     const ctx: Contexto = { pessoas, todas: [presencial, video] };
-    expect(conflitoDaPessoa("laura", video, ctx.todas)).toMatchObject({ tipo: "deslocamento", com: { id: presencial.id } });
+    expect(conflitoDaPessoa("carla", video, ctx.todas)).toMatchObject({ tipo: "deslocamento", com: { id: presencial.id } });
     expect(alertasDaAudiencia(video, ctx).map((a) => a.tipo)).toContain("deslocamento");
   });
 
   it("mesmo horário é choque; audiência cancelada não conta", () => {
-    const a = aud({ inicio: "2026-11-19T13:15:00.000Z", tipo: "una", titularId: "lucia" });
+    const a = aud({ inicio: "2026-11-19T13:15:00.000Z", tipo: "una", titularId: "helena" });
     const b = aud({ inicio: "2026-11-19T13:20:00.000Z" });
     const cancelada = aud({ inicio: "2026-11-19T13:20:00.000Z", titularId: "clara", situacao: "cancelada" });
-    expect(conflitoDaPessoa("lucia", b, [a, b, cancelada])).toMatchObject({ tipo: "choque" });
+    expect(conflitoDaPessoa("helena", b, [a, b, cancelada])).toMatchObject({ tipo: "choque" });
     expect(conflitoDaPessoa("clara", b, [a, b, cancelada])).toBeNull();
   });
 
   it("opções de troca: livre primeiro, choque por último, quem não faz audiência fica de fora", () => {
-    const a = aud({ inicio: "2026-11-19T13:15:00.000Z", tipo: "una", titularId: "lucia", backupId: null });
+    const a = aud({ inicio: "2026-11-19T13:15:00.000Z", tipo: "una", titularId: "helena", backupId: null });
     const b = aud({ inicio: "2026-11-19T13:20:00.000Z" });
     const opcoes = opcoesDeTroca(b, "titular", { pessoas, todas: [a, b] });
     expect(opcoes.map((o) => [o.pessoa.id, o.estado])).toEqual([
-      ["laura", "atual"],
+      ["carla", "atual"],
       ["clara", "livre"],
       ["vera", "atencao"],
-      ["lucia", "choque"],
+      ["helena", "choque"],
     ]);
   });
 });

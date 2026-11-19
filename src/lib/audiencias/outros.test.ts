@@ -10,10 +10,10 @@ function pessoa(id: string, nome: string, extra: Partial<PessoaPauta> = {}): Pes
 }
 
 const equipe = [
-  pessoa("p1", "Paula Kiefer Santos Pires", { whatsapp: "(19) 99999-0001", email: "paula@exemplo.com.br" }),
-  pessoa("p2", "Laura Lacerda Mendes", { email: "laura@exemplo.com.br" }),
-  pessoa("p3", "Luana de Oliveira Prado"),
-  pessoa("p4", "Lucas Oliveira Pinto"),
+  pessoa("p1", "Bruna Teixeira Alves Rocha", { whatsapp: "(19) 99999-0001", email: "bruna@exemplo.com.br" }),
+  pessoa("p2", "Carla Duarte Nunes", { email: "carla@exemplo.com.br" }),
+  pessoa("p3", "Diana de Souza Lima"),
+  pessoa("p4", "Daniel Silva Leite"),
 ];
 const mapa = new Map(equipe.map((p) => [p.id, p]));
 
@@ -29,16 +29,16 @@ function aud(p: Partial<Audiencia> = {}): Audiencia {
 
 describe("duplas do VIOS", () => {
   it("sigla sem preposição e nome curto", () => {
-    expect(siglaDoNome("Luana de Oliveira Prado")).toBe("LOP");
-    expect(siglaDoNome("Lúcia Zanetti Jardim")).toBe("LZJ");
-    expect(nomeCurto("Luana de Oliveira Prado")).toBe("Luana Oliveira");
+    expect(siglaDoNome("Diana de Souza Lima")).toBe("DSL");
+    expect(siglaDoNome("Helena Prado Costa")).toBe("HPC");
+    expect(nomeCurto("Diana de Souza Lima")).toBe("Diana Souza");
   });
   it("sigla ambígua não vale", () => {
-    expect(pessoaPorSigla(equipe, "LOP")).toBeNull();
-    expect(pessoaPorSigla(equipe, "LLM")?.id).toBe("p2");
+    expect(pessoaPorSigla(equipe, "DSL")).toBeNull();
+    expect(pessoaPorSigla(equipe, "CDN")?.id).toBe("p2");
   });
   it("titular pelo nome completo, backup pela sigla", () => {
-    expect(duplaDaPasta(equipe, { advogadoResponsavel: "Paula Kiefer Santos Pires", auxiliarSigla: "LLM" })).toEqual({ titularId: "p1", backupId: "p2" });
+    expect(duplaDaPasta(equipe, { advogadoResponsavel: "Bruna Teixeira Alves Rocha", auxiliarSigla: "CDN" })).toEqual({ titularId: "p1", backupId: "p2" });
     expect(duplaDaPasta(equipe, { advogadoResponsavel: "Alguém de Fora", auxiliarSigla: null })).toEqual({ titularId: null, backupId: null });
   });
 });
@@ -47,14 +47,14 @@ describe("mensagens do WhatsApp", () => {
   it("marca quem tem número e escreve o nome de quem não tem", () => {
     const m = mensagemDaPauta("Pauta de amanhã", "2026-11-19", [aud()], mapa)!;
     expect(m.texto).toContain("qui 19/11");
-    expect(m.texto).toContain("08:40 Inicial · Exemplo · vídeo · @5519999990001 (backup Laura)");
+    expect(m.texto).toContain("08:40 Inicial · Exemplo · vídeo · @5519999990001 (backup Carla)");
     expect(m.mencoes).toEqual(["5519999990001"]);
     expect(soDigitos("123")).toBeNull();
   });
   it("troca de titular diz quem sai e por quê", () => {
     const m = mensagemDeTroca(aud({ titularId: "p3" }), "titular", "p1", "p3", "Deslocamento", mapa);
     expect(m.texto).toContain("Troca de titular");
-    expect(m.texto).toContain("Sai: Paula Kiefer (deslocamento)");
+    expect(m.texto).toContain("Sai: Bruna Teixeira (deslocamento)");
   });
 });
 
@@ -84,9 +84,9 @@ describe("relatório do VIOS", () => {
   it("lê só as audiências do pxe-lista", () => {
     const csv = [
       '"CI";"CI do Processo";"Data limite";"Horário";"Nro CNJ";"Área do Processo";"Tarefa";"Status";"Responsáveis";"Auxiliares"',
-      '="901";="90001";"19/11/2026";"08:40 - 09:40";"0099991-11.2026.5.15.0001";"Trabalhista";"AUDIÊNCIA UNA/INICIAL";"Pendente";"Paula Kiefer Santos Pires";"Laura Lacerda Mendes"',
-      '="902";="90001";"15/11/2026";"";"0099991-11.2026.5.15.0001";"Trabalhista";"LEMBRETE AUDIÊNCIA + REGULARIZAÇÃO";"Pendente";"Paula";""',
-      '="903";="90002";"23/11/2026";"10:20";"00999922220255150002";"Trabalhista";"AUD. INSTRUÇÃO";"Cancelada";"Fátima";"Lúcia"',
+      '="901";="90001";"19/11/2026";"08:40 - 09:40";"0099991-11.2026.5.15.0001";"Trabalhista";"AUDIÊNCIA UNA/INICIAL";"Pendente";"Bruna Teixeira Alves Rocha";"Carla Duarte Nunes"',
+      '="902";="90001";"15/11/2026";"";"0099991-11.2026.5.15.0001";"Trabalhista";"LEMBRETE AUDIÊNCIA + REGULARIZAÇÃO";"Pendente";"Bruna";""',
+      '="903";="90002";"23/11/2026";"10:20";"00999922220255150002";"Trabalhista";"AUD. INSTRUÇÃO";"Cancelada";"Joana";"Helena"',
     ].join("\n");
     const lidas = lerCsvDoVios(csv);
     expect(lidas.map((l) => [l.tarefaCi, l.tipo, l.status, l.inicio])).toEqual([

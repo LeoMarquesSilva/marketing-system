@@ -3,7 +3,7 @@ import type { PessoaPauta } from "./tipos";
 /**
  * Titular e backup vêm da pasta no VIOS: o titular é o advogado responsável (nome completo, como o SIOE guarda em
  * processos_completo.advogado_responsavel) e o backup é o auxiliar da dupla (sigla, como o "Processos Lista" traz:
- * "LZJ", "PKSP").
+ * "HPC", "BTAR").
  */
 
 export function chaveNomePessoa(nome: string | null | undefined): string {
@@ -16,7 +16,7 @@ export function chaveNomePessoa(nome: string | null | undefined): string {
     .trim();
 }
 
-/** "Lúcia Zanetti Jardim" → "LZJ"; "Luana de Oliveira Prado" → "LOP" (sem preposições). */
+/** "Helena Prado Costa" → "HPC"; "Diana de Souza Lima" → "DSL" (sem preposições). */
 export function siglaDoNome(nome: string | null | undefined): string {
   return chaveNomePessoa(nome)
     .split(" ")
@@ -25,7 +25,7 @@ export function siglaDoNome(nome: string | null | undefined): string {
     .join("");
 }
 
-/** "Paula Kiefer Santos Pires" → "Paula Kiefer" (primeiro e segundo nomes, como a equipe se chama). */
+/** "Bruna Teixeira Alves Rocha" → "Bruna Teixeira" (primeiro e segundo nomes, como a equipe se chama). */
 export function nomeCurto(nome: string): string {
   const partes = nome.trim().split(/\s+/);
   const uteis = partes.filter((p, i) => i === 0 || !/^(d[aeo]s?|e)$/i.test(p));
