@@ -21,7 +21,7 @@ import { lerPublicacao } from "@/lib/vistagem/leitura";
 import { advogadosDoEscritorioCitados } from "@/lib/vistagem/triagem";
 import type { MateriaVios, PublicacaoResumo, SintesePedida } from "@/lib/vistagem/types";
 import { AvatarPessoa, ComboboxBusca } from "./combobox-busca";
-import { Celula, LinkPastaVios } from "./ficha-pasta";
+import { Celula, LinkPastaVios, tipoDaPasta } from "./ficha-pasta";
 import { Selo, type TomSelo } from "./ui";
 
 /** Nomes de cada polo que aparecem antes do "e mais N". */
@@ -140,7 +140,7 @@ export function ResumoDaFicha({ publicacao, auxiliar, fotos }: { publicacao: Pub
   return (
     <div className="space-y-2 rounded-md border border-[#c9dde6] bg-[#e9f2f6] px-3 py-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        {publicacao.pastaCi ? <LinkPastaVios ci={publicacao.pastaCi} /> : <span className="text-sm text-muted-foreground">Sem pasta</span>}
+        {publicacao.pastaCi ? <LinkPastaVios ci={publicacao.pastaCi} tipo={tipoDaPasta(publicacao)} /> : <span className="text-sm text-muted-foreground">Sem pasta</span>}
         {processo.map((parte) => (
           <span key={parte.chave} className="flex min-w-0 items-center gap-2 text-sm">
             <span className="text-[#9fb8c2]" aria-hidden>

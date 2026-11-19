@@ -70,6 +70,10 @@
     {
       "path": "/api/cron/vistagem-djen?rodada=noite",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/pauta-tick",
+      "schedule": "0 11 * * *"
     }
   ]
 }

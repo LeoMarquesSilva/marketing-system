@@ -138,19 +138,43 @@ export interface FeedbackInput {
   feedz?: FeedzLinkInput | null;
 }
 
-/** Áreas do Registro (mesma grafia das outras telas do RH; Marketing e Comercial à parte). */
+/**
+ * Áreas do Registro, na grafia das outras telas do RH. Marketing, Comercial,
+ * Financeiro, Facilities e as demais áreas de apoio entram em Operações Legais
+ * (canonicalFeedbackArea, mesma regra de Férias).
+ */
 export const FEEDBACK_AREAS = [
   "Reestruturação",
   "Cível",
   "Trabalhista",
   "Operações Legais",
   "Societário e Contratos",
-  "ADD",
   "Recuperação de Crédito",
   "Tributário",
-  "Marketing",
-  "Comercial",
 ] as const;
+
+/**
+ * Grupo de liderança: feedback para todos os gestores juntos (sócios,
+ * coordenadores, gerentes), quando todos estavam no lugar. Não é área: grava
+ * como equipe (is_team) com área "Gestores" e nome "Equipe Gestores".
+ */
+export const LEADERS_GROUP = "Gestores";
+
+/**
+ * Área fora da lista oficial (ex.: ADD/Distressed Deals, extinta) não ganha
+ * botão, linha nem filtro, como em Férias: o registro continua na lista geral.
+ */
+export function isOfficialArea(area: string): boolean {
+  return (FEEDBACK_AREAS as readonly string[]).includes(area);
+}
+
+/** Quem recebeu: um colaborador, a equipe inteira de uma área ou todos os gestores. */
+export type FeedbackRecipient = "pessoa" | "equipe" | "gestores";
+
+export function recipientOf(item: { is_team: boolean; area: string }): FeedbackRecipient {
+  if (!item.is_team) return "pessoa";
+  return item.area === LEADERS_GROUP ? "gestores" : "equipe";
+}
 
 export interface FeedbackCategoryInfo {
   name: string;

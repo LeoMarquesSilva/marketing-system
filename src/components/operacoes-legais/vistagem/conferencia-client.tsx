@@ -37,7 +37,7 @@ import { RENOVAR_CONFERENCIA_MS } from "@/lib/vistagem/alterar-vistagem";
 import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
 import { marcarEnviosSincronizados, sincronizarEnvios } from "@/lib/vistagem/envios-client";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
+import { RESPONSAVEL_PELO_VIOS, ROTULO_ETIQUETA, chaveNome, responsavelFicaComOVios } from "@/lib/vistagem/agendamento";
 import { vaiParaCentral } from "@/lib/vistagem/central";
 import { textoDaRepetida } from "@/lib/vistagem/ciencia-agendamentos";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
@@ -266,7 +266,9 @@ export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { ag
                 ) : null}
               </Celula>
               <Celula rotulo="Responsável" compacta={compacta}>
-                <span className="break-words text-foreground">{item.responsavel}</span>
+                <span className="break-words text-foreground">
+                  {responsavelFicaComOVios(item.tarefa, item.responsavel) ? RESPONSAVEL_PELO_VIOS : item.responsavel}
+                </span>
               </Celula>
               <Celula rotulo="Revisor" compacta={compacta}>
                 <span className={cn("break-words", item.revisor ? "text-foreground" : "text-muted-foreground")}>{item.revisor ?? "—"}</span>

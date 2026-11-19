@@ -399,12 +399,47 @@ export function observacaoObrigatoria(nomeDaTarefa: string | null | undefined): 
   return chaveNome(nomeDaTarefa) === "CIENCIA NF";
 }
 
+/** Área Operações Legais (escritório da pasta ou área do catálogo, com os nomes do RH e do VIOS). */
+export function ehOperacoesLegais(area: string | null | undefined): boolean {
+  return chaveNome(escritorioDaArea(area)) === "OPERACOES LEGAIS";
+}
+
+/** Dias úteis da VERIFICAR RENÚNCIA da Operações Legais, contados do dia da vistagem (pedido de 18/11/2026). */
+export const DIAS_DA_RENUNCIA = 2;
+
+/**
+ * VERIFICAR RENÚNCIA na Operações Legais (pedido de 18/11/2026): a data é sempre 2 dias úteis depois da vistagem, e a
+ * tela não deixa mudar (o servidor grava a do dia em que vistou). O VIOS divide a tarefa entre as estagiárias.
+ */
+export function renunciaComDataFixa(nomeDaTarefa: string | null | undefined, area: string | null | undefined): boolean {
+  return chaveNome(nomeDaTarefa) === "VERIFICAR RENUNCIA" && ehOperacoesLegais(area);
+}
+
+/** O que aparece no responsável da VERIFICAR RENÚNCIA pedida sem ninguém, até o robô trazer quem o VIOS pôs. */
+export const RESPONSAVEL_PELO_VIOS = "O VIOS define";
+
+/**
+ * Tarefa pedida sem responsável (VERIFICAR RENÚNCIA da Operações Legais, pedido de 18/11/2026): o VIOS define, e a
+ * Orquestra grava quem ele pôs quando o robô volta (`responsavelQueOViosPos`). Enquanto isso, as telas mostram
+ * `RESPONSAVEL_PELO_VIOS`.
+ */
+export function responsavelFicaComOVios(tarefa: string | null | undefined, responsavel: string | null | undefined): boolean {
+  return !String(responsavel ?? "").trim() && chaveNome(tarefa) === "VERIFICAR RENUNCIA";
+}
+
 /**
  * Data que o tipo de tarefa já traz ao ser escolhido. A CIÊNCIA NF vai para o dia útil seguinte ao da vistagem
- * (pedido de 11/11/2026; era o que o jurídico preenchia à mão), como o Inserir E-social. Os outros tipos começam
- * vazios (null). Recebe o nome como está no VIOS.
+ * (pedido de 11/11/2026; era o que o jurídico preenchia à mão), como o Inserir E-social. Na Operações Legais, a
+ * VERIFICAR RENÚNCIA vai para 2 dias úteis depois (`renunciaComDataFixa`). Os outros tipos começam vazios (null).
+ * Recebe o nome como está no VIOS e a área da publicação.
  */
-export function dataPadraoDaTarefa(nomeDaTarefa: string | null | undefined, hoje: string, ehDiaUtil: (iso: string) => boolean): string | null {
+export function dataPadraoDaTarefa(
+  nomeDaTarefa: string | null | undefined,
+  hoje: string,
+  ehDiaUtil: (iso: string) => boolean,
+  area: string | null = null
+): string | null {
+  if (renunciaComDataFixa(nomeDaTarefa, area)) return somarDiasUteis(hoje, DIAS_DA_RENUNCIA, ehDiaUtil);
   return chaveNome(nomeDaTarefa) === "CIENCIA NF" ? somarDiasUteis(hoje, 1, ehDiaUtil) : null;
 }
 
@@ -437,7 +472,7 @@ export function validarAgendamentos(
     ehDiaUtil: (iso: string) => boolean;
     /**
      * Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). Recebe o prazo marcado: a regra
-     * da insolvência só antecipa o Enviar com 10 dias ou mais (`fluxoDoPrazo`).
+     * da insolvência antecipa o Enviar com 10 dias ou mais e o adia no prazo curto, com menos de 10 (`fluxoDoPrazo`).
      */
     cadeiaDaTarefa: (tarefaId: string, prazo: { dataFatal: string | null; diasPrazo: number | null }) => CadeiaDoPrazo | null;
     /** Tarefas que o fluxo do tipo cria junto (chaveDoCaminho), para aceitar só datas delas. */
@@ -456,6 +491,11 @@ export function validarAgendamentos(
      * e pessoas, e uma tarefa vistada antes da regra não pode ficar sem ajuste.
      */
     exigirObservacao?: boolean;
+    /**
+     * Área da publicação (escritório da pasta ou área do catálogo). Na Operações Legais, a VERIFICAR RENÚNCIA vai sem
+     * responsável: o VIOS define e divide entre as estagiárias (`renunciaComDataFixa`, pedido de 18/11/2026).
+     */
+    area?: string | null;
   }
 ): { ok: true; itens: AgendamentoValidado[] } | { ok: false; erros: string[] } {
   const erros: string[] = [];
@@ -517,10 +557,12 @@ export function validarAgendamentos(
       erros.push(`${n}: a data limite tem de ser a data para conclusão ou depois.`);
     }
     const dataLimite = dataLimiteDaTarefa(nomeVios, data, limitePedido);
-    // Pode haver mais de um responsável (ex.: tipos com responsáveis fixos no VIOS), separados por vírgula.
-    const nomesResponsaveis = separarNomes(entrada.responsavel);
+    // Pode haver mais de um responsável (ex.: tipos com responsáveis fixos no VIOS), separados por vírgula. Na
+    // VERIFICAR RENÚNCIA da Operações Legais não vai ninguém: o VIOS define e divide entre as estagiárias.
+    const peloVios = renunciaComDataFixa(nomeVios, contexto.area);
+    const nomesResponsaveis = peloVios ? [] : separarNomes(entrada.responsavel);
     const encontrados = nomesResponsaveis.map((nome) => usuarioPorChave.get(chaveNome(nome)));
-    const responsavel = nomesResponsaveis.length && encontrados.every(Boolean) ? (encontrados as OpcaoVios[]) : null;
+    const responsavel = peloVios ? [] : nomesResponsaveis.length && encontrados.every(Boolean) ? (encontrados as OpcaoVios[]) : null;
     if (!responsavel) erros.push(`${n}: escolha o responsável na lista de usuários do VIOS.`);
     // Providência não tem revisor: nenhum tipo de Providência cria 2. REVISAR no VIOS (conferido em 05/11/2026).
     const comRevisor = entrada.etiqueta !== "PROVIDENCIA";

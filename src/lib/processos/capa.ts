@@ -92,10 +92,13 @@ export interface RegistroDataJud {
   movimentos?: { codigo?: number | null; nome?: string | null; dataHora?: string | null; complementosTabelados?: { nome?: string | null }[] | null }[] | null;
 }
 
+/** Fonte oficial do CNJ de onde vêm a capa e os movimentos do tribunal. */
+export type FonteOficial = "datajud" | "jusbr";
+
 /** Um andamento para a linha do tempo do processo (proc_andamentos). */
 export interface AndamentoNovo {
   quando: string;
-  fonte: "datajud";
+  fonte: FonteOficial;
   titulo: string;
   detalhe: string | null;
   grau: string | null;
@@ -119,7 +122,7 @@ export function dataHoraDoDataJud(valor: string | null | undefined): string | nu
  * Todos os movimentos do DataJud (de todas as instâncias que o tribunal enviou) como andamentos da linha do
  * tempo. A chave junta instância, código, data e nome: a mesma consulta repetida não duplica nada.
  */
-export function andamentosDoDataJud(registros: RegistroDataJud[]): AndamentoNovo[] {
+export function andamentosDoDataJud(registros: RegistroDataJud[], fonte: FonteOficial = "datajud"): AndamentoNovo[] {
   const vistos = new Map<string, AndamentoNovo>();
   for (const registro of registros) {
     const grau = registro.grau?.trim() || null;
@@ -129,8 +132,8 @@ export function andamentosDoDataJud(registros: RegistroDataJud[]): AndamentoNovo
       if (!quando || !titulo) continue;
       const complementos = (movimento.complementosTabelados ?? []).map((item) => item.nome?.trim()).filter((nome): nome is string => Boolean(nome));
       const codigo = typeof movimento.codigo === "number" ? movimento.codigo : null;
-      const chave = ["datajud", grau ?? "", codigo ?? "", quando, titulo.toLowerCase()].join("|");
-      if (!vistos.has(chave)) vistos.set(chave, { quando, fonte: "datajud", titulo, detalhe: complementos.length ? complementos.join(" · ") : null, grau, codigo, chave });
+      const chave = [fonte, grau ?? "", codigo ?? "", quando, titulo.toLowerCase()].join("|");
+      if (!vistos.has(chave)) vistos.set(chave, { quando, fonte, titulo, detalhe: complementos.length ? complementos.join(" · ") : null, grau, codigo, chave });
     }
   }
   return [...vistos.values()].sort((a, b) => b.quando.localeCompare(a.quando));
@@ -202,6 +205,8 @@ export interface EntradaDaCapa {
   municipio?: string | null;
   /** Quando o DataJud foi consultado (AAAA-MM-DD), para o texto da sugestão. */
   consultadoEm: string;
+  /** De onde vieram os registros: DataJud (padrão) ou a ficha do Jus.br, convertida pelo registrosDoJusbr. */
+  fonteOficial?: FonteOficial;
 }
 
 const GRAU: Record<string, string> = { G1: "1º grau", G2: "2º grau", JE: "Juizado Especial", TR: "Turma Recursal" };
@@ -217,7 +222,9 @@ export function sugestoesDaCapa(entrada: EntradaDaCapa): SugestaoNova[] {
   const sugestoes: SugestaoNova[] = [];
   const falta = (campo: string) => !estaPreenchido(valores[campo]);
 
-  const propor = (fonte: "cnj" | "datajud", campo: string, bruto: ValorCampo | undefined, origem: string, confianca: Confianca, junto?: Record<string, string>) => {
+  const oficial: FonteOficial = entrada.fonteOficial ?? "datajud";
+  const nomeOficial = oficial === "jusbr" ? "Jus.br" : "DataJud";
+  const propor = (fonte: "cnj" | FonteOficial, campo: string, bruto: ValorCampo | undefined, origem: string, confianca: Confianca, junto?: Record<string, string>) => {
     const item = campoPorChave(campo);
     if (!item || bruto === null || bruto === undefined || bruto === "") return;
     const valor = coagirValor(item, bruto);
@@ -246,43 +253,84 @@ export function sugestoesDaCapa(entrada: EntradaDaCapa): SugestaoNova[] {
   const segundoGrau = atual?.grau ? atual.grau === "G2" : cnj.grau === "SEGUNDO GRAU";
   if (falta("jurisdicao_atual")) {
     if (atual?.grau === "G1" || atual?.grau === "G2") {
-      propor("datajud", "jurisdicao_atual", atual.grau === "G2" ? "SEGUNDO GRAU" : "PRIMEIRO GRAU", `DataJud, ${entrada.consultadoEm}: o registro mais recente do processo é do ${GRAU[atual.grau]}.`, "alta");
+      propor(oficial, "jurisdicao_atual", atual.grau === "G2" ? "SEGUNDO GRAU" : "PRIMEIRO GRAU", `${nomeOficial}, ${entrada.consultadoEm}: o registro mais recente do processo é do ${GRAU[atual.grau]}.`, "alta");
     } else {
       propor("cnj", "jurisdicao_atual", cnj.grau, `Número CNJ: origem ${cnj.digitos.slice(16)} (${cnj.grau === "SEGUNDO GRAU" ? "processo do próprio tribunal" : "vara de origem"}).`, "media");
     }
   }
   if (!atual) return sugestoes;
 
-  const fonte = `DataJud (${cnj.tribunal}, ${atual.grau ? (GRAU[atual.grau] ?? atual.grau) : "grau não informado"}), ${entrada.consultadoEm}`;
+  const fonte = `${nomeOficial} (${cnj.tribunal}, ${atual.grau ? (GRAU[atual.grau] ?? atual.grau) : "grau não informado"}), ${entrada.consultadoEm}`;
   const orgaoNome = atual.orgaoJulgador?.nome?.replace(/\s+/g, " ").trim() || null;
 
   if (falta("cidade")) {
     const cidade = cidadeDoOrgao(orgaoNome) ?? entrada.municipio ?? (segundoGrau && cnj.uf ? CAPITAL[cnj.uf] : null);
-    const deOnde = cidadeDoOrgao(orgaoNome) ? `órgão julgador "${orgaoNome}"` : entrada.municipio ? `município do órgão julgador (código IBGE ${atual.orgaoJulgador?.codigoMunicipioIBGE})` : "2º grau: a capital do estado";
-    propor("datajud", "cidade", cidade, `${fonte}: ${deOnde}.`, cidadeDoOrgao(orgaoNome) || entrada.municipio ? "alta" : "media");
+    const deOnde = cidadeDoOrgao(orgaoNome) ? `órgão julgador "${orgaoNome}"` : entrada.municipio ? (atual.orgaoJulgador?.codigoMunicipioIBGE ? `município do órgão julgador (código IBGE ${atual.orgaoJulgador.codigoMunicipioIBGE})` : "município do órgão julgador") : "2º grau: a capital do estado";
+    propor(oficial, "cidade", cidade, `${fonte}: ${deOnde}.`, cidadeDoOrgao(orgaoNome) || entrada.municipio ? "alta" : "media");
   }
   if (orgaoNome && !segundoGrau && (falta("orgao_julgador") || falta("tipo_orgao_julgador"))) {
     const { vara, tipo } = separarVara(orgaoSemComarca(orgaoNome));
-    if (falta("orgao_julgador")) propor("datajud", "orgao_julgador", vara, `${fonte}: órgão julgador "${orgaoNome}".`, "media");
-    if (falta("tipo_orgao_julgador")) propor("datajud", "tipo_orgao_julgador", tipo, `${fonte}: órgão julgador "${orgaoNome}".`, "media");
+    if (falta("orgao_julgador")) propor(oficial, "orgao_julgador", vara, `${fonte}: órgão julgador "${orgaoNome}".`, "media");
+    if (falta("tipo_orgao_julgador")) propor(oficial, "tipo_orgao_julgador", tipo, `${fonte}: órgão julgador "${orgaoNome}".`, "media");
   }
   if (falta("data_distribuicao")) {
     const registroDoInicio = entrada.datajud.find((registro) => registro.grau === "G1") ?? atual;
-    propor("datajud", "data_distribuicao", dataDoDataJud(registroDoInicio.dataAjuizamento), `${fonte}: data de ajuizamento.`, "alta");
+    propor(oficial, "data_distribuicao", dataDoDataJud(registroDoInicio.dataAjuizamento), `${fonte}: data de ajuizamento.`, "alta");
   }
   if (falta("processo_eletronico") && atual.formato?.nome) {
     const eletronico = /eletr/i.test(atual.formato.nome) ? true : /f[ií]sico/i.test(atual.formato.nome) ? false : null;
-    if (eletronico !== null) propor("datajud", "processo_eletronico", eletronico, `${fonte}: formato "${atual.formato.nome}".`, "alta");
+    if (eletronico !== null) propor(oficial, "processo_eletronico", eletronico, `${fonte}: formato "${atual.formato.nome}".`, "alta");
   }
   if (falta("segredo_justica") && typeof atual.nivelSigilo === "number") {
-    propor("datajud", "segredo_justica", atual.nivelSigilo > 0, `${fonte}: nível de sigilo ${atual.nivelSigilo}${atual.nivelSigilo > 0 ? "" : " (público)"}.`, "alta");
+    propor(oficial, "segredo_justica", atual.nivelSigilo > 0, `${fonte}: nível de sigilo ${atual.nivelSigilo}${atual.nivelSigilo > 0 ? "" : " (público)"}.`, "alta");
   }
 
   // Último andamento: quando falta ou quando o DataJud tem um mais novo que o do cadastro.
   const movimento = ultimoMovimento(atual);
   const dataAtual = typeof valores.ultimo_andamento_data === "string" ? valores.ultimo_andamento_data.slice(0, 10) : "";
   if (movimento && (falta("ultimo_andamento_texto") || movimento.data > dataAtual)) {
-    propor("datajud", "ultimo_andamento_texto", movimento.texto, `${fonte}: movimentação de ${movimento.data.split("-").reverse().join("/")}.`, "alta", { ultimo_andamento_data: movimento.data });
+    propor(oficial, "ultimo_andamento_texto", movimento.texto, `${fonte}: movimentação de ${movimento.data.split("-").reverse().join("/")}.`, "alta", { ultimo_andamento_data: movimento.data });
   }
   return sugestoes;
+}
+
+/* ----------------------------------------------------------------- Jus.br */
+
+/** A capa que o robô lê na ficha do Jus.br e envia com os autos (sem partes nem documentos). */
+export interface CapaDoJusbr {
+  siglaTribunal?: string | null;
+  nivelSigilo?: number | null;
+  tramitacoes: {
+    grau?: string | null;
+    dataHoraAjuizamento?: string | null;
+    classe?: string | null;
+    orgaoJulgador?: string | null;
+    cidade?: string | null;
+    movimentos: { dataHora?: string | null; descricao?: string | null; codigo?: number | null; complementos?: string[] | null }[];
+  }[];
+}
+
+/**
+ * A ficha do Jus.br no formato de registro do DataJud (um por tramitação: 1º grau, 2º grau…), para a capa e a
+ * linha do tempo passarem pelo mesmo caminho. A cidade vem pronta (jurisdição do órgão), sem consultar o IBGE.
+ */
+export function registrosDoJusbr(capa: CapaDoJusbr): { registros: RegistroDataJud[]; municipio: string | null } {
+  const registros: RegistroDataJud[] = capa.tramitacoes.map((tramitacao) => ({
+    grau: tramitacao.grau ?? null,
+    dataAjuizamento: tramitacao.dataHoraAjuizamento ?? null,
+    nivelSigilo: capa.nivelSigilo ?? null,
+    classe: tramitacao.classe ? { nome: tramitacao.classe } : null,
+    orgaoJulgador: tramitacao.orgaoJulgador ? { nome: tramitacao.orgaoJulgador, codigoMunicipioIBGE: null } : null,
+    movimentos: tramitacao.movimentos.map((movimento) => ({
+      codigo: movimento.codigo ?? null,
+      nome: movimento.descricao ?? null,
+      dataHora: movimento.dataHora ?? null,
+      complementosTabelados: (movimento.complementos ?? []).map((nome) => ({ nome })),
+    })),
+  }));
+  const atual = registroAtual(registros);
+  const indice = atual ? registros.indexOf(atual) : -1;
+  const cidade = (indice >= 0 ? capa.tramitacoes[indice].cidade : capa.tramitacoes[0]?.cidade) ?? null;
+  // A jurisdição do Jus.br vem como "Comarca de Cidade Exemplo" / "Foro de …": o cadastro quer só o nome da cidade.
+  return { registros, municipio: cidade?.replace(/^\s*(comarca|foro|foro regional)\s+(de|da|do|das|dos)\s+/i, "").trim() || null };
 }

@@ -1,4 +1,13 @@
-/** Pasta (processo) da base do SIOE (processos_completo). */
+/**
+ * Tipo da pasta que a controladoria informou pela CI na Triagem Manual e que não está nos processos do SIOE (pedido de
+ * 18/11/2026: "independente da pasta, se ela colocar o CI tem que ser levado em consideração").
+ * - Atendimento: a SAMA conhece a pasta como atendimento (vios_pastas) ou pelas tarefas dela sem CNJ (vios_tarefas).
+ * - Processo: a SAMA conhece como processo, mas o SIOE ainda não copiou (pasta aberta hoje).
+ * - Desconhecido: nenhuma base conhece; vale como atendimento, e o robô abre a tela que existir.
+ */
+export type TipoPastaInformada = "Processo" | "Atendimento" | "Desconhecido";
+
+/** Pasta (processo) da base do SIOE (processos_completo), ou uma pasta informada pela CI (`tipoPasta`). */
 export interface PastaSioe {
   ci: string;
   cnj: string;
@@ -14,6 +23,54 @@ export interface PastaSioe {
   fase?: string | null;
   valorAcao?: number | null;
   valorAcaoAtualizado?: number | null;
+  /** Só nas pastas informadas pela CI que não vieram do SIOE; sem ele, é uma pasta de processo do SIOE. */
+  tipoPasta?: TipoPastaInformada;
+}
+
+/** Pasta de atendimento (ou que nenhuma base conhece): a vistagem usa as tarefas de atendimento e agenda direto nela. */
+export function ehPastaDeAtendimento(tipo: TipoPastaInformada | null | undefined): boolean {
+  return tipo === "Atendimento" || tipo === "Desconhecido";
+}
+
+/** O tipo da pasta da publicação: a candidata com a CI da pasta diz; as do SIOE (sem tipo) e a falta de pasta, processo. */
+export function tipoDaPastaDaPublicacao(publicacao: {
+  pasta_ci: string | null;
+  pastas_candidatas: PastaSioe[] | null;
+}): TipoPastaInformada {
+  if (!publicacao.pasta_ci) return "Processo";
+  const pasta = (publicacao.pastas_candidatas ?? []).find((candidata) => candidata.ci === publicacao.pasta_ci);
+  return pasta?.tipoPasta ?? "Processo";
+}
+
+/** O que a SAMA sabe de uma pasta do VIOS fora do SIOE (vios_pastas e a cópia das tarefas, vios_tarefas). */
+export interface PastaNoSama {
+  tipo: "Processo" | "Atendimento" | null;
+  area: string | null;
+  cnj: string | null;
+  cliente: string | null;
+  grupoCliente: string | null;
+}
+
+/**
+ * Pasta informada pela CI que não está nos processos do SIOE, montada com o que a SAMA sabe (ou só com a CI). Sem
+ * tipo na SAMA, a pasta sem CNJ nas tarefas é de atendimento (os atendimentos não têm número de processo).
+ */
+export function pastaInformada(ci: string, noSama: PastaNoSama | null): PastaSioe {
+  const tipoPasta: TipoPastaInformada = !noSama
+    ? "Desconhecido"
+    : noSama.tipo ?? (noSama.cnj ? "Processo" : "Atendimento");
+  return {
+    ci,
+    cnj: noSama?.cnj ?? "",
+    vinculo: null,
+    cliente: noSama?.cliente ?? null,
+    grupoCliente: noSama?.grupoCliente ?? null,
+    area: noSama?.area ?? null,
+    advogadoResponsavel: null,
+    situacao: null,
+    etiquetas: null,
+    tipoPasta,
+  };
 }
 
 export type Pendencia = "sem_pasta" | "varias_pastas" | "ex_cliente" | "sem_area" | "sem_grupo";

@@ -33,7 +33,7 @@ import {
   loadRelatedCandidates,
   scoreNewsRelevance,
 } from "@/lib/content-generator/server";
-import { rankRelatedCandidates, relatedCarouselGuidance } from "@/lib/content-generator/related";
+import { isSameStory, rankRelatedCandidates, relatedCarouselGuidance, storyTerms } from "@/lib/content-generator/related";
 
 /**
  * URL de notícia aceita. O protocolo é validado explicitamente: `z.url()` do
@@ -127,10 +127,10 @@ export async function createRoteiroFromLink(
   // Evita post duplicado do mesmo link/manchete numa janela recente.
   const titleKey = normalizeTitleKey(title);
   // Paginado: o Supabase corta em 1.000 linhas e a janela tem mais que isso.
-  const existing = await fetchAllPages<{ id: string; title: string | null; link: string | null }>((from, to) =>
+  const existing = await fetchAllPages<{ id: string; title: string | null; link: string | null; created_at: string }>((from, to) =>
     supabase
       .from("content_roteiros")
-      .select("id, title, link")
+      .select("id, title, link, created_at")
       .gte("created_at", getContentCutoffDate(120).toISOString())
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
@@ -147,6 +147,20 @@ export async function createRoteiroFromLink(
         "ALREADY_EXISTS"
       );
     }
+  }
+
+  // A mesma notícia por outro veículo nas últimas 3 semanas também já está na lista.
+  const storySince = getContentCutoffDate(21).toISOString();
+  const itemStory = storyTerms(title);
+  const sameStory = existing.find(
+    (row) => row.created_at >= storySince && row.title && isSameStory(storyTerms(row.title), itemStory)
+  );
+  if (sameStory) {
+    throw new ManualLinkError(
+      `Essa notícia já está na lista, vinda de outro veículo: "${sameStory.title}". Procure por ela em Posts.`,
+      409,
+      "ALREADY_EXISTS"
+    );
   }
 
   const openai = createOpenAI({ apiKey });

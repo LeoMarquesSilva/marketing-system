@@ -13,6 +13,7 @@ import {
   Megaphone,
   MonitorPlay,
   PencilLine,
+  Presentation,
   Settings2,
   Trophy,
   UsersRound,
@@ -38,14 +39,16 @@ import {
   type ParticipantOverride,
 } from "@/lib/rh/bp-awards/types";
 import { cn } from "@/lib/utils";
+import { MeetingPanel } from "./meeting-panel";
 import { ParticipationPanel } from "./participation-panel";
 import { requestJson } from "./request";
 import { SettingsPanel } from "./settings-panel";
 import { TallyPanel } from "./tally-panel";
 
-type Tab = "apuracao" | "participacao" | "configuracoes";
+type Tab = "reuniao" | "apuracao" | "participacao" | "configuracoes";
 
 const TABS: Array<{ key: Tab; label: string; icon: LucideIcon }> = [
+  { key: "reuniao", label: "Reunião", icon: Presentation },
   { key: "apuracao", label: "Apuração", icon: Trophy },
   { key: "participacao", label: "Participação", icon: UsersRound },
   { key: "configuracoes", label: "Configurações", icon: Settings2 },
@@ -70,7 +73,7 @@ export function CommitteeClient({ initial }: { initial: CommitteeView }) {
   const [finalists, setFinalists] = useState<AwardFinalist[]>(initial.finalists);
   const phase = resolveAwardPhase(edition);
   const [tab, setTab] = useState<Tab>(
-    phase === "apuracao" || phase === "publicada" ? "apuracao" : phase === "aberta" ? "participacao" : "configuracoes"
+    phase === "apuracao" ? "reuniao" : phase === "publicada" ? "apuracao" : phase === "aberta" ? "participacao" : "configuracoes"
   );
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -249,6 +252,14 @@ export function CommitteeClient({ initial }: { initial: CommitteeView }) {
               setOverrides(next);
               refreshAfterSettings();
             }}
+          />
+        ) : tab === "reuniao" ? (
+          <MeetingPanel
+            tallies={initial.tallies}
+            finalists={finalists}
+            aiReviews={initial.aiReviews}
+            aiSlots={initial.aiSlots}
+            onFinalistsChange={setFinalists}
           />
         ) : tab === "apuracao" ? (
           <TallyPanel

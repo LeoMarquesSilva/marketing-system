@@ -31,7 +31,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
-import { chaveNome } from "@/lib/vistagem/agendamento";
+import { RESPONSAVEL_PELO_VIOS, chaveNome, responsavelFicaComOVios } from "@/lib/vistagem/agendamento";
 import { nomeCurto } from "@/lib/vistagem/como-fica-no-vios";
 import { agruparPorDia, dataHoraDoMomento, horaDoMomento, tituloDoDia } from "@/lib/vistagem/datas-do-historico";
 import {
@@ -136,7 +136,11 @@ function Tarefas({ tarefas, fotos }: { tarefas: TarefaResumida[]; fotos: Record<
               fatal {dataCurta(tarefa.dataFatal)}
             </span>
           ) : null}
-          {tarefa.responsavel ? <Pessoa nome={tarefa.responsavel} fotos={fotos} /> : null}
+          {tarefa.responsavel ? (
+            <Pessoa nome={tarefa.responsavel} fotos={fotos} />
+          ) : responsavelFicaComOVios(tarefa.tarefa, tarefa.responsavel) ? (
+            <span className="text-muted-foreground">Responsável: {RESPONSAVEL_PELO_VIOS.toLowerCase()}</span>
+          ) : null}
           {/* Prazo: se a fatal veio do calendário ou dos botões de dias (pedido de 18/11/2026). */}
           {tarefa.etiqueta && tarefa.dataFatal ? (
             <SeloOrigemDaFatal className="basis-full" item={{ ...tarefa, etiqueta: tarefa.etiqueta, dataFatal: tarefa.dataFatal }} />

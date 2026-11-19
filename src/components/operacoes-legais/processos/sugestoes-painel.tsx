@@ -30,7 +30,11 @@ const CONFIANCA: Record<Confianca, { tom: TomSelo; rotulo: string }> = {
 const ROTULO_ITEM = new Map([
   ...ITENS_SANEAMENTO.map((item) => [item.chave, item.rotulo] as const),
   ...Object.entries(ROTULO_DO_ITEM).map(([item, rotulo]) => [`rec_credito_${item}`, `Rec. Crédito: ${rotulo.toLowerCase()}`] as const),
+  ["acordo_acordo", "Acordo"],
+  ["acordo_pagamento", "Acordo: pagamento"],
+  ["acordo_descumprimento", "Acordo: descumprimento"],
 ]);
+const ORDEM_ACORDO: Record<string, number> = { acordo: 0, pagamento: 1, descumprimento: 2 };
 const ROTULO_GRUPO = new Map<string, string>(GRUPOS_CAMPO.map((grupo) => [grupo.id, grupo.rotulo]));
 const ROTULO_CONTATO = new Map<string, string>(TIPOS_CONTATO.map((item) => [item.valor, item.rotulo]));
 
@@ -65,6 +69,17 @@ function Proposta({ sugestao, processo }: { sugestao: Sugestao; processo: Proces
           </p>
         ))}
         {estaPreenchido(atual) ? <p className="text-xs text-amber-800">Hoje no cadastro: {formatarValor(item, atual)}. Aprovar troca o valor.</p> : null}
+      </>
+    );
+  }
+  if (sugestao.tipo === "acordo") {
+    const [rotulo, ...resto] = sugestao.resumo.split(": ");
+    return (
+      <>
+        <p className="text-xs font-medium text-muted-foreground">{rotulo}</p>
+        <p className="break-words text-sm font-semibold text-[#10293a]">{resto.join(": ")}</p>
+        {sugestao.campo === "acordo" ? <p className="text-xs text-muted-foreground">Aprovado, entra em Acordos com as parcelas geradas; ajuste depois no controle de parcelas, se precisar.</p> : null}
+        {sugestao.campo === "pagamento" ? <p className="text-xs text-muted-foreground">Aprovado, marca paga a parcela informada (ou a primeira em aberto) do acordo mais recente.</p> : null}
       </>
     );
   }
@@ -198,8 +213,8 @@ function ConferirCampo({ sugestao, uf, onFechar, aprovar }: { sugestao: Sugestao
   );
 }
 
-const FONTE: Record<Exclude<Sugestao["fonte"], undefined>, string> = { autos: "Autos (IA)", datajud: "DataJud", cnj: "Número CNJ" };
-const ehDaCapa = (sugestao: Sugestao) => sugestao.fonte === "datajud" || sugestao.fonte === "cnj";
+const FONTE: Record<Exclude<Sugestao["fonte"], undefined>, string> = { autos: "Autos (IA)", datajud: "DataJud", jusbr: "Jus.br", cnj: "Número CNJ" };
+const ehDaCapa = (sugestao: Sugestao) => sugestao.fonte === "datajud" || sugestao.fonte === "cnj" || sugestao.fonte === "jusbr";
 const ehSintese = (sugestao: Sugestao) => sugestao.tipo === "campo" && sugestao.campo === "sintese";
 /** Textos que a IA redige com o conjunto dos autos (não são cópia de uma página): síntese e parecer do risco. */
 const ehRedigida = (sugestao: Sugestao) => sugestao.tipo === "campo" && (sugestao.campo === "sintese" || sugestao.campo === "parecer_risco") && !sugestao.trecho;
@@ -428,7 +443,16 @@ export function PainelSugestoes({
     { chave: "pedidos", titulo: "Pedidos de execução", lista: pegar((item) => item.tipo === "rec_credito" && item.campo === "pedido"), lote: true, nome: "pedidos", tabela: "pedido" as const },
     { chave: "guias", titulo: "Guias pagas", descricao: "Entram no valor atualizado, a cobrar do devedor.", lista: pegar((item) => item.tipo === "rec_credito" && item.campo === "lancamento" && dadoRec(item).tipo === "guia_paga"), lote: true, nome: "guias pagas", tabela: "guia" as const },
     { chave: "levantamentos", titulo: "Valores levantados", descricao: "Abatidos do valor atualizado.", lista: pegar((item) => item.tipo === "rec_credito" && item.campo === "lancamento"), lote: true, nome: "levantamentos", tabela: "levantamento" as const },
-    { chave: "partes", titulo: "Partes e contatos", lista: pegar((item) => item.tipo !== "campo" && item.tipo !== "rec_credito"), lote: false },
+    {
+      chave: "acordos",
+      titulo: "Acordos",
+      descricao: "Acordo, pagamentos das parcelas e descumprimento lidos nos autos. O acordo entra antes dos pagamentos.",
+      // Em lote, o acordo é gravado antes dos pagamentos e do descumprimento, que dependem dele.
+      lista: pegar((item) => item.tipo === "acordo").sort((a, b) => ORDEM_ACORDO[a.campo ?? ""] - ORDEM_ACORDO[b.campo ?? ""]),
+      lote: true,
+      nome: "acordos",
+    },
+    { chave: "partes", titulo: "Partes e contatos", lista: pegar((item) => item.tipo !== "campo" && item.tipo !== "rec_credito" && item.tipo !== "acordo"), lote: false },
     { chave: "cadastro", titulo: "Cadastro", descricao: "Valores, datas e dados do processo lidos nos autos.", lista: pegar(() => true), lote: true, nome: "dados do cadastro" },
   ];
   const grupos = todosOsGrupos.filter((grupo) => grupo.lista.length > 0);
@@ -481,7 +505,7 @@ export function PainelSugestoes({
   };
 
   // Formulário de parte para conferir: a pessoa nova, ou a parte já cadastrada com o dado proposto.
-  const deParte = editando && editando.tipo !== "campo" && editando.tipo !== "rec_credito" ? editando : null;
+  const deParte = editando && editando.tipo !== "campo" && editando.tipo !== "rec_credito" && editando.tipo !== "acordo" ? editando : null;
   const parteEmEdicao = deParte ? (processo.partes.find((item) => item.id === deParte.parteId) ?? null) : null;
   const dadosDaParte: ParteEntrada | null = deParte
     ? deParte.tipo === "parte_nova"
@@ -495,7 +519,8 @@ export function PainelSugestoes({
   function cartao(sugestao: Sugestao) {
     const aprovando = ocupado === `aprovar:${sugestao.id}`;
     const recusando = ocupado === `recusar:${sugestao.id}`;
-    const parteSumiu = sugestao.tipo !== "campo" && sugestao.tipo !== "parte_nova" && sugestao.tipo !== "rec_credito" && !processo.partes.some((item) => item.id === sugestao.parteId);
+    const parteSumiu =
+      sugestao.tipo !== "campo" && sugestao.tipo !== "parte_nova" && sugestao.tipo !== "rec_credito" && sugestao.tipo !== "acordo" && !processo.partes.some((item) => item.id === sugestao.parteId);
     return (
       <li key={sugestao.id} className="grid gap-3 px-4 py-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="min-w-0 space-y-2">
@@ -522,9 +547,11 @@ export function PainelSugestoes({
           <Button size="sm" disabled={Boolean(ocupado) || parteSumiu} onClick={() => void decidirNaLista(sugestao, "aprovar")}>
             {aprovando ? <LoaderCircle className="animate-spin" /> : <Check />} Aprovar
           </Button>
-          <Button size="sm" variant="outline" disabled={Boolean(ocupado) || parteSumiu} onClick={() => setEditando(sugestao)}>
-            <PencilLine /> Editar
-          </Button>
+          {sugestao.tipo === "acordo" ? null : (
+            <Button size="sm" variant="outline" disabled={Boolean(ocupado) || parteSumiu} onClick={() => setEditando(sugestao)}>
+              <PencilLine /> Editar
+            </Button>
+          )}
           <Button size="sm" variant="ghost" disabled={Boolean(ocupado)} onClick={() => void decidirNaLista(sugestao, "recusar")}>
             {recusando ? <LoaderCircle className="animate-spin" /> : <X />} Recusar
           </Button>

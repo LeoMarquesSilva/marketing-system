@@ -21,8 +21,12 @@ export interface Ambiente {
 export interface ResultadoDoDownload {
   pecas?: string[];
   semNovidades?: boolean;
-  /** O pedido acabou atendido por outro sistema (o DCP do TJRJ manda ao eproc o processo migrado). */
-  sistema?: "eproc";
+  /** O pedido acabou atendido por outro sistema (o DCP manda ao eproc o processo migrado; o Jus.br, ao tribunal). */
+  sistema?: string;
+  /** Jus.br: capa e movimentos da ficha, que o ORQESTRAI grava na capa e na linha do tempo. */
+  capa?: unknown;
+  /** Processo grande em partes (Jus.br): cada PDF com as suas peças. O primeiro é o `destino`. */
+  arquivos?: { caminho: string; pecas: string[] }[];
 }
 
 export interface Conector {

@@ -41,7 +41,10 @@ import {
   scoreNewsRelevance,
   writeCarousel,
 } from "./content-generator/server";
-import { rankRelatedCandidates, relatedCarouselGuidance } from "./content-generator/related";
+import { isSameStory, rankRelatedCandidates, relatedCarouselGuidance, storyTerms } from "./content-generator/related";
+
+/** Janela da regra "mesma notícia por outro veículo" (as manchetes repetem por umas duas semanas). */
+const SAME_STORY_WINDOW_DAYS = 21;
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -843,10 +846,10 @@ export async function runFetchPipeline(
   // Paginado: até 18/11/2026 lia só as primeiras 1.000 de ~2.100 linhas e a mesma
   // notícia virava carrossel de novo todo dia (373 cópias em 60 dias).
   const dedupeSince = getContentCutoffDate(120);
-  const existing = await fetchAllPages<{ link: string | null; title: string | null }>((from, to) =>
+  const existing = await fetchAllPages<{ link: string | null; title: string | null; created_at: string }>((from, to) =>
     supabase
       .from("content_roteiros")
-      .select("link, title")
+      .select("link, title, created_at")
       .gte("created_at", dedupeSince.toISOString())
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
@@ -858,6 +861,12 @@ export async function runFetchPipeline(
   const seenTitles = new Set<string>(
     (existing ?? []).map((r) => normalizeTitleKey((r.title as string) ?? "")).filter(Boolean)
   );
+  // Mesma notícia por outro veículo (título diferente): compara com as das últimas 3 semanas
+  // e com as que entram nesta rodada. Ex.: a decisão da Xuxa veio pelo Migalhas e pelo Jurinews.
+  const storySince = getContentCutoffDate(SAME_STORY_WINDOW_DAYS).toISOString();
+  const recentStories = existing
+    .filter((r) => r.created_at >= storySince && r.title)
+    .map((r) => storyTerms(r.title as string));
 
   // Carrega o histórico de performance do Instagram uma vez e memoiza por área.
   let performancePosts: InstagramPost[] = [];
@@ -908,6 +917,11 @@ export async function runFetchPipeline(
             skipped++;
             continue;
           }
+          const itemStory = storyTerms(title);
+          if (recentStories.some((story) => isSameStory(story, itemStory))) {
+            skipped++;
+            continue;
+          }
 
           // Pré-filtro barato: descarta lixo óbvio (polícia/crime/etc.) ANTES de
           // gastar chamadas de IA. Importante para feeds diretos mais amplos.
@@ -953,6 +967,7 @@ export async function runFetchPipeline(
             lowScore++;
             if (linkKey) seenLinks.add(linkKey);
             if (titleKey) seenTitles.add(titleKey);
+            recentStories.push(itemStory);
             continue;
           }
 
@@ -1011,6 +1026,7 @@ export async function runFetchPipeline(
             // Registra para não repetir dentro da mesma execução.
             if (linkKey) seenLinks.add(linkKey);
             if (titleKey) seenTitles.add(titleKey);
+            recentStories.push(itemStory);
           }
         } catch (err) {
           errors.push(

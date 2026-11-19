@@ -19,6 +19,9 @@ import {
   montarObservacaoVios,
   dataLimiteDaTarefa,
   dataPadraoDaTarefa,
+  ehOperacoesLegais,
+  renunciaComDataFixa,
+  responsavelFicaComOVios,
   observacaoObrigatoria,
   origemDoPrazo,
   pedeDataLimite,
@@ -737,5 +740,67 @@ describe("depois das 18h, nenhuma tarefa fica para hoje (pedido de 13/11/2026)",
 
   it("antes das 18h (sem a trava), a data de hoje continua valendo", () => {
     expect(validarAgendamentos([providencia("2026-11-13")], { ...contexto, hoje: "2026-11-13" }).ok).toBe(true);
+  });
+});
+
+describe("VERIFICAR RENÚNCIA na Operações Legais (pedido de 18/11/2026)", () => {
+  const ehDiaUtil = criarCalendario(["2026-11-20"]);
+
+  it("vai sempre para 2 dias úteis depois da vistagem", () => {
+    // quarta 18/11 → quinta 19/11 e, com a sexta 20/11 feriado, segunda 23/11
+    expect(dataPadraoDaTarefa("VERIFICAR RENÚNCIA", "2026-11-18", ehDiaUtil, "Operações Legais")).toBe("2026-11-23");
+    // segunda 16/11 → quarta 18/11
+    expect(dataPadraoDaTarefa("VERIFICAR RENÚNCIA", "2026-11-16", ehDiaUtil, "Operações Legais")).toBe("2026-11-18");
+    // vistada no sábado: conta a partir dos dias úteis seguintes
+    expect(dataPadraoDaTarefa("verificar renuncia", "2026-11-21", ehDiaUtil, "Operações Legais (Legal Ops)")).toBe("2026-11-24");
+  });
+
+  it("só na Operações Legais e só na VERIFICAR RENÚNCIA; a CIÊNCIA NF continua no dia útil seguinte", () => {
+    expect(dataPadraoDaTarefa("VERIFICAR RENÚNCIA", "2026-11-16", ehDiaUtil, "Trabalhista")).toBeNull();
+    expect(dataPadraoDaTarefa("VERIFICAR RENÚNCIA", "2026-11-16", ehDiaUtil)).toBeNull();
+    expect(dataPadraoDaTarefa("RENÚNCIA / SUBSTABELECIMENTO", "2026-11-16", ehDiaUtil, "Operações Legais")).toBeNull();
+    expect(dataPadraoDaTarefa("CIÊNCIA NF", "2026-11-16", ehDiaUtil, "Operações Legais")).toBe("2026-11-17");
+    expect(renunciaComDataFixa("VERIFICAR RENÚNCIA", "Operações Legais")).toBe(true);
+    expect(renunciaComDataFixa("VERIFICAR RENÚNCIA", "Cível")).toBe(false);
+    expect(ehOperacoesLegais("Operações Legais (Legal Ops)")).toBe(true);
+    expect(ehOperacoesLegais(null)).toBe(false);
+  });
+});
+
+describe("VERIFICAR RENÚNCIA da Operações Legais vai sem responsável (pedido de 18/11/2026)", () => {
+  const contexto = {
+    tarefas: {
+      PRAZO: tarefasPermitidas(ETAPAS, "PRAZO"),
+      PROVIDENCIA: [...tarefasPermitidas(ETAPAS, "PROVIDENCIA"), { id: "320", nome: "VERIFICAR RENÚNCIA" }],
+      COMPROMISSO: tarefasPermitidas(ETAPAS, "COMPROMISSO"),
+    },
+    usuarios: USUARIOS,
+    ehDiaUtil: criarCalendario([]),
+    cadeiaDaTarefa: () => CADEIA_PADRAO,
+  };
+  const renuncia = (responsavel: string) => [{ etiqueta: "PROVIDENCIA" as const, tarefa: "VERIFICAR RENÚNCIA", tarefaId: "320", data: "2026-11-20", responsavel }];
+
+  it("na Operações Legais o VIOS define: aceita sem ninguém e não grava quem veio", () => {
+    const resultado = validarAgendamentos(renuncia(""), { ...contexto, area: "Operações Legais" });
+    expect(resultado.ok).toBe(true);
+    if (resultado.ok) expect(resultado.itens[0]).toMatchObject({ tarefa: "VERIFICAR RENÚNCIA", responsavel: "", responsavelId: "" });
+    const comAlguem = validarAgendamentos(renuncia("Advogada Exemplo"), { ...contexto, area: "Operações Legais" });
+    if (comAlguem.ok) expect(comAlguem.itens[0].responsavel).toBe("");
+  });
+
+  it("nas outras áreas, e nas outras tarefas, o responsável continua obrigatório", () => {
+    expect(validarAgendamentos(renuncia(""), { ...contexto, area: "Trabalhista" }).ok).toBe(false);
+    expect(validarAgendamentos(renuncia(""), contexto).ok).toBe(false);
+    expect(
+      validarAgendamentos([{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-20", responsavel: "" }], { ...contexto, area: "Operações Legais" }).ok
+    ).toBe(false);
+  });
+});
+
+describe("responsavelFicaComOVios", () => {
+  it("só a VERIFICAR RENÚNCIA pedida sem ninguém", () => {
+    expect(responsavelFicaComOVios("VERIFICAR RENÚNCIA", "")).toBe(true);
+    expect(responsavelFicaComOVios("VERIFICAR RENÚNCIA", "Marina Silva Pinelli")).toBe(false);
+    expect(responsavelFicaComOVios("CIÊNCIA NF", "")).toBe(false);
   });
 });

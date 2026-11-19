@@ -52,6 +52,7 @@ import Link from "next/link";
 import { Textarea } from "@/components/ui/textarea";
 import { REGENERATE_PRESETS } from "@/lib/content-generator/prompt";
 import { FollowupAlertsSection, OPEN_POST_EVENT } from "@/components/conteudo/followup-alerts";
+import { GeradorNovidadesTour } from "@/components/conteudo/novidades-tour";
 import { CONTENT_SETTINGS_PATH } from "@/lib/content-generator/settings";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -189,6 +190,8 @@ export function RoteirosClient() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  /** Incrementa para reabrir o tour de novidades pelo botão. */
+  const [novidadesRun, setNovidadesRun] = useState(0);
   const [selectedRoteiro, setSelectedRoteiro] = useState<RoteiroItem | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -736,6 +739,10 @@ export function RoteirosClient() {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setNovidadesRun((run) => run + 1)} title="Rever o tour do que mudou nesta tela">
+            <Sparkles className="size-4" aria-hidden />
+            Novidades
+          </Button>
           {canPasteLink ? (
             <Button variant="outline" size="sm" onClick={() => setLinkOpen(true)}>
               <Link2 className="size-4" aria-hidden />
@@ -811,7 +818,7 @@ export function RoteirosClient() {
           </div>
           <div className={cn("grid gap-2 sm:flex", isManager && topics.length > 0 ? "grid-cols-3" : "grid-cols-2")}>
             <Select value={sortBy} onValueChange={(v) => setSortBy(v as "recentes" | "potencial")}>
-              <SelectTrigger className="h-10 w-full text-sm sm:w-[190px]" aria-label="Ordenar">
+              <SelectTrigger className="h-10 w-full text-sm sm:w-[190px]" aria-label="Ordenar" data-tour="roteiros-ordenar">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -951,6 +958,9 @@ export function RoteirosClient() {
       <FollowupAlertsSection onOpen={(id) => void openRoteiroById(id)} />
 
       {showTourDemo && <ContentTourRoteiroDemo />}
+
+      {/* O que mudou na tela: abre sozinho uma vez por pessoa; o botão Novidades reabre. */}
+      <GeradorNovidadesTour runId={novidadesRun} />
 
       {/* Lista */}
       <section data-tour="roteiros-list" className="overflow-hidden rounded-lg border border-[#dce9eb] bg-white shadow-[0_1px_2px_rgba(4,32,47,0.04)]">

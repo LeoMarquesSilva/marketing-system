@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { CalendarClock, FileSpreadsheet, Gavel, LoaderCircle, Scale, SquareKanban, StickyNote, Tags } from "lucide-react";
+import { CalendarCheck, CalendarClock, FileSpreadsheet, Gavel, LoaderCircle, Scale, SquareKanban, StickyNote, Tags } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { hasOperacoesLegaisAccess } from "@/lib/access-control";
 
@@ -14,6 +14,12 @@ const MODULES = [
     description: "Cadastro de processos, partes e saneamento (piloto: Recuperação de Crédito).",
     icon: Gavel,
     href: "/operacoes-legais/processos",
+  },
+  {
+    title: "Pauta de Audiências",
+    description: "Audiências da trabalhista lidas do PJe, com titular, backup, convite no Outlook e aviso no grupo.",
+    icon: CalendarCheck,
+    href: "/operacoes-legais/pauta",
   },
   {
     title: "Planner de Operações Legais",

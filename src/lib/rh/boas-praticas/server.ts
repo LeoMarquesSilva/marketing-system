@@ -3,6 +3,7 @@ import "server-only";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { loadPeopleDirectory } from "@/lib/rh/people-directory";
+import { canonicalFeedbackArea } from "./metrics";
 import { RhHttpError, requireHrManager } from "@/lib/rh/qualifications/server";
 import {
   FEEDBACK_PHOTO_MAX_BYTES,
@@ -13,8 +14,10 @@ import {
   FEEDBACK_VIDEO_TYPES,
   FEEDBACK_VIDEOS_MAX,
   GOOD_PRACTICES_MANUAL,
+  LEADERS_GROUP,
   categoryInfo,
   isFeedbackVideo,
+  isOfficialArea,
   type FeedbackInput,
   type FeedbackPerson,
   type FeedbackPhoto,
@@ -50,7 +53,12 @@ type FeedbackRow = Omit<GoodPracticeFeedback, "created_by_name" | "photo_count">
 
 function toFeedback(row: FeedbackRow): GoodPracticeFeedback {
   const { creator, photos, ...rest } = row;
-  return { ...rest, created_by_name: creator?.name ?? null, photo_count: photos?.[0]?.count ?? 0 };
+  return {
+    ...rest,
+    area: canonicalFeedbackArea(rest.area),
+    created_by_name: creator?.name ?? null,
+    photo_count: photos?.[0]?.count ?? 0,
+  };
 }
 
 const isoDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida");
@@ -145,11 +153,20 @@ async function resolvePeople(db: SupabaseClient, names: string[]): Promise<Map<s
   return map;
 }
 
-async function toRow(db: SupabaseClient, input: FeedbackInput) {
+/** `currentArea`: na edição, um registro antigo pode manter a área que já tinha (ex.: ADD). */
+async function toRow(db: SupabaseClient, input: FeedbackInput, currentArea: string | null = null) {
   const value = parseInput(input);
   const ids = await resolvePeople(db, [value.employee_name, value.manager_name]);
+  // Marketing, Financeiro, Facilities etc. gravam como Operações Legais; a equipe acompanha a área.
+  const area = canonicalFeedbackArea(value.area);
+  const leaders = value.is_team && area === LEADERS_GROUP;
+  if (!isOfficialArea(area) && !leaders && area !== currentArea) {
+    throw new RhHttpError("Escolha uma das áreas da lista.", 400, "INVALID_INPUT");
+  }
   return {
     ...value,
+    area,
+    employee_name: value.is_team ? `Equipe ${area}` : value.employee_name,
     employee_id: value.is_team ? null : (ids.get(normalizeName(value.employee_name)) ?? null),
     manager_employee_id: ids.get(normalizeName(value.manager_name)) ?? null,
     viewed_on: value.viewed === true ? value.viewed_on : null,
@@ -224,7 +241,8 @@ export async function createFeedback(input: FeedbackInput): Promise<GoodPractice
 export async function updateFeedback(id: string, input: FeedbackInput): Promise<GoodPracticeFeedback> {
   const manager = await requireHrManager();
   const db = createFeedbackAdminClient();
-  const row = await toRow(db, input);
+  const { data: current } = await db.from("hr_good_practice_feedbacks").select("area").eq("id", id).maybeSingle();
+  const row = await toRow(db, input, (current?.area as string | undefined) ?? null);
   const { data, error } = await db
     .from("hr_good_practice_feedbacks")
     .update({ ...row, updated_by: manager.profileId })

@@ -15,13 +15,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ ped
     exigirRobo(request);
     const { pedidoId } = await params;
     const resposta = await atualizarPedidoDoRobo(pedidoId, await request.json().catch(() => null));
-    if ("documento" in resposta) {
-      const documentoId = resposta.documento.id;
+    if ("documentos" in resposta) {
+      // Processo grande chega em partes: lê uma depois da outra.
+      const ids = resposta.documentos.map((documento) => documento.id);
       after(async () => {
-        try {
-          await lerDocumento(documentoId);
-        } catch (erro) {
-          console.error("[robos/autos] leitura depois do download:", erro instanceof Error ? erro.message : erro);
+        for (const documentoId of ids) {
+          try {
+            await lerDocumento(documentoId);
+          } catch (erro) {
+            console.error("[robos/autos] leitura depois do download:", erro instanceof Error ? erro.message : erro);
+          }
         }
       });
     }

@@ -4,7 +4,9 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
+  hasPautaAccess,
   hasProcessosAccess,
+  isAdminRole,
   papelVistagem,
   type PapelVistagem,
 } from "@/lib/access-control";
@@ -141,6 +143,17 @@ export async function requireProcessosAccess(authUserId: string) {
   if (!hasProcessosAccess({ role: data.role, permissions: (data.permissions as string[] | null) ?? null })) {
     throw new Error("Sem permissão para Processos.");
   }
+}
+
+/** Pauta de Audiências: admin ou liberação da Pauta. Devolve se é admin (configurações). */
+export async function requirePautaAccess(authUserId: string): Promise<{ admin: boolean }> {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase.from("users").select("role, permissions, is_active").eq("auth_id", authUserId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || data.is_active === false) throw new Error("Usuário inativo.");
+  const perfil = { role: data.role, permissions: (data.permissions as string[] | null) ?? null };
+  if (!hasPautaAccess(perfil)) throw new Error("Sem permissão para a Pauta de Audiências.");
+  return { admin: isAdminRole(perfil) };
 }
 
 /**

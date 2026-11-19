@@ -17,21 +17,31 @@ try {
   syncViosToSupabase = null;
 }
 
+// Modo --audiencias (Pauta de Audiências do ORQESTRAI): período móvel de 3 dias atrás a 1 ano à frente, sem
+// janela no navegador, salvo em Audiencias.csv na mesma pasta. Agendar no Agendador de Tarefas às 6h30, 11h30 e 16h30.
+const modoAudiencias = process.argv.includes('--audiencias');
+const pastaBases = process.env.VIOS_PASTA_BASES || `C:\\Users\\bp01\\OneDrive - BPPLAW\\Documentos - Equipe Controladoria\\Núcleo de Cadastro\\Bases Atualizacoes`;
+
+/** dd/mm/aaaa de hoje mais `dias`, no horário de Brasília. */
+function dataBr(dias) {
+  return new Date(Date.now() + dias * 86400000).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+}
+
 const config = {
   baseUrl: 'https://bp.vios.com.br',
   usuario: process.env.VIOS_USER,
   senha: process.env.VIOS_PASS,
-  headless: false,
+  headless: modoAudiencias || process.env.VIOS_HEADLESS === 'sim',
 
-  // 🔧 Informe manualmente o período desejado
-  dataInicio: '01/01/2026',
-  dataFim: '28/04/2026',
+  // 🔧 Informe manualmente o período desejado (no modo --audiencias o período é calculado)
+  dataInicio: modoAudiencias ? dataBr(-3) : '01/01/2026',
+  dataFim: modoAudiencias ? dataBr(365) : '28/04/2026',
 
   // Caminho principal
-  downloadPath: `C:\\Users\\bp01\\OneDrive - BPPLAW\\Documentos - Equipe Controladoria\\Núcleo de Cadastro\\Bases Atualizacoes\\Tarefas.csv`,
+  downloadPath: path.join(pastaBases, modoAudiencias ? 'Audiencias.csv' : 'Tarefas.csv'),
 
   // Caminho secundário (Histórico)
-  backupPath: `C:\\Users\\bp01\\OneDrive - BPPLAW\\Documentos - Equipe Controladoria\\Núcleo de Cadastro\\Bases Atualizacoes\\Historico\\Tarefas.csv`
+  backupPath: path.join(pastaBases, 'Historico', modoAudiencias ? 'Audiencias.csv' : 'Tarefas.csv')
 };
 
 if (!config.usuario || !config.senha) {
@@ -144,7 +154,7 @@ async function main() {
   await copiarParaBackup();
 
   // 📤 Sync para Supabase (apenas tarefas MATERIAL MARKETING - REELS/POST/ARTIGO)
-  if (syncViosToSupabase && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  if (!modoAudiencias && syncViosToSupabase && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     console.log('Sincronizando com Supabase...');
     try {
       const result = await syncViosToSupabase(config.downloadPath);

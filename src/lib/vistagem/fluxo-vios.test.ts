@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fluxoCriaCiencia } from "./ciencia-agendamentos";
 import { criarCalendario, dataDaTarefaSemPrazo, datasDoPrazo } from "./dias-uteis";
-import { arvoreDaArea, cadeiaDoFluxo, diasDoPrazo, montarFluxo, papelNoFluxo, semPrazoProprio, type TipoNaArvore } from "./fluxo-vios";
+import { arvoreDaArea, cadeiaDoFluxo, cadeiaDoVios, diasDoPrazo, montarFluxo, papelNoFluxo, semPrazoProprio, type TipoNaArvore } from "./fluxo-vios";
 
 // Recorte da árvore do VIOS (processos-etapas-tree.php) em 15/10/2026.
 const ARVORE = new Map<number, TipoNaArvore>([
@@ -205,8 +205,46 @@ describe("regra da insolvência: Enviar e Revisar 2 dias úteis antes (pedido de
     expect(cadeia("462", "Insolvência")).toEqual({ revisar: 1, protocolar: 2 });
   });
 
-  it("o tipo que já tem o Protocolar 4 dias depois do Enviar não antecipa de novo", () => {
-    expect(cadeia("622", "Insolvência")).toEqual({ revisar: 1, protocolar: 4 });
-    expect(montarFluxo("622", arvoreDaArea(ARVORE_INS, todos, "Insolvência"))?.antecipaEnviar).toBeUndefined();
+  it("o tipo que já tem o Protocolar 4 dias depois do Enviar não antecipa de novo (no prazo curto, adia: abaixo)", () => {
+    const fluxo = montarFluxo("622", arvoreDaArea(ARVORE_INS, todos, "Insolvência"));
+    expect(fluxo?.antecipaEnviar).toBeUndefined();
+    expect(cadeiaDoVios(fluxo)).toEqual({ revisar: 1, protocolar: 4 });
+  });
+
+  describe("prazo curto: o tipo com Protocolar 4 dias depois do Enviar vai como o fluxo comum (pedido de 18/11/2026)", () => {
+    const ARVORE = new Map<number, TipoNaArvore>([
+      ...ARVORE_INS,
+      [492, { nome: "RESPOSTA AOS EMBARGOS DE DECLARAÇÃO", prazo: "2 dias", criacao: [321, 314, 482], conclusao: [] }],
+    ]);
+    const ids = [...ARVORE.keys()];
+    const fluxoNa = (id: string, area: string | null) => montarFluxo(id, arvoreDaArea(ARVORE, ids, area));
+
+    it("na Insolvência e na Cível | Insolvência, o tipo com Protocolar de 4 dias fica marcado para adiar 2 dias úteis", () => {
+      for (const area of ["Insolvência", "Cível | Insolvência"]) {
+        expect(fluxoNa("492", area)?.adiaEnviar).toBe(2);
+        expect(fluxoNa("622", area)?.adiaEnviar).toBe(2);
+        expect(cadeiaDoFluxo(fluxoNa("492", area))).toEqual({ revisar: 1, protocolar: 2, adiada: 2 });
+      }
+    });
+
+    it("a MANIFESTAÇÃO - FLUXO D5, as outras áreas e o fluxo comum ficam como o VIOS cria", () => {
+      expect(fluxoNa("612", "Insolvência")?.adiaEnviar).toBeUndefined();
+      expect(cadeiaDoFluxo(fluxoNa("612", "Insolvência"))).toEqual({ revisar: 1, protocolar: 4 });
+      expect(fluxoNa("492", "Cível")?.adiaEnviar).toBeUndefined();
+      expect(fluxoNa("492", null)?.adiaEnviar).toBeUndefined();
+      // Fluxo comum (Protocolar 2 dias): não há o que adiar.
+      expect(fluxoNa("452", "Insolvência")?.adiaEnviar).toBeUndefined();
+    });
+
+    it("4008806-15: fatal 25/11 (feriado 20/11) → Enviar 19/11, Revisar 23/11, Protocolar 24/11, em vez de Enviar 17/11", () => {
+      const pick = (datas: ReturnType<typeof datasDoPrazo>) => [datas.enviar, datas.revisar, datas.protocolar];
+      expect(pick(datasDoPrazo("2026-11-25", ehDiaUtil, cadeiaDoFluxo(fluxoNa("492", "Cível | Insolvência")), "2026-11-17"))).toEqual([
+        "2026-11-19",
+        "2026-11-23",
+        "2026-11-24",
+      ]);
+      // Como o VIOS cria (sem a regra): o Enviar no próprio dia da publicação.
+      expect(datasDoPrazo("2026-11-25", ehDiaUtil, cadeiaDoVios(fluxoNa("492", "Cível | Insolvência")), "2026-11-17").enviar).toBe("2026-11-17");
+    });
   });
 });

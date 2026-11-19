@@ -5,6 +5,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { REQUEST_FILES_BUCKET } from "./domain";
+import { REEL_DELIVERIES_BUCKET } from "@/lib/reel-deliveries/domain";
 
 const SIGNED_URL_SECONDS = 60 * 60;
 
@@ -44,10 +45,12 @@ type RequestRow = {
   posted_at: string | null;
   art_link: string | null;
   ig_media_id: string | null;
+  /** Capa de Reels: a imagem fica no bucket dos Reels, não nos arquivos da tarefa. */
+  art_image_path: string | null;
 };
 
 const REQUEST_COLUMNS =
-  "id, title, request_type, requesting_area, stage_changed_at, delivered_at, completion_type, posted_at, art_link, ig_media_id";
+  "id, title, request_type, requesting_area, stage_changed_at, delivered_at, completion_type, posted_at, art_link, ig_media_id, art_image_path";
 
 /** Tira a tag "[OAB]" e o tipo repetido do título, para mostrar ao advogado. */
 export function deliveryTitle(title: string): string {
@@ -104,6 +107,20 @@ export async function listMyDeliveries(
     filesByRequest.set(file.request_id, [
       ...(filesByRequest.get(file.request_id) ?? []),
       { id: file.id, name: file.file_name, contentType: file.content_type, url },
+    ]);
+  }
+
+  // Capa de Reels: a arte é a imagem da capa (art_image_path), guardada no bucket dos Reels.
+  const coverPaths = requests.map((request) => request.art_image_path).filter((path): path is string => Boolean(path));
+  const { data: signedCovers } = coverPaths.length
+    ? await db.storage.from(REEL_DELIVERIES_BUCKET).createSignedUrls(coverPaths, SIGNED_URL_SECONDS)
+    : { data: [] };
+  const coverByPath = new Map((signedCovers ?? []).map((item) => [item.path, item.signedUrl]));
+  for (const request of requests) {
+    const url = request.art_image_path ? coverByPath.get(request.art_image_path) : undefined;
+    if (!url || filesByRequest.has(request.id)) continue;
+    filesByRequest.set(request.id, [
+      { id: `capa-${request.id}`, name: request.art_image_path?.split("/").pop() ?? "Capa", contentType: "image/*", url },
     ]);
   }
 

@@ -5,7 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import { Bot, CalendarDays, CircleCheck, Clock, Flag, Info, TriangleAlert, UserCheck, UserRound, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
+import { RESPONSAVEL_PELO_VIOS, ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, responsavelFicaComOVios, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
 import { compararTarefa, revisorEstaNaTarefa, type ComparacaoDaTarefa, type SituacaoCampo, type SituacaoCheck } from "@/lib/vistagem/check";
 import { nomeCurto } from "@/lib/vistagem/como-fica-no-vios";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
@@ -242,8 +242,9 @@ function Comparacao({
           <Linha
             icone={UserRound}
             rotulo="Responsável"
+            dica={responsavel.distribuidoPeloVios ? "O VIOS divide a VERIFICAR RENÚNCIA entre as estagiárias: vale quem ele pôs." : undefined}
             situacao={responsavel.situacao}
-            pedido={<PessoasCurtas texto={item.responsavel} fotos={fotos} />}
+            pedido={<PessoasCurtas texto={item.responsavel} fotos={fotos} vazio={responsavelFicaComOVios(item.tarefa, item.responsavel) ? RESPONSAVEL_PELO_VIOS : "—"} />}
             noVios={
               responsavel.noVios.length ? (
                 <span className="block space-y-1">

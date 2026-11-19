@@ -20,3 +20,11 @@ npx playwright install chromium
 node index.js
 # ou: node Tarefas.js
 ```
+
+## Modo audiências (Pauta de Audiências do ORQESTRAI)
+
+```bash
+node index.js --audiencias
+```
+
+Exporta o relatório de tarefas de 3 dias atrás até 1 ano à frente, sem abrir janela, em `Bases Atualizacoes/Audiencias.csv` (e cópia em `Historico/`). O ORQESTRAI usa esse arquivo para conferir a data e a situação de cada audiência no VIOS. Agende no Agendador de Tarefas do Windows às 6h30, 11h30 e 16h30. `VIOS_PASTA_BASES` troca a pasta de saída.

@@ -1,4 +1,5 @@
 import { chaveNome, ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, referenciaDaPublicacao, revisorFicaNaTarefa, type EtiquetaAgendamento } from "./agendamento";
+import { ehPastaDeAtendimento, type TipoPastaInformada } from "./triagem";
 import type { DataDoFluxo } from "./types";
 
 /**
@@ -74,6 +75,12 @@ export interface LancamentoFila {
   agendar_na_pasta?: boolean;
   /** A publicação foi colada à mão: o robô avisa isso (e não "não chegou ao VIOS até as 17h", do plano B). */
   publicacao_colada?: boolean;
+  /**
+   * A pasta é de atendimento (ou nenhuma base a conhece), informada pela CI na Triagem Manual (18/11/2026): vai direto
+   * nela, que a intimação do VIOS não se liga a atendimento. O robô abre a tela de atendimento pela CI (e a de processo,
+   * se a de atendimento não abrir) e avisa o motivo.
+   */
+  pasta_informada?: { tipo: TipoPastaInformada };
   tarefas: TarefaDoLancamento[];
 }
 
@@ -87,7 +94,7 @@ export interface LinhaFilaSama {
   passo_texto: string;
   data: string;
   pasta: string;
-  pasta_tipo: "Processo";
+  pasta_tipo: "Processo" | "Atendimento";
   ci_pasta: string | null;
   responsavel: string;
   revisor: string | null;
@@ -147,8 +154,11 @@ const TIPO_NA_FILA: Record<EtiquetaAgendamento, string> = { PRAZO: "Prazo", PROV
 export function linhasParaFila(
   publicacao: PublicacaoParaFila,
   itens: AgendamentoParaFila[],
-  opcoes: { simular: boolean; modo: ModoAgendamento }
+  opcoes: { simular: boolean; modo: ModoAgendamento; tipoPasta?: TipoPastaInformada }
 ): { linha: LinhaFilaSama; agendamentos: string[] }[] {
+  // Pasta de atendimento informada na Triagem Manual: o tipo vai na linha e no lançamento (sempre direto na pasta).
+  const atendimento = ehPastaDeAtendimento(opcoes.tipoPasta) && Boolean(publicacao.pasta_ci);
+  const modo: ModoAgendamento = atendimento ? "pasta" : opcoes.modo;
   const referencia = {
     dataPublicacao: publicacao.data_publicacao,
     tribunal: publicacao.tribunal,
@@ -164,14 +174,14 @@ export function linhasParaFila(
     passo_texto: observacao,
     data: paraDataVios(item.data),
     pasta: publicacao.numero_processo as string,
-    pasta_tipo: "Processo",
+    pasta_tipo: atendimento ? "Atendimento" : "Processo",
     ci_pasta: publicacao.pasta_ci,
     responsavel: item.responsavel,
     revisor: item.revisor,
     simular: opcoes.simular,
   });
 
-  if (opcoes.modo === "pasta" && !publicacao.pasta_ci) {
+  if (modo === "pasta" && !publicacao.pasta_ci) {
     // A fila da pasta não tem coluna de hora: o horário do Compromisso vai na descrição.
     return itens.map((item) => ({
       linha: base(
@@ -205,7 +215,9 @@ export function linhasParaFila(
           comunicacoes_equivalentes: [...new Set((publicacao.comunicacoes_equivalentes ?? []).map(String))].filter((id) => id && id !== comunicacao),
           data_publicacao: publicacao.data_publicacao ? paraDataVios(publicacao.data_publicacao) : null,
           texto_publicacao: publicacao.teor?.trim() || null,
-          ...(opcoes.modo === "pasta" ? { agendar_na_pasta: true, publicacao_colada: true } : {}),
+          ...(modo === "pasta" ? { agendar_na_pasta: true } : {}),
+          ...(opcoes.modo === "pasta" ? { publicacao_colada: true } : {}),
+          ...(atendimento && opcoes.tipoPasta ? { pasta_informada: { tipo: opcoes.tipoPasta } } : {}),
           tarefas: itens.map((item) => {
             const cienciaNf = chaveNome(item.tarefa) === "CIENCIA NF";
             return {
@@ -256,6 +268,17 @@ export interface TarefaNoVios {
   dataLimite: string | null;
   hora: string | null;
   responsaveis: string | null;
+}
+
+/**
+ * Responsável que o VIOS pôs na tarefa pedida sem ninguém (VERIFICAR RENÚNCIA da Operações Legais, pedido de
+ * 18/11/2026), lido da tarefa principal que o robô devolveu: a Orquestra grava para mostrar para quem foi agendada.
+ * Null quando foi pedida para alguém ou quando o robô não devolveu quem ficou.
+ */
+export function responsavelQueOViosPos(pedido: string | null | undefined, tarefas: TarefaNoVios[] | null | undefined): string | null {
+  if (String(pedido ?? "").trim()) return null;
+  const principal = (tarefas ?? []).find((tarefa) => tarefa.principal);
+  return principal?.responsaveis?.trim() || null;
 }
 
 /** DD/MM/AAAA → AAAA-MM-DD; outro formato → null. */

@@ -4,7 +4,7 @@
  * mais comum daquele tribunal. Um conector por sistema; cada conector diz em quais tribunais já funciona.
  */
 
-export type SistemaTribunal = "esaj" | "pje" | "eproc" | "projudi" | "dcp" | "outro";
+export type SistemaTribunal = "esaj" | "pje" | "eproc" | "projudi" | "dcp" | "jusbr" | "outro";
 
 export const ROTULO_SISTEMA: Record<SistemaTribunal, string> = {
   esaj: "e-SAJ",
@@ -12,6 +12,7 @@ export const ROTULO_SISTEMA: Record<SistemaTribunal, string> = {
   eproc: "eproc",
   projudi: "Projudi",
   dcp: "DCP (Portal de Serviços)",
+  jusbr: "Jus.br (consulta unificada do CNJ)",
   outro: "sistema próprio",
 };
 
@@ -120,4 +121,16 @@ export function roboDoProcesso(cnj: string | null | undefined, sistemaDoCadastro
     disponivel,
     motivo: disponivel ? null : `Ainda não há robô para o ${ROTULO_SISTEMA[sistema]} do ${tribunal}: anexe o PDF dos autos.`,
   };
+}
+
+/**
+ * Jus.br como fonte dos autos (consulta unificada do CNJ, um robô para todos os tribunais integrados à PDPJ). Com a
+ * fonte ligada, todo processo com CNJ de tribunal reconhecido vai primeiro ao Jus.br, e o robô do tribunal (se
+ * houver) fica de reserva para o que o Jus.br não trouxer. `reserva` é a chave do conector do tribunal.
+ */
+export function roboPeloJusbr(cnj: string | null | undefined, sistemaDoCadastro: string | null | undefined): RoboDoProcesso & { reserva: string | null } {
+  const doTribunal = roboDoProcesso(cnj, sistemaDoCadastro);
+  const reserva = doTribunal.disponivel && doTribunal.sistema && doTribunal.tribunal ? `${doTribunal.sistema}:${doTribunal.tribunal}` : null;
+  if (!doTribunal.cnj || !doTribunal.tribunal) return { ...doTribunal, reserva };
+  return { cnj: doTribunal.cnj, tribunal: doTribunal.tribunal, sistema: "jusbr", disponivel: true, motivo: null, reserva };
 }

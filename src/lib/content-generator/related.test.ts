@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   entityTerms,
+  isSameStory,
   rankRelatedCandidates,
+  storyTerms,
   relatedCandidatesBlock,
   relatedCarouselGuidance,
   stripSourceSuffix,
@@ -54,6 +56,40 @@ describe("já falamos disso?", () => {
     expect(rankRelatedCandidates({ title: "Fim da escala 6X1: será mesmo?" }, historico)[0]?.candidate.id).toBe("escala");
     expect(rankRelatedCandidates({ title: "Governo publica nova versão da NR-1 com prazo para empresas" }, historico)[0]?.candidate.id).toBe("nr1");
     expect(rankRelatedCandidates({ title: "STJ decide sobre penhora de salário em execução de dívida" }, historico)).toEqual([]);
+  });
+
+  it("reconhece a mesma notícia em outro veículo (pares reais da busca de 18/11)", () => {
+    const same = (a: string, b: string) => isSameStory(storyTerms(a), storyTerms(b));
+    expect(
+      same(
+        "STJ ajusta cálculo de indenização devida por empresa de Xuxa a ilustrador por plágio - Migalhas",
+        "STJ reduz valor de indenização por plágio contra empresa de Xuxa - Jurinews",
+      ),
+    ).toBe(true);
+    expect(
+      same(
+        "STF decide que ISS não integra base de cálculo do PIS/Cofins - Agência Brasil",
+        "STF decide que ISS não integra base de cálculo do PIS e da Cofins - stf noticias",
+      ),
+    ).toBe(true);
+  });
+
+  it("não junta notícias diferentes que só dividem o tema", () => {
+    const same = (a: string, b: string) => isSameStory(storyTerms(a), storyTerms(b));
+    const caixa = "Caixa Seguridade informa ataque cibernético e vazamento de dados - Agência Brasil";
+    expect(same(caixa, "Banco Carrefour investiga possível vazamento de dados - TI INSIDE Online")).toBe(false);
+    expect(same(caixa, "Tribunal de Justiça de Minas Gerais confirma vazamento de dados após ataque cibernético - ConvergenciaDigital")).toBe(false);
+    expect(same(caixa, "Uber confirma vazamento de dados de 149 mil pessoas após ataque hacker - Fast Company Brasil")).toBe(false);
+    // Sigla de lei sozinha não é o mesmo caso: dois artigos diferentes sobre LGPD e IA.
+    expect(
+      same("LGPD completa seis anos com os desafios da inteligência artificial - Valor Econômico", "Inteligência artificial e LGPD: o que esperamos para 2027 - Debate Jurídico"),
+    ).toBe(false);
+    expect(
+      same(
+        "STJ reduz indenização, mas reconhece responsabilidade solidária de concessionária por falha em airbag - JOTA Info",
+        "STJ reduz valor de indenização por plágio contra empresa de Xuxa - Jurinews",
+      ),
+    ).toBe(false);
   });
 
   it("leva junto quem fez o post, sem repetir a mesma pessoa", () => {

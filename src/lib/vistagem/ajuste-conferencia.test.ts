@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enviarDoPrazo, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
+import { enviarDoPrazo, mudancaDosDias, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
 
 const BASE: CamposDaTarefa = {
   data: "2026-11-17",
@@ -107,5 +107,19 @@ describe("enviarDoPrazo", () => {
     expect(enviarDoPrazo("2026-11-06", contexto)).toEqual({ ok: false, erro: "A data do Enviar não pode ficar no passado." });
     expect(enviarDoPrazo("2026-11-06", { ...contexto, anterior: "2026-11-06" })).toEqual({ ok: true, data: "2026-11-06" });
     expect(enviarDoPrazo("2026-11-09", contexto)).toEqual({ ok: true, data: "2026-11-09" });
+  });
+});
+
+describe("mudancaDosDias: os dias da vistagem ficam no ajuste quando a fatal muda (pedido de 19/11/2026)", () => {
+  const antes = { dataFatal: "2026-12-09", diasPrazo: 15, contagemPrazo: "uteis" as const };
+
+  it("fatal nova: guarda os dias que o vistador escolheu", () => {
+    expect(mudancaDosDias(antes, "2026-12-11")).toEqual({ campo: "Dias do prazo", de: "15 dias úteis", para: "fatal mudada na Conferência" });
+    expect(mudancaDosDias({ ...antes, diasPrazo: 30, contagemPrazo: "corridos" }, "2026-12-20")?.de).toBe("30 dias corridos");
+  });
+
+  it("a mesma fatal, ou fatal do calendário (sem dias): nada", () => {
+    expect(mudancaDosDias(antes, "2026-12-09")).toBeNull();
+    expect(mudancaDosDias({ ...antes, diasPrazo: null, contagemPrazo: null }, "2026-12-11")).toBeNull();
   });
 });

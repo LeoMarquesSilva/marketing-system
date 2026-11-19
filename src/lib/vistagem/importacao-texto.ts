@@ -12,9 +12,12 @@ import type { KurierLinha } from "./types";
  *   Caderno (ex.: TRT2DJEN), Vara e "Publicação:" (PROCESSO: … || texto ||| POLO …, ADVOGADO …).
  * - "djen": comunicação do DJEN repassada por texto (ex.: Teams), com cabeçalho "Divulgado em: … -
  *   Publicado em: …" e "Diário: STJDJN", e um bloco "Publicação / Processo: … / Conteúdo: …" por comunicação.
+ * - "fonte": publicação do DJEN repassada por e-mail, um bloco por "Processo: … Data da Disponibilização: … Data da
+ *   Publicação: … Fonte: Tribunal … - DJEN - Órgão", seguido do tipo ("Notificação - Intimação"), do texto e do fim
+ *   (Intimado(s) / Citado(s), POLO ATIVO, ADVOGADO, Acesso ao documento, Identificador do documento).
  */
 
-export type FormatoColado = "recorte" | "djen";
+export type FormatoColado = "recorte" | "djen" | "fonte";
 
 export interface PublicacaoColada {
   formato: FormatoColado;
@@ -191,6 +194,34 @@ const ROTULOS_RECORTE_FIM = {
   identificador: "Identificador do documento",
 };
 
+/**
+ * O fim da publicação, depois dos intimados: "POLO ATIVO: … POLO PASSIVO: … ADVOGADO: X - OAB: 111111/SP Acesso ao
+ * documento: URL Identificador do documento: N".
+ */
+function lerRodape(fim: string): Pick<Comunicacao, "partes" | "advogados" | "link" | "idComunicacao"> {
+  const camposFim = camposPorRotulo(fim, ROTULOS_RECORTE_FIM);
+  const partes = camposFim
+    .filter(([chave]) => chave === "ativo" || chave === "passivo" || chave === "terceiro")
+    .map(([chave, nome]) => ({ nome, polo: chave === "ativo" ? "A" : chave === "passivo" ? "P" : "T" }));
+  const advogados = camposFim
+    .filter(([chave]) => chave === "advogado")
+    .map(([, valor]) => {
+      const oab = valor.match(/\s-\s*OAB\s*:?\s*(\d[\d.]*)\s*\/\s*([A-Z]{2})/i);
+      return oab
+        ? { nome: valor.slice(0, oab.index).trim(), oab: oab[1].replace(/\./g, ""), uf: oab[2].toUpperCase() }
+        : { nome: valor, oab: "", uf: "" };
+    })
+    .filter((advogado) => advogado.nome && advogado.oab);
+  const url = primeiroCampo(camposFim, "acesso")?.match(/https?:\/\/\S+/)?.[0] ?? null;
+  const identificador = primeiroCampo(camposFim, "identificador")?.match(/\d{5,}/)?.[0];
+  return {
+    partes,
+    advogados,
+    link: url ? { rotulo: "Acesso ao documento", url } : null,
+    idComunicacao: identificador ? Number(identificador) : null,
+  };
+}
+
 /** Linha do cabeçalho do recorte ("Caderno: TRT1DJEN", "Página: 00001"…). */
 const LINHA_CABECALHO_RECORTE = new RegExp(`^\\s*(?:${Object.values(ROTULOS_RECORTE).join("|")})\\s*:`, "i");
 
@@ -268,22 +299,6 @@ function lerBlocoRecorte(bloco: string): Comunicacao | string {
   const intimados = intimadoMatch ? intimadoMatch[1].split(/\s+-\s+/).map((nome) => nome.trim()).filter(Boolean) : [];
   if (intimadoMatch) corpo = corpo.slice(0, intimadoMatch.index);
 
-  const camposFim = camposPorRotulo(fim, ROTULOS_RECORTE_FIM);
-  const partes = camposFim
-    .filter(([chave]) => chave === "ativo" || chave === "passivo" || chave === "terceiro")
-    .map(([chave, nome]) => ({ nome, polo: chave === "ativo" ? "A" : chave === "passivo" ? "P" : "T" }));
-  const advogados = camposFim
-    .filter(([chave]) => chave === "advogado")
-    .map(([, valor]) => {
-      const oab = valor.match(/\s-\s*OAB\s*:?\s*(\d[\d.]*)\s*\/\s*([A-Z]{2})/i);
-      return oab
-        ? { nome: valor.slice(0, oab.index).trim(), oab: oab[1].replace(/\./g, ""), uf: oab[2].toUpperCase() }
-        : { nome: valor, oab: "", uf: "" };
-    })
-    .filter((advogado) => advogado.nome && advogado.oab);
-  const url = primeiroCampo(camposFim, "acesso")?.match(/https?:\/\/\S+/)?.[0] ?? null;
-  const identificador = primeiroCampo(camposFim, "identificador")?.match(/\d{5,}/)?.[0];
-
   return {
     formato: "recorte",
     cnj,
@@ -294,11 +309,8 @@ function lerBlocoRecorte(bloco: string): Comunicacao | string {
     tipoComunicacao,
     classe: classe || null,
     corpo: plano(corpo),
-    link: url ? { rotulo: "Acesso ao documento", url } : null,
     intimados,
-    partes,
-    advogados,
-    idComunicacao: identificador ? Number(identificador) : null,
+    ...lerRodape(fim),
     caderno,
     comarca: "",
     nomeLocalizado: "",
@@ -444,6 +456,124 @@ function lerDjen(texto: string): LeituraColada {
 }
 
 // ---------------------------------------------------------------------------
+// DJEN repassado por e-mail ("Processo: … Data da Disponibilização: … Data da Publicação: … Fonte: …")
+// ---------------------------------------------------------------------------
+
+const ROTULOS_FONTE = {
+  disponibilizacao: "Data da Disponibiliza[çc][ãa]o",
+  publicacao: "Data da Publica[çc][ãa]o",
+};
+
+/** Tipo do documento e da comunicação no DJEN, que abre o texto ("Notificação - Intimação", "Despacho - Intimação"). */
+const TIPO_DJEN =
+  "(?:Notifica[çc][ãa]o|Intima[çc][ãa]o|Cita[çc][ãa]o|Edital|Despacho|Decis[ãa]o|Senten[çc]a|Ac[óo]rd[ãa]o|Certid[ãa]o|Ato Ordinat[óo]rio|Pauta de Julgamento|Lista de Distribui[çc][ãa]o)";
+const TIPOS_DJEN = `${TIPO_DJEN}(?:\\s*-\\s*${TIPO_DJEN})*`;
+
+/** Onde começa o fim da publicação (o que o `lerRodape` lê), depois dos intimados. */
+const INICIO_RODAPE = /(?:^|\s)(?:POLO ATIVO|POLO PASSIVO|TERCEIRO INTERESSADO|ADVOGADO|[Aa]cesso ao documento|[Ii]dentificador do documento)\s*:/;
+/** Sem a linha dos intimados, o fim só começa num rótulo que não aparece no texto da decisão. */
+const INICIO_RODAPE_SEM_INTIMADOS = /(?:^|\s)(?:POLO ATIVO|POLO PASSIVO|TERCEIRO INTERESSADO|[Aa]cesso ao documento)\s*:/;
+
+/** Sigla pelo nome do tribunal na fonte ("Tribunal Regional do Trabalho - 2ª Região - SP - DJEN - …"); sem nome conhecido, pelo número. */
+function tribunalDaFonte(fonte: string, cnj: string): string {
+  if (/Superior Tribunal de Justi[çc]a/i.test(fonte)) return "STJ";
+  if (/Tribunal Superior do Trabalho/i.test(fonte)) return "TST";
+  if (/Supremo Tribunal Federal/i.test(fonte)) return "STF";
+  const trt = fonte.match(/Tribunal Regional do Trabalho\D{0,12}(\d{1,2})/i);
+  if (trt) return `TRT${Number(trt[1])}`;
+  const trf = fonte.match(/Tribunal Regional Federal\D{0,12}(\d)/i);
+  if (trf) return `TRF${trf[1]}`;
+  const uf = fonte.match(/Tribunal de Justi[çc]a.*?\s-\s([A-Z]{2})\s-/)?.[1];
+  if (uf) return `TJ${uf === "DF" ? "DFT" : uf}`;
+  const sigla = fonte.toUpperCase().match(/\b(TRT\s*\d{1,2}|TST|STJ|STF|TRF\s*\d|TJ[A-Z]{2,3})\b/)?.[1];
+  return sigla?.replace(/\s+/g, "") ?? tribunalDoCnj(cnj.replace(/\D/g, "")) ?? "";
+}
+
+function lerBlocoFonte(bloco: string, processoDoCabecalho: string | null): Comunicacao | string {
+  const rotuloFonte = bloco.match(/Fonte\s*:\s*/i);
+  if (!rotuloFonte) return "sem a fonte (Fonte:)";
+  const campos = camposPorRotulo(bloco.slice(0, rotuloFonte.index), ROTULOS_FONTE, { colados: true });
+
+  // A fonte vai até o fim da linha; no texto sem quebras, até o tipo ("Notificação - Intimação") ou o "PROCESSO:".
+  const resto = bloco.slice((rotuloFonte.index ?? 0) + rotuloFonte[0].length);
+  const quebra = resto.indexOf("\n");
+  const linha = quebra >= 0 ? resto.slice(0, quebra) : resto;
+  const desde = Math.max(linha.search(/\s-\s*DJE?N\s*-\s/i), 0);
+  const cortes = [
+    linha.slice(desde).search(new RegExp(`\\s${TIPOS_DJEN}(?=\\s|$)`, "i")),
+    linha.slice(desde).search(/\sPROCESSO\s*:/),
+  ].filter((corte) => corte >= 0);
+  const fimDaFonte = cortes.length ? desde + Math.min(...cortes) : linha.length;
+  const fonte = plano(linha.slice(0, fimDaFonte));
+  let conteudo = plano(resto.slice(fimDaFonte));
+
+  const tipos = conteudo.match(new RegExp(`^(${TIPOS_DJEN})(?=\\s|$)`, "i"));
+  const listaDeTipos = tipos ? tipos[1].split(/\s*-\s*/) : [];
+  if (tipos) conteudo = conteudo.slice(tipos[0].length).trim();
+
+  // "PROCESSO: 1001026-70.2025.5.02.0321 - AÇÃO TRABALHISTA - RITO ORDINÁRIO PODER JUDICIÁRIO …": a classe vai até o texto.
+  const linhaProcesso = conteudo.match(new RegExp(`^PROCESSO\\s*:\\s*${CNJ.source}\\s*-?\\s*(.{0,150}?)[\\s-]+(?=PODER JUDICI[AÁ]RIO\\b)`, "i"));
+  const classe = [...listaDeTipos.slice(0, -1), linhaProcesso?.[1].replace(/^[\s-]+|[\s-]+$/g, "") ?? ""].filter(Boolean).join(" ");
+  let corpo = linhaProcesso ? conteudo.slice(linhaProcesso[0].length) : conteudo;
+
+  let intimados: string[] = [];
+  let rodape = "";
+  const marca = [...corpo.matchAll(/Intimado\s*\(s\)\s*\/\s*Citado\s*\(s\)\s*-?\s*/gi)].pop();
+  if (marca) {
+    const depois = corpo.slice((marca.index ?? 0) + marca[0].length);
+    const inicio = depois.search(INICIO_RODAPE);
+    intimados = (inicio >= 0 ? depois.slice(0, inicio) : depois).split(/\s+-\s+/).map((nome) => nome.trim()).filter(Boolean);
+    rodape = inicio >= 0 ? depois.slice(inicio) : "";
+    corpo = corpo.slice(0, marca.index);
+  } else {
+    const inicio = corpo.search(INICIO_RODAPE_SEM_INTIMADOS);
+    if (inicio >= 0) {
+      rodape = corpo.slice(inicio);
+      corpo = corpo.slice(0, inicio);
+    }
+  }
+
+  const dataDisponibilizacao = dataIso(primeiroCampo(campos, "disponibilizacao"));
+  const dataPublicacao = dataIso(primeiroCampo(campos, "publicacao"));
+  const cnj = cnjDe(processoDoCabecalho ?? "") ?? cnjDe(conteudo) ?? cnjDe(bloco);
+  if (!cnj) return "sem número de processo";
+  if (!dataDisponibilizacao) return "sem a data de disponibilização";
+  if (!dataPublicacao) return "sem a data de publicação";
+  if (!plano(corpo)) return "sem o texto da publicação";
+
+  return {
+    formato: "fonte",
+    cnj,
+    tribunal: tribunalDaFonte(fonte, cnj),
+    orgao: fonte.split(/\s-\s*DJE?N\s*-\s*/i)[1]?.trim() || null,
+    dataDisponibilizacao,
+    dataPublicacao,
+    tipoComunicacao: listaDeTipos[listaDeTipos.length - 1] ?? null,
+    classe: classe || null,
+    corpo: plano(corpo),
+    intimados,
+    ...lerRodape(rodape),
+    caderno: "",
+    comarca: "",
+    nomeLocalizado: "",
+  };
+}
+
+function lerFonte(texto: string): LeituraColada {
+  // Cada publicação começa em "Processo: N Data da Disponibilização:" (ou só no "Data da Disponibilização:").
+  const marcas = [...texto.matchAll(new RegExp(`(?:Processo\\s*:\\s*(${CNJ.source})\\s*)?Data da Disponibiliza[çc][ãa]o\\s*:`, "gi"))];
+  const publicacoes: Comunicacao[] = [];
+  const ignorados: TrechoIgnorado[] = [];
+  marcas.forEach((marca, posicao) => {
+    const bloco = texto.slice(marca.index ?? 0, marcas[posicao + 1]?.index ?? texto.length);
+    const lido = lerBlocoFonte(bloco, marca[1] ?? null);
+    if (typeof lido === "string") ignorados.push({ trecho: trechoDe(bloco), motivo: lido });
+    else publicacoes.push(lido);
+  });
+  return { publicacoes: publicacoes.map(paraPublicacaoColada), ignorados };
+}
+
+// ---------------------------------------------------------------------------
 
 function paraPublicacaoColada(c: Comunicacao, indice: number): PublicacaoColada {
   return {
@@ -475,11 +605,13 @@ function paraPublicacaoColada(c: Comunicacao, indice: number): PublicacaoColada 
 export function lerPublicacoesColadas(textoBruto: string): LeituraColada {
   const texto = limpar(textoBruto.slice(0, MAX_TEXTO_COLADO));
   const djen = /\|\s*comunica[çc][ãa]o_id\s*:|Termo encontrado\s*:|Divulgado em\s*:/i.test(texto) || /(?:^|\s)Publica[çc][ãa]o\s*Processo\s*:/i.test(texto);
-  const leitura = djen ? lerDjen(texto) : lerRecorte(texto);
+  const fonte = !djen && /Data da Disponibiliza[çc][ãa]o\s*:/i.test(texto) && /Fonte\s*:/i.test(texto);
+  const leitura = djen ? lerDjen(texto) : fonte ? lerFonte(texto) : lerRecorte(texto);
   if (!leitura.publicacoes.length && !leitura.ignorados.length && texto.trim()) {
     leitura.ignorados.push({
       trecho: trechoDe(texto),
-      motivo: "nenhuma publicação reconhecida (aceita o Recorte Digital da OAB/SP e o texto do DJEN com \"Publicação / Processo: … / Conteúdo: …\")",
+      motivo:
+        "nenhuma publicação reconhecida (aceita o Recorte Digital da OAB/SP, o e-mail do DJEN com \"Processo: … / Data da Disponibilização: … / Fonte: …\" e o texto do DJEN com \"Publicação / Processo: … / Conteúdo: …\")",
     });
   }
   leitura.publicacoes = leitura.publicacoes.slice(0, MAX_PUBLICACOES_COLADAS);
