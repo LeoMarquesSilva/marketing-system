@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import { motion } from "framer-motion";
-import { Ban } from "lucide-react";
+import { Ban, Contact } from "lucide-react";
 import { WhatsappAudioPlayer } from "@/components/trafego-pago/whatsapp-audio-player";
 import { WhatsappLeadAvatar } from "@/components/trafego-pago/whatsapp-lead-avatar";
 import { WhatsappMediaBubble } from "@/components/trafego-pago/whatsapp-media-bubble";
@@ -10,6 +10,7 @@ import { WhatsappMessageStatus } from "@/components/trafego-pago/whatsapp-messag
 import { cn } from "@/lib/utils";
 import { isAudioMessageType, isMediaMessageType, formatWhatsappMessageDisplay } from "@/lib/evolution-leads";
 import { whatsappMessageDeleteBlock, WHATSAPP_DELETED_TEXT } from "@/lib/whatsapp-message-delete";
+import { parseContactBody } from "@/lib/whatsapp-team-contacts";
 import type { WhatsappConversation, WhatsappMessage } from "./whatsapp-crm-types";
 import { formatMessageTime, leadDisplayName } from "./whatsapp-crm-utils";
 import { MessageActions } from "./message-actions";
@@ -47,6 +48,7 @@ export const MessageBubble = memo(function MessageBubble({
   onTranscript,
 }: MessageBubbleProps) {
   const deleted = Boolean(message.deleted_at);
+  const contactCard = message.message_type === "contactMessage" ? parseContactBody(message.body) : null;
   const fromLead = !message.from_me;
   const groupSender = Boolean(conversation.is_group) && fromLead;
   const senderLabel = groupSender ? participantLabel(message) : null;
@@ -155,6 +157,18 @@ export const MessageBubble = memo(function MessageBubble({
             body={message.body}
             fromMe={message.from_me}
           />
+        ) : contactCard ? (
+          <div className="flex min-w-[12rem] items-center gap-3 py-0.5">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-black/5 text-[#285f7a] dark:bg-white/10 dark:text-[#47cdd0]">
+              <Contact className="size-5" aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{contactCard.name ?? "Cartão de contato"}</span>
+              {contactCard.phone ? (
+                <span className="block text-xs text-[#667781] dark:text-[#aebac1]">{contactCard.phone}</span>
+              ) : null}
+            </span>
+          </div>
         ) : (
           <p className="whitespace-pre-wrap break-words">
             {formatWhatsappMessageDisplay(message.body, message.message_type)}

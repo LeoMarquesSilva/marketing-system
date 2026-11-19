@@ -225,6 +225,8 @@ export function WhatsappInbox() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
+  /** Pessoa já escolhida no Encaminhar quando a IA sugere o encaminhamento. */
+  const [forwardPreset, setForwardPreset] = useState<string | null>(null);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [staleDialogOpen, setStaleDialogOpen] = useState(false);
   const [resolvingStale, setResolvingStale] = useState(false);
@@ -958,7 +960,10 @@ export function WhatsappInbox() {
                 onResolve={resolveSelected}
                 onReopen={reopenSelected}
                 onOpenDetails={() => setDetailsOpen(true)}
-                onForward={() => setForwardOpen(true)}
+                onForward={() => {
+                  setForwardPreset(null);
+                  setForwardOpen(true);
+                }}
               />
 
               <div
@@ -1018,6 +1023,10 @@ export function WhatsappInbox() {
                 onDraftChange={setDraftMessage}
                 onSubmit={() => void sendMessage()}
                 onCancelReply={() => setReplyTo(null)}
+                onForwardLead={(userId) => {
+                  setForwardPreset(userId);
+                  setForwardOpen(true);
+                }}
                 onSent={(message) => {
                   setReplyTo(null);
                   setMessages((prev) => mergeMessages(prev, message));
@@ -1080,6 +1089,7 @@ export function WhatsappInbox() {
           conversation={selected}
           open={forwardOpen}
           onOpenChange={setForwardOpen}
+          presetRecipientUserId={forwardPreset}
           onForwarded={() => {
             void loadMessages(selected.id, true);
             // A conversa de quem recebeu ganha nome e responsável alguns segundos depois.

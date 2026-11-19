@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { generateObject, generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { after, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
@@ -11,8 +11,17 @@ import {
   saveAssistantSuggestion,
   type AssistantMode,
 } from "@/lib/whatsapp-assistant";
+import {
+  assistantReplySchema,
+  cleanVersions,
+  resolveAssistantActions,
+  type AssistantAction,
+  type AssistantVersion,
+} from "@/lib/whatsapp-assistant-output";
 import { ATENDIMENTO_MANUAL } from "@/lib/whatsapp-playbook";
 import { formatQuickRepliesForPrompt, listQuickReplies } from "@/lib/whatsapp-quick-replies-server";
+import type { TeamContact } from "@/lib/whatsapp-team-contacts";
+import { fetchTeamDirectory, formatTeamForPrompt } from "@/lib/whatsapp-team-directory";
 
 export const dynamic = "force-dynamic";
 // Áudios sem transcrição são transcritos antes de sugerir.
@@ -32,7 +41,7 @@ interface AssistantRequestBody {
 /** Melhorar o texto só precisa do tom recente: sem transcrever áudio, contexto curto. */
 const IMPROVE_CONTEXT_CHARS = 6000;
 
-function suggestSystemPrompt(quickReplies: string): string {
+function suggestSystemPrompt(quickReplies: string, team: string): string {
   return `Você ajuda a equipe do escritório Bismarchi | Pires Sociedade de Advogados a responder leads e clientes pelo WhatsApp comercial.
 Sugira a mensagem que o atendente vai enviar, com base na conversa inteira (os áudios aparecem transcritos) e no manual de atendimento abaixo.
 
@@ -47,10 +56,24 @@ Regras da resposta:
 - Se a conversa for golpe ou spam, responda apenas: "Não responder: parece golpe ou spam."
 - Se houver rascunho do atendente, parta dele em vez de começar do zero.
 
+Versões:
+- Em "Sugerir", devolva duas versões: "curta" (uma ou duas frases, direto ao ponto) e "completa" (a mensagem inteira, seguindo o roteiro).
+- Em "Responder só esta", devolva só a "curta".
+
+Contatos e ações (o atendente decide; nada é enviado sozinho):
+- Você conhece a equipe pela lista abaixo. Quando o cliente perguntar como falar com alguém da equipe, pedir um contato, ou quando outro escritório ou banco precisar falar com o responsável, escreva no texto o e-mail profissional da pessoa (está na lista) e sugira "enviar_cartao" para ela.
+- Nunca escreva telefone de ninguém no texto. Para passar o WhatsApp, sugira "enviar_cartao" (da "recepcao" ou de quem "tem cartão do WhatsApp") e diga no texto que o contato vai logo abaixo; para quem não tem cartão, o botão manda o e-mail.
+- Quando o cliente quiser ligar, falar por telefone ou marcar um horário, sugira "enviar_cartao" da "recepcao".
+- Quando o lead precisar ir para o advogado da área, sugira "encaminhar_lead" para o responsável da área (pelo manual) e diga ao cliente quem vai chamá-lo.
+- Sugira ação só quando ela combinar com o texto; na dúvida, nenhuma.
+
 ${ATENDIMENTO_MANUAL}
 
 ## Respostas prontas do escritório
-${quickReplies || "Nenhuma cadastrada."}`;
+${quickReplies || "Nenhuma cadastrada."}
+
+## Equipe (código, nome, cargo, área, e-mail)
+${team || "Lista indisponível agora: não cite e-mail de ninguém."}`;
 }
 
 const IMPROVE_SYSTEM_PROMPT = `Você revisa mensagens que a equipe do escritório Bismarchi | Pires Sociedade de Advogados vai mandar pelo WhatsApp.
@@ -125,7 +148,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Escolha a mensagem que quer responder." }, { status: 400 });
     }
 
-    const [context, attendantName, quickReplies] = await Promise.all([
+    const [context, attendantName, quickReplies, team] = await Promise.all([
       loadAssistantContext(
         conversationId,
         mode === "improve"
@@ -138,6 +161,12 @@ export async function POST(request: Request) {
         : listQuickReplies().catch((err) => {
             console.error("[evolution/assistant] respostas prontas:", err);
             return [];
+          }),
+      mode === "improve"
+        ? Promise.resolve([] as TeamContact[])
+        : fetchTeamDirectory().catch((err) => {
+            console.error("[evolution/assistant] equipe:", err);
+            return [] as TeamContact[];
           }),
     ]);
     if (!context) {
@@ -182,15 +211,34 @@ ${
 }`;
 
     const openai = createOpenAI({ apiKey });
-    const { text } = await generateText({
+    const generation = {
       model: openai(OPENAI_DEFAULT_MODEL),
-      system: mode === "improve" ? IMPROVE_SYSTEM_PROMPT : suggestSystemPrompt(formatQuickRepliesForPrompt(quickReplies)),
       prompt,
       // Uma nova tentativa só: quem espera é o atendente com o cliente na linha.
       maxRetries: 1,
       ...openAIGenerationOptions(OPENAI_DEFAULT_MODEL, { reasoningEffort: "none", temperature: 0.4 }),
-    });
-    const suggestion = text.trim();
+    };
+
+    let versions: AssistantVersion[];
+    let actions: AssistantAction[] = [];
+    if (mode === "improve") {
+      const { text } = await generateText({ ...generation, system: IMPROVE_SYSTEM_PROMPT });
+      versions = [{ kind: "curta", text: text.trim() }];
+    } else {
+      const directory = formatTeamForPrompt(team);
+      const { object } = await generateObject({
+        ...generation,
+        system: suggestSystemPrompt(formatQuickRepliesForPrompt(quickReplies), team.length ? directory.text : ""),
+        schema: assistantReplySchema,
+        schemaName: "resposta_whatsapp",
+      });
+      versions = cleanVersions(object.versoes, mode === "reply" ? 1 : 2);
+      actions = resolveAssistantActions(object.acoes, { idByRef: directory.idByRef, team });
+    }
+    if (versions.length === 0) throw new Error("A IA não devolveu texto.");
+    const suggestion = versions[0].text;
+    const savedSuggestion =
+      versions.length > 1 ? versions.map((version) => `[${version.kind}]\n${version.text}`).join("\n\n") : suggestion;
 
     after(async () => {
       try {
@@ -198,7 +246,7 @@ ${
           conversationId,
           authId: user.id,
           draft: draftMessage,
-          suggestion,
+          suggestion: savedSuggestion,
           model: OPENAI_DEFAULT_MODEL,
           messagesInContext: context.messageCount,
           mode,
@@ -208,7 +256,7 @@ ${
       }
     });
 
-    return NextResponse.json({ suggestion, mode, transcribedAudios: context.transcribedNow });
+    return NextResponse.json({ suggestion, versions, actions, mode, transcribedAudios: context.transcribedNow });
   } catch (error) {
     console.error("[evolution/assistant]", error);
     return NextResponse.json(

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
+  Contact,
   Loader2,
   Maximize2,
   MessageSquareText,
@@ -32,6 +33,9 @@ import { QuickRepliesManager } from "./quick-replies-manager";
 import { QuickReplyPicker } from "./quick-reply-picker";
 import { ReplyPreview } from "./reply-preview";
 import { useQuickReplies } from "./use-quick-replies";
+import { AssistantSuggestionBar } from "./assistant-suggestion-bar";
+import { SendContactDialog, type SendContactPreset } from "./send-contact-dialog";
+import type { AssistantAction, AssistantVersion } from "@/lib/whatsapp-assistant-output";
 import { friendlyError } from "./whatsapp-inbox-view";
 
 interface ChatInputProps {
@@ -49,6 +53,8 @@ interface ChatInputProps {
   onSubmit: () => void;
   onCancelReply: () => void;
   onSent: (message: WhatsappMessage) => void;
+  /** Ação sugerida pela IA: abrir o Encaminhar já com a pessoa escolhida. */
+  onForwardLead?: (userId: string) => void;
 }
 
 type AssistantMode = "suggest" | "reply" | "improve";
@@ -90,11 +96,20 @@ export function ChatInput({
   onSubmit,
   onCancelReply,
   onSent,
+  onForwardLead,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const quickReplyListId = useId();
   const [assistantMode, setAssistantMode] = useState<AssistantMode | null>(null);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+  /** Versões e ações da última sugestão (faixa acima do campo). */
+  const [aiResult, setAiResult] = useState<{
+    versions: AssistantVersion[];
+    actions: AssistantAction[];
+    active: number;
+  } | null>(null);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactPreset, setContactPreset] = useState<SendContactPreset | null>(null);
   /** Texto de antes da IA, para o "Desfazer". Some quando a pessoa volta a digitar. */
   const [draftBeforeAssistant, setDraftBeforeAssistant] = useState<string | null>(null);
   const [inputExpanded, setInputExpanded] = useState(false);
@@ -214,12 +229,20 @@ export function ChatInput({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ conversationId, draftMessage, replyTo, mode }),
       });
-      const json = (await res.json().catch(() => ({}))) as { suggestion?: string; error?: string };
+      const json = (await res.json().catch(() => ({}))) as {
+        suggestion?: string;
+        versions?: AssistantVersion[];
+        actions?: AssistantAction[];
+        error?: string;
+      };
       if (!res.ok) throw new Error(json.error ?? "Não foi possível usar a IA agora.");
-      const suggestion = json.suggestion?.trim();
+      const versions = (json.versions ?? []).filter((version) => version.text?.trim());
+      const suggestion = versions[0]?.text.trim() || json.suggestion?.trim();
       if (!suggestion) throw new Error("A IA não devolveu texto. Tente de novo.");
       setDraftBeforeAssistant(before);
       onDraftChange(suggestion);
+      const actions = json.actions ?? [];
+      setAiResult(versions.length > 1 || actions.length > 0 ? { versions, actions, active: 0 } : null);
     } catch (error) {
       setAssistantError(friendlyError(error, "Não foi possível usar a IA agora."));
     } finally {
@@ -231,6 +254,23 @@ export function ChatInput({
     if (draftBeforeAssistant === null) return;
     onDraftChange(draftBeforeAssistant);
     setDraftBeforeAssistant(null);
+    setAiResult(null);
+  };
+
+  const pickVersion = (index: number) => {
+    const version = aiResult?.versions[index];
+    if (!version) return;
+    onDraftChange(version.text);
+    setAiResult((current) => (current ? { ...current, active: index } : current));
+  };
+
+  const runSuggestedAction = (action: AssistantAction) => {
+    if (action.type === "forward_lead") {
+      onForwardLead?.(action.contactId);
+      return;
+    }
+    setContactPreset({ contactId: action.contactId, card: true, email: true });
+    setContactOpen(true);
   };
 
   return (
@@ -281,6 +321,17 @@ export function ChatInput({
           />
         )}
 
+        {aiResult && !assistantMode && (
+          <AssistantSuggestionBar
+            versions={aiResult.versions}
+            activeIndex={aiResult.active}
+            actions={aiResult.actions}
+            onPickVersion={pickVersion}
+            onAction={runSuggestedAction}
+            onClose={() => setAiResult(null)}
+          />
+        )}
+
         <form
           className={cn(
             "flex min-w-0 gap-1 rounded-lg border bg-white p-2 shadow-sm dark:bg-background sm:gap-2",
@@ -289,6 +340,7 @@ export function ChatInput({
           onSubmit={(event) => {
             event.preventDefault();
             setDraftBeforeAssistant(null);
+            setAiResult(null);
             onSubmit();
           }}
         >
@@ -391,6 +443,20 @@ export function ChatInput({
             <MessageSquareText />
             Respostas prontas
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            title="Manda o cartão do WhatsApp da recepção ou o contato de alguém da equipe"
+            disabled={sending || !configured}
+            onClick={() => {
+              setContactPreset(null);
+              setContactOpen(true);
+            }}
+          >
+            <Contact />
+            Enviar contato
+          </Button>
           <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
           {visibleModes.map((mode) => {
             const action = ASSISTANT_ACTIONS[mode];
@@ -439,6 +505,20 @@ export function ChatInput({
           onRemoved={quickReplies.removeLocal}
         />
       )}
+
+      <SendContactDialog
+        open={contactOpen}
+        onOpenChange={setContactOpen}
+        conversationId={conversationId}
+        leadName={leadName}
+        preset={contactPreset}
+        onSent={(messages) => {
+          for (const message of messages) onSent(message);
+          setAiResult((current) =>
+            current ? { ...current, actions: current.actions.filter((action) => action.type !== "send_contact") } : current
+          );
+        }}
+      />
     </div>
   );
 }
