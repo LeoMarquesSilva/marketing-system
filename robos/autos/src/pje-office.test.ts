@@ -44,7 +44,8 @@ function conferir(mensagem: string, assinatura64: string, cadeia64: string): { o
 }
 
 describe("assinatura do PJe Office", () => {
-  it.each(["aes.pfx", "rc2.pfx"])("%s: assina a mensagem (MD5withRSA) e manda a cadeia em PkiPath, da raiz ao titular", async (arquivo, ctx) => {
+  // it.for (e não it.each) passa o contexto do teste como 2º argumento, para o ctx.skip() sem OpenSSL.
+  it.for(["aes.pfx", "rc2.pfx"])("%s: assina a mensagem (MD5withRSA) e manda a cadeia em PkiPath, da raiz ao titular", async (arquivo, ctx) => {
     if (!temOpenssl) return ctx.skip();
     const assinador = abrirAssinador(await readFile(join(pasta, arquivo)), senha);
     const conferido = conferir("0.abc123", assinador.assinar("0.abc123"), assinador.cadeia64);

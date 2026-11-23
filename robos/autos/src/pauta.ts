@@ -28,8 +28,11 @@ import { entrarComCodigoDoPainel } from "./segundo-fator.ts";
  */
 
 const CODIGO = "#otp, input[name=otp], input[name=totp], input[autocomplete='one-time-code'], input[id*='codigo' i][maxlength='6']";
-/** Botão "CERTIFICADO DIGITAL" do SSO da PDPJ (chama o PJe Office). */
-const CERTIFICADO_PDPJ = "#kc-pje-office";
+/**
+ * Login por certificado no SSO da PDPJ (chama o PJe Office). Até 2026 era o botão "CERTIFICADO DIGITAL"
+ * (#kc-pje-office); em 23/11/2026 a tela trazia o link "Seu certificado digital" (<a onclick="autenticar(...)">).
+ */
+const CERTIFICADO_PDPJ = "#kc-pje-office, a[onclick^='autenticar(']";
 const CONFIRMAR = "#kc-login, button[type=submit], input[type=submit]";
 const DIAS_A_FRENTE = Number(process.env.PAUTA_DIAS?.trim() || 60);
 const SITUACOES = ["M", "C"] as const; // designadas e canceladas (cancelamento e redesignação)
@@ -52,6 +55,15 @@ function tribunais(): string[] {
 }
 
 const base = (trt: string) => `https://pje.${trt.toLowerCase()}.jus.br`;
+
+/**
+ * O login terminou quando a aba volta ao PJe do tribunal e já passou do retorno do SSO. O authenticateSSO.seam é a
+ * página que recebe o código da PDPJ e abre a sessão: sair dela antes de ela terminar deixa o PJe sem sessão.
+ */
+export function loginTerminou(url: string, trt: string): boolean {
+  if (!url.startsWith(base(trt))) return false;
+  return !/login|acesso-negado|authenticatesso|openid-connect|\/auth\/realms\//i.test(url);
+}
 
 function dataIso(deslocamentoDias: number): string {
   const d = new Date(Date.now() - 3 * 60 * 60 * 1000 + deslocamentoDias * 24 * 60 * 60 * 1000);
@@ -117,12 +129,26 @@ async function entrar(config: Config, pagina: Page, trt: string, comCertificado:
   let tentouCertificado = false;
   let tentouCodigo = false;
   let chamouPessoa = false;
+  let avisouTela = false;
+  const inicio = Date.now();
   while (Date.now() < limite) {
     const abas = pagina.context().pages().filter((a) => !a.isClosed());
     const atual = abas[abas.length - 1] ?? pagina;
-    if (atual.url().startsWith(base(trt)) && !/login|acesso-negado/.test(atual.url())) {
+    if (loginTerminou(atual.url(), trt)) {
+      // Deixa o PJe terminar de abrir a sessão antes de qualquer outra navegação.
+      await atual.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
       if (atual !== pagina) await pagina.goto(atual.url()).catch(() => undefined);
       return;
+    }
+    if (!avisouTela && Date.now() - inicio > 30_000) {
+      const temCodigo = await atual.locator(CODIGO).first().isVisible().catch(() => false);
+      const temCertificado = await atual.locator(CERTIFICADO_PDPJ).first().isVisible().catch(() => false);
+      if (!temCodigo && !temCertificado && !tentouCertificado) {
+        avisouTela = true;
+        const titulo = (await atual.title().catch(() => "")).slice(0, 80);
+        const endereco = atual.url().split("?")[0];
+        log(`${trt}: há 30 s o robô não acha o botão do certificado nem o campo do código (${endereco}${titulo ? ` · "${titulo}"` : ""}).${dicaDaTela(config)}`);
+      }
     }
     if (await atual.locator(CODIGO).first().isVisible().catch(() => false)) {
       if (!tentouCodigo) {
@@ -212,8 +238,13 @@ async function rodada(config: Config, navegador: Navegador, comCertificado: bool
       if (!(await logado(pagina, trt))) {
         await entrar(config, pagina, trt, comCertificado);
         await pagina.goto(`${base(trt)}/pjekz/pauta-usuarios-externos`, { waitUntil: "domcontentloaded" });
-        await pagina.waitForTimeout(3_000);
-        if (!(await logado(pagina, trt))) throw new Error("depois do login, a pauta ainda pede autenticação");
+        // A tela da pauta (pjekz) às vezes passa de novo pelo SSO, que já reconhece a sessão e volta sozinho.
+        let ok = false;
+        for (const limite = Date.now() + 45_000; !ok && Date.now() < limite; ) {
+          await pagina.waitForTimeout(3_000);
+          ok = await logado(pagina, trt);
+        }
+        if (!ok) throw new Error(`depois do login, a pauta ainda pede autenticação (${pagina.url().split("?")[0]})`);
         log(`${trt}: login concluído.`);
       } else log(`${trt}: sessão do PJe já aberta no perfil do robô.`);
       const de = dataIso(-1);

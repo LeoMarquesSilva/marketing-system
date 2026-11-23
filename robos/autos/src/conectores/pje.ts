@@ -29,8 +29,11 @@ import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type R
 
 /** Seletores e textos do roteiro do mapa (o conector usa os ids vistos nas telas, mais abaixo). */
 const TELA = {
-  /** Botão "CERTIFICADO DIGITAL" do SSO da PDPJ (chama o PJe Office). */
-  certificadoPdpj: "#kc-pje-office",
+  /**
+   * Login por certificado no SSO da PDPJ (chama o PJe Office): o botão "CERTIFICADO DIGITAL" (#kc-pje-office) ou, na
+   * tela de 23/11/2026, o link "Seu certificado digital" (<a onclick="autenticar(...)">).
+   */
+  certificadoPdpj: "#kc-pje-office, a[onclick^='autenticar(']",
   /** Código do segundo fator (Keycloak do SSO da PDPJ ou tela do próprio PJe). */
   codigo: "#otp, input[name=otp], input[name=totp], input[autocomplete='one-time-code'], input[id*='codigo' i][maxlength='6']",
   menuProcesso: /^Processo$/i,
