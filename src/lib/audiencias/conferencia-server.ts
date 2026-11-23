@@ -4,7 +4,7 @@ import { AUDIENCIAS_VIOS, SITE_CONTROLADORIA, TAREFAS_VIOS } from "@/lib/vistage
 import { sama } from "@/lib/vistagem/sama";
 import { baixarArquivoComDataPorCaminho } from "@/lib/vistagem/sharepoint";
 import { estadoNoVios, hojeEmBrasilia, local, somarDias } from "./agenda";
-import { completarCnj, conferirPautaComVios, JANELA_DIAS, juntarFontesDoVios, mudancaResolvidaNoVios, type TarefaDaFonte } from "./conferencia-vios";
+import { completarCnj, conferirPautaComVios, JANELA_DIAS, juntarFontesDoVios, mudancaResolvidaNoVios, tribunalDoCnj, type TarefaDaFonte } from "./conferencia-vios";
 import { audienciaNasIntimacoes, type ComunicacaoDjen } from "./djen";
 import { chaveDoLink, horaLocalParaIso } from "./pje";
 import { AudienciasError, carregarAudiencias, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
@@ -395,4 +395,24 @@ export async function conferirComViosSeDevido(agora = new Date()): Promise<Resum
     Boolean(ultimaPje?.terminada_em && Date.parse(ultimaPje.terminada_em) > Date.parse(ultimaVios.iniciada_em)) ||
     agora.getTime() - Date.parse(ultimaVios.iniciada_em) > INTERVALO_MAXIMO_MS;
   return devida ? conferirComVios(ORIGEM_AUTOMATICA, agora) : "em dia";
+}
+
+/**
+ * As audiências "só no VIOS" da última conferência automática, para o robô procurar no Jus.br: o processo não está na
+ * Minha Pauta do certificado, e a consulta do processo no PJe pede captcha. `tribunal` ("TRT15") filtra pelo CNJ.
+ */
+export async function soNoViosParaORobo(tribunal?: string | null): Promise<{ conferidaEm: string | null; audiencias: TarefaSoNoVios[] }> {
+  const { data, error } = await db()
+    .from("aud_leituras")
+    .select("iniciada_em, detalhe")
+    .eq("fonte", "vios")
+    .eq("origem", ORIGEM_AUTOMATICA)
+    .not("terminada_em", "is", null)
+    .is("erro", null)
+    .order("iniciada_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) falhou("ler a última conferência com o VIOS", error);
+  const lista = ((data?.detalhe as { soNoViosLista?: TarefaSoNoVios[] } | null)?.soNoViosLista ?? []).filter((t) => !tribunal || tribunalDoCnj(t.cnj) === tribunal);
+  return { conferidaEm: (data?.iniciada_em as string | undefined) ?? null, audiencias: lista };
 }

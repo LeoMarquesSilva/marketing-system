@@ -1,7 +1,9 @@
 import type { Page } from "playwright";
 import { FalhaDoCertificado, diasParaVencer, lerCertificado, type CertificadoCliente } from "./certificado.ts";
+import { API_JUSBR, CONSULTA_JUSBR, digitosDoCnj, ehAreaLogadaJusbr, motivoDaResposta, type FichaJusbr } from "./conectores/jusbr-urls.ts";
 import { lerConfig, type Config } from "./config.ts";
 import { abrirNavegador, guardarDiagnostico, type Navegador } from "./navegador.ts";
+import { lerSoNoVios, linhaDoMovimento, movimentosDeAudiencia, type AudienciaSoNoVios } from "./pauta-jusbr.ts";
 import { entrarComCodigoDoPainel } from "./segundo-fator.ts";
 
 /**
@@ -193,6 +195,14 @@ async function entrar(config: Config, pagina: Page, trt: string, comCertificado:
   const pdpj = pagina.locator("#btnSsoPdpj").first();
   if (await pdpj.isVisible().catch(() => false)) await pdpj.click().catch(() => undefined);
   await pagina.waitForTimeout(3_000);
+  await aguardarLoginPdpj(config, pagina, trt, (url) => loginTerminou(url, trt), comCertificado);
+}
+
+/**
+ * O miolo do login pela PDPJ, igual para o PJe e para o Jus.br (o mesmo SSO): certificado pelo PJe Office do robô,
+ * código do painel, código do webhook e, no fim, a pessoa. `rotulo` vai nos logs; `terminou` diz quando a aba chegou.
+ */
+async function aguardarLoginPdpj(config: Config, pagina: Page, rotulo: string, terminou: (url: string) => boolean, comCertificado: boolean): Promise<void> {
   const limite = Date.now() + config.esperaPessoaMs;
   let tentouCertificado = false;
   let tentouCodigo = false;
@@ -202,7 +212,7 @@ async function entrar(config: Config, pagina: Page, trt: string, comCertificado:
   while (Date.now() < limite) {
     const abas = pagina.context().pages().filter((a) => !a.isClosed());
     const atual = abas[abas.length - 1] ?? pagina;
-    if (loginTerminou(atual.url(), trt)) {
+    if (terminou(atual.url())) {
       // Deixa o PJe terminar de abrir a sessão antes de qualquer outra navegação.
       await atual.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
       if (atual !== pagina) await pagina.goto(atual.url()).catch(() => undefined);
@@ -215,7 +225,7 @@ async function entrar(config: Config, pagina: Page, trt: string, comCertificado:
         avisouTela = true;
         const titulo = (await atual.title().catch(() => "")).slice(0, 80);
         const endereco = atual.url().split("?")[0];
-        log(`${trt}: há 30 s o robô não acha o botão do certificado nem o campo do código (${endereco}${titulo ? ` · "${titulo}"` : ""}).${dicaDaTela(config)}`);
+        log(`${rotulo}: há 30 s o robô não acha o botão do certificado nem o campo do código (${endereco}${titulo ? ` · "${titulo}"` : ""}).${dicaDaTela(config)}`);
       }
     }
     if (await atual.locator(CODIGO).first().isVisible().catch(() => false)) {
@@ -224,26 +234,26 @@ async function entrar(config: Config, pagina: Page, trt: string, comCertificado:
         const peloPainel = await entrarComCodigoDoPainel({
           config: config.segundoFator,
           sistema: "pdpj",
-          digitar: (codigo) => digitarCodigo(atual, codigo, trt),
-          registrar: (m) => log(`${trt}: ${m}`),
+          digitar: (codigo) => digitarCodigo(atual, codigo, rotulo),
+          registrar: (m) => log(`${rotulo}: ${m}`),
         });
         if (peloPainel) continue;
         const codigo = await codigoDoWebhook(config);
-        if (codigo && (await digitarCodigo(atual, codigo, trt))) {
-          log(`${trt}: código de 2 fatores obtido do webhook e aceito.`);
+        if (codigo && (await digitarCodigo(atual, codigo, rotulo))) {
+          log(`${rotulo}: código de 2 fatores obtido do webhook e aceito.`);
           continue;
         }
       }
-      if (!chamouPessoa) log(`${trt}: o SSO pediu o código de 2 fatores e o robô não conseguiu. Digite na janela do robô.${dicaDaTela(config)}`);
+      if (!chamouPessoa) log(`${rotulo}: o SSO pediu o código de 2 fatores e o robô não conseguiu. Digite na janela do robô.${dicaDaTela(config)}`);
       chamouPessoa = true;
     } else if (comCertificado && !tentouCertificado && (await atual.locator(CERTIFICADO_PDPJ).first().isVisible().catch(() => false))) {
       tentouCertificado = true;
       await atual.locator(CERTIFICADO_PDPJ).first().click().catch(() => undefined);
-      log(`${trt}: entrando pelo certificado (PJe Office do robô).`);
+      log(`${rotulo}: entrando pelo certificado (PJe Office do robô).`);
       await atual.waitForTimeout(5_000);
       continue;
     } else if (!chamouPessoa && (!comCertificado || tentouCertificado)) {
-      log(`${trt}: login pelo SSO da PDPJ esperando a pessoa (certificado ou CPF e senha na janela do robô). O robô não digita senha.${dicaDaTela(config)}`);
+      log(`${rotulo}: login pelo SSO da PDPJ esperando a pessoa (certificado ou CPF e senha na janela do robô). O robô não digita senha.${dicaDaTela(config)}`);
       chamouPessoa = true;
     }
     await atual.waitForTimeout(3_000);
@@ -376,6 +386,107 @@ export function msAteProximoHorario(agora = Date.now(), texto = process.env.PAUT
   return (proximo - minutosAgora) * 60_000 - local.getUTCSeconds() * 1000 - local.getUTCMilliseconds();
 }
 
+/* ------------------------------------------------------------------ "só no VIOS" no Jus.br (fase 1: só log) */
+
+/** Até quantos processos por rodada: o Jus.br é um serviço nacional e o robô não deve martelar. */
+const JUSBR_POR_RODADA = Number(process.env.PAUTA_JUSBR_MAX?.trim() || 15);
+
+async function soNoVios(config: Config): Promise<AudienciaSoNoVios[]> {
+  const resposta = await fetch(`${config.orqestraiUrl}/api/robos/pauta/so-no-vios`, {
+    headers: { Authorization: `Bearer ${config.token}` },
+    signal: AbortSignal.timeout(60_000),
+  });
+  const corpo = (await resposta.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!resposta.ok) throw new Error(`o ORQESTRAI respondeu ${resposta.status}: ${String(corpo.error ?? "")}`);
+  return lerSoNoVios(corpo);
+}
+
+/**
+ * Busca o número pela tela da consulta (a única forma de o portal gerar a chamada autenticada) e devolve o cabeçalho de
+ * autorização que ele usou, como o conector do Jus.br do robô de autos.
+ */
+async function autorizacaoPelaTela(aba: Page, digitos: string): Promise<{ autorizacao: string | null; status: number }> {
+  if (!aba.url().startsWith(CONSULTA_JUSBR)) await aba.goto(CONSULTA_JUSBR, { waitUntil: "domcontentloaded" });
+  const pular = aba.getByRole("button", { name: /^\s*Pular\s*$/i });
+  if (await pular.isVisible().catch(() => false)) await pular.click().catch(() => undefined);
+  const campo = aba.getByPlaceholder(/0000000-00/).first();
+  await campo.waitFor({ state: "visible", timeout: 30_000 });
+  const resposta = aba.waitForResponse((r) => r.url().includes(`/api/v2/processos?numeroProcesso=${digitos}`), { timeout: 60_000 });
+  const pedido = aba.waitForRequest((r) => r.url().includes(`/api/v2/processos?numeroProcesso=${digitos}`), { timeout: 60_000 });
+  await campo.fill(digitos);
+  await aba.getByRole("button", { name: /Buscar/i }).first().click();
+  const autorizacao = (await pedido).headers()["authorization"] ?? null;
+  return { autorizacao, status: (await resposta).status() };
+}
+
+/**
+ * Para cada audiência "só no VIOS" (o processo não está na Minha Pauta do certificado), lê a ficha do processo no
+ * Jus.br e escreve no log os movimentos de audiência. Fase 1: nada é gravado; serve para conferir o formato. Qualquer
+ * falha fica no log e não derruba a rodada da pauta. PAUTA_JUSBR=off desliga.
+ */
+async function conferirSoNoViosNoJusbr(config: Config, navegador: Navegador, comCertificado: boolean): Promise<void> {
+  if (process.env.PAUTA_JUSBR?.trim().toLowerCase() === "off") return;
+  let lista: AudienciaSoNoVios[];
+  try {
+    lista = await soNoVios(config);
+  } catch (erro) {
+    log(`Jus.br: não consegui a lista dos "só no VIOS" no ORQESTRAI · ${erro instanceof Error ? erro.message : String(erro)}`);
+    return;
+  }
+  if (!lista.length) {
+    log(`Jus.br: nenhuma audiência "só no VIOS" para procurar.`);
+    return;
+  }
+  log(`Jus.br: ${lista.length} audiência(s) "só no VIOS"; procurando ${Math.min(lista.length, JUSBR_POR_RODADA)} no Jus.br (só log, nada é gravado).`);
+  const aba = await navegador.pagina.context().newPage();
+  try {
+    await aba.goto(CONSULTA_JUSBR, { waitUntil: "domcontentloaded" });
+    await aba.waitForTimeout(3_000);
+    if (!ehAreaLogadaJusbr(aba.url())) {
+      log(`Jus.br: pediu login (${aba.url().split("?")[0]}); entrando pela PDPJ.`);
+      await aguardarLoginPdpj(config, aba, "Jus.br", ehAreaLogadaJusbr, comCertificado);
+    }
+    log(`Jus.br: área logada aberta (${aba.url().split("?")[0]}).`);
+    let autorizacao: string | null = null;
+    for (const item of lista.slice(0, JUSBR_POR_RODADA)) {
+      const digitos = digitosDoCnj(item.cnj);
+      const noVios = `${item.inicio.slice(0, 16).replace("T", " ")} UTC · tarefa ${item.tarefaCi} ${item.tarefa}`.trim();
+      if (!digitos) continue;
+      try {
+        if (!autorizacao) {
+          const busca = await autorizacaoPelaTela(aba, digitos);
+          autorizacao = busca.autorizacao;
+          log(`Jus.br: busca pela tela respondeu ${busca.status}; ${autorizacao ? "autorização capturada" : "sem cabeçalho de autorização"}.`);
+        }
+        const url = `${API_JUSBR}/processos/${digitos}`;
+        let resposta = await aba.context().request.get(url, { headers: { authorization: autorizacao ?? "" }, timeout: 60_000 });
+        if (resposta.status() === 401) {
+          autorizacao = (await autorizacaoPelaTela(aba, digitos)).autorizacao;
+          resposta = await aba.context().request.get(url, { headers: { authorization: autorizacao ?? "" }, timeout: 60_000 });
+        }
+        const motivo = motivoDaResposta(resposta.status());
+        if (motivo) {
+          log(`Jus.br ${item.cnj} (VIOS ${noVios}): ${motivo}.`);
+          continue;
+        }
+        const corpo = (await resposta.json()) as FichaJusbr[] | FichaJusbr;
+        const movimentos = movimentosDeAudiencia(Array.isArray(corpo) ? corpo : [corpo]);
+        log(`Jus.br ${item.cnj} (VIOS ${noVios}): ${movimentos.length} movimento(s) de audiência.`);
+        for (const movimento of movimentos.slice(0, 8)) log(`   ${linhaDoMovimento(movimento)}`);
+      } catch (erro) {
+        log(`Jus.br ${item.cnj}: falhou · ${erro instanceof Error ? erro.message.split("\n")[0] : String(erro)}`);
+      }
+      await aba.waitForTimeout(1_500);
+    }
+  } catch (erro) {
+    log(`Jus.br: não deu certo · ${erro instanceof Error ? erro.message.split("\n")[0] : String(erro)}`);
+    const arquivo = await guardarDiagnostico(config, aba, "pauta-jusbr").catch(() => null);
+    if (arquivo) log(`Jus.br: tela guardada em ${arquivo} para conferir.`);
+  } finally {
+    await aba.close().catch(() => undefined);
+  }
+}
+
 async function carregarCertificado(config: Config): Promise<CertificadoCliente | null> {
   try {
     const certificado = await lerCertificado(config.certificado);
@@ -403,10 +514,13 @@ async function principal(): Promise<void> {
   const navegador = await abrirNavegador(config, certificado);
   let falhas = 0;
   try {
-    if (!CICLO) falhas = await rodada(config, navegador, comCertificado);
-    else {
+    if (!CICLO) {
+      falhas = await rodada(config, navegador, comCertificado);
+      if (!SO_LER) await conferirSoNoViosNoJusbr(config, navegador, comCertificado);
+    } else {
       for (;;) {
         await rodada(config, navegador, comCertificado);
+        if (!SO_LER) await conferirSoNoViosNoJusbr(config, navegador, comCertificado);
         const espera = msAteProximoHorario();
         log(`Próxima leitura em ${Math.round(espera / 60000)} minuto(s).`);
         await new Promise((resolver) => setTimeout(resolver, espera));
