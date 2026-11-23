@@ -196,6 +196,41 @@ export function LinkDaSala({ aud }: { aud: Audiencia }) {
   );
 }
 
+const pararClique = (e: { stopPropagation: () => void }) => e.stopPropagation();
+
+/**
+ * Toda CI da pauta é link para o VIOS, como na vistagem: CI de tarefa abre a tarefa, CI de processo abre a pasta. O
+ * clique no link não abre o detalhe da linha onde ele está.
+ */
+export function CiDoVios({ ci, tipo = "tarefa", className }: { ci: string; tipo?: "tarefa" | "processo"; className?: string }) {
+  return (
+    <a
+      href={tipo === "tarefa" ? linkTarefaVios(ci) : linkPastaVios(ci)}
+      target="_blank"
+      rel="noreferrer"
+      onClick={pararClique}
+      onKeyDown={pararClique}
+      title={tipo === "tarefa" ? `Abrir a tarefa ${ci} no VIOS` : `Abrir o processo ${ci} no VIOS`}
+      className={cn("font-mono tabular-nums text-[#0f5f9e] underline underline-offset-2 hover:text-[#0b4677]", className)}
+    >
+      {ci}
+    </a>
+  );
+}
+
+/** Texto com CIs de tarefa ("CI 882502", "Tarefa 882502"): cada número vira link para a tarefa no VIOS. */
+export function TextoComCi({ texto }: { texto: string }) {
+  const partes: ReactNode[] = [];
+  let ultimo = 0;
+  for (const m of texto.matchAll(/(CI|Tarefa) (\d{4,})/g)) {
+    const inicio = m.index ?? 0;
+    partes.push(texto.slice(ultimo, inicio), `${m[1]} `, <CiDoVios key={inicio} ci={m[2]!} />);
+    ultimo = inicio + m[0].length;
+  }
+  partes.push(texto.slice(ultimo));
+  return <>{partes}</>;
+}
+
 /**
  * Link para o VIOS, como na vistagem: a tarefa da audiência (CI casado na conferência) ou, sem tarefa, o processo.
  * Fica dentro de linhas clicáveis: o clique no link não abre o detalhe.
@@ -222,7 +257,7 @@ export function LinkDoVios({ aud, className }: { aud: Audiencia; className?: str
 
 /* ------------------------------------------------------------------ troca */
 
-const MOTIVOS = ["Choque de horário", "Deslocamento", "Ausência ou compromisso pessoal", "Equilibrar a carga do dia", "Pasta sem responsável", "Outro"];
+const MOTIVOS = ["Conflito de horário", "Deslocamento", "Ausência ou compromisso pessoal", "Equilibrar a carga do dia", "Pasta sem responsável", "Outro"];
 
 export function TrocaDialog({
   aud,

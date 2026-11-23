@@ -244,7 +244,7 @@ export function opcoesDeTroca(aud: Audiencia, papel: "titular" | "backup", ctx: 
       continue;
     }
     const conflito = conflitoDaPessoa(pessoa.id, aud, ctx.todas, ctx.duracoes);
-    if (conflito?.tipo === "choque") opcoes.push({ pessoa, estado: "choque", texto: `Choque · ${rotulo(conflito.com)}` });
+    if (conflito?.tipo === "choque") opcoes.push({ pessoa, estado: "choque", texto: `Conflito de horário · ${rotulo(conflito.com)}` });
     else if (conflito) opcoes.push({ pessoa, estado: "atencao", texto: `Deslocamento · ${rotulo(conflito.com)}` });
     else {
       const dia = compromissosDoDia(pessoa.id, local(aud.inicio).dia, ctx.todas, aud.id);

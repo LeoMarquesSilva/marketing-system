@@ -7,7 +7,7 @@ import { ALERTAS_DO_VIOS, alertasDaAudiencia, local, type Contexto } from "@/lib
 import type { Audiencia, Papel } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
 import { Aviso, Carregando, Indicador, Indicadores, Painel, PainelTopo, Selo, Vazio } from "../vistagem/ui";
-import { AcessoPauta, Dupla, SeloTipo, TrocaDialog, cliente, diaCurto, diaPorExtenso, hora, mensagemDeErro, pautaApi, type DadosDaPauta } from "./comum";
+import { AcessoPauta, Dupla, LinkDoVios, SeloTipo, TextoComCi, TrocaDialog, cliente, diaCurto, diaPorExtenso, hora, mensagemDeErro, pautaApi, type DadosDaPauta } from "./comum";
 
 type Dados = DadosDaPauta & { hoje: string; dias: string[] };
 
@@ -102,7 +102,7 @@ function Distribuicao() {
       <Indicadores className="lg:grid-cols-5">
         <Indicador icone={CalendarDays} rotulo="Audiências nos 2 dias" valor={numeros.total} />
         <Indicador icone={Users} rotulo="Sem titular" valor={numeros.semTitular} tom={numeros.semTitular ? "perigo" : "neutro"} />
-        <Indicador icone={AlertTriangle} rotulo="Choque ou deslocamento" valor={numeros.choques} tom={numeros.choques ? "perigo" : "neutro"} />
+        <Indicador icone={AlertTriangle} rotulo="Conflito de horário ou deslocamento" valor={numeros.choques} tom={numeros.choques ? "perigo" : "neutro"} />
         <Indicador icone={Repeat} rotulo="Conferir no VIOS" valor={numeros.mudou} tom={numeros.mudou ? "perigo" : "neutro"} />
         <Indicador icone={Clock} rotulo="Antes das 10h" valor={numeros.cedo} tom={numeros.cedo ? "alerta" : "neutro"} />
       </Indicadores>
@@ -116,7 +116,7 @@ function Distribuicao() {
                 {atencao.length ? `Precisa de decisão (${atencao.length})` : "Tudo decidido"}
               </span>
             }
-            descricao="Sem titular, choque, deslocamento, mudança ou cancelamento no tribunal."
+            descricao="Sem titular, conflito de horário, deslocamento, mudança ou cancelamento no tribunal, ou diferença com o VIOS."
             className={atencao.length ? "bg-red-50" : undefined}
           />
           {!atencao.length ? (
@@ -143,10 +143,11 @@ function Distribuicao() {
                       <p className="font-mono text-xs text-muted-foreground">
                         {aud.cnj} · {aud.orgao}
                       </p>
+                      <LinkDoVios aud={aud} />
                       {graves.map((a) => (
                         <p key={a.tipo} className="flex gap-1.5 text-xs font-medium text-red-700">
                           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                          {a.texto}
+                          <span><TextoComCi texto={a.texto} /></span>
                         </p>
                       ))}
                       <Dupla aud={aud} pessoas={pessoas} compacto />
@@ -194,6 +195,7 @@ function Distribuicao() {
                           {alertas.some((a) => a.tipo === "sem_link") ? <Selo tom="alerta">Sem link</Selo> : null}
                           {alertas.some((a) => a.tipo === "backup_ocupado") ? <Selo tom="alerta">Backup ocupada</Selo> : null}
                         </div>
+                        <LinkDoVios aud={aud} />
                         <Dupla aud={aud} pessoas={pessoas} compacto />
                       </div>
                       <div className="flex flex-col gap-1">

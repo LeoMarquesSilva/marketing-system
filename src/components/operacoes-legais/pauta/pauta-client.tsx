@@ -8,7 +8,7 @@ import { alertasDaAudiencia, estadoNoVios, hojeEmBrasilia, local, pendenteNoVios
 import { ROTULO_MUDANCA, ROTULO_TIPO, type Audiencia, type Papel } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
 import { Aviso, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, campoClasse } from "../vistagem/ui";
-import { AcessoPauta, Dupla, LinkDaSala, LinkDoVios, Local, Modalidade, SeloTipo, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
+import { AcessoPauta, Dupla, LinkDaSala, LinkDoVios, Local, Modalidade, SeloTipo, TextoComCi, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
 
 const COLUNAS = "lg:grid lg:grid-cols-[4.5rem_minmax(0,1.5fr)_minmax(0,1.1fr)_7.5rem_minmax(0,1.25fr)_minmax(0,1.15fr)_minmax(0,1fr)] lg:items-center lg:gap-4";
 const PERIODOS = [
@@ -252,7 +252,7 @@ function Pauta() {
                     <span className="flex flex-wrap gap-1">
                       {cancelada ? <Selo tom="perigo">Cancelada no PJe</Selo> : null}
                       {a.mudancas.length && !a.mudancaConferidaEm && !cancelada ? <Selo tom="perigo" icone={Repeat}>{a.mudancas.map((m) => ROTULO_MUDANCA[m]).join(", ")}</Selo> : null}
-                      {alertas.some((x) => x.tipo === "choque" || x.tipo === "deslocamento") ? <Selo tom="alerta">{alertas.find((x) => x.tipo === "choque") ? "Choque" : "Deslocamento"}</Selo> : null}
+                      {alertas.some((x) => x.tipo === "choque" || x.tipo === "deslocamento") ? <Selo tom="alerta">{alertas.find((x) => x.tipo === "choque") ? "Conflito de horário" : "Sem tempo de deslocamento"}</Selo> : null}
                       {alertas.some((x) => x.tipo === "cedo") ? <Selo tom="alerta" icone={Clock}>Antes das 10h</Selo> : null}
                       {!cancelada && !alertas.some((x) => x.grave) ? <Selo tom="marca">Designada</Selo> : null}
                     </span>
@@ -356,7 +356,7 @@ function Detalhe({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {alertas.filter((a) => a.tipo !== "cedo").map((a) => (
             <Aviso key={a.tipo + a.texto} tom={a.grave ? "erro" : "alerta"}>
-              {a.texto}
+              <TextoComCi texto={a.texto} />
             </Aviso>
           ))}
           <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
@@ -378,7 +378,9 @@ function Detalhe({
             <dt className="text-muted-foreground">DJEN</dt>
             <dd>{aud.djenConferidoEm ? (aud.djenData ? `Intimação de ${aud.djenData.slice(8, 10)}/${aud.djenData.slice(5, 7)}${aud.djenInicio ? ` · ${quando(aud.djenInicio)}` : ""}` : "Sem intimação com esta data") : "Ainda não conferido"}</dd>
             <dt className="text-muted-foreground">VIOS</dt>
-            <dd>{textoDoVios(aud)}</dd>
+            <dd>
+              <TextoComCi texto={textoDoVios(aud)} />
+            </dd>
           </dl>
           <div className="space-y-2 rounded-md border border-[#dce9eb] p-3">
             <div className="flex items-center justify-between gap-2">

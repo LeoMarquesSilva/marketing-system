@@ -281,7 +281,7 @@ function ConfigAvisos({ config, modos, admin, aoSalvar }: { config: Config; modo
         />
         <p className="text-xs text-muted-foreground">Ambiente: {modos?.outlook === "real" ? "envio real" : "modo teste (registra sem enviar)"}</p>
       </Secao>
-      <Secao titulo="Duração padrão (para os choques de horário)">
+      <Secao titulo="Duração padrão (para os conflitos de horário)">
         <div className="grid grid-cols-2 gap-2">
           {TIPOS_DURACAO.map((t) => (
             <label key={t} className="flex items-center justify-between gap-2 text-sm">

@@ -7,7 +7,7 @@ import { conferidaDepoisDaCopia, estadoNoVios, hojeEmBrasilia, local, pendenteNo
 import { ROTULO_MUDANCA, ROTULO_TIPO, type Audiencia } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
 import { Aviso, Carregando, Indicador, Indicadores, Painel, PainelTopo, Selo, Vazio } from "../vistagem/ui";
-import { AcessoPauta, LinkDaSala, cliente, diaCurto, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
+import { AcessoPauta, CiDoVios, LinkDaSala, LinkDoVios, TextoComCi, cliente, diaCurto, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
 
 const COLUNAS = "lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_10rem] lg:items-center lg:gap-4";
 const COLUNAS_SO_NO_VIOS = "lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.6fr)_8rem] lg:items-center lg:gap-4";
@@ -199,13 +199,16 @@ function Tribunal() {
                             <span className="truncate text-sm font-semibold">{cliente(a)}</span>
                           </span>
                           <span className="mt-0.5 block font-mono text-xs text-muted-foreground">{a.cnj}</span>
+                          <LinkDoVios aud={a} className="mt-0.5" />
                         </span>
                       </span>
                       <span className="block text-sm">
                         <span className={cn("font-mono font-medium", a.situacao === "cancelada" && "text-red-700")}>{a.situacao === "cancelada" ? "Cancelada" : `${diaCurto(local(a.inicio).dia)} ${hora(a.inicio)}`}</span>
                         <span className="block truncate text-xs text-muted-foreground">{a.orgao}</span>
                       </span>
-                      <span className="block text-xs text-muted-foreground">{oQueMudou(a)}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        <TextoComCi texto={oQueMudou(a)} />
+                      </span>
                       <LinkDaSala aud={a} />
                       <span className="flex flex-wrap gap-1">
                         {a.situacao === "cancelada" && !divergencia ? <Selo tom="perigo">Cancelada no PJe</Selo> : null}
@@ -253,11 +256,21 @@ function Tribunal() {
                   <li key={t.tarefaCi} className={cn("space-y-1 border-b border-[#e6eef0] px-4 py-3 last:border-b-0 lg:space-y-0", COLUNAS_SO_NO_VIOS)}>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold">{t.tarefa}</span>
-                      <span className="mt-0.5 block font-mono text-xs text-muted-foreground">{t.cnj}</span>
+                      <span className="mt-0.5 block font-mono text-xs text-muted-foreground">
+                        {t.cnj}
+                        {t.ciProcesso ? (
+                          <>
+                            {" · processo "}
+                            <CiDoVios ci={t.ciProcesso} tipo="processo" />
+                          </>
+                        ) : null}
+                      </span>
                     </span>
                     <span className="block font-mono text-sm">{quandoNoVios(t.inicio)}</span>
                     <span className="block truncate text-xs text-muted-foreground">{t.responsaveis.join(", ") || "—"}</span>
-                    <span className="block font-mono text-xs text-muted-foreground">{t.tarefaCi}</span>
+                    <span className="block text-xs">
+                      <CiDoVios ci={t.tarefaCi} />
+                    </span>
                   </li>
                 ))}
               </ul>
