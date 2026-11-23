@@ -79,8 +79,16 @@ function opcoesDeLogin(instancia: InstanciaPje, extra: Partial<OpcoesDeLogin> = 
  */
 function loginDoConector(instancia: InstanciaPje, pjeOffice: boolean): OpcoesDeLogin {
   if (!instancia.sso) return opcoesDeLogin(instancia);
-  return opcoesDeLogin(instancia, {
-    // Com o PJe Office do robô (servidor, A1 do painel), o próprio robô clica em "CERTIFICADO DIGITAL".
+  return opcoesDeLogin(instancia, loginAutomaticoPdpj(pjeOffice));
+}
+
+/**
+ * Login sem a pessoa no SSO da PDPJ (o mesmo do PJe e do Jus.br): com o PJe Office do robô (servidor, A1 do painel),
+ * o robô clica no certificado ("CERTIFICADO DIGITAL" ou o link "Seu certificado digital"); depois digita o código do
+ * segredo "pdpj" do painel. O que falhar fica com a pessoa, como antes.
+ */
+export function loginAutomaticoPdpj(pjeOffice: boolean): Partial<OpcoesDeLogin> {
+  return {
     ...(pjeOffice && {
       entrarSozinho: async (pagina: Page) => {
         const botao = pagina.locator(TELA.certificadoPdpj).first();
@@ -95,7 +103,8 @@ function loginDoConector(instancia: InstanciaPje, pjeOffice: boolean): OpcoesDeL
       await campo.fill(codigo);
       await campo.press("Enter");
     },
-  });
+    pedeCodigo: (pagina) => visivel(pagina, TELA.codigo),
+  };
 }
 
 /** Número na consulta: os campos separados do PJe, ou um campo só. */
