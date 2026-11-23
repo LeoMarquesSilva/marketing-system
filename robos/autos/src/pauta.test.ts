@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loginTerminou, msAteProximoHorario } from "./pauta.ts";
+import { haMaisPaginas, loginTerminou, msAteProximoHorario } from "./pauta.ts";
 
 // 18/11/2026 em Brasília (UTC-3): horário de cada caso em UTC = Brasília + 3h.
 const brasilia = (hhmm: string) => new Date(`2026-11-18T${hhmm}:00-03:00`).getTime();
@@ -28,5 +28,22 @@ describe("fim do login no PJe", () => {
     expect(loginTerminou("https://pje.trt15.jus.br/pjekz/painel/usuario-externo", "TRT15")).toBe(true);
     expect(loginTerminou("https://pje.trt15.jus.br/primeirograu/Painel/painel_usuario/advogado.seam", "TRT15")).toBe(true);
     expect(loginTerminou("https://pje.trt2.jus.br/pjekz/painel/usuario-externo", "TRT15")).toBe(false);
+  });
+});
+
+describe("páginas da Minha Pauta", () => {
+  const pagina = (n: number) => Array.from({ length: n }, () => ({}));
+  it("pelo totalRegistros: 68 designadas são duas páginas de 50", () => {
+    expect(haMaisPaginas(1, { totalRegistros: 68, resultado: pagina(50) })).toBe(true);
+    expect(haMaisPaginas(2, { totalRegistros: 68, resultado: pagina(18) })).toBe(false);
+  });
+  it("sem totalRegistros, vale o qtdPaginas", () => {
+    expect(haMaisPaginas(1, { qtdPaginas: 2, resultado: pagina(50) })).toBe(true);
+    expect(haMaisPaginas(2, { qtdPaginas: 2, resultado: pagina(10) })).toBe(false);
+  });
+  it("sem nenhum dos dois, página cheia pede a próxima; página vazia para", () => {
+    expect(haMaisPaginas(1, { resultado: pagina(50) })).toBe(true);
+    expect(haMaisPaginas(2, { resultado: pagina(7) })).toBe(false);
+    expect(haMaisPaginas(3, { totalRegistros: 500, resultado: [] })).toBe(false);
   });
 });

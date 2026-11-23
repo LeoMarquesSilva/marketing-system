@@ -251,16 +251,33 @@ async function entrar(config: Config, pagina: Page, trt: string, comCertificado:
   throw new Error(`ninguém concluiu o login em ${Math.round(config.esperaPessoaMs / 60000)} minutos.`);
 }
 
-interface PaginaDaPauta {
+export interface PaginaDaPauta {
   qtdPaginas?: number;
+  totalRegistros?: number;
   resultado?: Record<string, unknown>[];
 }
 
+const TAMANHO_DA_PAGINA = 50;
+
+/**
+ * Se ainda há página para ler. Primeiro teste no servidor (23/11/2026): o TRT-15 devolveu exatamente 50 designadas
+ * (uma página) quando o PJe tinha 68 — sem qtdPaginas na resposta, o robô parava na primeira. Agora vale o
+ * totalRegistros, depois o qtdPaginas e, sem os dois, página cheia = pode haver outra.
+ */
+export function haMaisPaginas(numero: number, corpo: PaginaDaPauta, tamanho = TAMANHO_DA_PAGINA): boolean {
+  const lidos = (corpo.resultado ?? []).length;
+  if (lidos === 0) return false;
+  if (typeof corpo.totalRegistros === "number") return numero * tamanho < corpo.totalRegistros;
+  if (typeof corpo.qtdPaginas === "number" && corpo.qtdPaginas > 0) return numero < corpo.qtdPaginas;
+  return lidos >= tamanho;
+}
+
 /** Lê a pauta no contexto da página (mesma sessão e mesmos cabeçalhos do navegador). */
-async function lerPauta(pagina: Page, situacao: string, de: string, ate: string): Promise<Record<string, unknown>[]> {
+async function lerPauta(pagina: Page, trt: string, situacao: string, de: string, ate: string): Promise<Record<string, unknown>[]> {
   const registros: Record<string, unknown>[] = [];
+  let total: number | undefined;
   for (let numero = 1; numero <= 40; numero += 1) {
-    const parametros = new URLSearchParams({ dataInicio: de, dataFim: ate, codigoSituacao: situacao, numeroPagina: String(numero), tamanhoPagina: "50", ordenacao: "asc" });
+    const parametros = new URLSearchParams({ dataInicio: de, dataFim: ate, codigoSituacao: situacao, numeroPagina: String(numero), tamanhoPagina: String(TAMANHO_DA_PAGINA), ordenacao: "asc" });
     const resposta = await pagina.evaluate(async (consulta) => {
       // Mesmos cabeçalhos que o PJe (pjekz) manda: o X-XSRF-TOKEN sai do cookie Xsrf-Token.
       const xsrf = decodeURIComponent((document.cookie.match(/(?:^|; )Xsrf-Token=([^;]*)/) || [])[1] || "");
@@ -271,9 +288,11 @@ async function lerPauta(pagina: Page, situacao: string, de: string, ate: string)
     if (resposta.status !== 200) throw new Error(`a consulta da pauta respondeu ${resposta.status}: ${String(resposta.corpo).slice(0, 160)}`);
     const corpo = resposta.corpo as PaginaDaPauta;
     registros.push(...(corpo.resultado ?? []));
-    if (numero >= (corpo.qtdPaginas ?? 1)) break;
+    if (typeof corpo.totalRegistros === "number") total = corpo.totalRegistros;
+    if (!haMaisPaginas(numero, corpo)) break;
     await pagina.waitForTimeout(800);
   }
+  log(`${trt}: situação ${situacao}: ${registros.length} lido(s)${total === undefined ? "" : ` de ${total} no PJe`}.`);
   return registros;
 }
 
@@ -326,7 +345,7 @@ async function rodada(config: Config, navegador: Navegador, comCertificado: bool
       const de = dataIso(-1);
       const ate = dataIso(DIAS_A_FRENTE);
       const registros: Record<string, unknown>[] = [];
-      for (const situacao of SITUACOES) registros.push(...(await lerPauta(pagina, situacao, de, ate)));
+      for (const situacao of SITUACOES) registros.push(...(await lerPauta(pagina, trt, situacao, de, ate)));
       log(`${trt}: ${registros.length} registro(s) lido(s) de ${de} a ${ate} · ${resumo(registros)}.`);
       if (SO_LER) {
         log(`${trt}: teste de acesso OK. Nada foi mandado ao ORQESTRAI (--so-ler).`);
