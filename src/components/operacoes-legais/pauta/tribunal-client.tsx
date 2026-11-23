@@ -7,7 +7,7 @@ import { conferidaDepoisDaCopia, estadoNoVios, hojeEmBrasilia, local, pendenteNo
 import { ROTULO_MUDANCA, ROTULO_TIPO, type Audiencia } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
 import { Aviso, Carregando, Indicador, Indicadores, Painel, PainelTopo, Selo, Vazio } from "../vistagem/ui";
-import { AcessoPauta, CiDoVios, LinkDaSala, LinkDoVios, TextoComCi, cliente, diaCurto, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
+import { AcessoPauta, CiDoVios, LinkDaSala, LinkDoVios, SeloOrigem, TextoComCi, cliente, diaCurto, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
 
 const COLUNAS = "lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_10rem] lg:items-center lg:gap-4";
 const COLUNAS_SO_NO_VIOS = "lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.6fr)_8rem] lg:items-center lg:gap-4";
@@ -211,6 +211,7 @@ function Tribunal() {
                       </span>
                       <LinkDaSala aud={a} />
                       <span className="flex flex-wrap gap-1">
+                        <SeloOrigem aud={a} />
                         {a.situacao === "cancelada" && !divergencia ? <Selo tom="perigo">Cancelada no PJe</Selo> : null}
                         {a.situacao !== "cancelada" && a.mudancas.map((m) => <Selo key={m} tom={m === "link" || m === "vara" ? "alerta" : "perigo"}>{ROTULO_MUDANCA[m]}</Selo>)}
                         {divergencia ? (

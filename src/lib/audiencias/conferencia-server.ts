@@ -8,6 +8,7 @@ import { completarCnj, conferirPautaComVios, JANELA_DIAS, juntarFontesDoVios, mu
 import { audienciaNasIntimacoes, type ComunicacaoDjen } from "./djen";
 import { chaveDoLink, horaLocalParaIso } from "./pje";
 import { AudienciasError, carregarAudiencias, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
+import { substituirJusbrPeloPje } from "./jusbr-server";
 import { deTarefaDoSama, lerCsvDoVios, type AudienciaNoVios, type TarefaDoSama } from "./vios-csv";
 
 /**
@@ -270,12 +271,18 @@ export async function conferirComVios(origem = ORIGEM_AUTOMATICA, agora = new Da
       avisos.push(`${fonte} não lido: ${erro instanceof Error ? erro.message : String(erro)}`);
       return null;
     };
-    const [auds, tarefasCsv, audienciasCsv, copia] = await Promise.all([
+    const [audsLidas, tarefasCsv, audienciasCsv, copia] = await Promise.all([
       carregarAudiencias(`${hoje}T00:00:00-03:00`, `${somarDias(hoje, DIAS_A_FRENTE)}T00:00:00-03:00`),
       arquivoDoVios("Tarefas.csv", TAREFAS_VIOS).catch(semFonte("Tarefas.csv do SharePoint")),
       arquivoDoVios("Audiencias.csv", AUDIENCIAS_VIOS, true).catch(semFonte("Audiencias.csv do SharePoint")),
       copiaDoSama(de, ate).catch(semFonte("Cópia do VIOS no SAMA")),
     ]);
+    // Audiência que veio do Jus.br e que o PJe agora também mostra: a do PJe vale (herda a dupla) e a do Jus.br sai.
+    const substituidas = await substituirJusbrPeloPje(audsLidas).catch((erro) => {
+      avisos.push(`Audiências do Jus.br não substituídas pelas do PJe: ${erro instanceof Error ? erro.message : String(erro)}`);
+      return 0;
+    });
+    const auds = substituidas ? await carregarAudiencias(`${hoje}T00:00:00-03:00`, `${somarDias(hoje, DIAS_A_FRENTE)}T00:00:00-03:00`) : audsLidas;
     const arquivos = [tarefasCsv, audienciasCsv].filter((a): a is ArquivoDoVios => Boolean(a));
     if (!arquivos.length && !copia) throw new AudienciasError(avisos.join(" · "), 502);
     const naJanela = (t: AudienciaNoVios) => {
@@ -401,7 +408,7 @@ export async function conferirComViosSeDevido(agora = new Date()): Promise<Resum
  * As audiências "só no VIOS" da última conferência automática, para o robô procurar no Jus.br: o processo não está na
  * Minha Pauta do certificado, e a consulta do processo no PJe pede captcha. `tribunal` ("TRT15") filtra pelo CNJ.
  */
-export async function soNoViosParaORobo(tribunal?: string | null): Promise<{ conferidaEm: string | null; audiencias: TarefaSoNoVios[] }> {
+export async function soNoViosParaORobo(tribunal?: string | null): Promise<{ conferidaEm: string | null; audiencias: TarefaSoNoVios[]; acompanhar: string[] }> {
   const { data, error } = await db()
     .from("aud_leituras")
     .select("iniciada_em, detalhe")
@@ -414,5 +421,15 @@ export async function soNoViosParaORobo(tribunal?: string | null): Promise<{ con
     .maybeSingle();
   if (error) falhou("ler a última conferência com o VIOS", error);
   const lista = ((data?.detalhe as { soNoViosLista?: TarefaSoNoVios[] } | null)?.soNoViosLista ?? []).filter((t) => !tribunal || tribunalDoCnj(t.cnj) === tribunal);
-  return { conferidaEm: (data?.iniciada_em as string | undefined) ?? null, audiencias: lista };
+  // Audiências que vieram do Jus.br e seguem designadas: o robô relê o processo para pegar cancelamento ou remarcação.
+  const { data: doJusbr, error: erroJusbr } = await db()
+    .from("aud_audiencias")
+    .select("cnj")
+    .eq("origem", "jusbr")
+    .eq("situacao", "designada")
+    .gte("inicio", new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
+    .limit(500);
+  if (erroJusbr) falhou("ler as audiências do Jus.br", erroJusbr);
+  const acompanhar = [...new Set(((doJusbr ?? []) as { cnj: string }[]).map((l) => l.cnj))].filter((cnj) => !tribunal || tribunalDoCnj(cnj) === tribunal);
+  return { conferidaEm: (data?.iniciada_em as string | undefined) ?? null, audiencias: lista, acompanhar };
 }

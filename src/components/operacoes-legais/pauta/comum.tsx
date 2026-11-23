@@ -152,6 +152,16 @@ export function SeloTipo({ aud }: { aud: Audiencia }) {
   );
 }
 
+/** Audiência que não veio da Minha Pauta do PJe: o processo não está na pauta do certificado e foi lido no Jus.br. */
+export function SeloOrigem({ aud }: { aud: Audiencia }) {
+  if (aud.origem !== "jusbr") return null;
+  return (
+    <Selo tom="etiqueta" titulo="O processo não está na Minha Pauta do PJe do certificado: a audiência foi lida no Jus.br (Portal de Serviços do CNJ).">
+      Do Jus.br
+    </Selo>
+  );
+}
+
 export function Modalidade({ aud }: { aud: Audiencia }) {
   const m = aud.modalidadeTribunal;
   if (!m) return <span className="text-xs font-semibold text-amber-800">A completar</span>;

@@ -7,7 +7,7 @@ import { ALERTAS_DO_VIOS, alertasDaAudiencia, local, type Contexto } from "@/lib
 import type { Audiencia, Papel } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
 import { Aviso, Carregando, Indicador, Indicadores, Painel, PainelTopo, Selo, Vazio } from "../vistagem/ui";
-import { AcessoPauta, Dupla, LinkDoVios, SeloTipo, TextoComCi, TrocaDialog, cliente, diaCurto, diaPorExtenso, hora, mensagemDeErro, pautaApi, type DadosDaPauta } from "./comum";
+import { AcessoPauta, Dupla, LinkDoVios, SeloOrigem, SeloTipo, TextoComCi, TrocaDialog, cliente, diaCurto, diaPorExtenso, hora, mensagemDeErro, pautaApi, type DadosDaPauta } from "./comum";
 
 type Dados = DadosDaPauta & { hoje: string; dias: string[] };
 
@@ -138,6 +138,7 @@ function Distribuicao() {
                     <div className="min-w-0 space-y-1.5">
                       <div className="flex min-w-0 items-center gap-1.5">
                         <SeloTipo aud={aud} />
+                          <SeloOrigem aud={aud} />
                         <span className={cn("truncate text-sm font-semibold", aud.situacao === "cancelada" && "line-through")}>{cliente(aud)}</span>
                       </div>
                       <p className="font-mono text-xs text-muted-foreground">
@@ -190,6 +191,7 @@ function Distribuicao() {
                       <div className="min-w-0 space-y-1">
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                           <SeloTipo aud={aud} />
+                          <SeloOrigem aud={aud} />
                           <span className="truncate text-sm font-semibold">{cliente(aud)}</span>
                           {alertas.some((a) => a.tipo === "cedo") ? <Selo tom="alerta">Antes das 10h</Selo> : null}
                           {alertas.some((a) => a.tipo === "sem_link") ? <Selo tom="alerta">Sem link</Selo> : null}

@@ -3,7 +3,7 @@ import { FalhaDoCertificado, diasParaVencer, lerCertificado, type CertificadoCli
 import { API_JUSBR, CONSULTA_JUSBR, digitosDoCnj, ehAreaLogadaJusbr, motivoDaResposta, type FichaJusbr } from "./conectores/jusbr-urls.ts";
 import { lerConfig, type Config } from "./config.ts";
 import { abrirNavegador, guardarDiagnostico, type Navegador } from "./navegador.ts";
-import { lerSoNoVios, linhaDoMovimento, movimentosDeAudiencia, type AudienciaSoNoVios } from "./pauta-jusbr.ts";
+import { audienciasDosMovimentos, lerAcompanhar, lerSoNoVios, movimentosDeAudiencia, type AudienciaDoJusbr, type AudienciaSoNoVios } from "./pauta-jusbr.ts";
 import { entrarComCodigoDoPainel } from "./segundo-fator.ts";
 
 /**
@@ -386,19 +386,37 @@ export function msAteProximoHorario(agora = Date.now(), texto = process.env.PAUT
   return (proximo - minutosAgora) * 60_000 - local.getUTCSeconds() * 1000 - local.getUTCMilliseconds();
 }
 
-/* ------------------------------------------------------------------ "só no VIOS" no Jus.br (fase 1: só log) */
+/* ------------------------------------------------------------------ audiências fora da Minha Pauta, pelo Jus.br */
 
 /** Até quantos processos por rodada: o Jus.br é um serviço nacional e o robô não deve martelar. */
 const JUSBR_POR_RODADA = Number(process.env.PAUTA_JUSBR_MAX?.trim() || 15);
 
-async function soNoVios(config: Config): Promise<AudienciaSoNoVios[]> {
+/** PAUTA_JUSBR: "off" desliga; "log" só escreve no log (fase 1); o padrão grava no ORQESTRAI. */
+function modoJusbr(): "off" | "log" | "gravar" {
+  const modo = process.env.PAUTA_JUSBR?.trim().toLowerCase();
+  return modo === "off" || modo === "log" ? modo : "gravar";
+}
+
+async function processosParaOJusbr(config: Config): Promise<{ soNoVios: AudienciaSoNoVios[]; acompanhar: string[] }> {
   const resposta = await fetch(`${config.orqestraiUrl}/api/robos/pauta/so-no-vios`, {
     headers: { Authorization: `Bearer ${config.token}` },
     signal: AbortSignal.timeout(60_000),
   });
   const corpo = (await resposta.json().catch(() => ({}))) as Record<string, unknown>;
   if (!resposta.ok) throw new Error(`o ORQESTRAI respondeu ${resposta.status}: ${String(corpo.error ?? "")}`);
-  return lerSoNoVios(corpo);
+  return { soNoVios: lerSoNoVios(corpo), acompanhar: lerAcompanhar(corpo) };
+}
+
+async function enviarJusbr(config: Config, consultados: string[], audiencias: AudienciaDoJusbr[]): Promise<Record<string, unknown>> {
+  const resposta = await fetch(`${config.orqestraiUrl}/api/robos/pauta/jusbr`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ origem: `robô ${config.nome}`, consultados, audiencias }),
+    signal: AbortSignal.timeout(280_000),
+  });
+  const corpo = (await resposta.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!resposta.ok) throw new Error(`o ORQESTRAI respondeu ${resposta.status}: ${String(corpo.error ?? "")}`);
+  return corpo;
 }
 
 /**
@@ -420,24 +438,33 @@ async function autorizacaoPelaTela(aba: Page, digitos: string): Promise<{ autori
 }
 
 /**
- * Para cada audiência "só no VIOS" (o processo não está na Minha Pauta do certificado), lê a ficha do processo no
- * Jus.br e escreve no log os movimentos de audiência. Fase 1: nada é gravado; serve para conferir o formato. Qualquer
- * falha fica no log e não derruba a rodada da pauta. PAUTA_JUSBR=off desliga.
+ * Audiências fora da Minha Pauta: o processo não está na pauta do certificado e a consulta do processo no PJe pede
+ * captcha. Para cada audiência "só no VIOS" e cada processo de audiência que já veio do Jus.br (para pegar cancelamento
+ * ou remarcação), lê a ficha no Jus.br, tira dos movimentos as audiências de hoje em diante e manda ao ORQESTRAI
+ * (POST /api/robos/pauta/jusbr). Qualquer falha fica no log e não derruba a rodada da pauta.
  */
-async function conferirSoNoViosNoJusbr(config: Config, navegador: Navegador, comCertificado: boolean): Promise<void> {
-  if (process.env.PAUTA_JUSBR?.trim().toLowerCase() === "off") return;
-  let lista: AudienciaSoNoVios[];
+async function audienciasPeloJusbr(config: Config, navegador: Navegador, comCertificado: boolean): Promise<void> {
+  const modo = modoJusbr();
+  if (modo === "off") return;
+  let pedidos: Awaited<ReturnType<typeof processosParaOJusbr>>;
   try {
-    lista = await soNoVios(config);
+    pedidos = await processosParaOJusbr(config);
   } catch (erro) {
-    log(`Jus.br: não consegui a lista dos "só no VIOS" no ORQESTRAI · ${erro instanceof Error ? erro.message : String(erro)}`);
+    log(`Jus.br: não consegui a lista de processos no ORQESTRAI · ${erro instanceof Error ? erro.message : String(erro)}`);
     return;
   }
-  if (!lista.length) {
-    log(`Jus.br: nenhuma audiência "só no VIOS" para procurar.`);
+  const vios = new Map(pedidos.soNoVios.map((item) => [item.cnj, item]));
+  const cnjs = [...new Set([...pedidos.soNoVios.map((item) => item.cnj), ...pedidos.acompanhar])];
+  if (!cnjs.length) {
+    log(`Jus.br: nenhuma audiência fora da Minha Pauta para procurar.`);
     return;
   }
-  log(`Jus.br: ${lista.length} audiência(s) "só no VIOS"; procurando ${Math.min(lista.length, JUSBR_POR_RODADA)} no Jus.br (só log, nada é gravado).`);
+  log(
+    `Jus.br: ${pedidos.soNoVios.length} audiência(s) "só no VIOS" e ${pedidos.acompanhar.length} processo(s) para acompanhar; consultando ${Math.min(cnjs.length, JUSBR_POR_RODADA)}${modo === "log" ? " (só log, nada é gravado)" : ""}.`,
+  );
+  const consultados: string[] = [];
+  const audiencias: AudienciaDoJusbr[] = [];
+  const hoje = dataIso(0);
   const aba = await navegador.pagina.context().newPage();
   try {
     await aba.goto(CONSULTA_JUSBR, { waitUntil: "domcontentloaded" });
@@ -446,17 +473,17 @@ async function conferirSoNoViosNoJusbr(config: Config, navegador: Navegador, com
       log(`Jus.br: pediu login (${aba.url().split("?")[0]}); entrando pela PDPJ.`);
       await aguardarLoginPdpj(config, aba, "Jus.br", ehAreaLogadaJusbr, comCertificado);
     }
-    log(`Jus.br: área logada aberta (${aba.url().split("?")[0]}).`);
     let autorizacao: string | null = null;
-    for (const item of lista.slice(0, JUSBR_POR_RODADA)) {
-      const digitos = digitosDoCnj(item.cnj);
-      const noVios = `${item.inicio.slice(0, 16).replace("T", " ")} UTC · tarefa ${item.tarefaCi} ${item.tarefa}`.trim();
+    for (const cnj of cnjs.slice(0, JUSBR_POR_RODADA)) {
+      const digitos = digitosDoCnj(cnj);
       if (!digitos) continue;
+      const item = vios.get(cnj);
+      const noVios = item ? ` (VIOS ${item.inicio.slice(0, 16).replace("T", " ")} UTC · tarefa ${item.tarefaCi})` : " (acompanhando)";
       try {
         if (!autorizacao) {
           const busca = await autorizacaoPelaTela(aba, digitos);
           autorizacao = busca.autorizacao;
-          log(`Jus.br: busca pela tela respondeu ${busca.status}; ${autorizacao ? "autorização capturada" : "sem cabeçalho de autorização"}.`);
+          if (!autorizacao) log(`Jus.br: a busca pela tela respondeu ${busca.status} sem cabeçalho de autorização.`);
         }
         const url = `${API_JUSBR}/processos/${digitos}`;
         let resposta = await aba.context().request.get(url, { headers: { authorization: autorizacao ?? "" }, timeout: 60_000 });
@@ -466,15 +493,17 @@ async function conferirSoNoViosNoJusbr(config: Config, navegador: Navegador, com
         }
         const motivo = motivoDaResposta(resposta.status());
         if (motivo) {
-          log(`Jus.br ${item.cnj} (VIOS ${noVios}): ${motivo}.`);
+          log(`Jus.br ${cnj}${noVios}: ${motivo}.`);
           continue;
         }
         const corpo = (await resposta.json()) as FichaJusbr[] | FichaJusbr;
-        const movimentos = movimentosDeAudiencia(Array.isArray(corpo) ? corpo : [corpo]);
-        log(`Jus.br ${item.cnj} (VIOS ${noVios}): ${movimentos.length} movimento(s) de audiência.`);
-        for (const movimento of movimentos.slice(0, 8)) log(`   ${linhaDoMovimento(movimento)}`);
+        const daqui = audienciasDosMovimentos(cnj, movimentosDeAudiencia(Array.isArray(corpo) ? corpo : [corpo])).filter((a) => a.inicio.slice(0, 10) >= hoje);
+        consultados.push(cnj);
+        audiencias.push(...daqui);
+        const resumo = daqui.map((a) => `${a.inicio.slice(8, 10)}/${a.inicio.slice(5, 7)} ${a.inicio.slice(11, 16)} ${a.situacao}`).join(" · ");
+        log(`Jus.br ${cnj}${noVios}: ${daqui.length ? resumo : "nenhuma audiência de hoje em diante"}.`);
       } catch (erro) {
-        log(`Jus.br ${item.cnj}: falhou · ${erro instanceof Error ? erro.message.split("\n")[0] : String(erro)}`);
+        log(`Jus.br ${cnj}: falhou · ${erro instanceof Error ? erro.message.split("\n")[0] : String(erro)}`);
       }
       await aba.waitForTimeout(1_500);
     }
@@ -484,6 +513,12 @@ async function conferirSoNoViosNoJusbr(config: Config, navegador: Navegador, com
     if (arquivo) log(`Jus.br: tela guardada em ${arquivo} para conferir.`);
   } finally {
     await aba.close().catch(() => undefined);
+  }
+  if (modo === "log" || !consultados.length) return;
+  try {
+    log(`Jus.br: gravado no ORQESTRAI · ${JSON.stringify(await enviarJusbr(config, consultados, audiencias))}`);
+  } catch (erro) {
+    log(`Jus.br: não consegui gravar no ORQESTRAI · ${erro instanceof Error ? erro.message : String(erro)}`);
   }
 }
 
@@ -516,11 +551,11 @@ async function principal(): Promise<void> {
   try {
     if (!CICLO) {
       falhas = await rodada(config, navegador, comCertificado);
-      if (!SO_LER) await conferirSoNoViosNoJusbr(config, navegador, comCertificado);
+      if (!SO_LER) await audienciasPeloJusbr(config, navegador, comCertificado);
     } else {
       for (;;) {
         await rodada(config, navegador, comCertificado);
-        if (!SO_LER) await conferirSoNoViosNoJusbr(config, navegador, comCertificado);
+        if (!SO_LER) await audienciasPeloJusbr(config, navegador, comCertificado);
         const espera = msAteProximoHorario();
         log(`Próxima leitura em ${Math.round(espera / 60000)} minuto(s).`);
         await new Promise((resolver) => setTimeout(resolver, espera));

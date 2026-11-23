@@ -1,0 +1,148 @@
+import "server-only";
+
+import { z } from "zod";
+import { hojeEmBrasilia, local, somarDias } from "./agenda";
+import { avisarMudanca } from "./avisos-server";
+import { duplaDaPasta } from "./duplas";
+import { heranca, jusbrComPje, linhaDoJusbr, type LinhaDoJusbr } from "./jusbr";
+import { pastasPorCnj } from "./pastas-server";
+import { cnjComMascara } from "./pje";
+import { AudienciasError, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
+import type { Audiencia, Mudanca } from "./tipos";
+
+/**
+ * Grava as audiências que o robô leu no Jus.br para processos fora da Minha Pauta (audiências "só no VIOS" e as que
+ * já vieram de lá). Audiência nova só entra designada e ganha a dupla da pasta no VIOS; a que já está na pauta muda de
+ * situação como a do PJe (cancelada fica em vermelho até alguém conferir no VIOS). Se o PJe já mostra a audiência no
+ * mesmo dia, a do Jus.br não entra.
+ */
+
+const esquema = z.object({
+  origem: z.string().trim().min(1).max(80),
+  consultados: z.array(z.string().max(40)).max(200),
+  audiencias: z
+    .array(
+      z.object({
+        cnj: z.string().max(40),
+        inicio: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+        descricao: z.string().max(300),
+        situacao: z.enum(["designada", "cancelada", "realizada"]),
+        sala: z.string().max(300).nullable(),
+        orgao: z.string().max(300).nullable(),
+        movimentoEm: z.string().max(40).nullable(),
+      })
+    )
+    .max(1000),
+});
+
+export interface ResumoJusbr {
+  consultados: number;
+  novas: number;
+  atualizadas: number;
+  canceladas: number;
+  jaNoPje: number;
+}
+
+type Linha = Record<string, unknown>;
+
+export async function registrarLeituraJusbr(entrada: unknown): Promise<ResumoJusbr> {
+  const lido = esquema.safeParse(entrada);
+  if (!lido.success) throw new AudienciasError(`Leitura do Jus.br inválida: ${lido.error.issues[0]?.message ?? "formato"}.`, 400);
+  const corpo = lido.data;
+  const resumo: ResumoJusbr = { consultados: corpo.consultados.length, novas: 0, atualizadas: 0, canceladas: 0, jaNoPje: 0 };
+  const { data: leitura } = await db().from("aud_leituras").insert({ fonte: "jusbr", origem: corpo.origem }).select("id").single();
+  try {
+    const linhas = corpo.audiencias.map(linhaDoJusbr).filter((l): l is LinhaDoJusbr => Boolean(l));
+    const cnjs = [...new Set([...corpo.consultados.map((c) => cnjComMascara(c)).filter((c): c is string => Boolean(c)), ...linhas.map((l) => l.cnj)])];
+    const desde = `${somarDias(hojeEmBrasilia(), -1)}T00:00:00-03:00`;
+    const existentes: Audiencia[] = [];
+    for (let i = 0; i < cnjs.length; i += 150) {
+      const { data, error } = await db().from("aud_audiencias").select(COLUNAS_AUDIENCIA).in("cnj", cnjs.slice(i, i + 150)).gte("inicio", desde);
+      if (error) falhou("ler a pauta para gravar o Jus.br", error);
+      existentes.push(...((data ?? []) as Linha[]).map(paraAudiencia));
+    }
+    const porChave = new Map(existentes.map((a) => [a.chave, a]));
+    const noPje = new Set(existentes.filter((a) => a.origem === "pje" && a.situacao === "designada").map((a) => `${a.cnj}|${local(a.inicio).dia}`));
+    const pessoas = await carregarPessoas();
+    const pastas = await pastasPorCnj(linhas.filter((l) => !porChave.has(l.chave) && l.situacao === "designada").map((l) => l.cnj));
+    const agora = new Date().toISOString();
+
+    for (const l of linhas) {
+      const antes = porChave.get(l.chave);
+      if (!antes) {
+        if (l.situacao !== "designada") continue;
+        if (noPje.has(`${l.cnj}|${local(l.inicio).dia}`)) {
+          resumo.jaNoPje += 1;
+          continue;
+        }
+        const pasta = pastas.get(l.cnj);
+        const dupla = pasta ? duplaDaPasta(pessoas, { advogadoResponsavel: pasta.advogadoResponsavel, auxiliarSigla: pasta.auxiliarSigla }) : { titularId: null, backupId: null };
+        const { data, error } = await db()
+          .from("aud_audiencias")
+          .insert({
+            ...l,
+            cliente: pasta?.cliente ?? null,
+            grupo_cliente: pasta?.grupoCliente ?? null,
+            ci_processo: pasta?.ci ?? null,
+            titular_id: dupla.titularId,
+            backup_id: dupla.backupId,
+            lida_em: agora,
+          })
+          .select("id")
+          .single();
+        if (error) falhou("gravar a audiência lida no Jus.br", error);
+        resumo.novas += 1;
+        if (data) await registrarHistorico(String(data.id), "incluída pelo Jus.br", { para: `${l.inicio.slice(0, 16)} · ${l.tipo_descricao}`, feitoPor: "leitura do Jus.br" });
+        continue;
+      }
+      if (antes.origem !== "jusbr") continue;
+      const campos: Linha = { tipo: l.tipo, tipo_descricao: l.tipo_descricao, rito_sumarissimo: l.rito_sumarissimo, modalidade_tribunal: l.modalidade_tribunal, orgao: l.orgao, sala: l.sala, situacao: l.situacao, lida_em: agora };
+      const mudancasNovas: Mudanca[] = [];
+      if (antes.situacao === "designada" && l.situacao === "cancelada") mudancasNovas.push("cancelada");
+      if (antes.orgao && l.orgao && antes.orgao !== l.orgao && l.situacao === "designada") mudancasNovas.push("vara");
+      if (mudancasNovas.length) Object.assign(campos, { mudancas: [...new Set([...antes.mudancas, ...mudancasNovas])], mudanca_conferida_em: null, mudanca_conferida_por: null });
+      const { error } = await db().from("aud_audiencias").update(campos).eq("id", antes.id);
+      if (error) falhou("atualizar a audiência lida no Jus.br", error);
+      resumo.atualizadas += 1;
+      if (mudancasNovas.includes("cancelada")) resumo.canceladas += 1;
+      if (mudancasNovas.length) {
+        await registrarHistorico(antes.id, "mudou no tribunal", { de: antes.inicio, para: mudancasNovas.join(", "), feitoPor: "leitura do Jus.br" });
+        const { data } = await db().from("aud_audiencias").select(COLUNAS_AUDIENCIA).eq("id", antes.id).single();
+        if (data) await avisarMudanca(paraAudiencia(data as Linha));
+      }
+    }
+    if (leitura)
+      await db()
+        .from("aud_leituras")
+        .update({ terminada_em: new Date().toISOString(), total: linhas.length, novas: resumo.novas, alteradas: resumo.atualizadas, canceladas: resumo.canceladas, detalhe: resumo })
+        .eq("id", leitura.id);
+    return resumo;
+  } catch (erro) {
+    if (leitura) await db().from("aud_leituras").update({ terminada_em: new Date().toISOString(), erro: erro instanceof Error ? erro.message : String(erro) }).eq("id", leitura.id);
+    throw erro;
+  }
+}
+
+/**
+ * Quando o PJe passa a mostrar uma audiência que veio do Jus.br (mesmo processo, mesmo dia), a do PJe vale: herda
+ * titular, backup e o que a equipe completou, e a do Jus.br sai da pauta (cancelada, já conferida). Devolve quantas.
+ */
+export async function substituirJusbrPeloPje(audiencias: Audiencia[]): Promise<number> {
+  const pares = jusbrComPje(audiencias);
+  const agora = new Date().toISOString();
+  for (const { jusbr, pje } of pares) {
+    const campos = heranca(jusbr, pje);
+    if (Object.keys(campos).length) {
+      const { error } = await db().from("aud_audiencias").update(campos).eq("id", pje.id);
+      if (error) falhou("passar a audiência do Jus.br para a do PJe", error);
+    }
+    const { error } = await db()
+      .from("aud_audiencias")
+      .update({ situacao: "cancelada", mudanca_conferida_em: agora, mudanca_conferida_por: "sistema: substituída pela audiência do PJe" })
+      .eq("id", jusbr.id);
+    if (error) falhou("tirar da pauta a audiência do Jus.br", error);
+    await registrarHistorico(pje.id, "substituiu a do Jus.br", { para: Object.keys(campos).join(", ") || null, feitoPor: "conferência com o VIOS" });
+    await registrarHistorico(jusbr.id, "substituída pela do PJe", { feitoPor: "conferência com o VIOS" });
+  }
+  return pares.length;
+}

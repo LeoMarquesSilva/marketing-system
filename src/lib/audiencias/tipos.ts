@@ -63,7 +63,8 @@ export interface PessoaPauta {
 export interface Audiencia {
   id: string;
   chave: string;
-  origem: "pje" | "vios" | "manual";
+  /** pje: Minha Pauta do PJe; jusbr: processo fora da Minha Pauta, lido no Jus.br (audiência "só no VIOS"). */
+  origem: "pje" | "vios" | "manual" | "jusbr";
   tribunal: string | null;
   cnj: string;
   inicio: string;
