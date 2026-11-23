@@ -20,6 +20,40 @@ export type ModoDeLogin = "certificado" | "senha" | "manual";
  */
 export type ModoDoNavegador = "comum" | "playwright";
 
+export interface ProxyDoNavegador {
+  server: string;
+  username?: string;
+  password?: string;
+  bypass?: string;
+}
+
+/**
+ * Lê NAVEGADOR_PROXY ("socks5://host:porta" ou "http://usuario:senha@host:porta") e NAVEGADOR_PROXY_IGNORAR
+ * (domínios que saem direto, separados por vírgula). Usuário e senha saem da URL e vão em campos próprios.
+ */
+export function lerProxy(valor: string, ignorar = ""): ProxyDoNavegador | null {
+  const texto = valor.trim();
+  if (!texto) return null;
+  let url: URL;
+  try {
+    url = new URL(texto);
+  } catch {
+    throw new Error("NAVEGADOR_PROXY inválido: use socks5://host:porta ou http://usuario:senha@host:porta.");
+  }
+  if (!/^(http|https|socks5):$/.test(url.protocol) || !url.hostname || !url.port) {
+    throw new Error("NAVEGADOR_PROXY deve ter protocolo (http, https ou socks5), host e porta.");
+  }
+  if (url.protocol === "socks5:" && (url.username || url.password)) {
+    throw new Error("O navegador não aceita usuário e senha em proxy socks5: use http://usuario:senha@host:porta.");
+  }
+  const proxy: ProxyDoNavegador = { server: `${url.protocol}//${url.hostname}:${url.port}` };
+  if (url.username) proxy.username = decodeURIComponent(url.username);
+  if (url.password) proxy.password = decodeURIComponent(url.password);
+  const lista = ignorar.split(/[,\s]+/).map((d) => d.trim()).filter(Boolean);
+  if (lista.length) proxy.bypass = lista.join(",");
+  return proxy;
+}
+
 export interface Config {
   orqestraiUrl: string;
   token: string;
@@ -33,6 +67,11 @@ export interface Config {
   navegadorArgs: string[];
   /** Endereço da tela remota do robô (noVNC), mostrado no log quando ele precisa de uma pessoa. */
   telaRemotaUrl: string;
+  /**
+   * Saída do navegador por um proxy (NAVEGADOR_PROXY, só no modo playwright). Os tribunais (CloudFront) bloqueiam IP de
+   * data center: no servidor, o navegador sai por um proxy aceito (ex.: socks5://warp:1080). Null = conexão direta.
+   */
+  navegadorProxy: ProxyDoNavegador | null;
   /** Conectores que este robô atende (ROBO_CONECTORES); vazio = todos. Ex.: "eproc" ou "esaj:TJSP,esaj:TJCE". */
   conectores: string[];
   /** Certificado A1 em arquivo (só no modo playwright). */
@@ -128,6 +167,8 @@ export function lerConfig(): Config {
   if (comCertificado && navegadorModo !== "playwright") throw new Error("O certificado em arquivo (CERTIFICADO_PFX ou CERTIFICADO_PASTA) só funciona com NAVEGADOR_MODO=playwright.");
   const navegadorHeadless = /^(sim|1|true)$/i.test(texto("NAVEGADOR_HEADLESS"));
   if (navegadorHeadless && navegadorModo !== "playwright") throw new Error("NAVEGADOR_HEADLESS só vale com NAVEGADOR_MODO=playwright.");
+  const navegadorProxy = lerProxy(texto("NAVEGADOR_PROXY"), texto("NAVEGADOR_PROXY_IGNORAR"));
+  if (navegadorProxy && navegadorModo !== "playwright") throw new Error("NAVEGADOR_PROXY só vale com NAVEGADOR_MODO=playwright.");
 
   return {
     orqestraiUrl,
@@ -139,6 +180,7 @@ export function lerConfig(): Config {
     navegadorHeadless,
     navegadorArgs: texto("NAVEGADOR_ARGS").split(/\s+/).filter(Boolean),
     telaRemotaUrl: texto("TELA_REMOTA_URL"),
+    navegadorProxy,
     conectores: lista("ROBO_CONECTORES").map((item) => item.toLowerCase()),
     certificado,
     intervaloMs: numero("INTERVALO_SEGUNDOS", 30) * 1000,

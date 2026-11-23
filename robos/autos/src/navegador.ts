@@ -137,7 +137,12 @@ async function abrirPeloPlaywright(config: Config, certificado: CertificadoClien
     acceptDownloads: true,
     args: [...ARGUMENTOS, ...config.navegadorArgs],
     clientCertificates: certificado?.origens.map((origin) => ({ origin, pfx: certificado.pfx, passphrase: certificado.senha })),
+    // Os tribunais (CloudFront) bloqueiam IP de data center: no servidor, o navegador sai pelo proxy de NAVEGADOR_PROXY.
+    ...(config.navegadorProxy ? { proxy: config.navegadorProxy } : {}),
   });
+  if (config.navegadorProxy) {
+    console.log(`[${new Date().toLocaleTimeString("pt-BR")}] Navegador saindo pelo proxy ${config.navegadorProxy.server}.`);
+  }
   contexto.setDefaultTimeout(30_000);
   contexto.setDefaultNavigationTimeout(60_000);
   // Login por certificado no jus.br (PDPJ, PJe): o robô faz o papel do PJe Office com o mesmo A1 (src/pje-office.ts).
