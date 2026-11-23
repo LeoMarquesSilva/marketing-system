@@ -94,6 +94,10 @@ describe("cópia do VIOS no SAMA", () => {
     expect(deTarefaDoSama({ ci: 2, nro_cnj: CNJ, tarefa: "AUDIÊNCIA INICIAL", data_limite: "2026-12-10", vios_status: "Cancelada" })?.status).toBe("cancelada");
     expect(deTarefaDoSama({ ci: 3, nro_cnj: CNJ, tarefa: "AUDIÊNCIA INICIAL", data_limite: "2026-12-10", horario: "" })?.inicio).toBe("2026-12-10T03:00:00.000Z");
     expect(deTarefaDoSama({ ci: 4, nro_cnj: CNJ, tarefa: "INSERIR PAUTA DE AUDIÊNCIA", data_limite: "2026-12-10" })).toBeNull();
+    expect(deTarefaDoSama({ ci: 6, nro_cnj: CNJ, tarefa: "VERIFICAR AUDIÊNCIA - ALTERAÇÃO/INCLUSÃO/CANCELAMENTO DE AUDIÊNCIA", data_limite: "2026-12-10" })).toBeNull();
+    expect(deTarefaDoSama({ ci: 7, nro_cnj: CNJ, tarefa: "RELATÓRIO DA PERÍCIA + AGENDAR PRAZO DE ENTREGA PARECER TÉCNICO", data_limite: "2026-12-10" })).toBeNull();
+    expect(deTarefaDoSama({ ci: 8, nro_cnj: CNJ, tarefa: "AUD. INSTRUÇÃO", data_limite: "2026-12-10" })?.tipo).toBe("instrucao");
+    expect(deTarefaDoSama({ ci: 9, nro_cnj: CNJ, tarefa: "AUDIÊNCIA UNA/INICIAL", data_limite: "2026-12-10" })?.tipo).toBe("una");
     expect(deTarefaDoSama({ ci: 5, nro_cnj: "123", tarefa: "AUDIÊNCIA UNA", data_limite: "2026-12-10" })).toBeNull();
   });
 });
@@ -139,14 +143,16 @@ describe("casamento da pauta com o VIOS", () => {
     expect(r.tarefaDa.get(a.id)).toBeNull();
   });
 
-  it("só no VIOS: abertas, futuras e dos tribunais lidos", () => {
+  it("só no VIOS: abertas, futuras, dos tribunais lidos, sem sessão e perícia", () => {
     const a = aud();
     const sobra = tarefa({ cnj: "0022222-33.2026.5.15.0002", inicio: "2026-12-05T12:00:00.000Z" });
     const outroTribunal = tarefa({ cnj: "0033333-44.2026.8.26.0100", tarefa: "AUDIÊNCIA DE CONCILIAÇÃO" });
     const outroTrt = tarefa({ cnj: "0044444-55.2026.5.03.0001" });
     const concluida = tarefa({ cnj: "0022222-33.2026.5.15.0002", status: "concluida" });
     const passada = tarefa({ cnj: "0022222-33.2026.5.15.0002", inicio: "2026-11-20T12:00:00.000Z" });
-    const r = conferirPautaComVios([a], [tarefa(), sobra, outroTribunal, outroTrt, concluida, passada], AGORA);
+    const sessao = tarefa({ cnj: "0022222-33.2026.5.15.0002", tarefa: "SESSÃO DE JULGAMENTO", tipo: "sessao" });
+    const pericia = tarefa({ cnj: "0022222-33.2026.5.15.0002", tarefa: "PERÍCIA", tipo: "pericia" });
+    const r = conferirPautaComVios([a], [tarefa(), sobra, outroTribunal, outroTrt, concluida, passada, sessao, pericia], AGORA);
     expect(r.soNoVios).toEqual([sobra]);
   });
 

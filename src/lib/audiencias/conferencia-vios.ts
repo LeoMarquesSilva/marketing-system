@@ -60,7 +60,9 @@ export function conferirPautaComVios(audiencias: Audiencia[], tarefas: Audiencia
   }
 
   const tribunais = new Set(audiencias.map((a) => a.tribunal).filter(Boolean));
+  // O robô lê a Minha Pauta do 1º grau: sessão de julgamento (2º grau) e perícia nunca aparecem nela.
   const soNoVios = tarefas
+    .filter((t) => t.tipo !== "sessao" && t.tipo !== "pericia")
     .filter((t) => !usadas.has(t.tarefaCi) && t.status === "aberta" && new Date(t.inicio).getTime() >= agora.getTime())
     .filter((t) => tribunais.has(tribunalDoCnj(t.cnj)))
     .sort((x, y) => x.inicio.localeCompare(y.inicio));

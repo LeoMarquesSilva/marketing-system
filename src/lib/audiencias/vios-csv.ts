@@ -22,7 +22,9 @@ export interface AudienciaNoVios {
 }
 
 const EH_AUDIENCIA = /(AUDI[EÊ]NCIA|AUD\.|SESS[AÃ]O DE JULGAMENTO|PER[IÍ]CIA)/i;
-const NAO_EH = /(LEMBRETE|INSERIR PAUTA|ATA|ALERTA|CI[EÊ]NCIA|SOLICITAR|MANIFESTA|LAUDO|INFORMAR)/i;
+// "VERIFICAR AUDIÊNCIA - ALTERAÇÃO/INCLUSÃO/CANCELAMENTO" e "RELATÓRIO DA PERÍCIA + ... PARECER TÉCNICO" são
+// tarefas sobre a audiência, não a audiência (vistas na 1ª conferência, 23/11/2026).
+const NAO_EH = /(LEMBRETE|INSERIR PAUTA|ATA|ALERTA|CI[EÊ]NCIA|SOLICITAR|MANIFESTA|LAUDO|INFORMAR|VERIFICAR|RELAT[OÓ]RIO|PARECER)/i;
 
 export function ehTarefaDeAudiencia(tarefa: string): boolean {
   return EH_AUDIENCIA.test(tarefa) && !NAO_EH.test(tarefa);
