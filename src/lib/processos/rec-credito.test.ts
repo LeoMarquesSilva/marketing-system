@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TabelaTjsp } from "./calculo-tjsp";
-import { colunasDoItem, encargosDoProcesso, lerValor, linhaDaCarteira, memoriaDoValorDaAcao, processoEncerrado, situacaoDaCitacao, type Citacao, type DadosDoProcessoNaCarteira, type ItensRecCredito } from "./rec-credito";
+import { SEM_ATUALIZACAO, atualizacaoDosAutos, situacaoDaAtualizacao, colunasDoItem, encargosDoProcesso, lerValor, linhaDaCarteira, memoriaDoValorDaAcao, processoEncerrado, situacaoDaCitacao, type Citacao, type DadosDoProcessoNaCarteira, type ItensRecCredito } from "./rec-credito";
 
 const tabela = new TabelaTjsp([
   { mes: "2023-01-01", tabelaPratica: 100, taxaLegal: null },
@@ -170,5 +170,55 @@ describe("memória do valor da ação atualizado", () => {
     expect(encargosDoProcesso("Execução de Título Extrajudicial", null, null)).toMatchObject({ honorarios: 10, multa: 0 });
     expect(encargosDoProcesso("Monitória", null, null)).toMatchObject({ honorarios: 0, multa: 0 });
     expect(encargosDoProcesso("Cumprimento de sentença", 15, 0)).toMatchObject({ honorarios: 15, multa: 0, origem: "informados na ficha do processo" });
+  });
+});
+
+describe("atualização dos autos na carteira", () => {
+  const pedido = (status: string, criadoEm: string, concluidoEm: string | null = null, erro: string | null = null) => ({ status, criadoEm, concluidoEm, erro });
+
+  it("sem pedido nem documento, nada foi atualizado", () => {
+    expect(atualizacaoDosAutos([], [])).toEqual({ roboEm: null, roboAgora: null, roboErro: null, iaEm: null, iaPendentes: 0, iaErros: 0, iaSemTexto: 0, documentos: 0 });
+  });
+
+  it("pega a última conferência do robô e a última leitura da IA", () => {
+    const autos = atualizacaoDosAutos(
+      [pedido("concluido", "2026-11-10T10:00:00Z", "2026-11-10T10:05:00Z"), pedido("concluido", "2026-11-18T09:00:00Z", "2026-11-18T09:03:00Z")],
+      [
+        { leituraStatus: "lida", lidoEm: "2026-11-10T10:20:00Z" },
+        { leituraStatus: "lida", lidoEm: "2026-11-18T09:10:00Z" },
+        { leituraStatus: "sem_texto", lidoEm: null },
+      ]
+    );
+    expect(autos.roboEm).toBe("2026-11-18T09:03:00Z");
+    expect(autos.roboAgora).toBeNull();
+    expect(autos.iaEm).toBe("2026-11-18T09:10:00Z");
+    expect(autos.iaSemTexto).toBe(1);
+    expect(autos.documentos).toBe(3);
+  });
+
+  it("mostra o pedido em aberto ou a falha do mais recente, sem perder a data da última conferência", () => {
+    const naFila = atualizacaoDosAutos([pedido("concluido", "2026-11-10T10:00:00Z", "2026-11-10T10:05:00Z"), pedido("pendente", "2026-11-18T09:00:00Z")], []);
+    expect(naFila).toMatchObject({ roboEm: "2026-11-10T10:05:00Z", roboAgora: "na_fila" });
+    const falhou = atualizacaoDosAutos([pedido("erro", "2026-11-18T09:00:00Z", "2026-11-18T09:01:00Z", "Tribunal fora do ar")], [{ leituraStatus: "erro", lidoEm: null }, { leituraStatus: "lendo", lidoEm: null }]);
+    expect(falhou).toMatchObject({ roboEm: null, roboAgora: "erro", roboErro: "Tribunal fora do ar", iaErros: 1, iaPendentes: 1 });
+  });
+
+  it("um pedido cancelado depois não esconde a última conferência", () => {
+    const autos = atualizacaoDosAutos([pedido("concluido", "2026-11-10T10:00:00Z", "2026-11-10T10:05:00Z"), pedido("cancelado", "2026-11-18T09:00:00Z", "2026-11-18T09:01:00Z")], []);
+    expect(autos).toMatchObject({ roboEm: "2026-11-10T10:05:00Z", roboAgora: null });
+  });
+});
+
+describe("situação da atualização", () => {
+  it("hoje só quando o robô conferiu hoje (Brasília) e a IA não tem nada por ler", () => {
+    const conferido = { ...SEM_ATUALIZACAO, roboEm: "2026-11-18T12:00:00Z", iaEm: "2026-11-18T12:05:00Z", documentos: 1 };
+    expect(situacaoDaAtualizacao(conferido, "2026-11-18")).toBe("hoje");
+    expect(situacaoDaAtualizacao({ ...conferido, iaPendentes: 1 }, "2026-11-18")).toBe("em_andamento");
+    expect(situacaoDaAtualizacao({ ...conferido, roboAgora: "na_fila" }, "2026-11-18")).toBe("em_andamento");
+    expect(situacaoDaAtualizacao({ ...conferido, roboAgora: "erro" }, "2026-11-18")).toBe("pendente");
+    // 01:00 UTC do dia 19 ainda é dia 18 em Brasília.
+    expect(situacaoDaAtualizacao({ ...conferido, roboEm: "2026-11-19T01:00:00Z" }, "2026-11-18")).toBe("hoje");
+    expect(situacaoDaAtualizacao(conferido, "2026-11-19")).toBe("pendente");
+    expect(situacaoDaAtualizacao(SEM_ATUALIZACAO, "2026-11-18")).toBe("pendente");
   });
 });

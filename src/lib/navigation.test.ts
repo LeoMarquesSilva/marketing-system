@@ -38,7 +38,7 @@ describe("catálogo de navegação", () => {
       "Administração",
     ]);
     const facilities = admin.find((front) => front.id === "facilities")!;
-    expect(facilities.features.map((feature) => feature.label)).toEqual(["Gestão de eventos", "Fornecedores e contratos"]);
+    expect(facilities.features.map((feature) => feature.label)).toEqual(["Gestão de eventos", "Gestão de Fornecedores e Prestadores de Serviços"]);
     const marketing = admin.find((front) => front.id === "marketing")!;
     expect(marketing.features.map((feature) => feature.label)).toContain("Gerador de conteúdo");
     expect(marketing.features.map((feature) => feature.label)).toContain("Métricas de redes sociais");
@@ -50,6 +50,13 @@ describe("catálogo de navegação", () => {
     expect(visibleHrefs({ role: null, permissions: ["/planner"] })).not.toContain("/pe27");
     expect(buildNav({ role: null, permissions: ["/planner"] }).some((front) => front.id === "estrategia")).toBe(false);
     expect(visibleHrefs({ role: null, permissions: ["/planner", "/pe27"] })).toEqual(expect.arrayContaining(["/planner", "/pe27"]));
+  });
+
+  it("Minidocumentário aparece para admin e para quem tem a chave, nunca pelo modo legado", () => {
+    expect(visibleHrefs({ role: "admin" })).toEqual(expect.arrayContaining(["/documentario", "/documentario/dia", "/documentario/acervo"]));
+    expect(visibleHrefs({ role: null, permissions: null })).not.toContain("/documentario");
+    expect(visibleHrefs({ role: null, permissions: ["/planner", "/eventos"] })).not.toContain("/documentario");
+    expect(visibleHrefs({ role: null, permissions: ["/conteudo/roteiros", "/documentario"] })).toEqual(expect.arrayContaining(["/documentario", "/documentario/aprovacao"]));
   });
 
   it("consultor só com o PE27 vê no menu apenas o PE27", () => {
@@ -65,6 +72,7 @@ describe("visibilidade por perfil", () => {
   it("admin vê tudo menos a home do colaborador de conteúdo", () => {
     const hrefs = visibleHrefs({ role: "admin" });
     expect(hrefs).toContain("/");
+    expect(hrefs).toContain("/painel-marketing");
     expect(hrefs).not.toContain("/conteudo/inicio");
     for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check", "/rh/organograma", "/rh/boas-praticas", "/admin", "/fotos-colaboradores"]) {
       expect(hrefs).toContain(href);
@@ -136,7 +144,8 @@ describe("visibilidade por perfil", () => {
         "/meus-clientes",
       ])
     );
-    expect(hrefs).not.toContain("/");
+    expect(hrefs).toContain("/");
+    expect(hrefs).not.toContain("/painel-marketing");
     expect(hrefs).not.toContain("/planner");
     expect(frontIds({ role: null, permissions: null, department: "Trabalhista" })).not.toContain("pessoas");
   });
@@ -161,7 +170,8 @@ describe("visibilidade por perfil", () => {
     expect(hrefs).toEqual(
       expect.arrayContaining(["/conteudo/inicio", "/conteudo/boletim", "/conteudo/reels", "/conteudo/roteiros"])
     );
-    expect(hrefs).not.toContain("/");
+    expect(hrefs).toContain("/");
+    expect(hrefs).not.toContain("/painel-marketing");
     expect(hrefs).not.toContain("/conteudo/gustavo");
   });
 
@@ -245,5 +255,19 @@ describe("rota ativa e cabeçalho", () => {
     expect(naConfiguracao.configuracoes?.ativa).toBe(true);
     // A página de configurações não vira aba nem aparece na sidebar.
     expect(visibleHrefs({ role: "admin" })).not.toContain("/operacoes-legais/vistagem/configuracoes");
+  });
+
+  it("Minhas entregas aparece para todo mundo da equipe, menos para o perfil só do PE27", () => {
+    expect(visibleHrefs({ role: "admin" })).toContain("/minhas-entregas");
+    expect(visibleHrefs({ role: null, permissions: null, department: "Trabalhista" })).toContain("/minhas-entregas");
+    expect(visibleHrefs({ role: null, permissions: ["/planner"] })).toContain("/minhas-entregas");
+  });
+
+  it("Escolhas da equipe aparece para Marketing, admin e líderes, não para o colaborador comum", () => {
+    expect(visibleHrefs({ role: "admin" })).toContain("/conteudo/escolhas");
+    expect(visibleHrefs({ role: null, permissions: ["/conteudo/roteiros"], department: "Marketing" })).toContain("/conteudo/escolhas");
+    expect(visibleHrefs({ role: null, permissions: null, department: "Trabalhista", ferias_view_enabled: true })).toContain("/conteudo/escolhas");
+    expect(visibleHrefs({ role: null, permissions: null, department: "Trabalhista" })).not.toContain("/conteudo/escolhas");
+    expect(visibleHrefs({ role: null, permissions: ["/conteudo/roteiros"], department: "Cível" })).not.toContain("/conteudo/escolhas");
   });
 });

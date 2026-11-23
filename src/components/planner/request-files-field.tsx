@@ -16,6 +16,7 @@ import {
   signRequestFileUrls,
   uploadRequestFile,
 } from "@/lib/request-files/client";
+import { ArtCarousel, artSlideKind, type ArtSlide } from "@/components/planner/art-carousel";
 
 function FileTypeIcon({ contentType }: { contentType: string | null }) {
   if (contentType?.startsWith("video/")) return <FileVideo className="h-6 w-6" aria-hidden />;
@@ -108,29 +109,36 @@ export function RequestFilesField({
     );
   }
 
+  // A arte em carrossel (como no Instagram); a lista abaixo é para baixar e remover.
+  const slides: ArtSlide[] = files
+    .filter((file) => urls[file.storagePath])
+    .map((file) => ({ id: file.id, url: urls[file.storagePath], name: file.fileName, kind: artSlideKind(file.contentType) }));
+
   return (
     <div className="space-y-3">
+      {slides.length > 0 && <ArtCarousel slides={slides} label="Arte da tarefa" className="mx-auto max-w-[420px]" />}
+
       {files.length > 0 && (
-        <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4" aria-label="Arquivos da arte">
+        <ul className="divide-y divide-black/5 rounded-lg border border-black/10 dark:divide-white/10 dark:border-white/10" aria-label="Arquivos da arte">
           {files.map((file, index) => {
             const url = urls[file.storagePath];
             return (
-              <li key={file.id} className="group relative overflow-hidden rounded-lg border border-black/10 bg-black/[0.02] dark:border-white/10 dark:bg-white/[0.03]">
-                <div className="grid aspect-square place-items-center overflow-hidden text-muted-foreground">
+              <li key={file.id} className="flex items-center gap-2.5 px-2 py-1.5">
+                <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded bg-black/[0.03] text-muted-foreground dark:bg-white/[0.04]">
                   {isImageContentType(file.contentType) && url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={url} alt={file.fileName} className="size-full object-cover" />
+                    <img src={url} alt="" className="size-full object-cover" />
                   ) : (
                     <FileTypeIcon contentType={file.contentType} />
                   )}
-                </div>
-                <div className="flex items-center gap-1 border-t border-black/5 px-2 py-1.5 dark:border-white/10">
+                </span>
+                <div className="flex min-w-0 flex-1 items-center gap-1">
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[11px] font-medium text-foreground" title={file.fileName}>
+                    <span className="block truncate text-xs font-medium text-foreground" title={file.fileName}>
                       {files.length > 1 && <span className="text-muted-foreground">{index + 1}. </span>}
                       {file.fileName}
                     </span>
-                    <span className="block text-[10px] text-muted-foreground">{formatFileSize(file.sizeBytes)}</span>
+                    <span className="block text-xs text-muted-foreground">{formatFileSize(file.sizeBytes)}</span>
                   </span>
                   {url && (
                     <a

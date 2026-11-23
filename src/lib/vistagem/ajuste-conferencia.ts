@@ -1,4 +1,5 @@
 import { chaveDoCaminho, dataValida, mesmasPessoas, paraDataVios, separarNomes } from "./agendamento";
+import { ROTULO_CONTAGEM, type ContagemPrazo } from "./dias-uteis";
 import type { DataDoFluxo, EnvioStatus, MudancaNaTarefa, PublicacaoStatus } from "./types";
 
 /** O que a controladoria pode ajustar numa tarefa na Conferência; o tipo de tarefa e a observação ficam como o jurídico pediu. */
@@ -23,6 +24,33 @@ export function podeEditarNaConferencia(status: PublicacaoStatus, envio: EnvioSt
   return (status === "controladoria_vistar" && envio === "nao_enviado") || (status === "pronto_para_agendar" && envio === "erro");
 }
 
+/** Nome da mudança de fatal nos ajustes (o selo da origem da fatal procura por ele). */
+export const CAMPO_DATA_FATAL = "Data fatal";
+
+/**
+ * Nome da mudança que guarda os dias que o vistador escolheu (botão 5/10/15…, prazo da tarefa, IA ou leitor) quando a
+ * Conferência muda a fatal: os dias da tarefa são apagados, e o selo da origem da fatal lê daqui qual foi o botão
+ * (pedido de 19/11/2026).
+ */
+export const CAMPO_DIAS_DO_PRAZO = "Dias do prazo";
+
+/** "15 dias úteis" (o mesmo texto do selo). */
+export function textoDosDias(dias: number, contagem: ContagemPrazo | null | undefined): string {
+  return `${dias} ${ROTULO_CONTAGEM[contagem ?? "uteis"]}`;
+}
+
+/**
+ * A mudança dos dias quando a Conferência troca a fatal de uma tarefa que tinha os dias da vistagem; null quando a
+ * fatal é a mesma ou não havia dias (fatal do calendário).
+ */
+export function mudancaDosDias(
+  antes: { dataFatal: string | null; diasPrazo: number | null; contagemPrazo: ContagemPrazo | null },
+  fatalNova: string | null
+): MudancaNaTarefa | null {
+  if (!antes.diasPrazo || fatalNova === antes.dataFatal) return null;
+  return { campo: CAMPO_DIAS_DO_PRAZO, de: textoDosDias(antes.diasPrazo, antes.contagemPrazo), para: "fatal mudada na Conferência" };
+}
+
 /** O que mudou na tarefa, em texto de tela: é o que a Conferência registra e mostra no cartão. */
 export function mudancasNaTarefa(antes: CamposDaTarefa, depois: CamposDaTarefa): MudancaNaTarefa[] {
   const mudancas: MudancaNaTarefa[] = [];
@@ -34,7 +62,7 @@ export function mudancasNaTarefa(antes: CamposDaTarefa, depois: CamposDaTarefa):
     if (!mesmasPessoas(de, para)) mudancas.push({ campo, de: de.join(", ") || vazio, para: para.join(", ") || vazio });
   };
 
-  anotar("Data fatal", dia(antes.dataFatal, "sem fatal"), dia(depois.dataFatal, "sem fatal"));
+  anotar(CAMPO_DATA_FATAL, dia(antes.dataFatal, "sem fatal"), dia(depois.dataFatal, "sem fatal"));
   anotar(depois.dataFatal ? "Enviar no VIOS" : "Data no VIOS", dia(antes.data, "sem data"), dia(depois.data, "sem data"));
   anotar("Horário", antes.hora ?? "sem horário", depois.hora ?? "sem horário");
   anotar("Hora final", antes.horaFim ?? "sem hora final", depois.horaFim ?? "sem hora final");

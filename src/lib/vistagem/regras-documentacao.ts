@@ -16,7 +16,7 @@ export type OrigemDaRegra = "codigo" | "vios" | "sioe" | "servidor" | "configura
 
 export const ORIGEM_DA_REGRA: Record<OrigemDaRegra, { rotulo: string; dica: string }> = {
   configuravel: { rotulo: "Editável aqui", dica: "Muda nesta tela; vale a partir da próxima rodada." },
-  codigo: { rotulo: "Fixa no sistema", dica: "Muda com um ajuste no código do Orquestra." },
+  codigo: { rotulo: "Fixa no sistema", dica: "Muda com um ajuste no código do ORQESTRAI." },
   vios: { rotulo: "Vem do VIOS", dica: "Segue o cadastro do VIOS (fluxos, tarefas, usuários): muda lá." },
   sioe: { rotulo: "Vem do SIOE", dica: "Segue o SIOE (pastas, áreas das pessoas, feriados): muda lá." },
   servidor: { rotulo: "Variável do servidor", dica: "Ligada na Vercel: muda com a configuração do servidor (pedir ao suporte)." },
@@ -219,7 +219,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "quem-ve",
         titulo: "Quem vê a fila",
         quando: "a pessoa tiver o papel jurídico (Configurações › Quem acessa a Vistagem)",
-        entao: "ela só vê a Visão geral e a aba Vistagem, das áreas marcadas para ela; sem \"vê as demandas de risco\", as de risco não aparecem.",
+        entao: "ela só vê a Visão geral e a aba Vistagem, das áreas marcadas para ela; sem \"vista as demandas de risco\", as de risco não entram na fila A vistar dela, mas ela as vê no Vistado, na Visão geral e no Histórico, como o resto da área.",
         origem: "codigo",
       },
       {
@@ -234,6 +234,14 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         titulo: "Ciência dos agendamentos",
         quando: "nenhuma tarefa (nem o fluxo do VIOS) criar a \"1. CIÊNCIA DOS AGENDAMENTOS\"",
         entao: "o sistema cria para o responsável da primeira tarefa, com a data de hoje.",
+        origem: "codigo",
+      },
+      {
+        id: "renuncia-operacoes-legais",
+        titulo: "VERIFICAR RENÚNCIA na Operações Legais",
+        quando: "a publicação for da Operações Legais e tiver a tarefa VERIFICAR RENÚNCIA",
+        entao:
+          "a data é sempre 2 dias úteis depois da vistagem (não muda na tela), e ela vai sem responsável: o VIOS define e divide entre as estagiárias. Se for a única tarefa da publicação, ela vai direto ao robô, sem a Conferência, e o check é o automático.",
         origem: "codigo",
       },
       {
@@ -274,7 +282,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
       {
         id: "corridos",
         titulo: "Dias corridos",
-        quando: "a decisão disser que o prazo é em dias corridos, ou a área for Insolvência (já vem marcado Corridos)",
+        quando: "a decisão disser que o prazo é em dias corridos, ou a área for Insolvência, ou a pasta tiver a etiqueta RC-Insolvência (já vem marcado Corridos)",
         entao: "conta todos os dias (menos o recesso); se vencer em dia sem expediente, passa para o próximo dia útil.",
         origem: "codigo",
       },
@@ -284,6 +292,24 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         quando: "a tarefa for um Prazo",
         entao: "as datas antes da fatal seguem o fluxo da tarefa no VIOS; sem fluxo, Protocolar fica 1 dia útil antes da fatal, Revisar 2 e Enviar 3.",
         origem: "vios",
+      },
+      {
+        id: "antecipacao-insolvencia",
+        titulo: "Enviar e Revisar antes na insolvência",
+        quando:
+          "a pasta for de Insolvência ou Cível | Insolvência, a tarefa, compartilhada com outras áreas, tiver prazo de 10 dias ou mais no VIOS (Protocolar 2 dias depois do Enviar) e o prazo marcado na vistagem também for de 10 dias ou mais (com a fatal no calendário, contado da publicação até ela, na contagem da área)",
+        entao:
+          "o Enviar e o Revisar vão 2 dias úteis antes e o Protocolar e a fatal não mudam, como na MANIFESTAÇÃO - FLUXO D5 (Enviar 5 dias úteis antes da fatal, Revisar 4, Protocolar 1). O robô grava o Protocolar no VIOS. As tarefas próprias da insolvência já vêm assim do VIOS.",
+        origem: "codigo",
+      },
+      {
+        id: "prazo-curto-insolvencia",
+        titulo: "Prazo curto na insolvência",
+        quando:
+          "a pasta for de Insolvência ou Cível | Insolvência, o fluxo da tarefa no VIOS tiver o Protocolar 4 dias úteis depois do Enviar (EMBARGOS DE DECLARAÇÃO, RESPOSTA AOS EMBARGOS e outras; não vale para a MANIFESTAÇÃO - FLUXO D5) e o prazo marcado na vistagem for de menos de 10 dias (com a fatal no calendário, contado da publicação até ela, na contagem da área)",
+        entao:
+          "o Enviar e o Revisar vão 2 dias úteis depois do que o VIOS criaria e o Protocolar fica 1 dia útil antes da fatal, como no fluxo comum (Enviar 3 dias úteis antes da fatal, Revisar 2, Protocolar 1). Ex.: fatal 25/11 → Enviar 19/11, Revisar 23/11, Protocolar 24/11. O robô grava o Protocolar no VIOS. A MANIFESTAÇÃO - FLUXO D5 fica sempre como o VIOS cria.",
+        origem: "codigo",
       },
       {
         id: "feriados",
@@ -317,8 +343,15 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "fluxo",
         titulo: "Fluxo das tarefas",
         quando: "a tarefa tiver fluxo no VIOS",
-        entao: `o VIOS cria as tarefas do fluxo junto. Revisar fica com o revisor; Protocolar com o responsável e ${PESSOA_FIXA_PROTOCOLAR}. Se o jurídico escolher outros responsáveis numa tarefa do fluxo, o robô põe os escolhidos.`,
+        entao: `o VIOS cria as tarefas do fluxo junto. Revisar fica com o revisor; Protocolar com o responsável e ${PESSOA_FIXA_PROTOCOLAR}. Se o jurídico escolher outros responsáveis numa tarefa do fluxo, o robô põe os escolhidos. Tarefa que o VIOS cria sem ninguém (ex.: Inserir Pauta numa pasta sem estagiário) fica com o responsável da vistagem, e não com o usuário do robô.`,
         origem: "vios",
+      },
+      {
+        id: "revisor-na-tarefa",
+        titulo: "Revisor na própria tarefa",
+        quando: "a tarefa for SESSÃO DE JULGAMENTO, ou uma audiência (AUDIÊNCIA UNA/INICIAL, AUDIÊNCIA DE JULGAMENTO…) no Trabalhista",
+        entao: "o robô lança a tarefa com o responsável e o revisor (o advogado auxiliar) juntos; nas outras, a tarefa fica só com o responsável.",
+        origem: "codigo",
       },
       {
         id: "robo",
@@ -354,7 +387,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "check",
         titulo: "Check do agendamento",
         quando: "a tarefa já estiver no VIOS",
-        entao: `o sistema compara o pedido com o VIOS (data, hora, responsável, fluxo). Erro é registrado como ${lista(SUBTIPOS_AGENDAMENTO_EM_USO)}.`,
+        entao: `o sistema compara o pedido com o VIOS (data, hora, responsável, fluxo). Erro é registrado como ${lista(SUBTIPOS_AGENDAMENTO_EM_USO)}. Na VERIFICAR RENÚNCIA, vale a responsável que o VIOS distribuiu. A CIÊNCIA NF e a VERIFICAR RENÚNCIA sozinhas, gravadas como pedidas, têm o check automático.`,
         origem: "codigo",
         metrica: "checadas",
         rotuloDaMetrica: "checadas",

@@ -339,7 +339,6 @@ function LinhaVistador({ linha, maior }: { linha: VistadorDaVisao; maior: number
 
 function ParaVistar({ visao }: { visao: VisaoGeral }) {
   const minhas = visao.escopo?.areas ?? null;
-  const veRisco = visao.escopo?.veRisco ?? true;
   // Área com algo aberto ou com vistador cadastrado (essa aparece mesmo em dia, com o zero); no jurídico, todas as dele.
   const areas = visao.areas.filter(
     (area) =>
@@ -348,7 +347,7 @@ function ParaVistar({ visao }: { visao: VisaoGeral }) {
       Boolean(minhas?.includes(area.area))
   );
   const maior = Math.max(1, ...visao.vistadores.map((linha) => linha.total));
-  const demandas = veRisco ? "nas demandas normais e nas de risco" : "nas demandas normais";
+  const demandas = "nas demandas normais e nas de risco";
   return (
     <Painel aria-labelledby="para-vistar-titulo" data-tour="vg-visao-para-vistar">
       <PainelTopo
@@ -890,16 +889,13 @@ function juntarNomes(nomes: string[]): string {
   return nomes.length <= 1 ? (nomes[0] ?? "") : `${nomes.slice(0, -1).join(", ")} e ${nomes.at(-1)}`;
 }
 
-/** No jurídico, o lugar da situação do arquivo do dia: de quais áreas são os números (e se ficam sem as de risco). */
+/** No jurídico, o lugar da situação do arquivo do dia: de quais áreas são os números. */
 function ResumoDoEscopo({ escopo }: { escopo: EscopoDaVisao }) {
   const areas = escopo.areas ?? [];
   return (
-    <>
-      <Selo tom="marca" icone={Scale}>
-        {areas.length ? `${areas.length === 1 ? "Sua área" : "Suas áreas"}: ${juntarNomes(areas)}` : "Nenhuma área sua cadastrada"}
-      </Selo>
-      {escopo.veRisco ? null : <Selo tom="neutro">Sem as demandas de risco</Selo>}
-    </>
+    <Selo tom="marca" icone={Scale}>
+      {areas.length ? `${areas.length === 1 ? "Sua área" : "Suas áreas"}: ${juntarNomes(areas)}` : "Nenhuma área sua cadastrada"}
+    </Selo>
   );
 }
 

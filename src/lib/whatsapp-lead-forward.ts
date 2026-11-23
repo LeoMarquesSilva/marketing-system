@@ -87,14 +87,14 @@ export async function fetchForwardRecipients(): Promise<LeadForwardRecipient[]> 
 }
 
 /** Encaminhamentos anteriores desta conversa, do mais recente para o mais antigo. */
-export async function fetchLeadForwards(conversationId: string): Promise<LeadForwardRecord[]> {
+export async function fetchLeadForwards(conversationId: string, limit = 5): Promise<LeadForwardRecord[]> {
   const db = getAdminClient();
   const { data, error } = await db
     .from("whatsapp_lead_forwards")
     .select("id, recipient_name, recipient_phone, created_at, sender:users!whatsapp_lead_forwards_sent_by_fkey(name)")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(limit);
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => {
     const sender = row.sender as { name?: string | null } | { name?: string | null }[] | null;
@@ -201,10 +201,15 @@ export async function sendLeadForward(input: {
 
 /**
  * A conversa com quem recebeu o lead aparece na inbox quando o webhook registra
- * o envio; marcada como Colaborador, ela não dispara aviso de lead quando a
- * pessoa responder. Tenta algumas vezes porque o webhook chega logo depois.
+ * o envio. Aqui ela ganha a tag Colaborador (não dispara aviso de lead quando a
+ * pessoa responder), o nome da pessoa (se o WhatsApp ainda não deu um, para a
+ * busca achar) e quem encaminhou como responsável (se não houver). Tenta algumas
+ * vezes porque o webhook chega logo depois.
  */
-export async function tagTeamConversation(phone: string): Promise<void> {
+export async function tagTeamConversation(
+  phone: string,
+  options: { name?: string | null; ownerId?: string | null } = {}
+): Promise<void> {
   const db = getAdminClient();
   const variants = brazilPhoneVariants(phone);
   if (variants.length === 0) return;
@@ -212,18 +217,22 @@ export async function tagTeamConversation(phone: string): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, waitMs));
     const { data } = await db
       .from("whatsapp_conversations")
-      .select("id, tags")
+      .select("id, tags, push_name, owner_user_id")
       .in("phone", variants)
       .or("is_group.is.null,is_group.eq.false")
       .limit(1)
       .maybeSingle();
     if (!data) continue;
     const tags = (data.tags as string[] | null) ?? [];
-    if (tags.some((tag) => tag.toLowerCase() === TEAM_TAG.toLowerCase())) return;
-    await db
-      .from("whatsapp_conversations")
-      .update({ tags: [...tags, TEAM_TAG] })
-      .eq("id", data.id);
+    const update: Record<string, unknown> = {};
+    if (!tags.some((tag) => tag.toLowerCase() === TEAM_TAG.toLowerCase())) update.tags = [...tags, TEAM_TAG];
+    // Sem nome ou só com o número (o WhatsApp não mandou o nome do perfil).
+    const hasName = /\p{L}/u.test((data.push_name as string | null) ?? "");
+    if (!hasName && options.name?.trim()) update.push_name = options.name.trim();
+    if (!data.owner_user_id && options.ownerId) update.owner_user_id = options.ownerId;
+    if (Object.keys(update).length > 0) {
+      await db.from("whatsapp_conversations").update(update).eq("id", data.id);
+    }
     return;
   }
 }

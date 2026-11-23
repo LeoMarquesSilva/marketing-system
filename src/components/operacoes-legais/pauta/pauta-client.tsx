@@ -1,0 +1,433 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CalendarDays, CircleSlash, Clock, Download, History, LoaderCircle, RefreshCw, Repeat, Video } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { alertasDaAudiencia, hojeEmBrasilia, local, somarDias, type Contexto } from "@/lib/audiencias/agenda";
+import { ROTULO_MUDANCA, ROTULO_TIPO, type Audiencia, type Papel } from "@/lib/audiencias/tipos";
+import { cn } from "@/lib/utils";
+import { Aviso, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, campoClasse } from "../vistagem/ui";
+import { AcessoPauta, Dupla, LinkDaSala, Local, Modalidade, SeloTipo, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
+
+const COLUNAS = "lg:grid lg:grid-cols-[4.5rem_minmax(0,1.5fr)_minmax(0,1.1fr)_7.5rem_minmax(0,1.25fr)_minmax(0,1.15fr)_minmax(0,1fr)] lg:items-center lg:gap-4";
+const PERIODOS = [
+  { dias: 7, rotulo: "7 dias" },
+  { dias: 15, rotulo: "15 dias" },
+  { dias: 30, rotulo: "30 dias" },
+];
+
+function semAcento(texto: string): string {
+  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+export function PautaClient() {
+  return (
+    <AcessoPauta>
+      <Pauta />
+    </AcessoPauta>
+  );
+}
+
+function Pauta() {
+  const [periodo, setPeriodo] = useState(7);
+  const [dados, setDados] = useState<DadosDaPauta | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [busca, setBusca] = useState("");
+  const [pessoa, setPessoa] = useState("");
+  const [mostrarCanceladas, setMostrarCanceladas] = useState(true);
+  const [aberta, setAberta] = useState<Audiencia | null>(null);
+  const [troca, setTroca] = useState<{ aud: Audiencia; papel: Papel } | null>(null);
+
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    setErro(null);
+    try {
+      const de = hojeEmBrasilia();
+      setDados(await pautaApi.get<DadosDaPauta>(`?de=${de}&ate=${somarDias(de, periodo)}`));
+    } catch (e) {
+      setErro(mensagemDeErro(e));
+    } finally {
+      setCarregando(false);
+    }
+  }, [periodo]);
+
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  const pessoas = useMemo(() => new Map((dados?.pessoas ?? []).map((p) => [p.id, p])), [dados]);
+  const contexto: Contexto = useMemo(() => ({ pessoas, todas: dados?.audiencias ?? [], duracoes: dados?.duracoes }), [pessoas, dados]);
+
+  const filtradas = useMemo(() => {
+    const termo = semAcento(busca.trim());
+    return (dados?.audiencias ?? []).filter((a) => {
+      if (a.situacao === "cancelada" && (!mostrarCanceladas || a.mudancaConferidaEm)) return false;
+      if (a.situacao === "realizada") return false;
+      if (pessoa && a.titularId !== pessoa && a.backupId !== pessoa) return false;
+      if (!termo) return true;
+      const texto = semAcento([a.cnj, cliente(a), a.orgao, a.titularId && pessoas.get(a.titularId)?.nomeVios, a.backupId && pessoas.get(a.backupId)?.nomeVios].filter(Boolean).join(" "));
+      return texto.includes(termo);
+    });
+  }, [dados, busca, pessoa, mostrarCanceladas, pessoas]);
+
+  const porDia = useMemo(() => {
+    const grupos = new Map<string, Audiencia[]>();
+    for (const a of filtradas) {
+      const dia = local(a.inicio).dia;
+      grupos.set(dia, [...(grupos.get(dia) ?? []), a]);
+    }
+    return [...grupos.entries()];
+  }, [filtradas]);
+
+  const numeros = useMemo(() => {
+    const ativas = (dados?.audiencias ?? []).filter((a) => a.situacao === "designada");
+    const alertas = ativas.map((a) => alertasDaAudiencia(a, contexto));
+    return {
+      total: ativas.length,
+      mudaram: ativas.filter((a) => a.mudancas.length && !a.mudancaConferidaEm).length,
+      canceladas: (dados?.audiencias ?? []).filter((a) => a.situacao === "cancelada" && !a.mudancaConferidaEm).length,
+      semLink: alertas.filter((l) => l.some((x) => x.tipo === "sem_link")).length,
+      cedo: alertas.filter((l) => l.some((x) => x.tipo === "cedo")).length,
+    };
+  }, [dados, contexto]);
+
+  function atualizar(aud: Audiencia) {
+    setDados((d) => (d ? { ...d, audiencias: d.audiencias.map((a) => (a.id === aud.id ? aud : a)) } : d));
+    setAberta((a) => (a?.id === aud.id ? aud : a));
+  }
+
+  async function exportar() {
+    const XLSX = await import("xlsx");
+    const linhas: (string | null)[][] = [];
+    for (const [dia, auds] of porDia) {
+      linhas.push([diaPorExtenso(dia).toUpperCase()]);
+      linhas.push(["CLIENTE", "HORÁRIO", "EVENTO", "LOCAL", "MODALIDADE", "PROCESSO", "RECLAMANTE", "RESPONSÁVEL", "LINK", "OBSERVAÇÃO"]);
+      for (const a of auds) {
+        const dupla = [a.titularId && pessoas.get(a.titularId)?.nomeCurto.split(" ")[0], a.backupId && pessoas.get(a.backupId)?.nomeCurto.split(" ")[0]].filter(Boolean).join("-");
+        linhas.push([
+          cliente(a),
+          hora(a.inicio),
+          a.tipoDescricao ?? ROTULO_TIPO[a.tipo],
+          a.orgao,
+          a.modalidadeTribunal === "presencial" ? "Presencial" : a.modalidadeTribunal === "hibrida" ? "Híbrida" : "Virtual",
+          a.cnj,
+          a.reclamanteIniciais,
+          dupla,
+          a.linkSala,
+          [a.situacao === "cancelada" ? "CANCELADA NO PJE" : null, a.observacao].filter(Boolean).join(" · ") || null,
+        ]);
+      }
+      linhas.push([]);
+    }
+    const planilha = XLSX.utils.aoa_to_sheet(linhas);
+    const livro = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(livro, planilha, "Pauta");
+    XLSX.writeFile(livro, `pauta-trabalhista-${hojeEmBrasilia()}.xlsx`);
+  }
+
+  return (
+    <div className="space-y-4">
+      <Indicadores className="lg:grid-cols-5">
+        <Indicador icone={CalendarDays} rotulo={`Próximos ${periodo} dias`} valor={dados ? numeros.total : "—"} />
+        <Indicador icone={Repeat} rotulo="Mudaram no tribunal" valor={dados ? numeros.mudaram : "—"} tom={numeros.mudaram ? "perigo" : "neutro"} />
+        <Indicador icone={CircleSlash} rotulo="Canceladas no PJe" valor={dados ? numeros.canceladas : "—"} tom={numeros.canceladas ? "perigo" : "neutro"} />
+        <Indicador icone={Video} rotulo="Vídeo sem link" valor={dados ? numeros.semLink : "—"} tom={numeros.semLink ? "alerta" : "neutro"} />
+        <Indicador icone={Clock} rotulo="Antes das 10h" valor={dados ? numeros.cedo : "—"} tom={numeros.cedo ? "alerta" : "neutro"} />
+      </Indicadores>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Busca placeholder="Buscar cliente, processo ou pessoa" value={busca} onChange={(e) => setBusca(e.target.value)} className="w-full sm:w-72" aria-label="Buscar" />
+        <div className="flex rounded-md border border-[#dce9eb] bg-white p-0.5" role="group" aria-label="Período">
+          {PERIODOS.map((p) => (
+            <button
+              key={p.dias}
+              type="button"
+              onClick={() => setPeriodo(p.dias)}
+              className={cn("rounded px-3 py-1.5 text-xs font-semibold", periodo === p.dias ? "bg-[#e8f8f8] text-[#285f7a]" : "text-muted-foreground hover:bg-[#f6fafb]")}
+            >
+              {p.rotulo}
+            </button>
+          ))}
+        </div>
+        <select className={cn(campoClasse, "h-9 w-48")} value={pessoa} onChange={(e) => setPessoa(e.target.value)} aria-label="Pessoa">
+          <option value="">Todas as pessoas</option>
+          {(dados?.pessoas ?? [])
+            .filter((p) => p.fazAudiencia && p.ativo)
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nomeCurto}
+              </option>
+            ))}
+        </select>
+        <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          <input type="checkbox" className="size-4 accent-[#347796]" checked={mostrarCanceladas} onChange={(e) => setMostrarCanceladas(e.target.checked)} />
+          Canceladas a conferir
+        </label>
+        <div className="ml-auto flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => void carregar()} disabled={carregando}>
+            <RefreshCw className={cn(carregando && "animate-spin")} />
+            Atualizar
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void exportar()} disabled={!porDia.length}>
+            <Download />
+            Exportar Excel
+          </Button>
+        </div>
+      </div>
+
+      {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
+      {carregando && !dados ? <Carregando rotulo="Carregando a pauta" /> : null}
+      {dados && !porDia.length ? (
+        <Painel>
+          <Vazio icone={CalendarDays} titulo="Nenhuma audiência no período">
+            A pauta é montada pelas leituras do PJe. Se o robô ainda não rodou, a última leitura aparece em Configurações.
+          </Vazio>
+        </Painel>
+      ) : null}
+
+      {porDia.map(([dia, auds]) => (
+        <Painel key={dia}>
+          <div className="flex items-center gap-2 border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-2.5 text-sm font-semibold">
+            {diaPorExtenso(dia)}
+            <span className="text-xs font-medium text-muted-foreground">
+              {auds.filter((a) => a.situacao === "designada").length} audiência(s)
+              {auds.some((a) => a.situacao === "cancelada") ? ` · ${auds.filter((a) => a.situacao === "cancelada").length} cancelada(s) no PJe` : ""}
+            </span>
+          </div>
+          <div className={cn("hidden border-b border-[#e6eef0] px-4 py-2 text-xs font-medium text-muted-foreground", COLUNAS)}>
+            <span>Hora</span>
+            <span>Audiência</span>
+            <span>Local</span>
+            <span>Modalidade</span>
+            <span>Titular e backup</span>
+            <span>Link da sala</span>
+            <span>Situação</span>
+          </div>
+          <ul>
+            {auds.map((a) => {
+              const alertas = alertasDaAudiencia(a, contexto);
+              const cancelada = a.situacao === "cancelada";
+              return (
+                <li key={a.id} className="border-b border-[#e6eef0] last:border-b-0">
+                  <button type="button" onClick={() => setAberta(a)} className={cn("w-full space-y-2 px-4 py-3 text-left hover:bg-[#f6fafb] focus-visible:bg-[#f6fafb] focus-visible:outline-none lg:space-y-0", COLUNAS, cancelada && "bg-[#fafcfc]")}>
+                    <span className={cn("block font-mono text-sm font-medium tabular-nums", cancelada && "text-muted-foreground line-through")}>{hora(a.inicio)}</span>
+                    <span className="block min-w-0">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <SeloTipo aud={a} />
+                        <span className={cn("truncate text-sm font-semibold", cancelada && "text-muted-foreground line-through")}>{cliente(a)}</span>
+                      </span>
+                      <span className="mt-0.5 block font-mono text-xs text-muted-foreground">{a.cnj}</span>
+                    </span>
+                    <Local aud={a} />
+                    <Modalidade aud={a} />
+                    <Dupla aud={a} pessoas={pessoas} />
+                    <LinkDaSala aud={a} />
+                    <span className="flex flex-wrap gap-1">
+                      {cancelada ? <Selo tom="perigo">Cancelada no PJe</Selo> : null}
+                      {a.mudancas.length && !a.mudancaConferidaEm && !cancelada ? <Selo tom="perigo" icone={Repeat}>{a.mudancas.map((m) => ROTULO_MUDANCA[m]).join(", ")}</Selo> : null}
+                      {alertas.some((x) => x.tipo === "choque" || x.tipo === "deslocamento") ? <Selo tom="alerta">{alertas.find((x) => x.tipo === "choque") ? "Choque" : "Deslocamento"}</Selo> : null}
+                      {alertas.some((x) => x.tipo === "cedo") ? <Selo tom="alerta" icone={Clock}>Antes das 10h</Selo> : null}
+                      {!cancelada && !alertas.some((x) => x.grave) ? <Selo tom="marca">Designada</Selo> : null}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </Painel>
+      ))}
+
+      <Detalhe
+        aud={aberta}
+        dados={dados}
+        contexto={contexto}
+        aoFechar={() => setAberta(null)}
+        aoAtualizar={atualizar}
+        aoTrocar={(aud, papel) => setTroca({ aud, papel })}
+      />
+      {dados ? <TrocaDialog aud={troca?.aud ?? null} papel={troca?.papel ?? "titular"} dados={dados} aberto={Boolean(troca)} aoFechar={() => setTroca(null)} aoTrocar={atualizar} /> : null}
+    </div>
+  );
+}
+
+function Detalhe({
+  aud,
+  dados,
+  contexto,
+  aoFechar,
+  aoAtualizar,
+  aoTrocar,
+}: {
+  aud: Audiencia | null;
+  dados: DadosDaPauta | null;
+  contexto: Contexto;
+  aoFechar: () => void;
+  aoAtualizar: (aud: Audiencia) => void;
+  aoTrocar: (aud: Audiencia, papel: Papel) => void;
+}) {
+  const [campos, setCampos] = useState({ modalidadeEquipe: "", correspondente: "", observacao: "", linkSala: "" });
+  const [historico, setHistorico] = useState<{ acao: string; de: string | null; para: string | null; motivo: string | null; feito_por: string | null; em: string }[] | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!aud) return;
+    setCampos({ modalidadeEquipe: aud.modalidadeEquipe ?? "", correspondente: aud.correspondente ?? "", observacao: aud.observacao ?? "", linkSala: aud.linkFonte === "manual" ? aud.linkSala ?? "" : "" });
+    setErro(null);
+    setHistorico(null);
+    pautaApi
+      .get<{ historico: NonNullable<typeof historico> }>(`/${aud.id}`)
+      .then((r) => setHistorico(r.historico))
+      .catch(() => setHistorico([]));
+  }, [aud]);
+
+  if (!aud || !dados) return null;
+  const alertas = alertasDaAudiencia(aud, contexto);
+
+  async function salvar() {
+    if (!aud) return;
+    setSalvando(true);
+    setErro(null);
+    try {
+      const corpo: Record<string, unknown> = { correspondente: campos.correspondente || null, observacao: campos.observacao || null };
+      if (aud.modalidadeTribunal === "hibrida") corpo.modalidadeEquipe = campos.modalidadeEquipe || null;
+      if (!aud.linkSala || aud.linkFonte === "manual") corpo.linkSala = campos.linkSala || null;
+      const { audiencia } = await pautaApi.patch<{ audiencia: Audiencia }>(`/${aud.id}`, corpo);
+      aoAtualizar(audiencia);
+    } catch (e) {
+      setErro(mensagemDeErro(e));
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function conferir() {
+    if (!aud) return;
+    setSalvando(true);
+    try {
+      await pautaApi.post(`/conferir`, { ids: [aud.id] });
+      aoAtualizar({ ...aud, mudancaConferidaEm: new Date().toISOString() });
+    } catch (e) {
+      setErro(mensagemDeErro(e));
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Dialog open={Boolean(aud)} onOpenChange={(v) => (!v ? aoFechar() : null)}>
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b border-[#e6eef0] px-5 py-4 text-left">
+          <DialogTitle>
+            {ROTULO_TIPO[aud.tipo]} · {cliente(aud)}
+          </DialogTitle>
+          <DialogDescription>
+            {diaPorExtenso(local(aud.inicio).dia)}, {hora(aud.inicio)} · <span className="font-mono">{aud.cnj}</span>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          {alertas.filter((a) => a.tipo !== "cedo").map((a) => (
+            <Aviso key={a.tipo + a.texto} tom={a.grave ? "erro" : "alerta"}>
+              {a.texto}
+            </Aviso>
+          ))}
+          <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+            <dt className="text-muted-foreground">No tribunal</dt>
+            <dd>{aud.tipoDescricao ?? ROTULO_TIPO[aud.tipo]}</dd>
+            <dt className="text-muted-foreground">Vara</dt>
+            <dd>{[aud.orgao, aud.sala].filter(Boolean).join(" · ") || "—"}</dd>
+            <dt className="text-muted-foreground">Modalidade</dt>
+            <dd>
+              <Modalidade aud={aud} />
+            </dd>
+            <dt className="text-muted-foreground">Link da sala</dt>
+            <dd>
+              <LinkDaSala aud={aud} />
+              {aud.linkAnterior ? <p className="truncate font-mono text-xs text-muted-foreground line-through">{aud.linkAnterior}</p> : null}
+            </dd>
+            <dt className="text-muted-foreground">Reclamante</dt>
+            <dd>{aud.reclamanteIniciais ?? "—"}</dd>
+            <dt className="text-muted-foreground">DJEN</dt>
+            <dd>{aud.djenConferidoEm ? (aud.djenData ? `Intimação de ${aud.djenData.slice(8, 10)}/${aud.djenData.slice(5, 7)}${aud.djenInicio ? ` · ${quando(aud.djenInicio)}` : ""}` : "Sem intimação com esta data") : "Ainda não conferido"}</dd>
+            <dt className="text-muted-foreground">VIOS</dt>
+            <dd>{aud.viosInicio ? `${quando(aud.viosInicio)} · ${aud.viosSituacao ?? ""}` : "Ainda não conferido"}</dd>
+          </dl>
+          <div className="space-y-2 rounded-md border border-[#dce9eb] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <Dupla aud={aud} pessoas={contexto.pessoas} />
+              <div className="flex flex-col gap-1.5">
+                <Button size="xs" variant="secondary" onClick={() => aoTrocar(aud, "titular")} disabled={aud.situacao !== "designada"}>
+                  {aud.titularId ? "Trocar titular" : "Definir titular"}
+                </Button>
+                <Button size="xs" variant="outline" onClick={() => aoTrocar(aud, "backup")} disabled={aud.situacao !== "designada"}>
+                  {aud.backupId ? "Trocar backup" : "Definir backup"}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {aud.modalidadeTribunal === "hibrida" ? (
+              <label className="space-y-1.5">
+                <span className="text-xs font-semibold">Como a equipe vai</span>
+                <select className={cn(campoClasse, "h-9 w-full")} value={campos.modalidadeEquipe} onChange={(e) => setCampos({ ...campos, modalidadeEquipe: e.target.value })}>
+                  <option value="">Escolher</option>
+                  <option value="video">Por vídeo</option>
+                  <option value="presencial">Presencial</option>
+                </select>
+              </label>
+            ) : null}
+            {!aud.linkSala || aud.linkFonte === "manual" ? (
+              <label className="space-y-1.5 sm:col-span-2">
+                <span className="text-xs font-semibold">Link da sala (se veio por outro meio)</span>
+                <input className={cn(campoClasse, "h-9 w-full")} value={campos.linkSala} onChange={(e) => setCampos({ ...campos, linkSala: e.target.value })} placeholder="https://" />
+              </label>
+            ) : null}
+            <label className="space-y-1.5">
+              <span className="text-xs font-semibold">Correspondente</span>
+              <input className={cn(campoClasse, "h-9 w-full")} value={campos.correspondente} onChange={(e) => setCampos({ ...campos, correspondente: e.target.value })} placeholder="Nome ou escritório" />
+            </label>
+            <label className="space-y-1.5 sm:col-span-2">
+              <span className="text-xs font-semibold">Observação</span>
+              <textarea className={cn(campoClasse, "min-h-16 w-full py-2")} value={campos.observacao} onChange={(e) => setCampos({ ...campos, observacao: e.target.value })} />
+            </label>
+          </div>
+          <div className="space-y-1.5">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-[#285f7a]">
+              <History className="size-3.5" aria-hidden /> Histórico
+            </p>
+            {historico === null ? (
+              <p className="text-xs text-muted-foreground">Carregando…</p>
+            ) : historico.length ? (
+              <ul className="space-y-1 text-xs">
+                {historico.map((h, i) => (
+                  <li key={i} className="text-muted-foreground">
+                    <span className="font-mono">{quando(h.em)}</span> · <b className="text-foreground">{h.acao}</b>
+                    {h.de || h.para ? ` · ${h.de ?? "—"} → ${h.para ?? "—"}` : ""}
+                    {h.motivo ? ` (${h.motivo})` : ""}
+                    {h.feito_por ? ` · ${h.feito_por}` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">Nada registrado ainda.</p>
+            )}
+          </div>
+          {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
+        </div>
+        <DialogFooter className="border-t border-[#e6eef0] bg-[#f7fbfc] px-5 py-3">
+          {(aud.mudancas.length || aud.situacao === "cancelada") && !aud.mudancaConferidaEm ? (
+            <Button variant="outline" onClick={() => void conferir()} disabled={salvando}>
+              Conferido no VIOS
+            </Button>
+          ) : null}
+          <Button onClick={() => void salvar()} disabled={salvando}>
+            {salvando ? <LoaderCircle className="animate-spin" /> : null}
+            Salvar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

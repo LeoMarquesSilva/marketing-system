@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos, fluxoCriaCiencia, type TarefaParaCiencia } from "./ciencia-agendamentos";
+import {
+  cienciaDosAgendamentos,
+  cienciaQueFica,
+  dataDaCienciaNaVistagem,
+  dataDaCienciaNoEnvio,
+  ehCienciaDosAgendamentos,
+  ehEmbargosDeDeclaracao,
+  embargosQueFica,
+  fluxoCriaCiencia,
+  repetidaDoCaminho,
+  repetidasNaVistagem,
+  textoDaRepetida,
+  vaiDiretoAoRobo,
+  type TarefaParaCiencia,
+} from "./ciencia-agendamentos";
+import { criarCalendario } from "./dias-uteis";
 import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
 
 function noFluxo(nome: string, filhas: TarefaDoFluxo[] = []): TarefaDoFluxo {
@@ -63,6 +78,105 @@ describe("cienciaQueFica (uma Ciência só por vistagem)", () => {
       caminho: null,
     });
     expect(cienciaQueFica([{ chave: "a", nome: "INFORMAR CLIENTE", fluxo: FLUXOS["406"] }])).toBeNull();
+  });
+});
+
+describe("Embargos de Declaração repetido (um só por vistagem)", () => {
+  const ciencia = () => noFluxo("1. CIÊNCIA DOS AGENDAMENTOS");
+  // Como no VIOS (vios_fluxos_tarefas, 17/11/2026): o Embargos 462 cria o 2. REVISAR e o 3. PROTOCOLAR dele.
+  const embargos462 = () => noFluxo("EMBARGOS DE DECLARAÇÃO", [noFluxo("2. REVISAR"), noFluxo("3. PROTOCOLAR")]);
+  const airr: FluxoDaTarefa = {
+    criacao: [embargos462(), ciencia(), noFluxo("2. REVISAR"), noFluxo("INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA"), noFluxo("3. PROTOCOLAR")],
+    conclusao: [],
+  };
+  const agravoInterno: FluxoDaTarefa = { criacao: [embargos462(), ciencia(), noFluxo("2. REVISAR"), noFluxo("3. PROTOCOLAR")], conclusao: [] };
+  // O Embargos 19 (do Agravo de Instrumento) cria a Ciência dele.
+  const embargos19: FluxoDaTarefa = { criacao: [ciencia(), noFluxo("2. REVISAR"), noFluxo("3. PROTOCOLAR")], conclusao: [] };
+  const soEmbargosComCiencia: FluxoDaTarefa = { criacao: [noFluxo("EMBARGOS DE DECLARAÇÃO", [ciencia(), noFluxo("2. REVISAR")])], conclusao: [] };
+
+  it("reconhece o Embargos pelo nome, e não a Resposta aos Embargos", () => {
+    expect(ehEmbargosDeDeclaracao("EMBARGOS DE DECLARAÇÃO")).toBe(true);
+    expect(ehEmbargosDeDeclaracao("Embargos de declaracao")).toBe(true);
+    expect(ehEmbargosDeDeclaracao("RESPOSTA AOS EMBARGOS DE DECLARAÇÃO")).toBe(false);
+  });
+
+  it("AIRR e AGRAVO INTERNO: fica o Embargos do AIRR; o do Agravo Interno sai com o Revisar e o Protocolar dele", () => {
+    const tarefas = [
+      { chave: "airr", nome: "AIRR", fluxo: airr },
+      { chave: "agravo", nome: "AGRAVO INTERNO", fluxo: agravoInterno },
+    ];
+    expect(embargosQueFica(tarefas)).toEqual({ chave: "airr", caminho: ["EMBARGOS DE DECLARAÇÃO"] });
+    const repetida = repetidasNaVistagem(tarefas);
+    // Do AIRR, nada sai.
+    expect(repetida("airr", null)).toBe(false);
+    expect(repetida("airr", ["EMBARGOS DE DECLARAÇÃO"])).toBe(false);
+    expect(repetida("airr", ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"])).toBe(false);
+    expect(repetida("airr", ["1. CIÊNCIA DOS AGENDAMENTOS"])).toBe(false);
+    // Do Agravo Interno: o Embargos com o que ele cria e a Ciência; o Revisar e o Protocolar do próprio Agravo ficam.
+    expect(repetida("agravo", null)).toBe(false);
+    expect(repetida("agravo", ["EMBARGOS DE DECLARAÇÃO"])).toBe(true);
+    expect(repetida("agravo", ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"])).toBe(true);
+    expect(repetida("agravo", ["EMBARGOS DE DECLARAÇÃO", "3. PROTOCOLAR"])).toBe(true);
+    expect(repetida("agravo", ["1. CIÊNCIA DOS AGENDAMENTOS"])).toBe(true);
+    expect(repetida("agravo", ["2. REVISAR"])).toBe(false);
+    expect(repetida("agravo", ["3. PROTOCOLAR"])).toBe(false);
+  });
+
+  it("vale a ordem em que as tarefas foram incluídas (Agravo Interno antes do Recurso de Revista)", () => {
+    const repetida = repetidasNaVistagem([
+      { chave: 1, nome: "AGRAVO INTERNO", fluxo: agravoInterno },
+      { chave: 2, nome: "RECURSO DE REVISTA", fluxo: airr },
+    ]);
+    expect(repetida(1, ["EMBARGOS DE DECLARAÇÃO"])).toBe(false);
+    expect(repetida(2, ["EMBARGOS DE DECLARAÇÃO"])).toBe(true);
+  });
+
+  it("um Embargos só não é repetido", () => {
+    const repetida = repetidasNaVistagem([
+      { chave: 1, nome: "AIRR", fluxo: airr },
+      { chave: 2, nome: "INFORMAR CLIENTE", fluxo: FLUXOS["406"] },
+    ]);
+    expect(repetida(1, ["EMBARGOS DE DECLARAÇÃO"])).toBe(false);
+    expect(repetida(1, ["EMBARGOS DE DECLARAÇÃO", "3. PROTOCOLAR"])).toBe(false);
+  });
+
+  it("Embargos pedido na vistagem: fica ele (nunca sai) e o do fluxo é cancelado", () => {
+    const tarefas = [
+      { chave: 1, nome: "AIRR", fluxo: airr },
+      { chave: 2, nome: "EMBARGOS DE DECLARAÇÃO", fluxo: embargos19 },
+    ];
+    expect(embargosQueFica(tarefas)).toEqual({ chave: 2, caminho: null });
+    const repetida = repetidasNaVistagem(tarefas);
+    expect(repetida(2, null)).toBe(false);
+    expect(repetida(1, ["EMBARGOS DE DECLARAÇÃO"])).toBe(true);
+    expect(repetida(1, ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"])).toBe(true);
+  });
+
+  it("a Ciência dentro do Embargos repetido sai com ele: fica a de outra tarefa", () => {
+    const tarefas = [
+      { chave: 1, nome: "RECURSO INOMINADO", fluxo: soEmbargosComCiencia },
+      { chave: 2, nome: "EMBARGOS DE DECLARAÇÃO", fluxo: embargos19 },
+    ];
+    expect(cienciaQueFica(tarefas)).toEqual({ chave: 2, caminho: ["1. CIÊNCIA DOS AGENDAMENTOS"] });
+    const repetida = repetidasNaVistagem(tarefas);
+    expect(repetida(1, ["EMBARGOS DE DECLARAÇÃO", "1. CIÊNCIA DOS AGENDAMENTOS"])).toBe(true);
+    expect(repetida(2, ["1. CIÊNCIA DOS AGENDAMENTOS"])).toBe(false);
+  });
+
+  it("a Ciência pedida depois de uma tarefa que já a cria continua repetida", () => {
+    const repetida = repetidasNaVistagem([
+      { chave: 1, nome: "AIRR", fluxo: airr },
+      { chave: 2, nome: "1. CIÊNCIA DOS AGENDAMENTOS", fluxo: null },
+    ]);
+    expect(repetida(2, null)).toBe(true);
+    expect(repetida(1, ["1. CIÊNCIA DOS AGENDAMENTOS"])).toBe(false);
+  });
+
+  it("diz qual repetida é, para a tela", () => {
+    expect(repetidaDoCaminho(["EMBARGOS DE DECLARAÇÃO"])).toBe("embargos");
+    expect(repetidaDoCaminho(["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"])).toBe("do_embargos");
+    expect(repetidaDoCaminho(["1. CIÊNCIA DOS AGENDAMENTOS"])).toBe("ciencia");
+    expect(textoDaRepetida(["EMBARGOS DE DECLARAÇÃO", "3. PROTOCOLAR"])).toContain("do Embargos repetido");
   });
 });
 
@@ -149,5 +263,52 @@ describe("cienciaDosAgendamentos", () => {
     expect(cienciaDosAgendamentos([], opcoes("Trabalhista"))).toBeNull();
     expect(cienciaDosAgendamentos([tarefa("", null)], opcoes("Trabalhista"))).toBeNull();
     expect(cienciaDosAgendamentos([tarefa("INFORMAR CLIENTE", "414", { responsaveis: [] })], opcoes("Trabalhista"))).toBeNull();
+  });
+});
+
+describe("data da Ciência dos Agendamentos (pedido de 13/11/2026)", () => {
+  // 20/11/2026 (sexta) é feriado.
+  const ehDiaUtil = criarCalendario(["2026-11-20"]);
+
+  it("vistada até as 17h59, fica no próprio dia", () => {
+    expect(dataDaCienciaNaVistagem("2026-11-12", 9, ehDiaUtil)).toBe("2026-11-12");
+    expect(dataDaCienciaNaVistagem("2026-11-12", 17, ehDiaUtil)).toBe("2026-11-12");
+  });
+
+  it("vistada às 18h ou depois, vai para o dia útil seguinte", () => {
+    expect(dataDaCienciaNaVistagem("2026-11-12", 18, ehDiaUtil)).toBe("2026-11-13");
+    expect(dataDaCienciaNaVistagem("2026-11-12", 23, ehDiaUtil)).toBe("2026-11-13");
+    // sexta à noite → segunda
+    expect(dataDaCienciaNaVistagem("2026-11-13", 20, ehDiaUtil)).toBe("2026-11-16");
+    // quinta à noite, com a sexta feriado → segunda
+    expect(dataDaCienciaNaVistagem("2026-11-19", 19, ehDiaUtil)).toBe("2026-11-23");
+  });
+
+  it("vistada num dia sem expediente, vai para o próximo dia útil, a qualquer hora", () => {
+    expect(dataDaCienciaNaVistagem("2026-11-14", 10, ehDiaUtil)).toBe("2026-11-16");
+    expect(dataDaCienciaNaVistagem("2026-11-20", 9, ehDiaUtil)).toBe("2026-11-23");
+  });
+
+  it("no envio ao robô, a Ciência com data passada vai com a do envio; a futura e as outras tarefas não mudam", () => {
+    expect(dataDaCienciaNoEnvio("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-12", "2026-11-13")).toBe("2026-11-13");
+    expect(dataDaCienciaNoEnvio("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-16", "2026-11-13")).toBe("2026-11-16");
+    expect(dataDaCienciaNoEnvio("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-13", "2026-11-13")).toBe("2026-11-13");
+    expect(dataDaCienciaNoEnvio("INFORMAR CLIENTE", "2026-11-12", "2026-11-13")).toBe("2026-11-12");
+  });
+});
+
+describe("vaiDiretoAoRobo: Operações Legais só com a VERIFICAR RENÚNCIA (pedido de 18/11/2026)", () => {
+  const renuncia = { tarefa: "VERIFICAR RENÚNCIA" };
+
+  it("sozinha na Operações Legais: sem a Conferência", () => {
+    expect(vaiDiretoAoRobo("Operações Legais", [renuncia])).toBe(true);
+  });
+
+  it("com outra tarefa junto, em outra área ou outra tarefa sozinha: a esteira de sempre", () => {
+    expect(vaiDiretoAoRobo("Operações Legais", [renuncia, { tarefa: "CIÊNCIA NF" }])).toBe(false);
+    expect(vaiDiretoAoRobo("Trabalhista", [renuncia])).toBe(false);
+    expect(vaiDiretoAoRobo(null, [renuncia])).toBe(false);
+    expect(vaiDiretoAoRobo("Operações Legais", [{ tarefa: "CIÊNCIA NF" }])).toBe(false);
+    expect(vaiDiretoAoRobo("Operações Legais", [])).toBe(false);
   });
 });

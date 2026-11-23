@@ -2,12 +2,32 @@
 
 import { useId, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ArrowRight, Bot, CalendarClock, CalendarDays, ChevronDown, CircleCheckBig, ClipboardList, CornerDownRight, ExternalLink, Hourglass, Pencil, Workflow } from "lucide-react";
+import {
+  ArrowRight,
+  Bot,
+  CalendarClock,
+  CalendarDays,
+  ChevronDown,
+  CircleCheckBig,
+  CircleHelp,
+  ClipboardList,
+  CornerDownRight,
+  ExternalLink,
+  FileText,
+  Hourglass,
+  MousePointerClick,
+  Pencil,
+  Scale,
+  Sparkles,
+  Workflow,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas } from "@/lib/vistagem/agendamento";
+import { RESPONSAVEL_PELO_VIOS, ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, responsavelFicaComOVios, type OrigemPrazo } from "@/lib/vistagem/agendamento";
+import { TEXTO_DA_REPETIDA } from "@/lib/vistagem/ciencia-agendamentos";
 import { agendaNoVios, nomeCurto, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
+import { origemDaFatal, type TarefaComFatal } from "@/lib/vistagem/origem-da-fatal";
 import type { AgendamentoResumo, AjusteNaTarefa, EnvioStatus, MudancaNaTarefa } from "@/lib/vistagem/types";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AvatarPessoa } from "./combobox-busca";
@@ -107,7 +127,14 @@ function marcosDoPrazo(item: AgendamentoResumo): MarcoRegua[] {
   );
   const meio: MarcoRegua[] = cadeia.map((tarefa) => ({ rotulo: rotuloCurto(tarefa.nome), data: tarefa.data, dica: tarefa.nome }));
   return [
-    { rotulo: "Enviar · no VIOS", data: item.data, tom: "marca", dica: "Data da tarefa que vai para o VIOS." },
+    item.enviarHoje
+      ? {
+          rotulo: "Enviar · no VIOS",
+          data: item.enviarHoje,
+          tom: "marca",
+          dica: `Vistado para ${formatarData(item.data)}, que já passou: o robô lança hoje.`,
+        }
+      : { rotulo: "Enviar · no VIOS", data: item.data, tom: "marca", dica: "Data da tarefa que vai para o VIOS." },
     ...meio.sort((a, b) => (a.data ?? "").localeCompare(b.data ?? "")),
     { rotulo: "Fatal", data: item.dataFatal, tom: "perigo" },
   ];
@@ -154,6 +181,8 @@ export function DiaNaAgenda({ data, hoje }: { data: string | null; hoje: string 
  */
 export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; fotos: Record<string, string>; hoje: string }) {
   const agenda = agendaNoVios(item);
+  // A Ciência e o Embargos repetidos (com o que ele cria) o robô cancela no VIOS: ficam riscados na lista.
+  const repetidas = agenda.linhas.filter((linha) => linha.repetida).length;
   // Sempre começa aberta; recolher vale só para este cartão, enquanto a tela estiver aberta.
   const [aberta, setAberta] = useState(true);
   const id = useId();
@@ -173,6 +202,7 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
         <span className="text-xs font-semibold text-[#285f7a]">Fluxo das tarefas</span>
         <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
           · {agenda.linhas.length} tarefas{agenda.gravada ? ", gravadas pelo robô" : ""}
+          {repetidas ? ` (${repetidas} ${repetidas === 1 ? "repetida" : "repetidas"}: o robô cancela)` : ""}
         </span>
         <span className="flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-[#347796]">
           {aberta ? "Recolher" : "Expandir"}
@@ -194,7 +224,14 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
                 <DiaNaAgenda data={linha.data} hoje={hoje} />
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                    <span className={cn("break-words text-xs", linha.principal ? "font-semibold text-[#10293a]" : "font-medium text-foreground")}>{linha.nome}</span>
+                    <span
+                      className={cn(
+                        "break-words text-xs",
+                        linha.principal ? "font-semibold text-[#10293a]" : linha.repetida ? "font-medium text-muted-foreground line-through" : "font-medium text-foreground"
+                      )}
+                    >
+                      {linha.nome}
+                    </span>
                     {linha.principal ? <Selo tom="marca" className="px-1.5 py-0 text-[11px]">esta tarefa</Selo> : null}
                     {linha.hora ? <span className="text-[11px] tabular-nums text-muted-foreground">às {linha.hora}</span> : null}
                     {linha.ci ? <LinkVios ci={linha.ci} /> : null}
@@ -205,6 +242,8 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
                       criada por {linha.criadaPor}
                     </p>
                   ) : null}
+                  {linha.repetida ? <p className="text-[11px] text-muted-foreground">{TEXTO_DA_REPETIDA[linha.repetida]}</p> : null}
+                  {linha.nota ? <p className="text-[11px] text-amber-800">Data ajustada · {linha.nota}</p> : null}
                   {dataMudou ? (
                     <p className="text-[11px] text-amber-800">
                       Data alterada{linha.dataVios ? ` · o VIOS daria ${formatarData(linha.dataVios)}` : ""}
@@ -247,8 +286,11 @@ export function ListaDeMudancas({ mudancas }: { mudancas: MudancaNaTarefa[] }) {
   );
 }
 
-/** O que a controladoria ajustou na tarefa, com quem e quando: a data e o responsável não são mais os que o jurídico vistou. */
-function AjustesDaTarefa({ ajustes }: { ajustes: AjusteNaTarefa[] }) {
+/**
+ * O que a controladoria ajustou na tarefa, com quem e quando: a data e o responsável não são mais os que o jurídico vistou.
+ * Aparece nos cartões da Conferência, do Vistado e do Check.
+ */
+export function AjustesDaTarefa({ ajustes }: { ajustes: AjusteNaTarefa[] }) {
   return (
     <section aria-label="Ajustes feitos na conferência" className="space-y-2 rounded-md border border-[#dce9eb] bg-[#f7fbfc] px-3 py-2">
       {ajustes.map((ajuste) => (
@@ -262,6 +304,37 @@ function AjustesDaTarefa({ ajustes }: { ajustes: AjusteNaTarefa[] }) {
         </div>
       ))}
     </section>
+  );
+}
+
+const VISUAL_ORIGEM: Record<OrigemPrazo | "nenhuma", { icone: LucideIcon; tom: TomSelo }> = {
+  atalho: { icone: MousePointerClick, tom: "marca" },
+  calendario: { icone: CalendarDays, tom: "escuro" },
+  tarefa: { icone: Scale, tom: "neutro" },
+  publicacao: { icone: FileText, tom: "neutro" },
+  sugestao_ia: { icone: Sparkles, tom: "ia" },
+  nenhuma: { icone: CircleHelp, tom: "neutro" },
+};
+
+/**
+ * "Fatal: Calendário" ou "Fatal: Botão 15 dias úteis": como a fatal foi escolhida na vistagem, à vista em todos os
+ * históricos (pedido de 18/11/2026). Com a fatal mudada depois na Conferência, um segundo selo diz isso.
+ */
+export function SeloOrigemDaFatal({ item, className }: { item: TarefaComFatal; className?: string }) {
+  const origem = origemDaFatal(item);
+  if (!origem) return null;
+  const { icone, tom } = VISUAL_ORIGEM[origem.origem ?? "nenhuma"];
+  return (
+    <span className={cn("flex flex-wrap items-center gap-1.5", className)}>
+      <Selo tom={tom} icone={icone} titulo={origem.descricao}>
+        <span className="font-normal">Fatal:</span> {origem.rotulo}
+      </Selo>
+      {origem.mudadaNaConferencia ? (
+        <Selo tom="alerta" icone={Pencil} titulo="A Conferência mudou a data fatal depois da vistagem: veja o ajuste na tarefa.">
+          Mudada na conferência
+        </Selo>
+      ) : null}
+    </span>
   );
 }
 
@@ -327,6 +400,7 @@ export function CartoesTarefas({
                   {comEnvio && item.viosTarefaId ? <LinkVios ci={item.viosTarefaId} /> : null}
                 </div>
                 <p className="break-words font-semibold text-foreground">{item.tarefa}</p>
+                <SeloOrigemDaFatal item={item} />
                 {item.observacao ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.observacao}</p> : null}
                 {simulada ? <p className="text-xs text-muted-foreground">Preenchida no VIOS, não gravada.</p> : null}
                 {item.envioErro ? <p className={cn("whitespace-pre-wrap break-words text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</p> : null}
@@ -352,8 +426,15 @@ export function CartoesTarefas({
               {prazoComFatal ? (
                 <div className="space-y-1.5 rounded-md border border-[#e6eef0] bg-white px-3 py-2">
                   <ReguaDatas rotulo={`Datas de ${item.tarefa}`} hoje={hoje} marcos={marcosDoPrazo(item)} />
+                  {item.enviarHoje ? (
+                    <p className="text-[11px] text-amber-800">
+                      Vistado com o Enviar em {formatarData(item.data)}, que já passou: o robô lança com o Enviar de hoje (
+                      {formatarData(item.enviarHoje)}) e põe o Revisar e o Protocolar antes da fatal. Não precisa editar.
+                    </p>
+                  ) : null}
+                  {/* De onde veio a fatal (botões, calendário, prazo legal, publicação, IA): no selo do topo do cartão. */}
                   {item.diasPrazo && item.contagemPrazo ? (
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-[11px] leading-snug text-muted-foreground">
                       {item.diasPrazo} {ROTULO_CONTAGEM[item.contagemPrazo]} após a publicação
                     </p>
                   ) : null}
@@ -366,16 +447,23 @@ export function CartoesTarefas({
                     <Rotulo>{item.etiqueta === "COMPROMISSO" ? "Data e horário" : "Data no VIOS"}</Rotulo>
                     <dd className="flex items-center gap-1.5 text-sm tabular-nums text-foreground">
                       <CalendarDays className="size-4 text-[#3e84a8]" aria-hidden />
-                      {formatarData(item.data)}
+                      {/* Ciência dos Agendamentos com a data já passada: vai com a do envio (pedido de 13/11/2026). */}
+                      {formatarData(item.enviarHoje ?? item.data)}
                       {item.hora ? ` às ${item.hora}${item.horaFim ? ` até ${item.horaFim}` : ""}` : ""}
                       {item.dataLimite && item.dataLimite !== item.data ? ` · limite ${formatarData(item.dataLimite)}` : ""}
                     </dd>
+                    {item.enviarHoje ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        Vistada para {formatarData(item.data)}, que já passou: vai com a data do envio ({formatarData(item.enviarHoje)}). Não
+                        precisa editar.
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="min-w-0 space-y-1">
                   <Rotulo>Responsável</Rotulo>
                   <dd>
-                    <Pessoas texto={item.responsavel} fotos={fotos} />
+                    <Pessoas texto={item.responsavel} fotos={fotos} vazio={responsavelFicaComOVios(item.tarefa, item.responsavel) ? RESPONSAVEL_PELO_VIOS : "—"} />
                   </dd>
                 </div>
                 <div className="min-w-0 space-y-1">

@@ -57,7 +57,11 @@ function maisFrequente(valores: (string | null)[]): string | null {
 }
 
 /** Dados que a controladoria copiaria dos cadastros parecidos: grupo, escritório e demanda de risco mais comuns. */
-export function resumirPastas(pastas: PastaSioe[], areaDoAdvogado: (nome: string | null) => string | null) {
+export function resumirPastas(
+  pastas: PastaSioe[],
+  areaDoAdvogado: (nome: string | null) => string | null,
+  etiquetasDeRisco?: string[]
+) {
   const ativas = pastas.filter(pastaAtiva);
   const base = ativas.length ? ativas : pastas;
   const grupo = maisFrequente(base.map((pasta) => pasta.grupoCliente));
@@ -71,21 +75,26 @@ export function resumirPastas(pastas: PastaSioe[], areaDoAdvogado: (nome: string
     grupo,
     escritorio,
     exCliente,
-    demandaRisco: doGrupo.filter((pasta) => temDemandaDeRisco(pasta)).length > doGrupo.length / 2,
+    demandaRisco: doGrupo.filter((pasta) => temDemandaDeRisco(pasta, etiquetasDeRisco)).length > doGrupo.length / 2,
     ativas: doGrupo.filter(pastaAtiva).length,
     referencia: referencia ? { ci: referencia.ci, cnj: referencia.cnj, cliente: referencia.cliente, grupo: referencia.grupoCliente } : null,
   };
 }
 
 /** 1) O teor cita o processo principal (ou outro) que tem pasta no VIOS. */
-export function sugestaoPorNumero(numero: string, pastas: PastaSioe[], areaDoAdvogado: (nome: string | null) => string | null): SugestaoTriagem {
-  const resumo = resumirPastas(pastas, areaDoAdvogado);
+export function sugestaoPorNumero(
+  numero: string,
+  pastas: PastaSioe[],
+  areaDoAdvogado: (nome: string | null) => string | null,
+  etiquetasDeRisco?: string[]
+): SugestaoTriagem {
+  const resumo = resumirPastas(pastas, areaDoAdvogado, etiquetasDeRisco);
   const pasta = pastas[0];
   return {
     origem: "numero",
     escritorio: resumo.escritorio,
     grupo: resumo.grupo,
-    demandaRisco: pastas.some((pasta) => temDemandaDeRisco(pasta)),
+    demandaRisco: pastas.some((pasta) => temDemandaDeRisco(pasta, etiquetasDeRisco)),
     referencia: { ci: pasta.ci, cnj: pasta.cnj, cliente: pasta.cliente, grupo: pasta.grupoCliente },
     cliente: pasta.cliente,
     confianca: "alta",
@@ -98,13 +107,14 @@ export function sugestaoPorNumero(numero: string, pastas: PastaSioe[], areaDoAdv
 export function sugestaoPorPartes(
   partes: string[],
   porCliente: Map<string, PastaSioe[]>,
-  areaDoAdvogado: (nome: string | null) => string | null
+  areaDoAdvogado: (nome: string | null) => string | null,
+  etiquetasDeRisco?: string[]
 ): SugestaoTriagem | null {
   const achados = [...new Set(partes.map((parte) => parte.trim()).filter(Boolean))]
     .map((parte) => ({ parte, pastas: porCliente.get(chaveCliente(parte)) ?? [] }))
     .filter((item) => item.pastas.length);
   if (!achados.length) return null;
-  const resumos = achados.map((item) => ({ ...item, resumo: resumirPastas(item.pastas, areaDoAdvogado) }));
+  const resumos = achados.map((item) => ({ ...item, resumo: resumirPastas(item.pastas, areaDoAdvogado, etiquetasDeRisco) }));
   resumos.sort((a, b) => b.resumo.ativas - a.resumo.ativas || b.pastas.length - a.pastas.length);
   const [melhor] = resumos;
   const grupos = new Set(resumos.map((item) => item.resumo.grupo).filter(Boolean));

@@ -1,8 +1,6 @@
 import { Wallet } from "lucide-react";
 import { CustosProjetosClient } from "@/components/custos-projetos/custos-projetos-client";
 
-export const dynamic = "force-dynamic";
-
 export default function CustosProjetosPage() {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

@@ -8,7 +8,7 @@ import { IconeOpcao, Seletor } from "./seletor";
 const DIAS_DA_SEMANA = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
 
 /** "2026-10-29" → "29/10/2026". */
-function rotuloDaData(data: string): string {
+export function rotuloDaData(data: string): string {
   const [ano, mes, dia] = data.split("-");
   return `${dia}/${mes}/${ano}`;
 }
@@ -76,4 +76,44 @@ export function FiltroData({
       opcoes={opcoes}
     />
   );
+}
+
+/**
+ * Escolha de um dia de importação que a tela pede ao servidor (as Checadas trazem um dia por vez). Não tem "Todas as
+ * datas": o dia escolhido sempre aparece, mesmo sem importação (hoje, antes do arquivo chegar).
+ */
+export function EscolhaDoDia({
+  rotulo,
+  dias,
+  valor,
+  hoje,
+  onChange,
+  desabilitado = false,
+  className = "sm:w-64",
+}: {
+  /** Nome acessível do campo e título da lista. */
+  rotulo: string;
+  /** Dias que tiveram importação (AAAA-MM-DD). */
+  dias: string[];
+  valor: string;
+  /** AAAA-MM-DD de hoje, para escrever "de hoje" e "há N dias". */
+  hoje: string;
+  onChange: (valor: string) => void;
+  desabilitado?: boolean;
+  className?: string;
+}) {
+  const opcoes = useMemo(
+    () =>
+      [...new Set([valor, ...dias])]
+        .filter(Boolean)
+        .sort((a, b) => b.localeCompare(a))
+        .map((dia) => ({
+          valor: dia,
+          rotulo: dia === hoje ? "Importação de hoje" : `Importação ${rotuloDaData(dia)}`,
+          descricao: descricaoDaData(dia, hoje),
+          icone,
+        })),
+    [dias, valor, hoje]
+  );
+  return <Seletor rotulo={rotulo} className={className} valor={valor} onChange={onChange} opcoes={opcoes} desabilitado={desabilitado} />;
 }

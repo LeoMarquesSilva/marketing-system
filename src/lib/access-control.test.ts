@@ -9,7 +9,11 @@ import {
   firstAllowedPath,
   hasCafeCulturaAccess,
   hasIcpAccess,
+  hasProcessosAccess,
   canEditPe27,
+  canEditDocumentario,
+  canUploadDocumentarioAcervo,
+  hasDocumentarioAccess,
   hasOperacoesLegaisAccess,
   hasPe27Access,
   hasTeamSurveysAccess,
@@ -56,7 +60,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(vistador, "/operacoes-legais/vistagem/juridico")).toBe(true);
     expect(canAccessPath(vistador, "/operacoes-legais")).toBe(false);
     expect(canAccessPath(vistador, "/planner")).toBe(false);
-    expect(firstAllowedPath(vistador)).toBe("/operacoes-legais/vistagem");
+    expect(firstAllowedPath(vistador)).toBe("/");
   });
 
   it("o jurídico abre a Visão geral e a aba Vistagem; sem papel ou admin é controladoria", () => {
@@ -74,8 +78,8 @@ describe("access-control permissions catalog", () => {
     ]) {
       expect(canAccessPath(juridico, aba)).toBe(false);
     }
-    // A página inicial e a entrada pelo menu continuam sendo a aba Vistagem.
-    expect(firstAllowedPath(juridico)).toBe("/operacoes-legais/vistagem/juridico");
+    // Entra pela tela inicial; no menu, a entrada da Vistagem continua sendo a aba Vistagem.
+    expect(firstAllowedPath(juridico)).toBe("/");
     expect(entradaDaVistagem(juridico)).toBe("/operacoes-legais/vistagem/juridico");
     expect(entradaDaVistagem({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toBe("/operacoes-legais/vistagem");
     expect(papelVistagem({ role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: null })).toBe("controladoria");
@@ -114,12 +118,13 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath({ role: null, permissions: ["/", "/planner"] }, "/icp")).toBe(false);
   });
 
-  it("perfil só com ICP cai direto no ICP e não vê o resto", () => {
+  it("perfil só com ICP entra pela tela inicial e não vê o resto", () => {
     const icpOnly = { role: null, permissions: ["/icp"] };
     expect(canAccessPath(icpOnly, "/icp")).toBe(true);
-    expect(canAccessPath(icpOnly, "/")).toBe(false);
+    expect(canAccessPath(icpOnly, "/")).toBe(true);
+    expect(canAccessPath(icpOnly, "/painel-marketing")).toBe(false);
     expect(canAccessPath(icpOnly, "/planner")).toBe(false);
-    expect(firstAllowedPath(icpOnly)).toBe("/icp");
+    expect(firstAllowedPath(icpOnly)).toBe("/");
   });
 
   it("perfil ICP + conteúdo vê ICP, conteúdo e fotos, mas não gerencia a galeria", () => {
@@ -134,7 +139,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(perfil, "/fotos-eventos")).toBe(true);
     expect(canAccessPath(perfil, "/fotos-colaboradores")).toBe(false);
     expect(canAccessPath(perfil, "/planner")).toBe(false);
-    expect(firstAllowedPath(perfil)).toBe("/conteudo/inicio");
+    expect(firstAllowedPath(perfil)).toBe("/");
   });
 
   it("libera Meus Clientes para qualquer autenticado", () => {
@@ -288,6 +293,25 @@ describe("access-control permissions catalog", () => {
   });
 });
 
+describe("processos e pessoas", () => {
+  const liberado = { role: null, permissions: ["/meus-clientes", "/operacoes-legais/vistagem", "/operacoes-legais/processos"] };
+  it("admin ou liberação manual; a liberação de Operações Legais não basta", () => {
+    expect(hasProcessosAccess({ role: "admin" })).toBe(true);
+    expect(hasProcessosAccess(liberado)).toBe(true);
+    expect(hasProcessosAccess({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toBe(false);
+    expect(hasProcessosAccess({ role: null, permissions: ["/operacoes-legais"] })).toBe(false);
+  });
+
+  it("abre Processos e Pessoas, e nada mais de Operações Legais", () => {
+    for (const rota of ["/operacoes-legais/processos", "/operacoes-legais/processos/carteira", "/operacoes-legais/pessoas/abc"]) {
+      expect(canAccessPath(liberado, rota)).toBe(true);
+      expect(canAccessPath({ role: null, permissions: ["/operacoes-legais/vistagem"] }, rota)).toBe(false);
+    }
+    expect(canAccessPath(liberado, "/operacoes-legais")).toBe(false);
+    expect(canAccessPath(liberado, "/operacoes-legais/pesquisas")).toBe(false);
+  });
+});
+
 describe("pesquisas com a equipe", () => {
   it("gestão e resultados só para admin, mesmo com a chave salva no cadastro", () => {
     const comChave = { role: null, permissions: ["/operacoes-legais/pesquisas"] };
@@ -299,6 +323,32 @@ describe("pesquisas com a equipe", () => {
 
   it("a página de resposta abre para qualquer pessoa logada", () => {
     expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/pesquisa/pe27-operacoes-legais")).toBe(true);
+  });
+});
+
+describe("Minidocumentário 10 anos", () => {
+  it("admin abre e edita; /documentario vê e aprova; /documentario/editar edita; o modo legado não abre", () => {
+    expect(hasDocumentarioAccess({ role: "admin" })).toBe(true);
+    expect(canEditDocumentario({ role: "admin" })).toBe(true);
+    expect(canAccessPath({ role: null, permissions: null }, "/documentario")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/planner", "/eventos"] }, "/documentario/acervo")).toBe(false);
+    const socio = { role: null, permissions: ["/conteudo/roteiros", "/documentario"] };
+    expect(canAccessPath(socio, "/documentario/aprovacao")).toBe(true);
+    expect(canEditDocumentario(socio)).toBe(false);
+    const producao = { role: null, permissions: ["/documentario", "/documentario/editar"] };
+    expect(canEditDocumentario(producao)).toBe(true);
+    expect(firstAllowedPath({ role: null, permissions: ["/documentario/editar"] })).toBe("/");
+    expect(isManualOnlyKey("/documentario")).toBe(true);
+    expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/documentario");
+    expect(canUploadDocumentarioAcervo({ role: "admin" })).toBe(true);
+    expect(canUploadDocumentarioAcervo(producao)).toBe(true);
+    expect(canUploadDocumentarioAcervo(socio)).toBe(false);
+    // Chave só do acervo: sobe fotos, mas não edita o projeto; sem a chave de ver, não vale.
+    const acervo = { role: null, permissions: ["/rh", "/documentario", "/documentario/acervo/enviar"] };
+    expect(canUploadDocumentarioAcervo(acervo)).toBe(true);
+    expect(canEditDocumentario(acervo)).toBe(false);
+    expect(canUploadDocumentarioAcervo({ role: null, permissions: ["/documentario/acervo/enviar"] })).toBe(false);
+    expect(isManualOnlyKey("/documentario/acervo/enviar")).toBe(true);
   });
 });
 
@@ -325,6 +375,14 @@ describe("PE27 (planejamento estratégico)", () => {
     expect(firstAllowedPath(consultor)).toBe("/pe27");
   });
 
+  it("os consultores do PE27 abrem a confirmação da festa de 10 anos, e só ela fora do módulo", () => {
+    const consultor = { role: null, permissions: ["/pe27", "/pe27/editar"] };
+    expect(canAccessPath(consultor, "/festa-10-anos")).toBe(true);
+    expect(canAccessPath(consultor, "/festa-10-anos/outra")).toBe(false);
+    expect(canAccessPath(consultor, "/convites-festa")).toBe(false);
+    expect(canAccessPath(consultor, "/eventos")).toBe(false);
+  });
+
   it("a chave /pe27/editar libera decidir e editar, e o perfil continua restrito ao módulo", () => {
     const consultor = { role: null, permissions: ["/pe27", "/pe27/editar"] };
     expect(hasPe27Access(consultor)).toBe(true);
@@ -347,5 +405,30 @@ describe("PE27 (planejamento estratégico)", () => {
     expect(isPe27OnlyProfile({ role: "admin", permissions: ["/pe27"] })).toBe(false);
     expect(canAccessPath(socio, "/meus-clientes")).toBe(true);
     expect(canAccessPath(socio, "/pe27")).toBe(true);
+  });
+});
+
+describe("tela inicial e dashboard de marketing", () => {
+  it("a tela inicial abre para todos os perfis, menos o liberado só no PE27", () => {
+    expect(canAccessPath({ role: "admin" }, "/")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: ["/conteudo/roteiros"] }, "/")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: null, department: "Trabalhista" }, "/")).toBe(true);
+    expect(canAccessPath({ role: "designer", permissions: null }, "/")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: ["/pe27"] }, "/")).toBe(false);
+  });
+
+  it("todo mundo entra pela tela inicial; o perfil só-PE27, pelo módulo", () => {
+    expect(firstAllowedPath({ role: "admin" })).toBe("/");
+    expect(firstAllowedPath({ role: null, permissions: ["/", "/planner"] })).toBe("/");
+    expect(firstAllowedPath({ role: "designer", permissions: null })).toBe("/");
+    expect(firstAllowedPath({ role: null, permissions: ["/pe27"] })).toBe("/pe27");
+  });
+
+  it("a chave antiga do dashboard continua liberando o dashboard de marketing", () => {
+    expect(canAccessPath({ role: null, permissions: ["/", "/planner"] }, "/painel-marketing")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/painel-marketing")).toBe(false);
+    expect(normalizePermissionsInput(["/", "/planner"])).toEqual(["/painel-marketing", "/planner"]);
+    expect(normalizePermissionsInput(["/", "/painel-marketing"])).toEqual(["/painel-marketing"]);
+    expect(ACCESS_PRESETS["Marketing completo"]).toContain("/painel-marketing");
   });
 });

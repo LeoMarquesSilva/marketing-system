@@ -2,10 +2,12 @@ import "server-only";
 
 import {
   ETIQUETAS_AGENDAMENTO,
-  areaDoCatalogo,
-  chaveDoCaminho,
+  horaEmSaoPaulo,
   nomesDasPessoas,
   pessoasDaArea,
+  primeiroDiaDaTarefa,
+  dataPadraoDaTarefa,
+  renunciaComDataFixa,
   responsavelSugerido,
   responsaveisNaArea,
   tarefasPermitidas,
@@ -16,36 +18,49 @@ import {
   type EtiquetaAgendamento,
   type OpcaoTarefa,
   type OpcaoVios,
+  type OrigemPrazo,
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
-import { enviarDoPrazo, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
-import { CHECK_AUTOMATICO, foiCheckAutomatico, notaDoCheckAutomatico } from "./check";
+import { enviarDoPrazo, mudancaDosDias, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
+import { MINIMO_BUSCA_NO_BANCO, camposDoCheck, combinaCampos, digitosDoTermo, normalizarBusca, padraoDoTermo, termosDaBusca } from "./busca";
+import { CHECK_AUTOMATICO, CONFERENCIA_AUTOMATICA, foiCheckAutomatico, foiConferenciaAutomatica, notaDoCheckAutomatico } from "./check";
 import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { vaiParaCentral } from "./central";
 import { enviarParaCentral } from "./central-server";
-import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
+import {
+  cienciaDosAgendamentos,
+  dataDaCienciaNaVistagem,
+  dataDaCienciaNoEnvio,
+  ehCienciaDosAgendamentos,
+  ehReestruturacao,
+  vaiDiretoAoRobo,
+} from "./ciencia-agendamentos";
+import { alteracaoDaVistagem, inicioDaConferenciaSegura, reabertaParaAlterar } from "./alterar-vistagem";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
+import { registrarDecisaoDaIa } from "./ia-registro-server";
 import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaAtual, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
-import { arvoreDaArea, cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
-import { caminhosDoFluxo, fluxoParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
+import { cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
+import { caminhosDoFluxo, fluxoDoPrazo, fluxoParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
+import { arvoreDaPublicacao, carregarBaseDoFluxo, catalogoDaPublicacao, comFluxoPrevisto, prazoDaPublicacao, type AreaDaPublicacao } from "./fluxo-previsto-server";
 import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
-import { linhasParaFila, modoDaPublicacao, type TarefaNoVios } from "./fila-vios";
+import { linhasParaFila, modoDaPublicacao, podeTerGravadoNoVios, responsavelQueOViosPos, type TarefaNoVios } from "./fila-vios";
+import { avisarErrosDoRobo } from "./aviso-erro-robo-server";
 import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria, precisaDeSistema, sistemaDaLista } from "./dados-processo";
-import { buscarPastaPorCi, buscarSinteseDaPasta, cadastroDaPasta, semMateria, semSistema, type CadastroDaPasta } from "./sioe";
-import { ESCRITORIOS, type PastaSioe, type Pendencia } from "./triagem";
+import { cadastroDaPasta, semMateria, semSistema, sinteseECadastroDaPasta, type CadastroDaPasta } from "./sioe";
+import { ESCRITORIOS, ehPastaDeAtendimento, tipoDaPastaDaPublicacao, type PastaSioe, type Pendencia } from "./triagem";
 import { montarHistorico, type HistoricoPublicacao } from "./historico";
 import {
   carregarArvoreVios,
+  carregarCatalogoAtendimentos,
   carregarCatalogoProcessos,
   carregarMateriasVios,
   carregarSistemasVios,
-  catalogoDaArea,
   consultarFilaSama,
   enfileirarNoSama,
   enfileirarSintese,
@@ -55,7 +70,17 @@ import {
   sintesesDaPasta,
   type CatalogoArea,
 } from "./sama";
-import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, resolverPendencia, type ArquivoDaPublicacao, type PublicacaoRow } from "./server";
+import {
+  COLUNAS_PUBLICACAO,
+  admin,
+  buscarPastaInformada,
+  falhou,
+  hojeEmSaoPaulo,
+  publicacaoResumo,
+  resolverPendencia,
+  type ArquivoDaPublicacao,
+  type PublicacaoRow,
+} from "./server";
 import type {
   AgendadasJuridicoResposta,
   AgendamentoResumo,
@@ -63,6 +88,7 @@ import type {
   CatalogoVistagem,
   ConferenciaItem,
   ConferenciaResposta,
+  CheckBuscaResposta,
   CheckResposta,
   DataDoFluxo,
   DjenParte,
@@ -81,11 +107,11 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, data_limite, responsavel, revisor, observacao, fluxo_datas, ajustes, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, origem_prazo, hora, hora_fim, data_limite, responsavel, revisor, observacao, fluxo_datas, ajustes, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
-  data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
+  data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; origem_prazo: OrigemPrazo | null; hora: string | null;
   hora_fim: string | null; data_limite: string | null; responsavel: string; revisor: string | null;
   observacao: string | null; fluxo_datas: DataDoFluxo[] | null; ajustes: AjusteNaTarefa[] | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null;
@@ -103,6 +129,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     dataFatal: row.data_fatal,
     diasPrazo: row.dias_prazo,
     contagemPrazo: row.contagem_prazo,
+    origemPrazo: row.origem_prazo ?? null,
     hora: row.hora,
     horaFim: row.hora_fim ?? null,
     dataLimite: row.data_limite ?? null,
@@ -176,18 +203,13 @@ function comResponsaveisDaArea(tarefas: OpcaoTarefa[], usuarios: OpcaoVios[]): O
   });
 }
 
-function catalogoDaPublicacao(areas: CatalogoArea[], publicacao: Pick<PublicacaoComArea, "area_processo" | "escritorio_responsavel">): CatalogoArea | null {
-  return catalogoDaArea(areas, areaDoCatalogo(publicacao.area_processo, publicacao.escritorio_responsavel, areas.map((item) => item.area)));
-}
-
-/** A árvore do VIOS como vale para a pasta da publicação: só os tipos da lista de tarefas da área dela. */
-function arvoreDaPublicacao(
-  arvore: Map<number, TipoNaArvore>,
-  areas: CatalogoArea[],
-  publicacao: Pick<PublicacaoComArea, "area_processo" | "escritorio_responsavel">
-): Map<number, TipoNaArvore> {
-  return arvoreDaArea(arvore, catalogoDaPublicacao(areas, publicacao)?.etapas.map((etapa) => etapa.id) ?? null);
-}
+/**
+ * Lista de tarefas já montada de cada área. Montar custa de 4 a 9 ms de CPU por área (normaliza o nome de todos os
+ * usuários para cada tarefa); listas e o cron pediam isso para cada publicação. A chave é o objeto da área, que o
+ * cache do catálogo (sama.ts, 10 min) reaproveita: quando o catálogo é relido, a área é outra e a lista é montada de novo.
+ * Quem recebe a lista só lê; não altere o objeto devolvido.
+ */
+const catalogoMontado = new WeakMap<CatalogoArea, CatalogoVistagem>();
 
 export function catalogoParaPublicacao(
   areas: CatalogoArea[],
@@ -195,7 +217,9 @@ export function catalogoParaPublicacao(
 ): CatalogoVistagem | null {
   const catalogo = catalogoDaPublicacao(areas, publicacao);
   if (!catalogo) return null;
-  return {
+  const pronto = catalogoMontado.get(catalogo);
+  if (pronto) return pronto;
+  const montado: CatalogoVistagem = {
     area: catalogo.area,
     atualizadoEm: catalogo.atualizadoEm,
     tarefas: {
@@ -205,6 +229,8 @@ export function catalogoParaPublicacao(
     },
     usuarios: catalogo.usuarios,
   };
+  catalogoMontado.set(catalogo, montado);
+  return montado;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,13 +308,24 @@ async function comPrevia(publicacao: PublicacaoComArea, previa: PreviaPendencia,
   if (publicacao.status !== "triagem_pendente") throw new VistagemError("Esta publicação não está mais pendente na controladoria. Atualize a lista.", 409);
   if (!(ESCRITORIOS as readonly string[]).includes(previa.escritorio)) throw new VistagemError("Escolha o escritório responsável.");
   const ci = previa.ci?.replace(/\D/g, "") || publicacao.pasta_ci || "";
-  const pasta = ci ? (publicacao.pastas_candidatas ?? []).find((candidata) => candidata.ci === ci) ?? (await buscarPastaPorCi(ci)) : null;
-  if (ci && !pasta) throw new VistagemError(`CI ${ci} não encontrada no VIOS.`, 404);
+  const candidatas = publicacao.pastas_candidatas ?? [];
+  const pasta = ci ? candidatas.find((candidata) => candidata.ci === ci) ?? (await buscarPastaInformada(ci)) : null;
   return {
     ...publicacao,
     escritorio_responsavel: previa.escritorio,
     ...(pasta ? dadosDaPasta(pasta) : {}),
+    // A pasta informada fora do SIOE (atendimento) fica entre as candidatas com o tipo: é por ele que a vistagem usa as
+    // tarefas de atendimento e o robô agenda direto na pasta.
+    ...(pasta?.tipoPasta ? { pastas_candidatas: [...candidatas.filter((candidata) => candidata.ci !== pasta.ci), pasta] } : {}),
   };
+}
+
+/**
+ * A lista de tarefas do VIOS que vale para a pasta da publicação: a das pastas de atendimento quando a controladoria
+ * informou um atendimento na Triagem Manual (18/11/2026); senão, a dos processos.
+ */
+function catalogosDaPasta(publicacao: Pick<PublicacaoComArea, "pasta_ci" | "pastas_candidatas">): Promise<CatalogoArea[]> {
+  return ehPastaDeAtendimento(tipoDaPastaDaPublicacao(publicacao)) ? carregarCatalogoAtendimentos() : carregarCatalogoProcessos();
 }
 
 /** Campos da pasta escolhida, para a vistagem sugerir responsável, revisor e a lista de tarefas da área do processo. */
@@ -315,7 +352,7 @@ export async function obterVistagem(
   const publicacao = previa ? await comPrevia(carregada, previa, areasDoUsuario) : carregada;
   if (!previa) garantirArea(publicacao, areasDoUsuario, veRisco);
   let catalogoErro: string | null = null;
-  const areas = await carregarCatalogoProcessos().catch((erro: unknown) => {
+  const areas = await catalogosDaPasta(publicacao).catch((erro: unknown) => {
     catalogoErro = erro instanceof Error ? erro.message : String(erro);
     return [] as CatalogoArea[];
   });
@@ -325,7 +362,7 @@ export async function obterVistagem(
   }
   let fluxosErro: string | null = null;
   let sinteseErro: string | null = null;
-  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas, estagiarios, cadastro, materiasVios, sistemasVios] = await Promise.all([
+  const [inconsistencias, feriados, pastaVios, arvore, daPasta, sintesesPedidas, estagiarios, materiasVios, sistemasVios] = await Promise.all([
     inconsistenciasPorPublicacao([id]),
     carregarFeriados().catch(() => [] as string[]),
     publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
@@ -333,9 +370,12 @@ export async function obterVistagem(
       fluxosErro = erro instanceof Error ? erro.message : String(erro);
       return null;
     }),
+    // Síntese e, fora da prévia, a Matéria e o Sistema do Tribunal atuais (para mostrar e decidir o que "Atualizar
+    // cadastro no VIOS" exige), numa leitura só do SIOE. Sem resposta, segue sem exigir, e quem recusa é o VIOS.
     publicacao.pasta_ci
-      ? buscarSinteseDaPasta(publicacao.pasta_ci).catch((erro: unknown) => {
+      ? sinteseECadastroDaPasta(publicacao.pasta_ci).catch((erro: unknown) => {
           sinteseErro = erro instanceof Error ? erro.message : String(erro);
+          console.error("[vistagem] síntese e cadastro da pasta", sinteseErro);
           return null;
         })
       : Promise.resolve(null),
@@ -347,14 +387,6 @@ export async function obterVistagem(
         })
       : Promise.resolve([] as SintesePedida[]),
     catalogo && ehReestruturacao(publicacao.escritorio_responsavel ?? catalogo.area) ? estagiariosNoVios() : Promise.resolve(new Set<string>()),
-    // Matéria e Sistema do Tribunal atuais, para mostrar e decidir o que "Atualizar cadastro no VIOS" exige: sem
-    // resposta do SIOE, segue sem exigir, e quem recusa é o VIOS.
-    publicacao.pasta_ci && !previa
-      ? cadastroDaPasta(publicacao.pasta_ci).catch((erro: unknown): CadastroDaPasta | null => {
-          console.error("[vistagem] cadastro da pasta", erro instanceof Error ? erro.message : erro);
-          return null;
-        })
-      : Promise.resolve(null),
     // As listas do VIOS para escolher: sem elas, o campo some e o resto do pedido segue.
     publicacao.pasta_ci && !previa
       ? carregarMateriasVios().catch((erro: unknown) => {
@@ -369,6 +401,8 @@ export async function obterVistagem(
         })
       : Promise.resolve([] as MateriaVios[]),
   ]);
+  const sintese = daPasta?.sintese ?? null;
+  const cadastro: CadastroDaPasta | null = previa ? null : daPasta?.cadastro ?? null;
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
   const revisor = catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null;
@@ -417,7 +451,9 @@ export async function obterVistagem(
     sugestaoIa: publicacao.sugestao_ia && catalogo ? sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas) : publicacao.sugestao_ia,
     // Na prévia da controladoria a publicação ainda não está na fila do jurídico: a IA gera depois, se for o caso.
     sugestaoIaDisponivel:
-      !previa && Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")) && (await lerConfiguracoes()).iaSugestaoTarefa,
+      !previa &&
+      Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")) &&
+      (await lerConfiguracoes()).iaSugestaoTarefa,
     hoje: hojeEmSaoPaulo(),
   };
 }
@@ -442,11 +478,12 @@ async function estagiariosNoVios(): Promise<Set<string>> {
 
 /**
  * A "1. CIÊNCIA DOS AGENDAMENTOS" que o Orquestra acrescenta quando nenhuma tarefa é ela e o fluxo do VIOS de nenhuma
- * a cria: Providência no dia, para quem faz o Enviar da primeira tarefa (Reestruturação: estagiário → revisor).
+ * a cria: Providência no dia (vistada às 18h ou depois, no dia útil seguinte), para quem faz o Enviar da primeira
+ * tarefa (Reestruturação: estagiário → revisor).
  */
 async function cienciaParaGravar(
   itens: AgendamentoValidado[],
-  contexto: { arvore: Map<number, TipoNaArvore>; catalogo: CatalogoVistagem; area: string | null }
+  contexto: { arvore: Map<number, TipoNaArvore>; catalogo: CatalogoVistagem; area: string | null; ehDiaUtil: (iso: string) => boolean }
 ): Promise<AgendamentoValidado | null> {
   const estagiarios = ehReestruturacao(contexto.area) ? await estagiariosNoVios() : new Set<string>();
   const ciencia = cienciaDosAgendamentos(
@@ -475,10 +512,11 @@ async function cienciaParaGravar(
     etiqueta: "PROVIDENCIA",
     tarefa: tipo.nomeVios ?? tipo.nome,
     tarefaId: tipo.id,
-    data: hojeEmSaoPaulo(),
+    data: dataDaCienciaNaVistagem(hojeEmSaoPaulo(), horaEmSaoPaulo(), contexto.ehDiaUtil),
     dataFatal: null,
     diasPrazo: null,
     contagemPrazo: null,
+    origemPrazo: null,
     hora: null,
     horaFim: null,
     dataLimite: null,
@@ -505,7 +543,7 @@ export async function salvarVistagem(
   authUserId: string,
   areas: AreasVistagem = null,
   veRisco = true
-): Promise<{ central: ResultadoCentral | null }> {
+): Promise<{ central: ResultadoCentral | null; direto?: boolean }> {
   const carregada = await carregarPublicacao(id);
   const resolucao = entrada.resolucao ?? null;
   // Direto da triagem: valida tudo com o escritório e a pasta escolhidos e só então tira a pendência da controladoria.
@@ -514,44 +552,60 @@ export async function salvarVistagem(
     garantirArea(publicacao, areas, veRisco);
     if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
   }
-  const catalogos = await carregarCatalogoProcessos();
+  const catalogos = await catalogosDaPasta(publicacao);
   const catalogo = catalogoParaPublicacao(catalogos, publicacao);
   if (!catalogo) throw new VistagemError("Não há lista de tarefas do VIOS para a área desta pasta. Avise a controladoria.", 422);
 
   // A data do Prazo depende do fluxo do VIOS (dias do 3. PROTOCOLAR): sem ele, não grava.
   const [feriados, arvoreInteira] = await Promise.all([carregarFeriados(), carregarArvoreVios()]);
   const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
+  const daPublicacao = prazoDaPublicacao(publicacao, catalogos, feriados);
+  // Depois das 18h nada fica para hoje: as datas vão a partir do dia útil seguinte (pedido de 13/11/2026).
+  const hoje = hojeEmSaoPaulo();
+  const primeiroDia = primeiroDiaDaTarefa(hoje, horaEmSaoPaulo(), criarCalendario(feriados));
+  // Operações Legais: a VERIFICAR RENÚNCIA vai sem responsável (o VIOS divide entre as estagiárias).
+  const areaDaPasta = publicacao.escritorio_responsavel ?? catalogo.area;
   const validacao = validarAgendamentos(entrada.agendamentos, {
+    area: areaDaPasta,
     tarefas: catalogo.tarefas,
     usuarios: catalogo.usuarios,
     ehDiaUtil: criarCalendario(feriados),
-    cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
+    cadeiaDaTarefa: (tarefaId, prazo) => cadeiaDoFluxo(fluxoDoPrazo(montarFluxo(tarefaId, arvore), prazo, daPublicacao)),
     caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
     semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
-    hoje: hojeEmSaoPaulo(),
+    hoje: primeiroDia,
+    depoisDoHorario: primeiroDia > hoje ? primeiroDia : null,
   });
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
+  // Operações Legais: a VERIFICAR RENÚNCIA vai sempre para 2 dias úteis depois do dia em que vistou, mesmo que a tela
+  // tenha sido aberta noutro dia (pedido de 18/11/2026).
+  const itensVistados = validacao.itens.map((item) =>
+    renunciaComDataFixa(item.tarefa, areaDaPasta)
+      ? { ...item, data: dataPadraoDaTarefa(item.tarefa, hoje, criarCalendario(feriados), areaDaPasta) ?? item.data }
+      : item
+  );
   // Trabalhista: classificação eSocial (só na publicação, não vai para o VIOS) e, se pedir, a tarefa Inserir E-social.
   const esocial = validarEsocial({
     areaDoCatalogo: catalogo.area,
     classificacao: entrada.publicacaoEsocial,
     providencias: catalogo.tarefas.PROVIDENCIA,
-    itens: validacao.itens,
+    itens: itensVistados,
   });
   if (!esocial.ok) throw new VistagemError(esocial.erro);
   // Ciência dos Agendamentos em todo agendamento: se o fluxo do VIOS das tarefas não cria, o Orquestra cria.
-  const ciencia = await cienciaParaGravar(validacao.itens, {
+  const ciencia = await cienciaParaGravar(itensVistados, {
     arvore,
     catalogo,
-    area: publicacao.escritorio_responsavel ?? catalogo.area,
+    area: areaDaPasta,
+    ehDiaUtil: criarCalendario(feriados),
   });
-  const itensParaGravar = ciencia ? [...validacao.itens, ciencia] : validacao.itens;
+  const itensParaGravar = ciencia ? [...itensVistados, ciencia] : itensVistados;
   // Mede o acerto da IA: o jurídico usou a sugestão como veio, alterou ou não usou.
   const resultadoIa = publicacao.sugestao_ia
     ? resultadoDaSugestao({
         usou: entrada.sugestaoUsada === true,
         sugestao: sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas),
-        itens: validacao.itens,
+        itens: itensVistados,
         esocial: esocial.valor,
         tarefaEsocialId: tarefaEsocialDaLista(catalogo.tarefas.PROVIDENCIA)?.id ?? null,
         dataPublicacao: publicacao.data_publicacao,
@@ -576,6 +630,7 @@ export async function salvarVistagem(
       data_fatal: item.dataFatal,
       dias_prazo: item.diasPrazo,
       contagem_prazo: item.contagemPrazo,
+      origem_prazo: item.origemPrazo,
       hora: item.hora,
       hora_fim: item.horaFim,
       data_limite: item.dataLimite,
@@ -593,12 +648,16 @@ export async function salvarVistagem(
   // Depois de uma devolução, "vistado por" continua com quem analisou primeiro (é quem errou); a nova vistagem
   // fica em revistado_por/em. Na primeira vistagem, grava quem vistou.
   const agora = new Date().toISOString();
-  const revistagem = Boolean(publicacao.vistado_por && (publicacao.devolucoes ?? 0) > 0);
+  const reabertaPorOutro =
+    Boolean(publicacao.vistado_por && publicacao.vistado_por !== authUserId) &&
+    reabertaParaAlterar({ reabertaEm: publicacao.reaberta_em ?? null, devolvidoEm: publicacao.devolvido_em });
+  const revistagem = Boolean(publicacao.vistado_por && ((publicacao.devolucoes ?? 0) > 0 || reabertaPorOutro));
   const quemVistou = revistagem
     ? { revistado_por: authUserId, revistado_em: agora }
     : { vistado_por: authUserId, vistado_em: agora, revistado_por: null, revistado_em: null };
-  // Toda vistagem passa pela conferência da controladoria, com ou sem pasta. Sem pasta no VIOS, é ao validar que ela
-  // vira pedido de abertura de pasta na Central do SharePoint (validarVistagem), com quem conferiu registrado.
+  // A vistagem passa pela conferência da controladoria, com ou sem pasta. Sem pasta no VIOS, é ao validar que ela
+  // vira pedido de abertura de pasta na Central do SharePoint (validarVistagem), com quem conferiu registrado. A
+  // VERIFICAR RENÚNCIA sozinha da Operações Legais é validada logo abaixo, sem pessoa (vaiDiretoAoRobo).
   const { data: atualizada, error } = await db
     .from("vistagem_publicacoes")
     .update({
@@ -614,7 +673,105 @@ export async function salvarVistagem(
     .maybeSingle();
   if (error) falhou("enviar a vistagem para a controladoria", error);
   if (!atualizada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
+  // Registro da IA: o que o advogado agendou × o que a IA sugeriu (base para a IA aprender).
+  if (publicacao.sugestao_ia && resultadoIa) {
+    await registrarDecisaoDaIa({
+      publicacao,
+      area: catalogo.area,
+      sugestao: sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas),
+      resultado: resultadoIa,
+      itens: itensVistados,
+      autor: authUserId,
+    });
+  }
+  // Operações Legais só com a VERIFICAR RENÚNCIA: vai direto ao robô, sem a Conferência (pedido de 18/11/2026); o check
+  // é o automático. Se a fila do robô falhar, a publicação fica na Conferência, como as outras.
+  if (vaiDiretoAoRobo(areaDaPasta, itensParaGravar)) {
+    try {
+      const enviada = await validarVistagem(id, null);
+      return { central: enviada.central ?? null, direto: true };
+    } catch (erro) {
+      console.error("[vistagem] VERIFICAR RENÚNCIA direto ao robô (ficou na Conferência):", erro instanceof Error ? erro.message : erro);
+    }
+  }
   return { central: null };
+}
+
+/**
+ * Quem vistou reabre a vistagem para alterar (pedido de 11/11/2026): a publicação volta para "A vistar" com as tarefas
+ * como estão, enquanto a controladoria não agiu na Conferência. Se ela estiver com a publicação aberta, ou já ajustou,
+ * vale a decisão dela: a reabertura é recusada, inclusive se ela abrir no meio do caminho (a marca entra no filtro).
+ */
+export async function reabrirVistagem(
+  id: string,
+  authUserId: string,
+  areas: AreasVistagem = null,
+  veRisco = true,
+  ehAdmin = false
+): Promise<void> {
+  const publicacao = await carregarPublicacao(id);
+  garantirArea(publicacao, areas, veRisco);
+  const db = admin();
+  const [marcas, tarefas] = await Promise.all([
+    db.from("vistagem_publicacoes").select("vistado_por, revistado_por, conferencia_aberta_em").eq("id", id).maybeSingle(),
+    db.from("vistagem_agendamentos").select("ajustes").eq("publicacao_id", id),
+  ]);
+  if (marcas.error) falhou("conferir quem vistou", marcas.error);
+  if (tarefas.error) falhou("conferir os ajustes da Conferência", tarefas.error);
+  const linha = marcas.data as { vistado_por: string | null; revistado_por: string | null; conferencia_aberta_em: string | null } | null;
+  const ajustada = ((tarefas.data ?? []) as { ajustes: AjusteNaTarefa[] | null }[]).some((tarefa) => (tarefa.ajustes ?? []).length > 0);
+  const agora = Date.now();
+  const alteracao = alteracaoDaVistagem(
+    {
+      status: publicacao.status,
+      quemVistou: linha?.revistado_por ?? linha?.vistado_por ?? null,
+      ajustada,
+      conferenciaAbertaEm: linha?.conferencia_aberta_em ?? null,
+    },
+    authUserId,
+    agora,
+    ehAdmin
+  );
+  if (!alteracao.pode) throw new VistagemError(alteracao.texto, 409);
+  const { data: reaberta, error } = await db
+    .from("vistagem_publicacoes")
+    .update({ status: "juridico_vistar", reaberta_por: authUserId, reaberta_em: new Date(agora).toISOString() })
+    .eq("id", id)
+    .eq("status", "controladoria_vistar")
+    .or(`conferencia_aberta_em.is.null,conferencia_aberta_em.lt.${inicioDaConferenciaSegura(agora)}`)
+    .select("id")
+    .maybeSingle();
+  if (error) falhou("reabrir a vistagem", error);
+  if (!reaberta) throw new VistagemError("A controladoria acabou de abrir ou conferir esta publicação, e a decisão dela vale. Recarregue a página.", 409);
+}
+
+/** Marca a publicação como aberta na Conferência (só enquanto aguarda a conferência). Devolve se marcou. */
+async function segurarNaConferencia(id: string, authUserId: string): Promise<boolean> {
+  const { data, error } = await admin()
+    .from("vistagem_publicacoes")
+    .update({ conferencia_aberta_por: authUserId, conferencia_aberta_em: new Date().toISOString() })
+    .eq("id", id)
+    .eq("status", "controladoria_vistar")
+    .select("id")
+    .maybeSingle();
+  if (error) falhou("marcar a publicação na Conferência", error);
+  return Boolean(data);
+}
+
+/**
+ * A controladoria abriu a publicação na Conferência (a tela renova enquanto ela estiver aberta): por alguns minutos o
+ * jurídico não reabre a vistagem. Devolve como a publicação está agora, para a tela recarregar se o jurídico mexeu antes.
+ */
+export async function marcarConferenciaAberta(
+  id: string,
+  authUserId: string
+): Promise<{ status: PublicacaoStatus; vistadoEm: string | null; revistadoEm: string | null }> {
+  await segurarNaConferencia(id, authUserId);
+  const { data, error } = await admin().from("vistagem_publicacoes").select("status, vistado_em, revistado_em").eq("id", id).maybeSingle();
+  if (error) falhou("ler a publicação na Conferência", error);
+  if (!data) throw new VistagemError("Publicação não encontrada.", 404);
+  const linha = data as { status: PublicacaoStatus; vistado_em: string | null; revistado_em: string | null };
+  return { status: linha.status, vistadoEm: linha.vistado_em, revistadoEm: linha.revistado_em };
 }
 
 // ---------------------------------------------------------------------------
@@ -634,7 +791,7 @@ async function nomesDosUsuarios(ids: (string | null)[]): Promise<Map<string, str
 // ---------------------------------------------------------------------------
 
 const COLUNAS_HISTORICO =
-  "status, created_at, linha_arquivo, data_publicacao, triada_em, pasta_ci, pasta_vinculo, escritorio_responsavel, demanda_risco, pendencia, triagem_resolvida_por, triagem_resolvida_em, duplicidade_resultado, duplicidade_revisada_por, duplicidade_revisada_em, transferido_de, transferido_por, transferido_em, transferencia_motivo, vistado_por, vistado_em, observacao_vistagem, devolvido_por, devolvido_em, devolucao_motivo, devolucoes, revistado_por, revistado_em, conferido_por, conferido_em, central_item_id, central_enviada_em, central_erro, central_tentativa_em, checado_por, checado_em, check_nota, arquivo:vistagem_kurier_arquivos(origem)";
+  "status, created_at, linha_arquivo, data_publicacao, triada_em, pasta_ci, pasta_vinculo, escritorio_responsavel, demanda_risco, pendencia, triagem_resolvida_por, triagem_resolvida_em, duplicidade_resultado, duplicidade_revisada_por, duplicidade_revisada_em, transferido_de, transferido_por, transferido_em, transferencia_motivo, vistado_por, vistado_em, observacao_vistagem, devolvido_por, devolvido_em, devolucao_motivo, devolucoes, revistado_por, revistado_em, reaberta_por, reaberta_em, conferido_por, conferido_em, central_item_id, central_enviada_em, central_erro, central_tentativa_em, checado_por, checado_em, check_nota, arquivo:vistagem_kurier_arquivos(origem)";
 
 type HistoricoRow = {
   status: PublicacaoStatus; created_at: string; linha_arquivo: number | null; data_publicacao: string | null;
@@ -644,28 +801,34 @@ type HistoricoRow = {
   transferido_de: string | null; transferido_por: string | null; transferido_em: string | null; transferencia_motivo: string | null;
   vistado_por: string | null; vistado_em: string | null; observacao_vistagem: string | null;
   devolvido_por: string | null; devolvido_em: string | null; devolucao_motivo: string | null; devolucoes: number | null;
-  revistado_por: string | null; revistado_em: string | null; conferido_por: string | null; conferido_em: string | null;
+  revistado_por: string | null; revistado_em: string | null; reaberta_por?: string | null; reaberta_em?: string | null;
+  conferido_por: string | null; conferido_em: string | null;
   central_item_id: string | null; central_enviada_em: string | null; central_erro: string | null; central_tentativa_em: string | null;
   checado_por: string | null; checado_em: string | null; check_nota: string | null;
   arquivo?: ArquivoDaPublicacao | ArquivoDaPublicacao[] | null;
 };
 
 type TarefaDoHistoricoRow = {
-  tarefa: string; data: string | null; responsavel: string | null; ajustes: AjusteNaTarefa[] | null; envio_status: EnvioStatus;
+  tarefa: string; etiqueta: EtiquetaAgendamento; data: string | null; data_fatal: string | null; dias_prazo: number | null;
+  contagem_prazo: ContagemPrazo | null; origem_prazo: OrigemPrazo | null;
+  responsavel: string | null; ajustes: AjusteNaTarefa[] | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; envio_erro: string | null; enviado_em: string | null; envio_atualizado_em: string | null;
 };
 
 /**
  * O que aconteceu com a publicação, em ordem: das colunas de quem fez e quando, das tarefas e das inconsistências.
- * O jurídico só vê o das publicações da sua área (e de risco, se vista as de risco); a controladoria vê todas.
+ * O jurídico vê o das publicações da sua área, normais e de risco (ver não depende de vistar risco); a controladoria
+ * vê todas.
  */
-export async function historicoDaPublicacao(id: string, areas: AreasVistagem = null, veRisco = true): Promise<HistoricoPublicacao> {
+export async function historicoDaPublicacao(id: string, areas: AreasVistagem = null): Promise<HistoricoPublicacao> {
   const db = admin();
   const [publicacao, tarefas, inconsistencias] = await Promise.all([
     db.from("vistagem_publicacoes").select(COLUNAS_HISTORICO).eq("id", id).maybeSingle(),
     db
       .from("vistagem_agendamentos")
-      .select("tarefa, data, responsavel, ajustes, envio_status, envio_simulado, envio_erro, enviado_em, envio_atualizado_em")
+      .select(
+        "tarefa, etiqueta, data, data_fatal, dias_prazo, contagem_prazo, origem_prazo, responsavel, ajustes, envio_status, envio_simulado, envio_erro, enviado_em, envio_atualizado_em"
+      )
       .eq("publicacao_id", id)
       .order("ordem", { ascending: true }),
     inconsistenciasPorPublicacao([id]),
@@ -674,10 +837,10 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
   if (tarefas.error) falhou("carregar as tarefas do histórico", tarefas.error);
   const row = publicacao.data as unknown as HistoricoRow | null;
   if (!row) throw new VistagemError("Publicação não encontrada.", 404);
-  garantirArea(row, areas, veRisco);
+  garantirArea(row, areas);
   const nomes = await nomesDosUsuarios([
     row.triagem_resolvida_por, row.duplicidade_revisada_por, row.transferido_por, row.vistado_por,
-    row.devolvido_por, row.revistado_por, row.conferido_por, row.checado_por,
+    row.devolvido_por, row.revistado_por, row.reaberta_por ?? null, row.conferido_por, row.checado_por,
   ]);
   const nome = (authId: string | null) => (authId ? nomes.get(authId) || null : null);
   const marca = (por: string | null, em: string | null) => (em ? { por: nome(por), em } : null);
@@ -707,14 +870,22 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
     vistagem: vistagem ? { ...vistagem, observacao: row.observacao_vistagem } : null,
     devolucao: devolucao ? { ...devolucao, motivo: row.devolucao_motivo, total: row.devolucoes ?? 1 } : null,
     revistagem: marca(row.revistado_por, row.revistado_em),
-    conferencia: marca(row.conferido_por, row.conferido_em),
+    reabertura: marca(row.reaberta_por ?? null, row.reaberta_em ?? null),
+    conferencia: row.conferido_em
+      ? { por: foiConferenciaAutomatica(row.conferido_por, row.conferido_em) ? CONFERENCIA_AUTOMATICA : nome(row.conferido_por), em: row.conferido_em }
+      : null,
     central: temCentral
       ? { itemId: row.central_item_id, enviadaEm: row.central_enviada_em, erro: row.central_erro, tentativaEm: row.central_tentativa_em }
       : null,
     check: check ? { ...check, por: check.por ?? (foiCheckAutomatico(row.checado_por, row.check_nota) ? CHECK_AUTOMATICO : null), nota: row.check_nota } : null,
     tarefas: ((tarefas.data ?? []) as unknown as TarefaDoHistoricoRow[]).map((tarefa) => ({
       tarefa: tarefa.tarefa,
+      etiqueta: tarefa.etiqueta,
       data: tarefa.data,
+      dataFatal: tarefa.data_fatal,
+      diasPrazo: tarefa.dias_prazo,
+      contagemPrazo: tarefa.contagem_prazo,
+      origemPrazo: tarefa.origem_prazo ?? null,
       responsavel: tarefa.responsavel,
       ajustes: tarefa.ajustes ?? [],
       envioStatus: tarefa.envio_status,
@@ -738,11 +909,15 @@ async function itensDeConferencia(
     vistadoDesde?: string;
     limiteTeor?: number;
     comAuxiliar?: boolean;
-    semRisco?: boolean;
     /** Põe no item a sugestão da IA da vistagem (a fatal pelos dias só sai depois, com o calendário). */
     comSugestaoIa?: boolean;
+    /** Só as publicações destes lotes (Kurier ou colagem): a importação de um dia. */
+    arquivos?: string[];
+    /** Só estas publicações (resultado da busca). */
+    ids?: string[];
   } = {}
 ): Promise<ConferenciaItem[]> {
+  if ((filtro.arquivos && !filtro.arquivos.length) || (filtro.ids && !filtro.ids.length)) return [];
   let consulta = admin()
     .from("vistagem_publicacoes")
     .select(`${COLUNAS_PUBLICACAO}, area_processo, checado_por, sugestao_ia, sugestao_ia_resultado`)
@@ -751,7 +926,8 @@ async function itensDeConferencia(
     .limit(limite);
   if (filtro.escritorios) consulta = consulta.in("escritorio_responsavel", filtro.escritorios);
   if (filtro.vistadoDesde) consulta = consulta.gte("vistado_em", filtro.vistadoDesde);
-  if (filtro.semRisco) consulta = consulta.not("demanda_risco", "is", true);
+  if (filtro.arquivos) consulta = consulta.in("kurier_arquivo_id", filtro.arquivos);
+  if (filtro.ids) consulta = consulta.in("id", filtro.ids);
   const { data, error } = await consulta;
   if (error) falhou("carregar a conferência", error);
   const linhas = (data ?? []) as (PublicacaoRow & {
@@ -774,7 +950,12 @@ async function itensDeConferencia(
     vistadoPor: row.vistado_por ? nomes.get(row.vistado_por) ?? null : null,
     devolvidoPor: row.devolvido_por ? nomes.get(row.devolvido_por) ?? null : null,
     revistadoPor: row.revistado_por ? nomes.get(row.revistado_por) ?? null : null,
-    conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
+    // Direto ao robô (VERIFICAR RENÚNCIA da Operações Legais): sem pessoa; aparece como "Fluxo Automático Robô".
+    conferidoPor: row.conferido_por
+      ? nomes.get(row.conferido_por) ?? null
+      : foiConferenciaAutomatica(null, row.conferido_em)
+        ? CONFERENCIA_AUTOMATICA
+        : null,
     // Check automático da CIÊNCIA NF: sem pessoa; aparece como "Check automático".
     ...(row.checado_por
       ? { checadoPor: nomes.get(row.checado_por) ?? null }
@@ -810,10 +991,15 @@ async function auxiliaresDasPastas(linhas: (PublicacaoRow & { area_processo: str
   if (!comPasta.length) return mapa;
   try {
     const [pastas, areas] = await Promise.all([buscarPastasVios(comPasta.map((row) => row.pasta_ci as string)), carregarCatalogoProcessos()]);
+    // Basta a lista de usuários da área (não a lista de tarefas montada), e cada sigla é procurada uma vez por área.
+    const nomePorSigla = new Map<string, string | null>();
     for (const row of comPasta) {
       const sigla = pastas.get(row.pasta_ci as string)?.auxiliarSigla ?? null;
-      const usuarios = sigla ? catalogoParaPublicacao(areas, row)?.usuarios : null;
-      const nome = usuarios ? usuarioPorSigla(sigla, usuarios)?.nome : null;
+      const area = sigla ? catalogoDaPublicacao(areas, row) : null;
+      if (!sigla || !area) continue;
+      const chave = `${area.area}\u0000${sigla}`;
+      if (!nomePorSigla.has(chave)) nomePorSigla.set(chave, usuarioPorSigla(sigla, area.usuarios)?.nome ?? null);
+      const nome = nomePorSigla.get(chave);
       if (nome) mapa.set(row.id, nome);
     }
   } catch (erro) {
@@ -842,7 +1028,7 @@ export async function pedirAtualizacaoSintese(
   if (trecho && trecho.length < 3) throw new VistagemError("O trecho da síntese precisa de ao menos 3 caracteres.");
   if (trecho.length > LIMITE_TRECHO_SINTESE) throw new VistagemError(`O trecho passa de ${LIMITE_TRECHO_SINTESE} caracteres.`);
   const autor = (await nomesDosUsuarios([authUserId])).get(authUserId)?.trim();
-  if (!autor) throw new VistagemError("Seu nome não está no cadastro de usuários do Orquestra.", 403);
+  if (!autor) throw new VistagemError("Seu nome não está no cadastro de usuários do ORQESTRAI.", 403);
   // Sem a base ou sem as listas, não trava o pedido: quem recusa é o VIOS, como antes.
   const [pedidas, cadastro, listaDeMaterias, listaDeSistemas] = await Promise.all([
     sintesesDaPasta(publicacao.pasta_ci),
@@ -921,19 +1107,67 @@ export async function transferirPublicacao(
 export const DIAS_AGENDADAS = 30;
 
 /**
- * O que o jurídico já vistou nos últimos dias, das suas áreas: na conferência, com o robô, agendado,
+ * O que as áreas do usuário vistaram nos últimos dias, por qualquer pessoa: na conferência, com o robô, agendado,
  * checado ou em revisão, com as tarefas e a situação de cada uma no VIOS, e as fotos de quem aparece.
+ * Inclui as demandas de risco: "não vista risco" tira as de risco só da fila (A vistar); quem é da área acompanha tudo.
  */
-export async function listarAgendadasJuridico(escritorio: string | null, areas: AreasVistagem = null, veRisco = true): Promise<AgendadasJuridicoResposta> {
+export async function listarAgendadasJuridico(
+  escritorio: string | null,
+  areas: AreasVistagem = null,
+  authUserId: string | null = null,
+  ehAdmin = false
+): Promise<AgendadasJuridicoResposta> {
   const resposta = (itens: ConferenciaItem[], fotos: Record<string, string>) => ({ itens, fotos, hoje: hojeEmSaoPaulo(), dias: DIAS_AGENDADAS });
   if (areas && (!areas.length || (escritorio && !areas.includes(escritorio)))) return resposta([], {});
   const vistadoDesde = new Date(Date.now() - DIAS_AGENDADAS * 86_400_000).toISOString();
-  const itens = await itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar", "abertura_pasta"], 300, false, "vistado_em", {
+  const lidos = await itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar", "abertura_pasta"], 300, false, "vistado_em", {
     escritorios: escritorio ? [escritorio] : areas,
     vistadoDesde,
-    semRisco: !veRisco,
   });
-  return resposta(itens, await fotosDosItens(itens, "visão Agendadas"));
+  // A abertura de pasta não passa pelo robô: o detalhe mostra a árvore prevista (datas e quem fica), que a Central agenda.
+  const base = lidos.some((item) => item.publicacao.status === "abertura_pasta") ? await carregarBaseDoFluxo("das Agendadas") : null;
+  const hoje = hojeEmSaoPaulo();
+  const itens = base
+    ? lidos.map((item) =>
+        item.publicacao.status === "abertura_pasta" ? { ...item, agendamentos: comFluxoPrevisto(item.agendamentos, areaDoItem(item), base, hoje) } : item
+      )
+    : lidos;
+  return resposta(authUserId ? await comAlteracao(itens, authUserId, ehAdmin) : itens, await fotosDosItens(itens, "visão Agendadas"));
+}
+
+/** Nas que ainda aguardam a Conferência: se quem vê pode reabrir a vistagem para alterar e, se não, por quê. */
+async function comAlteracao(itens: ConferenciaItem[], authUserId: string, ehAdmin: boolean): Promise<ConferenciaItem[]> {
+  const ids = itens.filter((item) => item.publicacao.status === "controladoria_vistar").map((item) => item.publicacao.id);
+  if (!ids.length) return itens;
+  const { data, error } = await admin()
+    .from("vistagem_publicacoes")
+    .select("id, vistado_por, revistado_por, conferencia_aberta_em")
+    .in("id", ids);
+  if (error) falhou("conferir quem vistou", error);
+  type Marca = { id: string; vistado_por: string | null; revistado_por: string | null; conferencia_aberta_em: string | null };
+  const marcas = new Map(((data ?? []) as Marca[]).map((linha) => [linha.id, linha]));
+  const agora = Date.now();
+  return itens.map((item) => {
+    const marca = marcas.get(item.publicacao.id);
+    if (!marca) return item;
+    const alteracao = alteracaoDaVistagem(
+      {
+        status: item.publicacao.status,
+        quemVistou: marca.revistado_por ?? marca.vistado_por,
+        ajustada: item.agendamentos.some((agendamento) => (agendamento.ajustes ?? []).length > 0),
+        conferenciaAbertaEm: marca.conferencia_aberta_em,
+      },
+      authUserId,
+      agora,
+      ehAdmin
+    );
+    return { ...item, alteracao };
+  });
+}
+
+/** Área que decide a árvore do fluxo de um item da conferência. */
+function areaDoItem(item: ConferenciaItem): AreaDaPublicacao {
+  return { area_processo: item.areaProcesso, escritorio_responsavel: item.publicacao.escritorioResponsavel, data_publicacao: item.publicacao.dataPublicacao };
 }
 
 /** Texto da publicação na Conferência: 9 em cada 10 cabem inteiras; as maiores têm o "Ver texto completo". */
@@ -941,56 +1175,32 @@ const LIMITE_TEOR_CONFERENCIA = 12_000;
 
 export async function listarConferencia(): Promise<ConferenciaResposta> {
   const ficha = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true, comSugestaoIa: true };
-  const [aConferirSemFluxo, enviadasSemFluxo, aberturas, fluxo] = await Promise.all([
+  const [aConferirSemFluxo, enviadasSemFluxo, aberturasSemFluxo, base] = await Promise.all([
     itensDeConferencia(["controladoria_vistar"], 300, true, "vistado_em", ficha),
     itensDeConferencia(["pronto_para_agendar", "agendado"], 100, false, "conferido_em", ficha),
     itensDeConferencia(["abertura_pasta"], 100, false, "vistado_em", { limiteTeor: 300 }),
     // Sem a árvore do VIOS, a conferência mostra só as tarefas pedidas.
-    Promise.all([carregarArvoreVios(), carregarFeriados(), carregarCatalogoProcessos()]).catch((erro: unknown) => {
-      console.error("[vistagem] fluxo previsto da conferência", erro instanceof Error ? erro.message : erro);
-      return null;
-    }),
+    carregarBaseDoFluxo("da conferência"),
   ]);
   // O que o fluxo do VIOS cria com cada tarefa, para a controladoria validar tudo (não só o Enviar).
   const comFluxo = (itens: ConferenciaItem[]): ConferenciaItem[] => {
-    if (!fluxo) return itens;
-    const [arvoreInteira, feriados, catalogos] = fluxo;
-    const ehDiaUtil = criarCalendario(feriados);
-    const ehDiaDePrazo = criarCalendarioDePrazo(feriados);
+    if (!base) return itens;
+    const ehDiaUtil = criarCalendario(base.feriados);
+    const ehDiaDePrazo = criarCalendarioDePrazo(base.feriados);
     const hoje = hojeEmSaoPaulo();
-    return itens.map((item) => {
-      const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, {
-        area_processo: item.areaProcesso,
-        escritorio_responsavel: item.publicacao.escritorioResponsavel,
-      });
-      return {
-        ...item,
-        // Com o calendário, a fatal da sugestão sai como o jurídico viu na tela.
-        sugestaoIa: item.sugestaoIa
-          ? sugestaoNaVistagem(item.sugestaoIa.sugestao, item.sugestaoIa.resultado, item.publicacao.dataPublicacao, ehDiaDePrazo)
-          : item.sugestaoIa,
-        agendamentos: marcarCienciaRepetida(item.agendamentos, arvore).map(({ cienciaFica, ...agendamento }) => {
-          const fluxoDaTarefa = agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null;
-          // Prazo curto (ou validado noutro dia): o Enviar vai hoje e o Revisar e o Protocolar ficam antes da fatal.
-          const apertada = prazoApertado(agendamento, fluxoDaTarefa, ehDiaUtil, hoje);
-          return {
-            ...agendamento,
-            fluxoPrevisto: fluxoPrevisto(apertada ? { ...agendamento, data: apertada.enviar } : agendamento, fluxoDaTarefa, ehDiaUtil, {
-              hoje,
-              datas: agendamento.fluxoDatas,
-              apertada,
-            }).map((tarefa) =>
-              tarefa.quando === "criacao" && ehCienciaDosAgendamentos(tarefa.nome) && !cienciaFica(tarefa.caminho)
-                ? { ...tarefa, repetida: true }
-                : tarefa
-            ),
-          };
-        }),
-      };
-    });
+    return itens.map((item) => ({
+      ...item,
+      // Com o calendário, a fatal da sugestão sai como o jurídico viu na tela.
+      sugestaoIa: item.sugestaoIa
+        ? sugestaoNaVistagem(item.sugestaoIa.sugestao, item.sugestaoIa.resultado, item.publicacao.dataPublicacao, ehDiaDePrazo)
+        : item.sugestaoIa,
+      agendamentos: comFluxoPrevisto(item.agendamentos, areaDoItem(item), base, hoje, ehDiaUtil),
+    }));
   };
   const aConferir = comFluxo(aConferirSemFluxo);
   const enviadas = comFluxo(enviadasSemFluxo);
+  // Abertura de pasta: a árvore com as datas e quem fica em cada tarefa, que a controladoria agenda à mão pela Central.
+  const aberturas = comFluxo(aberturasSemFluxo);
   const fotos = await fotosDosItens([...aConferir, ...enviadas, ...aberturas], "conferência");
   return { aConferir, enviadas, aberturas, envioSimulado: envioSimulado(), fotos, hoje: hojeEmSaoPaulo() };
 }
@@ -1025,8 +1235,11 @@ async function fotosDosItens(itens: ConferenciaItem[], tela: string): Promise<Re
   return pessoas.fotos;
 }
 
-/** Validação da controladoria: as tarefas vão para a fila do robô do SAMA (na intimação, todas juntas). */
-export async function validarVistagem(id: string, authUserId: string): Promise<{ enviadas: number; simulado: boolean; central?: ResultadoCentral }> {
+/**
+ * Validação da controladoria: as tarefas vão para a fila do robô do SAMA (na intimação, todas juntas), ou à Central,
+ * sem pasta. `authUserId` null: foi direto, sem a Conferência (`vaiDiretoAoRobo`), e conferido_por fica vazio.
+ */
+export async function validarVistagem(id: string, authUserId: string | null): Promise<{ enviadas: number; simulado: boolean; central?: ResultadoCentral }> {
   const publicacao = await carregarPublicacao(id);
   if (publicacao.status !== "controladoria_vistar") throw new VistagemError("Esta publicação não está aguardando conferência.", 409);
   if (!publicacao.numero_processo) throw new VistagemError("Publicação sem número de processo: não dá para agendar no VIOS.", 422);
@@ -1069,13 +1282,15 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
 
   const simular = envioSimulado();
   try {
-    const filaPorAgendamento = await enfileirarPublicacao(publicacao, agendamentos, simular);
+    const hoje = hojeEmSaoPaulo();
+    const filaPorAgendamento = await enfileirarPublicacao(publicacao, agendamentos, simular, hoje);
     const agora = new Date().toISOString();
     await Promise.all(
       agendamentos.map((item) =>
         db
           .from("vistagem_agendamentos")
           .update({
+            ...dataQueFoiAoVios(item, hoje),
             envio_status: "pendente",
             envio_simulado: simular,
             sama_agendamento_id: filaPorAgendamento.get(item.id),
@@ -1119,7 +1334,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
     throw new VistagemError("Esta tarefa não está mais na conferência: a alteração não chegaria ao VIOS. Recarregue a página.", 409);
   }
 
-  const [catalogos, feriados, arvoreInteira] = await Promise.all([carregarCatalogoProcessos(), carregarFeriados(), carregarArvoreVios()]);
+  const [catalogos, feriados, arvoreInteira] = await Promise.all([catalogosDaPasta(publicacao), carregarFeriados(), carregarArvoreVios()]);
   const catalogo = catalogoParaPublicacao(catalogos, publicacao);
   if (!catalogo) throw new VistagemError("Não há lista de usuários do VIOS para a área desta pasta.", 422);
   const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
@@ -1146,10 +1361,19 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       tarefas: { ...catalogo.tarefas, [row.etiqueta]: [{ id: row.tarefa_id ?? "", nome: row.tarefa }] },
       usuarios: catalogo.usuarios,
       ehDiaUtil: criarCalendario(feriados),
-      cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
+      // A Conferência não manda os dias do prazo: valem os da vistagem enquanto a fatal for a mesma (como ao gravar).
+      cadeiaDaTarefa: (tarefaId, prazo) =>
+        cadeiaDoFluxo(
+          fluxoDoPrazo(
+            montarFluxo(tarefaId, arvore),
+            { dataFatal: prazo.dataFatal, diasPrazo: prazo.dataFatal === row.data_fatal ? row.dias_prazo : null },
+            prazoDaPublicacao(publicacao, catalogos, feriados)
+          )
+        ),
       caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
       semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
       hoje,
+      area: publicacao.escritorio_responsavel ?? catalogo.area,
       // A Observação não se edita aqui: uma CIÊNCIA NF vistada antes da regra não pode ficar sem ajuste de data.
       exigirObservacao: false,
     }
@@ -1184,9 +1408,18 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
   );
   if (!mudancas.length) return { mudancas: 0 };
 
+  // Segura a publicação na Conferência antes de gravar: o jurídico não reabre a vistagem no meio do ajuste.
+  if (publicacao.status === "controladoria_vistar" && !(await segurarNaConferencia(id, authUserId))) {
+    throw new VistagemError("O jurídico reabriu esta vistagem para alterar. Recarregue a página.", 409);
+  }
   const nomes = await nomesDosUsuarios([authUserId]);
-  // Outra fatal: "5 dias úteis após a publicação" não vale mais (como a fatal digitada na vistagem).
+  // Outra fatal: "5 dias úteis após a publicação" não vale mais (como a fatal digitada na vistagem). A origem fica: é
+  // como o vistador escolheu a fatal (botão ou calendário), que todos os históricos mostram (pedido de 18/11/2026); o
+  // ajuste registra a fatal nova.
   const mesmaFatal = item.dataFatal === row.data_fatal;
+  // Os dias da vistagem (botão 5/10/15…) saem da tarefa, mas ficam no ajuste: o selo da fatal mostra qual foi.
+  const dosDias = mudancaDosDias({ dataFatal: row.data_fatal, diasPrazo: row.dias_prazo, contagemPrazo: row.contagem_prazo }, item.dataFatal);
+  const mudancasGravadas = dosDias ? [...mudancas, dosDias] : mudancas;
   const { data: atualizada, error: erroGravar } = await db
     .from("vistagem_agendamentos")
     .update({
@@ -1194,6 +1427,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       data_fatal: item.dataFatal,
       dias_prazo: mesmaFatal ? row.dias_prazo : null,
       contagem_prazo: mesmaFatal ? row.contagem_prazo : null,
+      origem_prazo: row.origem_prazo,
       hora: item.hora,
       hora_fim: item.horaFim,
       data_limite: item.dataLimite,
@@ -1202,7 +1436,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       revisor: item.revisor,
       revisor_id: item.revisorId,
       fluxo_datas: item.fluxoDatas.length ? item.fluxoDatas : null,
-      ajustes: [...(row.ajustes ?? []), { por: nomes.get(authUserId) || null, em: new Date().toISOString(), mudancas } satisfies AjusteNaTarefa],
+      ajustes: [...(row.ajustes ?? []), { por: nomes.get(authUserId) || null, em: new Date().toISOString(), mudancas: mudancasGravadas } satisfies AjusteNaTarefa],
     })
     .eq("id", row.id)
     // A mesma situação de quando leu: se outra pessoa validou nesse meio-tempo, não muda o que já foi para o robô.
@@ -1228,29 +1462,6 @@ async function comunicacoesEquivalentes(publicacao: PublicacaoComArea): Promise<
 }
 
 /**
- * Uma Ciência dos Agendamentos só por vistagem (`cienciaQueFica`): diz, para cada tarefa, se a Ciência num caminho
- * do fluxo dela é a que fica; as outras o robô cancela no VIOS.
- */
-function marcarCienciaRepetida<T extends { id: string; ordem: number; tarefa: string; tarefaId: string | null }>(
-  agendamentos: T[],
-  arvore: Map<number, TipoNaArvore>
-): (T & { cienciaFica: (caminho: string[]) => boolean })[] {
-  const ordenados = [...agendamentos].sort((a, b) => a.ordem - b.ordem);
-  const fica = cienciaQueFica(
-    ordenados.map((agendamento) => ({
-      chave: agendamento.id,
-      nome: agendamento.tarefa,
-      fluxo: agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null,
-    }))
-  );
-  return agendamentos.map((agendamento) => ({
-    ...agendamento,
-    cienciaFica: (caminho: string[]) =>
-      !fica || (fica.chave === agendamento.id && fica.caminho !== null && chaveDoCaminho(fica.caminho) === chaveDoCaminho(caminho)),
-  }));
-}
-
-/**
  * Datas do fluxo que o robô grava no VIOS depois de lançar: as que o jurídico mudou, as das filhas delas (que o
  * VIOS cria pela data dele) e, no prazo curto a partir de hoje, o Revisar e o Protocolar apertados antes da fatal
  * (`enviar`: o Enviar vai hoje, não no passado). Vão junto os responsáveis que o jurídico escolheu. Sem a árvore
@@ -1261,12 +1472,15 @@ async function datasDoFluxoParaOVios(publicacao: PublicacaoComArea, itens: Agend
   const aConferir = itens.filter((item) => item.fluxo_datas?.length || (item.etiqueta === "PRAZO" && item.data_fatal));
   if (!aConferir.length) return mapa;
   try {
-    const [arvoreInteira, feriados, catalogos] = await Promise.all([carregarArvoreVios(), carregarFeriados(), carregarCatalogoProcessos()]);
+    const [arvoreInteira, feriados, catalogos] = await Promise.all([carregarArvoreVios(), carregarFeriados(), catalogosDaPasta(publicacao)]);
     const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
+    const daPublicacao = prazoDaPublicacao(publicacao, catalogos, feriados);
     const ehDiaUtil = criarCalendario(feriados);
     const hoje = hojeEmSaoPaulo();
     for (const item of aConferir) {
-      const fluxoDaTarefa = item.tarefa_id ? montarFluxo(item.tarefa_id, arvore) : null;
+      const fluxoDaTarefa = item.tarefa_id
+        ? fluxoDoPrazo(montarFluxo(item.tarefa_id, arvore), { dataFatal: item.data_fatal, diasPrazo: item.dias_prazo }, daPublicacao)
+        : null;
       const apertada = prazoApertado({ etiqueta: item.etiqueta, dataFatal: item.data_fatal, data: item.data }, fluxoDaTarefa, ehDiaUtil, hoje);
       if (!apertada && !item.fluxo_datas?.length) continue;
       const previstas = fluxoPrevisto(apertada ? { ...item, data: apertada.enviar } : item, fluxoDaTarefa, ehDiaUtil, {
@@ -1282,24 +1496,40 @@ async function datasDoFluxoParaOVios(publicacao: PublicacaoComArea, itens: Agend
   return mapa;
 }
 
+/**
+ * A data da Ciência dos Agendamentos que foi ao VIOS fica gravada na tarefa (para a gravar junto com o envio): o
+ * Check compara com ela, e a Conferência não precisa ajustar a data à mão.
+ */
+function dataQueFoiAoVios(item: AgendamentoRow, hoje: string): { data?: string } {
+  const data = dataDaCienciaNoEnvio(item.tarefa, item.data, hoje);
+  return data !== item.data ? { data } : {};
+}
+
 /** Põe as tarefas da publicação na fila do robô; devolve o id da linha da fila de cada agendamento. */
-async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: AgendamentoRow[], simular: boolean): Promise<Map<string, string>> {
+async function enfileirarPublicacao(
+  publicacao: PublicacaoComArea,
+  itens: AgendamentoRow[],
+  simular: boolean,
+  hoje: string
+): Promise<Map<string, string>> {
+  // Pasta de atendimento informada na Triagem Manual: a intimação do VIOS não se liga a ela, e linhasParaFila manda
+  // direto na pasta (sem marcar a publicação como colada).
+  const tipoPasta = tipoDaPastaDaPublicacao(publicacao);
   const modo = modoDaPublicacao(publicacao.arquivo, modoAgendamento());
   const [equivalentes, datasDoFluxo] = await Promise.all([
-    modo === "intimacao" ? comunicacoesEquivalentes(publicacao) : Promise.resolve([] as string[]),
+    modo === "intimacao" && !ehPastaDeAtendimento(tipoPasta) ? comunicacoesEquivalentes(publicacao) : Promise.resolve([] as string[]),
     datasDoFluxoParaOVios(publicacao, itens),
   ]);
-  // A Ciência dos Agendamentos é para o dia do lançamento: validada noutro dia, não vai com data passada.
-  const hoje = hojeEmSaoPaulo();
   const grupos = linhasParaFila(
     { ...publicacao, comunicacoes_equivalentes: equivalentes },
     itens.map((item) => ({
       ...item,
+      // A Ciência dos Agendamentos é para o dia do lançamento: validada noutro dia, não vai com data passada.
       // Prazo curto (ou validado noutro dia): o Enviar vai hoje, nunca no passado.
-      data: ehCienciaDosAgendamentos(item.tarefa) && item.data < hoje ? hoje : (datasDoFluxo.get(item.id)?.enviar ?? item.data),
+      data: ehCienciaDosAgendamentos(item.tarefa) ? dataDaCienciaNoEnvio(item.tarefa, item.data, hoje) : (datasDoFluxo.get(item.id)?.enviar ?? item.data),
       fluxoDatas: datasDoFluxo.get(item.id)?.datas ?? [],
     })),
-    { simular, modo }
+    { simular, modo, tipoPasta }
   );
   const ids = await enfileirarNoSama(grupos.map((grupo) => grupo.linha));
   return new Map(grupos.flatMap((grupo, indice) => grupo.agendamentos.map((agendamento) => [agendamento, ids[indice]] as const)));
@@ -1325,13 +1555,15 @@ export async function reenviarGravando(id: string): Promise<{ enviadas: number }
   const simuladas = (data ?? []) as AgendamentoRow[];
   if (!simuladas.length) throw new VistagemError("Não há tarefas simuladas para reenviar.", 422);
 
-  const filaPorAgendamento = await enfileirarPublicacao(publicacao, simuladas, false);
+  const hoje = hojeEmSaoPaulo();
+  const filaPorAgendamento = await enfileirarPublicacao(publicacao, simuladas, false, hoje);
   const agora = new Date().toISOString();
   await Promise.all(
     simuladas.map((item) =>
       db
         .from("vistagem_agendamentos")
         .update({
+          ...dataQueFoiAoVios(item, hoje),
           envio_status: "pendente",
           envio_simulado: false,
           sama_agendamento_id: filaPorAgendamento.get(item.id),
@@ -1345,9 +1577,6 @@ export async function reenviarGravando(id: string): Promise<{ enviadas: number }
   );
   return { enviadas: simuladas.length };
 }
-
-/** Erro depois que o robô clicou em Gravar/lançou: rodar de novo pode duplicar a tarefa no VIOS. */
-const ERRO_DEPOIS_DE_GRAVAR = /^\s*ATENÇÃO/i;
 
 /**
  * Roda de novo no robô as tarefas da publicação que deram erro (aba Enviadas ao robô).
@@ -1370,7 +1599,7 @@ export async function rodarNovamente(
   if (error) falhou("carregar as tarefas com erro", error);
   const comErro = (data ?? []) as AgendamentoRow[];
   if (!comErro.length) throw new VistagemError("Não há tarefas com erro para rodar de novo.", 422);
-  if (!forcar && comErro.some((item) => ERRO_DEPOIS_DE_GRAVAR.test(item.envio_erro ?? ""))) {
+  if (!forcar && comErro.some((item) => podeTerGravadoNoVios(item.envio_erro))) {
     return {
       precisaConfirmar:
         "O robô pode ter gravado no VIOS antes do erro. Confira no VIOS se a tarefa já existe: rodar de novo pode duplicá-la. Rodar mesmo assim?",
@@ -1378,13 +1607,15 @@ export async function rodarNovamente(
   }
 
   const simular = envioSimulado();
-  const filaPorAgendamento = await enfileirarPublicacao(publicacao, comErro, simular);
+  const hoje = hojeEmSaoPaulo();
+  const filaPorAgendamento = await enfileirarPublicacao(publicacao, comErro, simular, hoje);
   const agora = new Date().toISOString();
   await Promise.all(
     comErro.map((item) =>
       db
         .from("vistagem_agendamentos")
         .update({
+          ...dataQueFoiAoVios(item, hoje),
           envio_status: "pendente",
           envio_simulado: simular,
           sama_agendamento_id: filaPorAgendamento.get(item.id),
@@ -1431,23 +1662,41 @@ export async function devolverVistagem(id: string, entrada: InconsistenciaEntrad
   if (!atualizada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
 }
 
-/** Lê na fila do SAMA o andamento das tarefas enviadas; publicação com todas concluídas vira "agendado". */
-export async function atualizarEnvios(): Promise<{ consultadas: number; concluidas: number; erros: number; checadasSozinhas: number }> {
+/**
+ * Lê na fila do SAMA o andamento das tarefas enviadas; publicação com todas concluídas vira "agendado". Tarefa que
+ * acabou de dar erro (fora da simulação) é avisada no WhatsApp de Operações Legais, uma mensagem por rodada.
+ */
+export async function atualizarEnvios(): Promise<{
+  consultadas: number;
+  concluidas: number;
+  erros: number;
+  checadasSozinhas: number;
+  avisoErros?: { enviado: boolean; motivo?: string };
+}> {
   const db = admin();
   const { data, error } = await db
     .from("vistagem_agendamentos")
-    .select("id, publicacao_id, sama_agendamento_id, envio_status, envio_erro")
+    .select("id, publicacao_id, sama_agendamento_id, envio_status, envio_erro, envio_simulado, responsavel")
     .in("envio_status", ["pendente", "enviado", "processando"])
     .not("sama_agendamento_id", "is", null)
     .limit(1000);
   if (error) falhou("carregar os envios em andamento", error);
-  const pendentes = (data ?? []) as { id: string; publicacao_id: string; sama_agendamento_id: string; envio_status: EnvioStatus; envio_erro: string | null }[];
+  const pendentes = (data ?? []) as {
+    id: string;
+    publicacao_id: string;
+    sama_agendamento_id: string;
+    envio_status: EnvioStatus;
+    envio_erro: string | null;
+    envio_simulado: boolean | null;
+    responsavel: string | null;
+  }[];
   const resumo = { consultadas: pendentes.length, concluidas: 0, erros: 0 };
   if (!pendentes.length) return { ...resumo, checadasSozinhas: await checarSozinho() };
 
   const fila = await consultarFilaSama(pendentes.map((item) => item.sama_agendamento_id));
   const agora = new Date().toISOString();
   const publicacoesTocadas = new Set<string>();
+  const errosNovos: { publicacaoId: string; erro: string | null }[] = [];
   for (const item of pendentes) {
     const atual = fila.get(item.sama_agendamento_id);
     // O texto também conta: pendente esperando o VIOS ("Aguardando a disponibilidade…", próxima tentativa) muda só ele.
@@ -1457,17 +1706,25 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
     publicacoesTocadas.add(item.publicacao_id);
     // Lançamento pela intimação: uma linha da fila para várias tarefas, cada uma com o seu CI.
     const viosTarefaId = atual.cisPorAgendamento.size ? atual.cisPorAgendamento.get(item.id) ?? null : atual.viosTarefaId;
-    await db
+    const tarefasNoVios = atual.tarefasViosPorAgendamento.get(item.id) ?? null;
+    // Pedida sem ninguém (VERIFICAR RENÚNCIA da Operações Legais): fica gravado para quem o VIOS agendou.
+    const doVios = atual.status === "concluido" ? responsavelQueOViosPos(item.responsavel, tarefasNoVios) : null;
+    // Só grava se ninguém mudou antes (o cron e o botão Atualizar podem rodar juntos): quem grava o erro é quem avisa.
+    const { data: gravada } = await db
       .from("vistagem_agendamentos")
       .update({
         envio_status: atual.status,
         vios_tarefa_id: viosTarefaId,
         // Datas como ficaram no VIOS (Check); só vêm no lançamento pela intimação.
-        vios_tarefas: atual.tarefasViosPorAgendamento.get(item.id) ?? null,
+        vios_tarefas: tarefasNoVios,
+        ...(doVios ? { responsavel: doVios } : {}),
         envio_erro: atual.erro,
         envio_atualizado_em: agora,
       })
-      .eq("id", item.id);
+      .eq("id", item.id)
+      .eq("envio_status", item.envio_status)
+      .select("id");
+    if (atual.status === "erro" && gravada?.length && !item.envio_simulado) errosNovos.push({ publicacaoId: item.publicacao_id, erro: atual.erro });
   }
 
   for (const publicacaoId of publicacoesTocadas) {
@@ -1477,7 +1734,23 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
       await db.from("vistagem_publicacoes").update({ status: "agendado" }).eq("id", publicacaoId).eq("status", "pronto_para_agendar");
     }
   }
-  return { ...resumo, checadasSozinhas: await checarSozinho() };
+  const avisoErros = errosNovos.length ? await avisarErrosNovos(errosNovos) : undefined;
+  return { ...resumo, checadasSozinhas: await checarSozinho(), ...(avisoErros ? { avisoErros } : {}) };
+}
+
+/** Número do processo de cada publicação com erro novo e o aviso no WhatsApp. Nunca lança. */
+async function avisarErrosNovos(erros: { publicacaoId: string; erro: string | null }[]): Promise<{ enviado: boolean; motivo?: string }> {
+  try {
+    const ids = [...new Set(erros.map((item) => item.publicacaoId))];
+    const { data, error } = await admin().from("vistagem_publicacoes").select("id, numero_processo").in("id", ids);
+    if (error) throw new Error(error.message);
+    const numeros = new Map(((data ?? []) as { id: string; numero_processo: string | null }[]).map((row) => [row.id, row.numero_processo]));
+    return await avisarErrosDoRobo(erros.map((item) => ({ numeroProcesso: numeros.get(item.publicacaoId) ?? null, erro: item.erro })));
+  } catch (erro) {
+    const motivo = erro instanceof Error ? erro.message : String(erro);
+    console.error("[vistagem] aviso de erro do robô:", motivo);
+    return { enviado: false, motivo };
+  }
 }
 
 /**
@@ -1641,17 +1914,174 @@ export async function listarInconsistencias(situacao: "contestadas" | "abertas" 
 // Check dos agendamentos
 // ---------------------------------------------------------------------------
 
-/** Publicações com as tarefas gravadas no VIOS aguardando o check, as em revisão e as últimas checadas. */
-export async function listarCheck(): Promise<CheckResposta> {
-  // Mesma ficha da conferência (texto maior e auxiliar da pasta): o check mostra a publicação como na vistagem.
-  const ficha = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true };
-  const [aChecar, revisar, checadas] = await Promise.all([
-    itensDeConferencia(["agendado"], 300, true, "conferido_em", ficha),
-    itensDeConferencia(["revisar"], 300, true, "conferido_em", ficha),
-    itensDeConferencia(["checado"], 100, false, "checado_em", ficha),
+/** Mesma ficha da conferência (texto maior e auxiliar da pasta): o check mostra a publicação como na vistagem. */
+const FICHA_DO_CHECK = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true };
+
+/** Teto das checadas de um dia de importação (um lote tem perto de 150 publicações). */
+const LIMITE_CHECADAS_DO_DIA = 500;
+
+/** Quantos dias para trás a escolha do dia de importação alcança, nas Checadas. */
+const DIAS_DE_IMPORTACAO_NO_CHECK = 60;
+
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Lotes (Kurier e colagens) de um dia de importação. */
+async function lotesDoDia(dia: string): Promise<string[]> {
+  const { data, error } = await admin().from("vistagem_kurier_arquivos").select("id").eq("data_arquivo", dia);
+  if (error) falhou("carregar os lotes do dia", error);
+  return ((data ?? []) as { id: string }[]).map((row) => row.id);
+}
+
+/** Dias que tiveram importação, do mais recente para o mais antigo. */
+async function diasDeImportacao(hoje: string): Promise<string[]> {
+  const desde = new Date(Date.parse(`${hoje}T12:00:00Z`) - DIAS_DE_IMPORTACAO_NO_CHECK * 86_400_000).toISOString().slice(0, 10);
+  const { data, error } = await admin()
+    .from("vistagem_kurier_arquivos")
+    .select("data_arquivo")
+    .gte("data_arquivo", desde)
+    .order("data_arquivo", { ascending: false })
+    .limit(500);
+  if (error) falhou("carregar os dias de importação", error);
+  return [...new Set(((data ?? []) as { data_arquivo: string | null }[]).flatMap((row) => (row.data_arquivo ? [row.data_arquivo] : [])))];
+}
+
+/**
+ * Publicações com as tarefas gravadas no VIOS aguardando o check, as em revisão e as checadas de um dia de importação
+ * (hoje, se não vier outro). As checadas só crescem: trazer todas pesaria a cada abertura da tela. As outras são
+ * achadas pela busca, que vai ao banco (`buscarChecadas`).
+ */
+export async function listarCheck(importacao?: string | null): Promise<CheckResposta> {
+  const hoje = hojeEmSaoPaulo();
+  const dia = importacao && DATA_ISO.test(importacao) ? importacao : hoje;
+  const [aChecar, revisar, checadas, importacoes] = await Promise.all([
+    itensDeConferencia(["agendado"], 300, true, "conferido_em", FICHA_DO_CHECK),
+    itensDeConferencia(["revisar"], 300, true, "conferido_em", FICHA_DO_CHECK),
+    lotesDoDia(dia).then((arquivos) => itensDeConferencia(["checado"], LIMITE_CHECADAS_DO_DIA, false, "checado_em", { ...FICHA_DO_CHECK, arquivos })),
+    diasDeImportacao(hoje),
   ]);
   const fotos = await fotosDosItens([...aChecar, ...revisar, ...checadas], "tela de check");
-  return { aChecar, revisar, checadas, fotos, hoje: hojeEmSaoPaulo() };
+  return { aChecar, revisar, checadas, importacao: dia, importacoes, fotos, hoje };
+}
+
+/** Até quantas checadas a busca traz, das checadas mais recentemente para as mais antigas. */
+const LIMITE_BUSCA_CHECADAS = 100;
+
+/** Teto de cada consulta da busca (o banco não devolve mais que 1000 linhas por vez). */
+const TETO_CONSULTA_BUSCA = 1000;
+
+/** Colunas da publicação em que cada palavra é procurada (o texto fica à parte: ver `checadasComOTermo`). */
+const COLUNAS_DA_BUSCA = [
+  "numero_processo",
+  "numero_processo_original",
+  "pasta_ci",
+  "cliente",
+  "grupo_cliente",
+  "escritorio_responsavel",
+  "tribunal",
+  "djen_orgao",
+  "acao_processo",
+  "advogado_responsavel",
+];
+
+/** Checada achada por uma palavra: quando foi checada e se a palavra só apareceu no texto da publicação. */
+type Achada = { checadoEm: string; soNoTexto: boolean };
+
+type LinhaAchada = { id: string; checado_em: string | null };
+
+function guardarAchadas(mapa: Map<string, Achada>, linhas: LinhaAchada[], soNoTexto: boolean) {
+  for (const linha of linhas) {
+    const atual = mapa.get(linha.id);
+    mapa.set(linha.id, { checadoEm: linha.checado_em ?? "", soNoTexto: soNoTexto && (atual?.soNoTexto ?? true) });
+  }
+}
+
+/** Checadas em que alguém com esse nome vistou, vistou de novo, conferiu ou checou. */
+async function checadasDasPessoas(padrao: string): Promise<LinhaAchada[]> {
+  const { data: usuarios, error } = await admin().from("users").select("auth_id").filter("name", "imatch", padrao).not("auth_id", "is", null).limit(20);
+  if (error) falhou("buscar as pessoas", error);
+  const ids = ((usuarios ?? []) as { auth_id: string }[]).map((usuario) => usuario.auth_id);
+  if (!ids.length) return [];
+  const lista = `(${ids.join(",")})`;
+  const { data, error: erro } = await admin()
+    .from("vistagem_publicacoes")
+    .select("id, checado_em")
+    .eq("status", "checado")
+    .or(["vistado_por", "revistado_por", "conferido_por", "checado_por"].map((coluna) => `${coluna}.in.${lista}`).join(","))
+    .order("checado_em", { ascending: false, nullsFirst: false })
+    .limit(TETO_CONSULTA_BUSCA);
+  if (erro) falhou("buscar as checadas das pessoas", erro);
+  return (data ?? []) as LinhaAchada[];
+}
+
+/** Checadas com uma tarefa que bate: nome da tarefa, responsável, revisor ou CI no VIOS. */
+async function checadasDasTarefas(condicoes: string[]): Promise<LinhaAchada[]> {
+  const { data, error } = await admin()
+    .from("vistagem_agendamentos")
+    .select("publicacao_id, publicacao:vistagem_publicacoes!inner(checado_em, status)")
+    .eq("publicacao.status", "checado")
+    .or(condicoes.join(","))
+    .limit(TETO_CONSULTA_BUSCA);
+  if (error) falhou("buscar nas tarefas das checadas", error);
+  type Linha = { publicacao_id: string; publicacao: { checado_em: string | null } | { checado_em: string | null }[] | null };
+  return ((data ?? []) as unknown as Linha[]).map((linha) => ({
+    id: linha.publicacao_id,
+    checado_em: (Array.isArray(linha.publicacao) ? linha.publicacao[0] : linha.publicacao)?.checado_em ?? null,
+  }));
+}
+
+/** Checadas em que a palavra aparece: nas colunas, no texto, em quem vistou, conferiu ou checou, ou nas tarefas. */
+async function checadasComOTermo(termo: string): Promise<Map<string, Achada>> {
+  const padrao = padraoDoTermo(termo);
+  const digitos = digitosDoTermo(termo);
+  const temLetra = /[a-z]/.test(termo);
+  const nasColunas = [
+    ...COLUNAS_DA_BUSCA.map((coluna) => `${coluna}.imatch."${padrao}"`),
+    ...(digitos ? [`processo_digitos.like.*${digitos}*`, `pasta_ci.like.*${digitos}*`] : []),
+  ];
+  const nasTarefas = [
+    ...(temLetra ? ["tarefa", "responsavel", "revisor"].map((coluna) => `${coluna}.imatch."${padrao}"`) : []),
+    ...(digitos ? [`vios_tarefa_id.like.*${digitos}*`] : []),
+  ];
+  const checadas = () =>
+    admin().from("vistagem_publicacoes").select("id, checado_em").eq("status", "checado").order("checado_em", { ascending: false, nullsFirst: false }).limit(TETO_CONSULTA_BUSCA);
+  const [colunas, texto, pessoas, tarefas] = await Promise.all([
+    checadas().or(nasColunas.join(",")),
+    // O texto traz as partes e os intimados, mas também o resto da decisão: o que só bate nele vem por último.
+    checadas().filter("teor", "imatch", padrao),
+    temLetra ? checadasDasPessoas(padrao) : Promise.resolve([]),
+    nasTarefas.length ? checadasDasTarefas(nasTarefas) : Promise.resolve([]),
+  ]);
+  if (colunas.error) falhou("buscar nas checadas", colunas.error);
+  if (texto.error) falhou("buscar no texto das checadas", texto.error);
+  const mapa = new Map<string, Achada>();
+  guardarAchadas(mapa, (texto.data ?? []) as LinhaAchada[], true);
+  guardarAchadas(mapa, [...((colunas.data ?? []) as LinhaAchada[]), ...pessoas, ...tarefas], false);
+  return mapa;
+}
+
+/**
+ * Busca em todas as checadas, de qualquer dia. Cada palavra precisa aparecer, como na tela. O banco separa as
+ * candidatas (com ou sem acento), e a conferência final é a mesma da tela (`combinaCampos`), para achar a mesma coisa.
+ */
+export async function buscarChecadas(busca: string): Promise<CheckBuscaResposta> {
+  const termos = termosDaBusca(busca);
+  if (normalizarBusca(busca).length < MINIMO_BUSCA_NO_BANCO) return { itens: [], fotos: {}, maisResultados: false };
+  const [primeiro, ...resto] = await Promise.all(termos.map(checadasComOTermo));
+  // Fica o que todas as palavras acharam. Primeiro o que bateu fora do texto; depois, do check mais novo ao mais antigo.
+  const candidatas = [...primeiro.entries()]
+    .filter(([id]) => resto.every((mapa) => mapa.has(id)))
+    .map(([id, achada]) => ({
+      id,
+      checadoEm: achada.checadoEm,
+      soNoTexto: [achada, ...resto.map((mapa) => mapa.get(id) as Achada)].filter((cada) => cada.soNoTexto).length,
+    }))
+    .sort((a, b) => a.soNoTexto - b.soNoTexto || b.checadoEm.localeCompare(a.checadoEm));
+  const ids = candidatas.slice(0, LIMITE_BUSCA_CHECADAS).map((candidata) => candidata.id);
+  const itens = (await itensDeConferencia(["checado"], LIMITE_BUSCA_CHECADAS, false, "checado_em", { ...FICHA_DO_CHECK, ids })).filter((item) =>
+    combinaCampos(camposDoCheck(item), busca)
+  );
+  const fotos = await fotosDosItens(itens, "busca do check");
+  return { itens, fotos, maisResultados: candidatas.length > LIMITE_BUSCA_CHECADAS };
 }
 
 /** Check OK: a esteira e o agendamento no VIOS estão corretos. */

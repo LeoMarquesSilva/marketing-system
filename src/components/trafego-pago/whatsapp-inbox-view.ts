@@ -232,3 +232,30 @@ export function attendanceStatusLabel(conversation: WhatsappConversation): strin
   return ATTENDANCE_STATUS_LABEL[conversation.attendance_status ?? "nao_respondido"] ??
     ATTENDANCE_STATUS_LABEL.nao_respondido;
 }
+
+/**
+ * Onde cada encaminhamento entra na linha do tempo da conversa: depois da
+ * última mensagem que chegou até aquele momento (-1 = antes de todas).
+ * Os encaminhamentos de cada posição saem do mais antigo para o mais novo.
+ */
+export function forwardsByMessageIndex<T extends { createdAt: string }>(
+  messages: Array<{ message_timestamp: string }>,
+  forwards: T[]
+): Map<number, T[]> {
+  const byIndex = new Map<number, T[]>();
+  const sorted = [...forwards].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  for (const forward of sorted) {
+    const at = Date.parse(forward.createdAt);
+    let index = -1;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (Date.parse(messages[i].message_timestamp) <= at) {
+        index = i;
+        break;
+      }
+    }
+    const list = byIndex.get(index) ?? [];
+    list.push(forward);
+    byIndex.set(index, list);
+  }
+  return byIndex;
+}

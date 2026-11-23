@@ -37,12 +37,12 @@ function displayName(orgName: string | undefined, fullName: string): string {
   return parts.length > 3 ? `${parts[0]} ${parts[1]}` : orgName.trim();
 }
 
-type EmployeeRow = Omit<DirectoryPerson, "short_name" | "avatar_url">;
+type EmployeeRow = Omit<DirectoryPerson, "short_name" | "avatar_url"> & { is_automation?: boolean | null };
 
 /** Cadastro inteiro (ativos e ex-colaboradores), com foto e nome curto. `tag` identifica o log. */
 export async function loadPeopleDirectory(db: SupabaseClient, tag: string): Promise<DirectoryPerson[]> {
   const [employeesResult, orgResult] = await Promise.all([
-    db.from("hr_employees").select("id, full_name, department, position, is_active, user_id").order("full_name"),
+    db.from("hr_employees").select("id, full_name, department, position, is_active, user_id, is_automation").order("full_name"),
     db.from("org_chart_members").select("employee_id, display_name, photo_url, placement"),
   ]);
   if (employeesResult.error) {
@@ -51,9 +51,17 @@ export async function loadPeopleDirectory(db: SupabaseClient, tag: string): Prom
   }
   if (orgResult.error) console.error(`[${tag}] organograma:`, orgResult.error);
 
-  const employees = ((employeesResult.data ?? []) as EmployeeRow[]).filter(
-    (person) => !/fênix agendador/i.test(person.full_name)
-  );
+  // Conta de automação (robô do VIOS) não é pessoa da equipe.
+  const employees = ((employeesResult.data ?? []) as EmployeeRow[])
+    .filter((person) => !person.is_automation)
+    .map((person) => ({
+      id: person.id,
+      full_name: person.full_name,
+      department: person.department,
+      position: person.position,
+      is_active: person.is_active,
+      user_id: person.user_id,
+    }));
   const userIds = [...new Set(employees.map((person) => person.user_id).filter(Boolean))] as string[];
   const avatarByUser = new Map<string, string>();
   if (userIds.length) {

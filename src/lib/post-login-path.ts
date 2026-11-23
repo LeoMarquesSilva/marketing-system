@@ -1,5 +1,5 @@
 import { supabase } from "@/utils/supabase/client";
-import { firstAllowedPath, resolveAllowedSections } from "@/lib/access-control";
+import { canSeeHome, firstAllowedPath, isPe27OnlyProfile, resolveAllowedSections } from "@/lib/access-control";
 import { isContentCollaborator, isContentManager } from "@/lib/content-areas";
 import { sanitizeNextPath } from "@/lib/login-redirect";
 
@@ -22,11 +22,15 @@ export function resolvePostLoginPathFromProfile(
   const safeNext = sanitizeNextPath(next);
   if (safeNext) return safeNext;
 
+  // Quem enxerga a tela inicial entra por ela; quem tem seções liberadas, pela primeira delas.
   const allowed = resolveAllowedSections(profile);
-  if (allowed && allowed.length > 0) return firstAllowedPath(profile);
+  if (canSeeHome(profile) || isPe27OnlyProfile(profile) || (allowed && allowed.length > 0)) {
+    return firstAllowedPath(profile);
+  }
 
+  // Sem permissões marcadas (modo legado): colaborador vai ao desempenho; gestor, ao dashboard de marketing.
   if (isContentCollaborator(profile)) return "/conteudo/inicio";
-  if (isContentManager(profile)) return "/";
+  if (isContentManager(profile)) return firstAllowedPath(profile);
   return "/conteudo/inicio";
 }
 

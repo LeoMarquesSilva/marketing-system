@@ -5,14 +5,24 @@ import type { LucideIcon } from "lucide-react";
 import { Bot, CalendarDays, CircleCheck, Clock, Flag, Info, TriangleAlert, UserCheck, UserRound, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
+import { RESPONSAVEL_PELO_VIOS, ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, responsavelFicaComOVios, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
 import { compararTarefa, revisorEstaNaTarefa, type ComparacaoDaTarefa, type SituacaoCampo, type SituacaoCheck } from "@/lib/vistagem/check";
 import { nomeCurto } from "@/lib/vistagem/como-fica-no-vios";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import type { AgendamentoResumo } from "@/lib/vistagem/types";
 import { formatarData } from "./publicacao-ui";
 import { AvatarPessoa } from "./combobox-busca";
-import { AgendaNoVios, DiaNaAgenda, ESTILO_CLASSE, ICONE_CLASSE, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
+import {
+  AgendaNoVios,
+  AjustesDaTarefa,
+  DiaNaAgenda,
+  ESTILO_CLASSE,
+  ICONE_CLASSE,
+  LinkVios,
+  SeloOrigemDaFatal,
+  corDoTextoDoEnvio,
+  envioDaTarefa,
+} from "./tarefas-conferencia";
 import { Selo, TOM_CLASSE } from "./ui";
 
 /**
@@ -161,15 +171,17 @@ function Comparacao({
   comparacao,
   fotos,
   hoje,
+  area,
 }: {
   item: AgendamentoResumo;
   comparacao: ComparacaoDaTarefa;
   fotos: Record<string, string>;
   hoje: string;
+  area: string | null;
 }) {
   const { gravada } = comparacao;
   const responsavel = comparacao.responsavel;
-  const revisorNaTarefa = revisorEstaNaTarefa(item);
+  const revisorNaTarefa = revisorEstaNaTarefa(item, area);
   return (
     <div className="@container overflow-hidden rounded-md border border-[#e6eef0]">
       <table className="w-full table-fixed border-collapse text-sm @max-sm:block">
@@ -230,8 +242,9 @@ function Comparacao({
           <Linha
             icone={UserRound}
             rotulo="Responsável"
+            dica={responsavel.distribuidoPeloVios ? "O VIOS divide a VERIFICAR RENÚNCIA entre as estagiárias: vale quem ele pôs." : undefined}
             situacao={responsavel.situacao}
-            pedido={<PessoasCurtas texto={item.responsavel} fotos={fotos} />}
+            pedido={<PessoasCurtas texto={item.responsavel} fotos={fotos} vazio={responsavelFicaComOVios(item.tarefa, item.responsavel) ? RESPONSAVEL_PELO_VIOS : "—"} />}
             noVios={
               responsavel.noVios.length ? (
                 <span className="block space-y-1">
@@ -250,8 +263,8 @@ function Comparacao({
               icone={UserCheck}
               rotulo="Revisor"
               dica={
-                revisorFicaNaTarefa(item.tarefa)
-                  ? "Na Sessão de Julgamento o revisor fica na própria tarefa, junto com o responsável."
+                revisorFicaNaTarefa(item.tarefa, area)
+                  ? "Na Sessão de Julgamento e nas audiências do Trabalhista, o revisor fica na própria tarefa, junto com o responsável."
                   : "O robô não devolve o revisor da tarefa. No VIOS, aparecem aqui as tarefas Revisar do fluxo e quem está nelas."
               }
               situacao={revisorNaTarefa ? "confere" : null}
@@ -319,11 +332,14 @@ export function CartoesCheck({
   agendamentos,
   fotos,
   hoje,
+  area = null,
   onApontar,
 }: {
   agendamentos: AgendamentoResumo[];
   fotos: Record<string, string>;
   hoje: string;
+  /** Área da publicação: nas audiências do Trabalhista o revisor fica na tarefa (`revisorFicaNaTarefa`). */
+  area?: string | null;
   onApontar?: (agendamento: AgendamentoResumo) => void;
 }) {
   if (!agendamentos.length) return <p className="px-4 pb-4 text-sm text-muted-foreground">Nenhuma tarefa nesta vistagem.</p>;
@@ -379,6 +395,7 @@ export function CartoesCheck({
                     {item.diasPrazo && item.contagemPrazo ? <span>· {item.diasPrazo} {ROTULO_CONTAGEM[item.contagemPrazo]} após a publicação</span> : null}
                   </p>
                 ) : null}
+                <SeloOrigemDaFatal item={item} />
                 {item.observacao ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.observacao}</p> : null}
                 {simulada ? <p className="text-xs text-muted-foreground">Preenchida no VIOS, não gravada.</p> : null}
                 {item.envioErro ? <p className={cn("whitespace-pre-wrap break-words text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</p> : null}
@@ -386,6 +403,8 @@ export function CartoesCheck({
             </header>
 
             <div className="space-y-3 px-4 py-3.5">
+              {/* Alterada na Conferência (data, horário, responsável): o "Pedido" abaixo já é o ajustado (pedido de 18/11/2026). */}
+              {item.ajustes?.length ? <AjustesDaTarefa ajustes={item.ajustes} /> : null}
               {!comparacao.gravada ? (
                 <p className="flex items-start gap-1.5 rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-2 text-xs text-muted-foreground">
                   <Info className="mt-0.5 size-3.5 shrink-0 text-[#3e84a8]" aria-hidden />
@@ -394,7 +413,7 @@ export function CartoesCheck({
                     : "O robô não devolveu o CI nem como a tarefa ficou no VIOS. Procure a tarefa na pasta."}
                 </p>
               ) : null}
-              <Comparacao item={item} comparacao={comparacao} fotos={fotos} hoje={hoje} />
+              <Comparacao item={item} comparacao={comparacao} fotos={fotos} hoje={hoje} area={area} />
               <DatasDoFluxo comparacao={comparacao} hoje={hoje} />
               <AgendaNoVios item={item} fotos={fotos} hoje={hoje} />
               {onApontar && comparacao.situacao === "diverge" ? (

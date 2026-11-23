@@ -5,6 +5,8 @@ import { chaveNome, classeDasEtiquetas, type EtapaVios, type OpcaoVios } from ".
 import { VistagemError } from "./errors";
 import { cisDoResultado, tarefasViosDoResultado, type LinhaFilaSama, type ModoAgendamento, type TarefaNoVios } from "./fila-vios";
 import type { BaseDaData, ResponsabilidadeDoTipo, TipoNaArvore } from "./fluxo-vios";
+import type { CapaDoVios, PedidoDeAbertura, TarefaDaAbertura, TipoDaTarefaNova } from "./capa-abertura";
+import type { PastaNoSama } from "./triagem";
 import type { MateriaVios, SintesePedida } from "./types";
 
 /**
@@ -13,7 +15,7 @@ import type { MateriaVios, SintesePedida } from "./types";
  * relidos do VIOS pelo robô todo domingo à noite, e a fila vios_agendamentos que o
  * sama-rpa consome a cada 2 minutos para criar a tarefa no VIOS.
  */
-function sama(): SupabaseClient {
+export function sama(): SupabaseClient {
   const url = process.env.SAMA_SUPABASE_URL?.trim();
   const key = process.env.SAMA_SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !key) throw new VistagemError("SAMA não configurado (SAMA_SUPABASE_URL/SAMA_SUPABASE_SERVICE_ROLE_KEY).", 500);
@@ -52,7 +54,8 @@ export interface CatalogoArea {
   atualizadoEm: string;
 }
 
-let cacheCatalogo: { carregadoEm: number; areas: CatalogoArea[] } | null = null;
+/** Catálogos por tipo de pasta (Processo e Atendimento têm listas de tarefas diferentes no VIOS). */
+const cacheCatalogo = new Map<"Processo" | "Atendimento", { carregadoEm: number; areas: CatalogoArea[] }>();
 /** Etiquetas e responsáveis fixos de cada tipo de tarefa do VIOS. */
 interface DadosDoTipo {
   etiquetas: number[];
@@ -87,10 +90,24 @@ async function carregarEtiquetasDosTipos(): Promise<Map<string, DadosDoTipo>> {
 }
 
 /** Catálogo das pastas de Processo, por área (tarefas que o VIOS aceita, com as etiquetas, e usuários). */
-export async function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
-  if (cacheCatalogo && Date.now() - cacheCatalogo.carregadoEm < CACHE_MS) return cacheCatalogo.areas;
+export function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
+  return carregarCatalogo("Processo");
+}
+
+/**
+ * Catálogo das pastas de Atendimento, por área: a publicação ligada a uma pasta de atendimento informada na Triagem
+ * Manual (18/11/2026) é vistada com as tarefas que o VIOS aceita no atendimento (ex.: CIÊNCIA NF é 316 lá, 796 no
+ * processo; MANIFESTAÇÃO - FLUXO D5 só existe no processo).
+ */
+export function carregarCatalogoAtendimentos(): Promise<CatalogoArea[]> {
+  return carregarCatalogo("Atendimento");
+}
+
+async function carregarCatalogo(pastaTipo: "Processo" | "Atendimento"): Promise<CatalogoArea[]> {
+  const guardado = cacheCatalogo.get(pastaTipo);
+  if (guardado && Date.now() - guardado.carregadoEm < CACHE_MS) return guardado.areas;
   const [{ data, error }, etiquetasPorTipo] = await Promise.all([
-    sama().from("vios_catalogo_tarefas").select("area, etapas, usuarios, atualizado_em").eq("pasta_tipo", "Processo"),
+    sama().from("vios_catalogo_tarefas").select("area, etapas, usuarios, atualizado_em").eq("pasta_tipo", pastaTipo),
     carregarEtiquetasDosTipos(),
   ]);
   if (error) throw new VistagemError(`Falha ao carregar o catálogo de tarefas do SAMA: ${error.message}`, 502);
@@ -115,8 +132,55 @@ export async function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
       502
     );
   }
-  cacheCatalogo = { carregadoEm: Date.now(), areas };
+  cacheCatalogo.set(pastaTipo, { carregadoEm: Date.now(), areas });
   return areas;
+}
+
+/**
+ * O que a SAMA sabe de uma pasta do VIOS pela CI: o tipo e a área (vios_pastas, das pastas que o robô já abriu); pelas
+ * tarefas da pasta (vios_tarefas, cópia de madrugada de todas as tarefas do VIOS), o cliente, o grupo, a área e o número
+ * do processo; e, se foi o robô que abriu a pasta pela Triagem Manual (fila abrir_pasta), que é processo, com o número
+ * (ex.: a CI 61595, aberta em 18/11, antes da cópia da madrugada). Null quando nenhuma conhece a CI.
+ */
+export async function pastaNoSama(ci: string): Promise<PastaNoSama | null> {
+  const numero = ci.replace(/\D/g, "");
+  if (!numero) return null;
+  const db = sama();
+  const [pasta, tarefa, aberta] = await Promise.all([
+    db.from("vios_pastas").select("pasta_tipo, area, cnj").eq("ci", numero).limit(1).maybeSingle(),
+    db
+      .from("vios_tarefas")
+      .select("cliente, grupo_cliente, area_do_processo, nro_cnj")
+      .eq("ci_do_processo", numero)
+      .order("data_para_conclusao", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("vios_agendamentos")
+      .select("pasta, abertura")
+      .eq("operacao", "abrir_pasta")
+      .eq("status", "concluido")
+      .eq("resultado->>ci_pasta", numero)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  if (pasta.error && tarefa.error) throw new VistagemError(`Falha ao consultar a pasta ${numero} no SAMA: ${pasta.error.message}`, 502);
+  const pelaAbertura = aberta.error ? null : (aberta.data as { pasta: string | null; abertura: { capa?: { area?: string | null; cliente?: string | null } } | null } | null);
+  const doCadastro = pasta.error ? null : (pasta.data as { pasta_tipo: string | null; area: string | null; cnj: string | null } | null);
+  const daTarefa = tarefa.error
+    ? null
+    : (tarefa.data as { cliente: string | null; grupo_cliente: string | null; area_do_processo: string | null; nro_cnj: string | null } | null);
+  if (!doCadastro && !daTarefa && !pelaAbertura) return null;
+  const tipo =
+    doCadastro?.pasta_tipo === "Atendimento" || doCadastro?.pasta_tipo === "Processo" ? doCadastro.pasta_tipo : pelaAbertura ? "Processo" : null;
+  const capa = pelaAbertura?.abertura?.capa;
+  return {
+    tipo,
+    area: doCadastro?.area?.trim() || daTarefa?.area_do_processo?.trim() || capa?.area?.trim() || null,
+    cnj: doCadastro?.cnj?.trim() || daTarefa?.nro_cnj?.trim() || pelaAbertura?.pasta?.trim() || null,
+    cliente: daTarefa?.cliente?.trim() || capa?.cliente?.trim() || null,
+    grupoCliente: daTarefa?.grupo_cliente?.trim() || null,
+  };
 }
 
 let cacheArvore: { carregadoEm: number; arvore: Map<number, TipoNaArvore> } | null = null;
@@ -263,6 +327,86 @@ export async function enfileirarSintese(pedido: {
     .single();
   if (error || !data) throw new VistagemError(`Falha ao colocar a atualização do cadastro na fila do robô: ${error?.message ?? "sem retorno"}`, 502);
   return data.id as string;
+}
+
+/**
+ * Um tipo de tarefa de Processo pela grafia do VIOS (ex.: ATUALIZAÇÃO DE CADASTRO = 539), com as etiquetas e os fixos
+ * do cadastro do tipo. Null se a cópia do SAMA não tiver ou não responder: o robô escolhe pelo nome.
+ */
+export async function tipoDeTarefaPorNome(nome: string): Promise<TipoDaTarefaNova | null> {
+  const { data, error } = await sama().from("vios_tipos_tarefa").select("etapa_id, nome, pasta_tipos, etiquetas, responsaveis").limit(5000);
+  if (error) {
+    console.error("[vistagem] tipo de tarefa no SAMA:", error.message);
+    return null;
+  }
+  const linhas = (data ?? []) as { etapa_id: number; nome: string; pasta_tipos: string[] | null; etiquetas: number[] | null; responsaveis: string[] | null }[];
+  const achado = linhas.find((linha) => chaveNome(linha.nome) === chaveNome(nome) && (linha.pasta_tipos ?? []).includes("Processo"));
+  return achado
+    ? { id: Number(achado.etapa_id), etiquetas: (achado.etiquetas ?? []).map(Number), responsaveis: (achado.responsaveis ?? []).map(String).filter(Boolean) }
+    : null;
+}
+
+/**
+ * Abertura de pasta: pede ao robô que preencha o cadastro de processo com a capa conferida pela controladoria
+ * (coluna abertura, migração 20261110000015 do sama-rpa). Simulação, ou de verdade (Fase 3) com `simular: false`.
+ * `tarefas`: o que o robô cria na pasta nova depois de abri-la (a ATUALIZAÇÃO DE CADASTRO); o robô antigo ignora.
+ */
+export async function enfileirarAberturaDePasta(pedido: {
+  publicacaoId: string;
+  capa: CapaDoVios;
+  autor: string;
+  data: string;
+  simular: boolean;
+  tarefas?: TarefaDaAbertura[];
+}): Promise<string> {
+  const { data, error } = await sama()
+    .from("vios_agendamentos")
+    .insert({
+      operacao: "abrir_pasta",
+      status: "pendente",
+      tipo: "ABERTURA DE PASTA",
+      tarefa: "Abrir pasta no VIOS",
+      observacao: "",
+      responsavel: pedido.autor,
+      data: pedido.data,
+      pasta: pedido.capa.cnj ?? "",
+      pasta_tipo: "Processo",
+      simular: pedido.simular,
+      abertura: { publicacao_id: pedido.publicacaoId, capa: pedido.capa, ...(pedido.tarefas?.length ? { tarefas: pedido.tarefas } : {}) },
+    })
+    .select("id")
+    .single();
+  if (error?.code === "PGRST204" || /abertura/.test(error?.message ?? "")) {
+    throw new VistagemError("A fila do robô ainda não aceita abertura de pasta (falta rodar a SQL 0015 do SAMA).", 503);
+  }
+  if (error || !data) throw new VistagemError(`Falha ao colocar a abertura de pasta na fila do robô: ${error?.message ?? "sem retorno"}`, 502);
+  return data.id as string;
+}
+
+/** Pedidos de abertura de uma publicação, do mais novo para o mais antigo. Sem a coluna no SAMA, nenhum. */
+export async function aberturasDaPublicacao(publicacaoId: string): Promise<PedidoDeAbertura[]> {
+  const { data, error } = await sama()
+    .from("vios_agendamentos")
+    .select("id, status, erro, simular, responsavel, resultado, criado_em, atualizado_em, abertura")
+    .eq("operacao", "abrir_pasta")
+    .eq("abertura->>publicacao_id", publicacaoId)
+    .order("criado_em", { ascending: false })
+    .limit(5);
+  if (error) {
+    if (/abertura/.test(error.message)) return [];
+    throw new VistagemError(`Falha ao consultar os pedidos de abertura no robô: ${error.message}`, 502);
+  }
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    id: row.id as string,
+    status: row.status as PedidoDeAbertura["status"],
+    erro: (row.erro as string | null) ?? null,
+    simulado: row.simular === true,
+    autor: (row.responsavel as string | null) ?? null,
+    criadoEm: row.criado_em as string,
+    atualizadoEm: (row.atualizado_em as string | null) ?? null,
+    resultado: (row.resultado as PedidoDeAbertura["resultado"]) ?? null,
+    capa: ((row.abertura as { capa?: CapaDoVios } | null)?.capa as CapaDoVios | undefined) ?? null,
+  }));
 }
 
 function comoMateria(valor: unknown): MateriaVios | null {

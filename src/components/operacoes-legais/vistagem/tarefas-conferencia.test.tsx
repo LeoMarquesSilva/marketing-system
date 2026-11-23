@@ -14,6 +14,7 @@ function agendamento(campos: Partial<AgendamentoResumo> = {}): AgendamentoResumo
     dataFatal: null,
     diasPrazo: null,
     contagemPrazo: null,
+    origemPrazo: null,
     hora: null,
     horaFim: null,
     dataLimite: null,
@@ -95,5 +96,90 @@ describe("envio esperando a publicação chegar ao VIOS", () => {
     expect(html).toContain("Aguardando o VIOS");
     expect(html).toContain("text-amber-800");
     expect(html).not.toContain("text-red-700\">Aguardando");
+  });
+});
+
+describe("CartoesTarefas: prazo apertado", () => {
+  // 4001306-33 (11/11/2026): vistado à noite com o Enviar em 10/11; validado no dia seguinte, o robô lança hoje.
+  const prazo = (extra: Partial<AgendamentoResumo> = {}) =>
+    agendamento({ etiqueta: "PRAZO", tarefa: "MANIFESTAÇÃO - FLUXO D5", tarefaId: "612", data: "2026-11-10", dataFatal: "2026-11-16", revisor: "Lucas Sebinel Miranda", ...extra });
+  const texto = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+  it("a régua mostra o Enviar de hoje e o cartão diz por quê", () => {
+    const html = texto(cartoes(prazo({ enviarHoje: "2026-11-11" }), { hoje: "2026-11-11" }));
+    expect(html).toContain("Vistado com o Enviar em 10/11/2026, que já passou");
+    expect(html).toContain("(11/11/2026)");
+    expect(html).toContain("Não precisa editar.");
+  });
+
+  it("com o Enviar vistado ainda valendo, nada muda", () => {
+    expect(cartoes(prazo({ data: "2026-11-12", enviarHoje: null }), { hoje: "2026-11-11" })).not.toContain("que já passou");
+  });
+});
+
+describe("CartoesTarefas: Ciência dos Agendamentos vistada noutro dia (pedido de 13/11/2026)", () => {
+  // 1002399-97 (13/11/2026): vistada às 21h35 de 12/11; a Giovanna trocava a data para 13/11 no lápis.
+  const ciencia = (extra: Partial<AgendamentoResumo> = {}) =>
+    agendamento({ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", tarefaId: "321", data: "2026-11-12", dataFatal: null, ...extra });
+  const texto = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+  it("mostra a data do envio e diz que não precisa editar", () => {
+    const html = texto(cartoes(ciencia({ enviarHoje: "2026-11-13" }), { hoje: "2026-11-13" }));
+    expect(html).toContain("Data no VIOS 13/11/2026");
+    expect(html).toContain("Vistada para 12/11/2026, que já passou: vai com a data do envio (13/11/2026). Não precisa editar.");
+  });
+
+  it("com a data ainda valendo, mostra a gravada, sem aviso", () => {
+    const html = texto(cartoes(ciencia({ data: "2026-11-13", enviarHoje: null }), { hoje: "2026-11-13" }));
+    expect(html).toContain("Data no VIOS 13/11/2026");
+    expect(html).not.toContain("que já passou");
+  });
+});
+
+describe("CartoesTarefas: como a fatal foi escolhida, em selo (pedidos de 11/11 e 18/11/2026)", () => {
+  const prazo = (extra: Partial<AgendamentoResumo> = {}) =>
+    agendamento({ etiqueta: "PRAZO", tarefa: "APRESENTAR/IMPUGNAR CÁLCULOS", tarefaId: "500", data: "2027-01-22", dataFatal: "2027-01-27", revisor: "Lucas Sebinel Miranda", ...extra });
+  const texto = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+  it("botão de dias: o selo diz qual botão, e os dias ficam embaixo da régua", () => {
+    const html = texto(cartoes(prazo({ diasPrazo: 30, contagemPrazo: "uteis", origemPrazo: "atalho" })));
+    expect(html).toContain("Fatal: Botão 30 dias úteis");
+    expect(html).toContain("30 dias úteis após a publicação");
+  });
+
+  it("calendário: o selo diz calendário, sem dias", () => {
+    const html = texto(cartoes(prazo({ origemPrazo: "calendario" })));
+    expect(html).toContain("Fatal: Calendário");
+    expect(html).not.toContain("após a publicação");
+  });
+
+  it("as outras origens têm o seu selo", () => {
+    expect(texto(cartoes(prazo({ diasPrazo: 15, contagemPrazo: "uteis", origemPrazo: "tarefa" })))).toContain("Fatal: Prazo legal da tarefa (15 dias úteis)");
+    expect(texto(cartoes(prazo({ diasPrazo: 30, contagemPrazo: "uteis", origemPrazo: "publicacao" })))).toContain("Fatal: Dias lidos na publicação (30 dias úteis)");
+    expect(texto(cartoes(prazo({ diasPrazo: 30, contagemPrazo: "uteis", origemPrazo: "sugestao_ia" })))).toContain("Fatal: Sugestão da IA (30 dias úteis)");
+  });
+
+  it("vistada antes da origem existir: diz que não ficou registrado", () => {
+    const html = texto(cartoes(prazo({ diasPrazo: 30, contagemPrazo: "uteis" })));
+    expect(html).toContain("30 dias úteis após a publicação");
+    expect(html).toContain("Fatal: não registrado se foi botão ou calendário");
+  });
+
+  it("fatal mudada na conferência: mantém o que o vistador usou e marca a mudança", () => {
+    const html = texto(
+      cartoes(
+        prazo({
+          origemPrazo: "atalho",
+          ajustes: [{ por: "Giovanna Pereira de Souza", em: "2026-11-17T16:29:55.298Z", mudancas: [{ campo: "Data fatal", de: "25/01/2027", para: "27/01/2027" }] }],
+        })
+      )
+    );
+    expect(html).toContain("Fatal: Botões de dias");
+    expect(html).toContain("Mudada na conferência");
+  });
+
+  it("fora do Prazo com fatal, não há selo", () => {
+    expect(texto(cartoes(agendamento()))).not.toContain("Fatal:");
+    expect(texto(cartoes(prazo({ dataFatal: null, origemPrazo: "calendario" })))).not.toContain("Fatal:");
   });
 });

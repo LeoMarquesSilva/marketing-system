@@ -4,8 +4,16 @@ import { criarCalendarioDePrazo } from "./dias-uteis";
 import { ESOCIAL_PADRAO } from "./esocial";
 import {
   areaComSugestaoIa,
+  compararComSugestao,
+  ehAreaTrabalhista,
+  costumesDaArea,
   custoDaChamada,
   entradaDaSugestao,
+  entradaDoRegistro,
+  secaoDoHistorico,
+  sugereSoCiencia,
+  trechoDecisivo,
+  type TarefaDoHistorico,
   esocialDaResposta,
   fatalSugerida,
   instrucoesDaSugestao,
@@ -81,9 +89,144 @@ describe("Recurso Ordinário vira a tarefa SENTENÇA (fluxo interno)", () => {
 });
 
 describe("areaComSugestaoIa", () => {
-  it("só Trabalhista", () => {
+  it("todas as áreas, inclusive Operações Legais; sem lista de tarefas, não", () => {
     expect(areaComSugestaoIa("Trabalhista")).toBe(true);
-    expect(areaComSugestaoIa("Cível")).toBe(false);
+    expect(areaComSugestaoIa("Cível")).toBe(true);
+    expect(areaComSugestaoIa("Cível | Insolvência")).toBe(true);
+    expect(areaComSugestaoIa("Operações Legais")).toBe(true);
+    expect(areaComSugestaoIa(null)).toBe(false);
+  });
+
+  it("Operações Legais: instruções de ex-cliente (VERIFICAR RENÚNCIA), qualquer que seja a área da pasta", () => {
+    const comRenuncia = { ...LISTAS, PROVIDENCIA: [...LISTAS.PROVIDENCIA, { id: "700", nome: "VERIFICAR RENÚNCIA" }] };
+    const texto = instrucoesDaSugestao(comRenuncia, { area: "Trabalhista", escritorio: "Operações Legais" });
+    expect(texto).toContain("SOMENTE a tarefa 700 | VERIFICAR RENÚNCIA");
+    expect(texto).toContain("SOMENTE a tarefa 316 | CIÊNCIA NF");
+    expect(texto).toContain("Nunca sugira prazo processual");
+    expect(texto).not.toContain("CLT");
+    expect(texto).not.toContain("452 | COMPROVAR PAGAMENTO");
+    expect(ehAreaTrabalhista("Trabalhista", "Operações Legais")).toBe(false);
+    expect(ehAreaTrabalhista("Trabalhista", "Trabalhista")).toBe(true);
+  });
+});
+
+describe("instruções por área", () => {
+  const COM_SENTENCA: Record<EtiquetaAgendamento, OpcaoTarefa[]> = { ...LISTAS, PRAZO: [...LISTAS.PRAZO, { id: "13", nome: "SENTENÇA" }] };
+
+  it("fora do Trabalhista: CPC em dias úteis, sem eSocial nem a regra da SENTENÇA", () => {
+    const texto = instrucoesDaSugestao(COM_SENTENCA, { area: "Cível" });
+    expect(texto).toContain("área Cível");
+    expect(texto).toContain("dias úteis (art. 219)");
+    expect(texto).toContain('"esocial": sempre "Não Identificado"');
+    expect(texto).not.toContain("CLT");
+    expect(texto).not.toContain("nunca RECURSO ORDINÁRIO");
+    expect(texto).toContain("452 | COMPROVAR PAGAMENTO");
+    expect(texto).toContain("SOMENTE a tarefa 316 | CIÊNCIA NF");
+  });
+
+  it("Insolvência: prazos da Lei 11.101 em dias corridos", () => {
+    expect(instrucoesDaSugestao(LISTAS, { area: "Insolvência" })).toContain("dias corridos (art. 189, § 1º, I)");
+    expect(instrucoesDaSugestao(LISTAS, { area: "Cível | Insolvência" })).not.toContain("art. 189");
+  });
+
+  it("Trabalhista (ou sem área) continua com as instruções da CLT; o costume entra no fim", () => {
+    expect(instrucoesDaSugestao(LISTAS, { area: "Trabalhista" })).toBe(instrucoesDaSugestao(LISTAS));
+    expect(instrucoesDaSugestao(LISTAS)).toContain("CLT, art. 775");
+    expect(instrucoesDaSugestao(LISTAS, { area: "Cível", historico: "COSTUME DO ESCRITÓRIO NESTA ÁREA\n- x" })).toMatch(/COSTUME DO ESCRITÓRIO NESTA ÁREA\n- x$/);
+  });
+
+  it("fora do Trabalhista, a SENTENÇA não perde os dias", () => {
+    const resposta: RespostaIa = { resumo: "", tarefas: [tarefa({ tarefa_id: "13", dias: 15, contagem: "uteis" })], esocial: "Não Identificado", confianca: "alta", prazo_de: "cliente" };
+    expect(tarefasDaResposta(resposta, COM_SENTENCA, { trabalhista: false })[0]).toMatchObject({ tarefaId: "13", dias: 15 });
+    expect(tarefasDaResposta(resposta, COM_SENTENCA)[0]).toMatchObject({ tarefaId: "13", dias: null });
+  });
+});
+
+describe("costume do escritório (histórico)", () => {
+  const linha = (publicacaoId: string, tarefa: string, extra: Partial<TarefaDoHistorico> = {}): TarefaDoHistorico => ({
+    publicacaoId,
+    tarefa,
+    classe: "PRAZO",
+    dias: 5,
+    contagem: "uteis",
+    em: `2026-11-1${publicacaoId.slice(-1)}T12:00:00Z`,
+    ...extra,
+  });
+
+  it("junta por tarefa, com os dias mais comuns, sem as tarefas automáticas e sem as usadas uma vez só", () => {
+    const costumes = costumesDaArea([
+      linha("p1", "MANIFESTAÇÃO - FLUXO D1"),
+      linha("p2", "MANIFESTAÇÃO - FLUXO D1"),
+      linha("p3", "MANIFESTAÇÃO - FLUXO D1", { dias: 10 }),
+      linha("p3", "1. CIÊNCIA DOS AGENDAMENTOS", { classe: "PROVIDENCIA", dias: null }),
+      linha("p4", "INSERIR E-SOCIAL", { classe: "PROVIDENCIA", dias: null }),
+      linha("p5", "APELAÇÃO", { dias: 15 }),
+      linha("p6", "CIÊNCIA NF", { classe: "PROVIDENCIA", dias: null, contagem: null }),
+      linha("p7", "CIÊNCIA NF", { classe: "PROVIDENCIA", dias: null, contagem: null }),
+    ]);
+    expect(costumes.map((c) => [c.tarefa, c.usos, c.dias])).toEqual([
+      ["MANIFESTAÇÃO - FLUXO D1", 3, 5],
+      ["CIÊNCIA NF", 2, null],
+    ]);
+    // Exemplos: primeiro as publicações com uma tarefa só, depois as mais recentes.
+    expect(costumes[0].publicacoes).toEqual(["p3", "p2"]); // a Ciência dos Agendamentos não conta: p3 tem uma tarefa só
+  });
+
+  it("o trecho começa no comando da decisão, não no cabeçalho", () => {
+    const teor = `PROCESSO:123 ORGÃO:5ª Vara TIPO DE COMUNICAÇÃO:Intimação ${"cabeçalho ".repeat(40)} Intime-se a parte autora para se manifestar sobre o laudo no prazo de 5 dias. ${"assinatura ".repeat(40)}`;
+    const trecho = trechoDecisivo(teor);
+    expect(trecho).toContain("Intime-se a parte autora para se manifestar sobre o laudo");
+    expect(trecho.length).toBeLessThanOrEqual(262);
+    expect(trechoDecisivo("curto")).toBe("curto");
+  });
+
+  it("monta a seção com os dias e os exemplos; sem costume, nada", () => {
+    const secao = secaoDoHistorico(
+      [{ tarefa: "MANIFESTAÇÃO - FLUXO D1", classe: "PRAZO", usos: 3, dias: 5, contagem: "corridos", publicacoes: ["p1", "p9"] }],
+      new Map([["p1", 'Manifeste-se o "credor" em 5 dias']])
+    );
+    expect(secao).toContain("- MANIFESTAÇÃO - FLUXO D1 (PRAZO, em geral 5 dias corridos): 3 publicações");
+    expect(secao).toContain(`· "Manifeste-se o 'credor' em 5 dias"`);
+    expect(secaoDoHistorico([], new Map())).toBeNull();
+  });
+});
+
+describe("registro da IA", () => {
+  const sugestao = {
+    tarefas: [
+      { classe: "PRAZO" as const, tarefaId: "452", tarefa: "COMPROVAR PAGAMENTO", dias: 15, contagem: "uteis" as const, data: null, hora: null, motivo: "" },
+      { classe: "PROVIDENCIA" as const, tarefaId: "316", tarefa: "CIÊNCIA NF", dias: null, contagem: null, data: null, hora: null, motivo: "" },
+    ],
+  };
+
+  it("compara o que a IA sugeriu com o que o advogado agendou (id ou nome; automáticas fora)", () => {
+    expect(
+      compararComSugestao(sugestao, [
+        { tarefaId: "796", tarefa: "CIÊNCIA NF" },
+        { tarefaId: "500", tarefa: "INFORMAR CLIENTE" },
+        { tarefaId: "792", tarefa: "INSERIR E-SOCIAL" },
+      ])
+    ).toEqual({ aceitas: ["CIÊNCIA NF"], rejeitadas: ["COMPROVAR PAGAMENTO"], acrescentadas: ["INFORMAR CLIENTE"] });
+  });
+
+  it("guarda o que a IA leu, com o teor cortado no mesmo limite", () => {
+    const entrada = entradaDoRegistro({
+      data_publicacao: "2026-11-16",
+      tribunal: "TJSP",
+      djen_orgao: "1ª Vara",
+      djen_tipo_comunicacao: "Intimação",
+      cliente: "Cliente",
+      djen_partes: null,
+      teor: "x".repeat(25_000),
+    });
+    expect(entrada).toMatchObject({ tribunal: "TJSP", orgao: "1ª Vara", partes: [] });
+    expect((entrada.teor as string).length).toBe(20_000);
+  });
+
+  it("aviso de conferir quando a sugestão é só CIÊNCIA NF", () => {
+    expect(sugereSoCiencia({ tarefas: [sugestao.tarefas[1]] })).toBe(true);
+    expect(sugereSoCiencia(sugestao)).toBe(false);
+    expect(sugereSoCiencia({ tarefas: [] })).toBe(false);
   });
 });
 
@@ -264,6 +407,7 @@ describe("resultadoDaSugestao", () => {
     dataFatal: "2026-11-16",
     diasPrazo: 5,
     contagemPrazo: "uteis",
+    origemPrazo: null,
     hora: null,
     horaFim: null,
     dataLimite: null,

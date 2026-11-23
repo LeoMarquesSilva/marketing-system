@@ -3,6 +3,7 @@ import type { WhatsappConversation } from "./whatsapp-crm-types";
 import {
   buildInboxView,
   formatDaySeparator,
+  forwardsByMessageIndex,
   formatListTime,
   formatWaitingDuration,
   isStaleOpenConversation,
@@ -135,5 +136,24 @@ describe("conversas paradas", () => {
       isStaleOpenConversation(conversation({ last_message_at: old, attendance_status: "resolvido" }), NOW)
     ).toBe(false);
     expect(isStaleOpenConversation(conversation({}), NOW)).toBe(false);
+  });
+});
+
+describe("encaminhamentos na linha do tempo", () => {
+  it("entram depois da última mensagem anterior ao envio", () => {
+    const messages = [
+      { message_timestamp: "2026-11-19T18:00:00Z" },
+      { message_timestamp: "2026-11-19T18:40:00Z" },
+      { message_timestamp: "2026-11-19T19:00:00Z" },
+    ];
+    const forwards = [
+      { id: "b", createdAt: "2026-11-19T18:50:00Z" },
+      { id: "a", createdAt: "2026-11-19T18:45:00Z" },
+      { id: "antes", createdAt: "2026-11-19T17:00:00Z" },
+    ];
+    const byIndex = forwardsByMessageIndex(messages, forwards);
+    expect(byIndex.get(1)?.map((f) => f.id)).toEqual(["a", "b"]);
+    expect(byIndex.get(-1)?.map((f) => f.id)).toEqual(["antes"]);
+    expect(byIndex.has(2)).toBe(false);
   });
 });

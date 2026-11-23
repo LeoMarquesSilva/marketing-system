@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Mail, Users, ListChecks, Settings, Building2, TrendingUp } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
+  fetchAllEmailCampaignStats,
   fetchEmailCampaigns,
   fetchEmailCompanies,
   fetchEmailContacts,
@@ -11,6 +10,7 @@ import {
   fetchEmailPeople,
   fetchEmailRdEmails,
   type EmailCampaign,
+  type EmailCampaignStats,
   type EmailCompany,
   type EmailContact,
   type EmailList,
@@ -23,8 +23,9 @@ import { CompaniesTab } from "./companies-tab";
 import { ListsTab } from "./lists-tab";
 import { SettingsTab } from "./settings-tab";
 import { ProgressTab } from "./progress-tab";
+import EmailMarketingLoading from "@/app/email-marketing/loading";
 
-type EmailMarketingTabId =
+export type EmailMarketingTabId =
   | "campanhas"
   | "contatos"
   | "empresas"
@@ -32,45 +33,37 @@ type EmailMarketingTabId =
   | "progresso"
   | "configuracoes";
 
-const TABS: { id: EmailMarketingTabId; label: string; icon: React.ReactNode }[] = [
-  { id: "campanhas", label: "Campanhas", icon: <Mail className="h-4 w-4" /> },
-  { id: "contatos", label: "Contatos", icon: <Users className="h-4 w-4" /> },
-  { id: "empresas", label: "Empresas", icon: <Building2 className="h-4 w-4" /> },
-  { id: "listas", label: "Listas", icon: <ListChecks className="h-4 w-4" /> },
-  { id: "progresso", label: "Progresso", icon: <TrendingUp className="h-4 w-4" /> },
-  { id: "configuracoes", label: "Configurações", icon: <Settings className="h-4 w-4" /> },
-];
+/** O que cada aba precisa carregar (as abas agora são páginas do cabeçalho). */
+const NEEDS: Record<EmailMarketingTabId, { contacts?: boolean; companies?: boolean; people?: boolean; lists?: boolean; campaigns?: boolean }> = {
+  campanhas: { contacts: true, lists: true, campaigns: true },
+  contatos: { contacts: true, companies: true },
+  empresas: { contacts: true, companies: true, people: true },
+  listas: { contacts: true, lists: true, campaigns: true },
+  progresso: { contacts: true, people: true },
+  configuracoes: {},
+};
 
-export function EmailMarketingClient() {
-  const [activeTab, setActiveTab] = useState<EmailMarketingTabId>("campanhas");
+export function EmailMarketingClient({ tab }: { tab: EmailMarketingTabId }) {
+  const needs = NEEDS[tab];
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [contacts, setContacts] = useState<EmailContact[]>([]);
   const [companies, setCompanies] = useState<EmailCompany[]>([]);
   const [people, setPeople] = useState<EmailPerson[]>([]);
   const [lists, setLists] = useState<EmailList[]>([]);
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([]);
+  const [campaignStats, setCampaignStats] = useState<Record<string, EmailCampaignStats>>({});
   const [rdEmails, setRdEmails] = useState<EmailRdEmail[]>([]);
 
-  const reloadAll = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [c, co, pe, l, cp, rd] = await Promise.all([
-        fetchEmailContacts(),
-        fetchEmailCompanies(),
-        fetchEmailPeople(),
-        fetchEmailLists(),
-        fetchEmailCampaigns(),
-        fetchEmailRdEmails(),
-      ]);
-      setContacts(c);
-      setCompanies(co);
-      setPeople(pe);
-      setLists(l);
-      setCampaigns(cp);
-      setRdEmails(rd);
-    } finally {
-      setLoading(false);
-    }
+  const reloadCampaigns = useCallback(async () => {
+    const [cp, stats, rd] = await Promise.all([
+      fetchEmailCampaigns(),
+      fetchAllEmailCampaignStats(),
+      fetchEmailRdEmails(),
+    ]);
+    setCampaigns(cp);
+    setCampaignStats(stats);
+    setRdEmails(rd);
   }, []);
 
   const reloadContacts = useCallback(async () => {
@@ -84,69 +77,61 @@ export function EmailMarketingClient() {
     setLists(await fetchEmailLists());
   }, []);
 
-  const reloadCampaigns = useCallback(async () => {
-    const [cp, rd] = await Promise.all([fetchEmailCampaigns(), fetchEmailRdEmails()]);
-    setCampaigns(cp);
-    setRdEmails(rd);
-  }, []);
-
+  // Cada aba é uma página própria: o componente monta de novo ao trocar de aba.
   useEffect(() => {
-    reloadAll();
-  }, [reloadAll]);
+    let cancelled = false;
+    Promise.all([
+      needs.contacts ? fetchEmailContacts().then((v) => !cancelled && setContacts(v)) : null,
+      needs.companies ? fetchEmailCompanies().then((v) => !cancelled && setCompanies(v)) : null,
+      needs.people ? fetchEmailPeople().then((v) => !cancelled && setPeople(v)) : null,
+      needs.lists ? fetchEmailLists().then((v) => !cancelled && setLists(v)) : null,
+      needs.campaigns
+        ? Promise.all([fetchEmailCampaigns(), fetchAllEmailCampaignStats(), fetchEmailRdEmails()]).then(([cp, st, rd]) => {
+            if (cancelled) return;
+            setCampaigns(cp);
+            setCampaignStats(st);
+            setRdEmails(rd);
+          })
+        : null,
+    ])
+      .catch((err) => !cancelled && setError(err instanceof Error ? err.message : "Erro ao carregar os dados."))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [needs]);
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">E-mail Marketing</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Base de contatos, campanhas e newsletters — com rastreio de abertura e clique
-        </p>
+  if (loading) return <EmailMarketingLoading />;
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+        {error}
       </div>
+    );
+  }
 
-      <div className="flex flex-wrap gap-2 border-b pb-4">
-        {TABS.map((tab) => (
-          <Button
-            key={tab.id}
-            variant={activeTab === tab.id ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setActiveTab(tab.id)}
-            className="gap-2"
-            aria-current={activeTab === tab.id ? "page" : undefined}
-          >
-            {tab.icon}
-            {tab.label}
-          </Button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="flex min-h-[300px] items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        </div>
-      ) : (
-        <>
-          {activeTab === "campanhas" && (
-            <CampaignsTab
-              campaigns={campaigns}
-              rdEmails={rdEmails}
-              lists={lists}
-              contacts={contacts}
-              onChanged={reloadCampaigns}
-            />
-          )}
-          {activeTab === "contatos" && (
-            <ContactsTab contacts={contacts} companies={companies} onChanged={reloadContacts} />
-          )}
-          {activeTab === "empresas" && (
-            <CompaniesTab companies={companies} contacts={contacts} people={people} />
-          )}
-          {activeTab === "listas" && (
-            <ListsTab lists={lists} contacts={contacts} onChanged={reloadLists} />
-          )}
-          {activeTab === "progresso" && <ProgressTab contacts={contacts} people={people} />}
-          {activeTab === "configuracoes" && <SettingsTab />}
-        </>
-      )}
-    </div>
-  );
+  switch (tab) {
+    case "campanhas":
+      return (
+        <CampaignsTab
+          campaigns={campaigns}
+          stats={campaignStats}
+          rdEmails={rdEmails}
+          lists={lists}
+          contacts={contacts}
+          onChanged={reloadCampaigns}
+        />
+      );
+    case "contatos":
+      return <ContactsTab contacts={contacts} companies={companies} onChanged={reloadContacts} />;
+    case "empresas":
+      return <CompaniesTab companies={companies} contacts={contacts} people={people} />;
+    case "listas":
+      return <ListsTab lists={lists} contacts={contacts} campaigns={campaigns} onChanged={reloadLists} />;
+    case "progresso":
+      return <ProgressTab contacts={contacts} people={people} />;
+    case "configuracoes":
+      return <SettingsTab />;
+  }
 }

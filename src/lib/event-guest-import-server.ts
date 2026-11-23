@@ -17,7 +17,7 @@ export async function fetchGuestCandidates(source: GuestImportSource, authUserId
   const db = getAdminClient();
   const { data: employees, error } = await db.from("hr_employees")
     .select("id, user_id, full_name, email, department")
-    .eq("is_active", true).order("full_name");
+    .eq("is_active", true).eq("is_automation", false).order("full_name");
   if (error) throw new Error("Não foi possível carregar os colaboradores do escritório.");
   const userIds = (employees ?? []).flatMap(row => row.user_id ? [row.user_id as string] : []);
   const avatars = new Map<string, string | null>();

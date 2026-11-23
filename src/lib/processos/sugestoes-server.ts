@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { AcordoSugerido } from "./acordos-leitura";
+import { criarAcordo, registrarDescumprimentoLido, registrarPagamentoLido } from "./acordos-server";
 import { COLUNAS_SUGESTAO, carregarAutos, descartarSeConcluido, paraSugestao } from "./autos-server";
 import type { AutosDoProcesso, PessoaSugerida, Sugestao, ValorDeCampo } from "./autos-types";
 import { ProcessosError } from "./errors";
@@ -12,9 +14,9 @@ import { aplicarNaParte, entradaDaPessoa } from "./sugestoes";
 import { campoPorChave, textoDoValor } from "./campos";
 import type { OrigemAlteracao, ProcessoDetalhe } from "./types";
 
-/** No histórico: "ia" para o que veio dos autos; "datajud" ou "cnj" para a capa das fontes oficiais. */
+/** No histórico: "ia" para o que veio dos autos; "datajud", "jusbr" ou "cnj" para a capa das fontes oficiais. */
 function origemDaSugestao(sugestao: Sugestao): OrigemAlteracao {
-  return sugestao.fonte === "datajud" || sugestao.fonte === "cnj" ? sugestao.fonte : "ia";
+  return sugestao.fonte === "datajud" || sugestao.fonte === "cnj" || sugestao.fonte === "jusbr" ? sugestao.fonte : "ia";
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,6 +47,15 @@ async function gravar(sugestao: Sugestao & { processoId: string }, editado: { va
     const proposto = sugestao.valor as ItemSugerido;
     const dados = editado.valor && typeof editado.valor === "object" && !Array.isArray(editado.valor) ? (editado.valor as Record<string, unknown>) : proposto.dados;
     await incluirItem(processoId, proposto.item, dados, ator, { documentoId: sugestao.documentoId, pagina: sugestao.pagina });
+    return { processo: await detalharProcesso(processoId), gravado: dados };
+  }
+  if (sugestao.tipo === "acordo") {
+    const proposto = sugestao.valor as AcordoSugerido;
+    const dados = editado.valor && typeof editado.valor === "object" && !Array.isArray(editado.valor) ? (editado.valor as Record<string, unknown>) : proposto.dados;
+    const dosAutos = { documentoId: sugestao.documentoId, pagina: sugestao.pagina };
+    if (proposto.item === "acordo") await criarAcordo(processoId, dados, ator, dosAutos);
+    else if (proposto.item === "pagamento") await registrarPagamentoLido(processoId, dados, ator, dosAutos);
+    else await registrarDescumprimentoLido(processoId, dados, ator);
     return { processo: await detalharProcesso(processoId), gravado: dados };
   }
   const atual = await detalharProcesso(processoId);

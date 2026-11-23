@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link2, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { fetchActiveUsers, type User } from "@/lib/users";
+import { IconeArea, PersonPhoto, useTeam } from "./email-marketing-visuals";
 
 interface AreaManager {
   area: string;
@@ -23,6 +23,7 @@ interface AreaManager {
 }
 
 export function AreaManagersCard() {
+  const team = useTeam();
   const [loading, setLoading] = useState(true);
   const [areas, setAreas] = useState<string[]>([]);
   const [managers, setManagers] = useState<AreaManager[]>([]);
@@ -118,7 +119,7 @@ export function AreaManagersCard() {
   };
 
   return (
-    <Card className="rounded-xl">
+    <Card className="rounded-lg border-[#dce9eb] shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base">Gestores por área jurídica</CardTitle>
         <Button variant="ghost" size="icon-sm" onClick={load} disabled={loading}>
@@ -190,24 +191,34 @@ export function AreaManagersCard() {
             {Array.from(managersByArea.entries())
               .sort((a, b) => a[0].localeCompare(b[0], "pt-BR"))
               .map(([area, list]) => (
-                <div key={area} className="rounded-lg border p-2.5">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1.5">
+                <div key={area} className="flex flex-col gap-2 rounded-lg border border-[#dce9eb] p-3 sm:flex-row sm:items-center">
+                  <p className="flex w-56 shrink-0 items-center gap-2 text-sm font-medium text-[#0d2a38]">
+                    <IconeArea area={area} tamanho="sm" />
                     {area}
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {list.map((m) => (
-                      <Badge key={m.userId} variant="outline" className="gap-1 pr-1 text-xs">
-                        {m.userName ?? "usuário removido"}
-                        <button
-                          type="button"
-                          onClick={() => handleRemove(area, m.userId)}
-                          disabled={removing === `${area}::${m.userId}`}
-                          className="ml-1 rounded-full p-0.5 hover:bg-muted"
+                    {list.map((m) => {
+                      const member = team.get(m.userId);
+                      const name = m.userName ?? member?.name ?? "usuário removido";
+                      return (
+                        <span
+                          key={m.userId}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#dce9eb] bg-white py-0.5 pl-0.5 pr-1 text-xs text-[#0d2a38]"
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
+                          <PersonPhoto name={name} photo={member?.photo} size="sm" />
+                          {name}
+                          <button
+                            type="button"
+                            aria-label={`Tirar ${name} de ${area}`}
+                            onClick={() => handleRemove(area, m.userId)}
+                            disabled={removing === `${area}::${m.userId}`}
+                            className="rounded-full p-1 text-muted-foreground hover:bg-[#eaf2f5] hover:text-[#0d2a38]"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               ))}

@@ -1,4 +1,5 @@
-import { chaveNome, ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, referenciaDaPublicacao, type EtiquetaAgendamento } from "./agendamento";
+import { chaveNome, ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, referenciaDaPublicacao, revisorFicaNaTarefa, type EtiquetaAgendamento } from "./agendamento";
+import { ehPastaDeAtendimento, type TipoPastaInformada } from "./triagem";
 import type { DataDoFluxo } from "./types";
 
 /**
@@ -37,6 +38,11 @@ export interface TarefaDoLancamento {
   data_limite: string | null;
   responsavel: string;
   revisor: string | null;
+  /**
+   * O revisor fica na própria tarefa, junto com o responsável (`revisorFicaNaTarefa`: Sessão de Julgamento e
+   * audiências do Trabalhista). O robô junta os dois na tarefa lançada.
+   */
+  revisor_na_tarefa: boolean;
   observacao: string;
   /** Resposta da JUSTIFICATIVA NF (questionário que o VIOS pede depois de lançar a CIÊNCIA NF). */
   justificativa: string | null;
@@ -61,6 +67,20 @@ export interface LancamentoFila {
    * Intimações do VIOS até as 17h do dia dela e ele tiver de agendar direto na pasta (vai na descrição da tarefa).
    */
   texto_publicacao: string | null;
+  /**
+   * Agendar direto na pasta, sem procurar a intimação: a publicação colada à mão não está em Intimações do VIOS. O robô
+   * cria as tarefas no processo (CI da pasta), com o texto da publicação na descrição, e faz o resto como no lançamento
+   * (fluxo, responsáveis, Ciência repetida e a JUSTIFICATIVA NF). É o mesmo caminho do plano B das 17h.
+   */
+  agendar_na_pasta?: boolean;
+  /** A publicação foi colada à mão: o robô avisa isso (e não "não chegou ao VIOS até as 17h", do plano B). */
+  publicacao_colada?: boolean;
+  /**
+   * A pasta é de atendimento (ou nenhuma base a conhece), informada pela CI na Triagem Manual (18/11/2026): vai direto
+   * nela, que a intimação do VIOS não se liga a atendimento. O robô abre a tela de atendimento pela CI (e a de processo,
+   * se a de atendimento não abrir) e avisa o motivo.
+   */
+  pasta_informada?: { tipo: TipoPastaInformada };
   tarefas: TarefaDoLancamento[];
 }
 
@@ -74,7 +94,7 @@ export interface LinhaFilaSama {
   passo_texto: string;
   data: string;
   pasta: string;
-  pasta_tipo: "Processo";
+  pasta_tipo: "Processo" | "Atendimento";
   ci_pasta: string | null;
   responsavel: string;
   revisor: string | null;
@@ -89,6 +109,8 @@ export interface PublicacaoParaFila {
   djen_id_comunicacao: number | null;
   teor: string | null;
   pasta_ci: string | null;
+  /** Área da publicação: nas audiências do Trabalhista o revisor vai na tarefa (`revisor_na_tarefa`). */
+  escritorio_responsavel?: string | null;
   /** IDs de comunicação das outras publicações do mesmo grupo de duplicidade. */
   comunicacoes_equivalentes?: (number | string)[];
 }
@@ -120,17 +142,23 @@ const TIPO_NA_FILA: Record<EtiquetaAgendamento, string> = { PRAZO: "Prazo", PROV
 
 /**
  * Linhas da fila do robô para as tarefas de uma publicação, com os agendamentos de cada uma.
- * - pasta: uma linha por tarefa, com o teor da publicação na descrição.
  * - intimação: uma linha com todas as tarefas (depois de lançada, a intimação sai da lista do
  *   VIOS); a descrição leva só o cabeçalho e a observação, porque o VIOS insere o texto da intimação.
  *   Na CIÊNCIA NF a observação vai na JUSTIFICATIVA NF e a descrição fica só com o texto da
  *   intimação (modelo da Maria: CI 934338, 03/11/2026).
+ * - pasta (publicação colada à mão): a mesma linha, marcada para agendar direto na pasta. O robô põe o texto da
+ *   publicação na descrição e a observação da CIÊNCIA NF na JUSTIFICATIVA NF, como na intimação (pedido de 11/11/2026:
+ *   a linha antiga, uma por tarefa, ia sem o texto e com a justificativa na descrição).
+ * - pasta sem o CI da pasta (não acontece na vistagem: sem pasta, a publicação vai para a abertura): a linha antiga.
  */
 export function linhasParaFila(
   publicacao: PublicacaoParaFila,
   itens: AgendamentoParaFila[],
-  opcoes: { simular: boolean; modo: ModoAgendamento }
+  opcoes: { simular: boolean; modo: ModoAgendamento; tipoPasta?: TipoPastaInformada }
 ): { linha: LinhaFilaSama; agendamentos: string[] }[] {
+  // Pasta de atendimento informada na Triagem Manual: o tipo vai na linha e no lançamento (sempre direto na pasta).
+  const atendimento = ehPastaDeAtendimento(opcoes.tipoPasta) && Boolean(publicacao.pasta_ci);
+  const modo: ModoAgendamento = atendimento ? "pasta" : opcoes.modo;
   const referencia = {
     dataPublicacao: publicacao.data_publicacao,
     tribunal: publicacao.tribunal,
@@ -146,14 +174,14 @@ export function linhasParaFila(
     passo_texto: observacao,
     data: paraDataVios(item.data),
     pasta: publicacao.numero_processo as string,
-    pasta_tipo: "Processo",
+    pasta_tipo: atendimento ? "Atendimento" : "Processo",
     ci_pasta: publicacao.pasta_ci,
     responsavel: item.responsavel,
     revisor: item.revisor,
     simular: opcoes.simular,
   });
 
-  if (opcoes.modo === "pasta") {
+  if (modo === "pasta" && !publicacao.pasta_ci) {
     // A fila da pasta não tem coluna de hora: o horário do Compromisso vai na descrição.
     return itens.map((item) => ({
       linha: base(
@@ -187,6 +215,9 @@ export function linhasParaFila(
           comunicacoes_equivalentes: [...new Set((publicacao.comunicacoes_equivalentes ?? []).map(String))].filter((id) => id && id !== comunicacao),
           data_publicacao: publicacao.data_publicacao ? paraDataVios(publicacao.data_publicacao) : null,
           texto_publicacao: publicacao.teor?.trim() || null,
+          ...(modo === "pasta" ? { agendar_na_pasta: true } : {}),
+          ...(opcoes.modo === "pasta" ? { publicacao_colada: true } : {}),
+          ...(atendimento && opcoes.tipoPasta ? { pasta_informada: { tipo: opcoes.tipoPasta } } : {}),
           tarefas: itens.map((item) => {
             const cienciaNf = chaveNome(item.tarefa) === "CIENCIA NF";
             return {
@@ -200,6 +231,7 @@ export function linhasParaFila(
               data_limite: item.data_limite && item.data_limite !== item.data ? paraDataVios(item.data_limite) : null,
               responsavel: item.responsavel,
               revisor: item.revisor,
+              revisor_na_tarefa: Boolean(item.revisor) && revisorFicaNaTarefa(item.tarefa, publicacao.escritorio_responsavel),
               observacao: cienciaNf ? "" : montarObservacaoVios(publicacao.data_publicacao, item.observacao),
               justificativa: cienciaNf ? item.observacao?.trim() || null : null,
               fluxo_datas: (item.fluxoDatas ?? []).map((datada) => ({
@@ -216,6 +248,16 @@ export function linhasParaFila(
   ];
 }
 
+/**
+ * Erro em que o robô pode já ter gravado no VIOS: rodar de novo sem conferir duplica a tarefa.
+ * - "ATENÇÃO…": o próprio robô avisa que falhou depois de clicar em Gravar ou de lançar.
+ * - "Execução interrompida…": a fila do SAMA desiste do caso parado em "processando" (o robô reiniciou no
+ *   meio); ninguém sabe até onde ele foi. Ex.: 0922156-75 em 10/11/2026, com as 3 tarefas criadas no VIOS.
+ */
+export function podeTerGravadoNoVios(erro: string | null | undefined): boolean {
+  return /^\s*(ATENÇÃO|Execução interrompida)/i.test(erro ?? "");
+}
+
 /** Tarefa como ficou no VIOS depois do lançamento: a pedida (principal) ou uma que o fluxo criou junto. */
 export interface TarefaNoVios {
   ci: string;
@@ -226,6 +268,17 @@ export interface TarefaNoVios {
   dataLimite: string | null;
   hora: string | null;
   responsaveis: string | null;
+}
+
+/**
+ * Responsável que o VIOS pôs na tarefa pedida sem ninguém (VERIFICAR RENÚNCIA da Operações Legais, pedido de
+ * 18/11/2026), lido da tarefa principal que o robô devolveu: a Orquestra grava para mostrar para quem foi agendada.
+ * Null quando foi pedida para alguém ou quando o robô não devolveu quem ficou.
+ */
+export function responsavelQueOViosPos(pedido: string | null | undefined, tarefas: TarefaNoVios[] | null | undefined): string | null {
+  if (String(pedido ?? "").trim()) return null;
+  const principal = (tarefas ?? []).find((tarefa) => tarefa.principal);
+  return principal?.responsaveis?.trim() || null;
 }
 
 /** DD/MM/AAAA → AAAA-MM-DD; outro formato → null. */

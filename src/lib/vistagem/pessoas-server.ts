@@ -41,6 +41,44 @@ function porNome<T extends { is_active: boolean | null }>(linhas: T[], nome: (li
   return mapa;
 }
 
+type BaseDasPessoas = {
+  rh: { data: unknown[] | null };
+  usuarios: { data: unknown[] | null };
+  organograma: { data: unknown[] | null };
+};
+
+/**
+ * RH, usuários e organograma lidos de uma vez e guardados nesta instância por 5 min: abrir cada publicação no
+ * jurídico (e cada carga da Conferência e do Check) lia as três tabelas de novo (~7 ms de CPU por consulta na Vercel).
+ * Foto e área nova aparecem em até 5 min.
+ */
+const BASE_MS = 5 * 60 * 1000;
+let baseGuardada: { em: number; promessa: Promise<BaseDasPessoas> } | null = null;
+
+function carregarBaseDasPessoas(): Promise<BaseDasPessoas> {
+  if (baseGuardada && Date.now() - baseGuardada.em < BASE_MS) return baseGuardada.promessa;
+  const db = admin();
+  const promessa = Promise.all([
+    db.from("hr_employees").select("id, full_name, department, user_id, is_active").limit(5000),
+    db
+      .from("users")
+      .select("id, name, department, avatar_url, photo_onedrive_url, ferias_access_mode, ferias_area_scope, is_active")
+      .limit(5000),
+    db.from("org_chart_members").select("employee_id, photo_url, placement, team_key").not("employee_id", "is", null).limit(5000),
+  ]).then(([rh, usuarios, organograma]) => {
+    if (rh.error) throw new Error(rh.error.message);
+    if (usuarios.error) throw new Error(usuarios.error.message);
+    if (organograma.error) throw new Error(organograma.error.message);
+    return { rh, usuarios, organograma };
+  });
+  // Falhou: a próxima chamada lê de novo (quem chama mostra as iniciais nesta).
+  promessa.catch(() => {
+    if (baseGuardada?.promessa === promessa) baseGuardada = null;
+  });
+  baseGuardada = { em: Date.now(), promessa };
+  return promessa;
+}
+
 /**
  * Foto e área das pessoas citadas na vistagem (usuários do VIOS e advogado da pasta), pelo nome que vem do VIOS.
  * O nome bate com o do RH: a foto é a do usuário ou, sem ela, a do organograma; a área é o departamento no RH
@@ -51,18 +89,7 @@ export async function pessoasPorNome(nomes: (string | null | undefined)[]): Prom
   const procurados = new Set(nomes.map(chaveNome).filter(Boolean));
   const resultado: PessoasPorNome = { fotos: {}, areas: {}, rotulos: {} };
   if (!procurados.size) return resultado;
-  const db = admin();
-  const [rh, usuarios, organograma] = await Promise.all([
-    db.from("hr_employees").select("id, full_name, department, user_id, is_active").limit(5000),
-    db
-      .from("users")
-      .select("id, name, department, avatar_url, photo_onedrive_url, ferias_access_mode, ferias_area_scope, is_active")
-      .limit(5000),
-    db.from("org_chart_members").select("employee_id, photo_url, placement, team_key").not("employee_id", "is", null).limit(5000),
-  ]);
-  if (rh.error) throw new Error(rh.error.message);
-  if (usuarios.error) throw new Error(usuarios.error.message);
-  if (organograma.error) throw new Error(organograma.error.message);
+  const { rh, usuarios, organograma } = await carregarBaseDasPessoas();
 
   const todosUsuarios = (usuarios.data ?? []) as Usuario[];
   const usuarioPorId = new Map(todosUsuarios.map((usuario) => [usuario.id, usuario]));

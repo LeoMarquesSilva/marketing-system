@@ -46,10 +46,14 @@ describe("resolvePostLoginPathFromProfile", () => {
     ).toBe("/alterar-senha");
   });
 
-  it("sem next, gestor/admin cai no dashboard — por isso o next precisa sobreviver", () => {
-    expect(resolvePostLoginPathFromProfile({ role: "designer", department: "Operações Legais" })).toBe(
-      "/"
-    );
+  it("sem next, todo mundo cai na tela inicial — por isso o next precisa sobreviver", () => {
     expect(resolvePostLoginPathFromProfile({ role: "admin", department: "Comercial" })).toBe("/");
+    expect(resolvePostLoginPathFromProfile({ role: "designer", department: "Operações Legais" })).toBe("/");
+    expect(resolvePostLoginPathFromProfile({ role: null, department: "Cível", permissions: ["/conteudo/roteiros"] })).toBe("/");
+    expect(resolvePostLoginPathFromProfile({ role: null, department: "Trabalhista", permissions: null })).toBe("/");
+  });
+
+  it("consultor liberado só no PE27 entra direto no módulo", () => {
+    expect(resolvePostLoginPathFromProfile({ role: null, permissions: ["/pe27"] })).toBe("/pe27");
   });
 });

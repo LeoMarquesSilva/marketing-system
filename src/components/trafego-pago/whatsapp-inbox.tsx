@@ -21,6 +21,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { LeadList } from "@/components/trafego-pago/lead-list";
 import { ConversationHeader } from "@/components/trafego-pago/conversation-header";
 import { LeadForwardDialog } from "@/components/trafego-pago/lead-forward-dialog";
+import { LeadForwardEvents } from "@/components/trafego-pago/lead-forward-events";
+import { DeleteMessageDialog } from "@/components/trafego-pago/delete-message-dialog";
 import { MessageBubble } from "@/components/trafego-pago/message-bubble";
 import { ChatInput } from "@/components/trafego-pago/chat-input";
 import { LeadDetailsContent, LeadDetailsPanel } from "@/components/trafego-pago/lead-details-panel";
@@ -41,10 +43,12 @@ import type {
 } from "@/components/trafego-pago/whatsapp-crm-types";
 import { leadDisplayName, sameMessageDay } from "@/components/trafego-pago/whatsapp-crm-utils";
 import { participantLabel, startsParticipantRun } from "@/components/trafego-pago/whatsapp-participant";
+import type { LeadForwardRecord } from "@/lib/whatsapp-lead-forward-format";
 import {
   STALE_CONVERSATION_DAYS,
   buildInboxView,
   formatDaySeparator,
+  forwardsByMessageIndex,
   friendlyError,
   isStaleOpenConversation,
   lastMessageIsOurs,
@@ -197,6 +201,8 @@ export function WhatsappInbox() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  /** Encaminhamentos do lead aberto, para a linha do tempo. */
+  const [forwards, setForwards] = useState<LeadForwardRecord[]>([]);
   const [configured, setConfigured] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -207,6 +213,7 @@ export function WhatsappInbox() {
   const [savingTags, setSavingTags] = useState(false);
   const [draftMessage, setDraftMessage] = useState("");
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Message | null>(null);
   const presenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPreviewRef = useRef<string>("");
   const [sending, setSending] = useState(false);
@@ -218,6 +225,8 @@ export function WhatsappInbox() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
+  /** Pessoa já escolhida no Encaminhar quando a IA sugere o encaminhamento. */
+  const [forwardPreset, setForwardPreset] = useState<string | null>(null);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [staleDialogOpen, setStaleDialogOpen] = useState(false);
   const [resolvingStale, setResolvingStale] = useState(false);
@@ -344,6 +353,7 @@ export function WhatsappInbox() {
       if (!res.ok) throw new Error(json.error ?? "Não foi possível carregar as mensagens.");
       if (shouldRefreshAvatar) avatarRefreshRef.current.add(conversationId);
       setMessages(json.messages ?? []);
+      setForwards((json.forwards as LeadForwardRecord[] | undefined) ?? []);
       if (json.conversation) {
         lastPreviewRef.current =
           (json.conversation as Conversation).last_message_preview ?? "";
@@ -508,6 +518,16 @@ export function WhatsappInbox() {
     (message: Message, emoji: string) => void sendReaction(message, emoji),
     [sendReaction]
   );
+
+  const handleDeleteRequest = useCallback((message: Message) => setDeleteTarget(message), []);
+
+  const handleDeleted = useCallback((message: Message, patch: Partial<Conversation>) => {
+    const conversationId = selectedIdRef.current;
+    setMessages((prev) => mergeMessages(prev, message));
+    setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, ...patch } : c)));
+    setReplyTo((current) => (current?.waMessageId === message.wa_message_id ? null : current));
+    setDeleteTarget(null);
+  }, []);
 
   const handleTranscript = useCallback((messageId: string, text: string) => {
     setMessages((prev) =>
@@ -687,6 +707,7 @@ export function WhatsappInbox() {
   }, [user, loadConversations]);
 
   useEffect(() => {
+    setForwards([]);
     if (selectedId) loadMessages(selectedId);
     else setMessages([]);
     setDraftMessage("");
@@ -752,6 +773,13 @@ export function WhatsappInbox() {
   }, [frameEl, health, error]);
 
   const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
+  const forwardsAt = useMemo(() => forwardsByMessageIndex(messages, forwards), [messages, forwards]);
+  const renderForwards = (index: number) => {
+    const list = forwardsAt.get(index);
+    return list ? (
+      <LeadForwardEvents forwards={list} conversations={conversations} onOpenConversation={setSelectedId} />
+    ) : null;
+  };
   const view = useMemo(
     () =>
       buildInboxView(conversations, {
@@ -932,7 +960,10 @@ export function WhatsappInbox() {
                 onResolve={resolveSelected}
                 onReopen={reopenSelected}
                 onOpenDetails={() => setDetailsOpen(true)}
-                onForward={() => setForwardOpen(true)}
+                onForward={() => {
+                  setForwardPreset(null);
+                  setForwardOpen(true);
+                }}
               />
 
               <div
@@ -952,6 +983,7 @@ export function WhatsappInbox() {
                   </div>
                 ) : (
                   <AnimatePresence initial={false}>
+                    {renderForwards(-1)}
                     {messages.map((message, index) => (
                       <div key={message.id} className="space-y-4">
                         {!sameMessageDay(messages[index - 1], message) && (
@@ -968,8 +1000,10 @@ export function WhatsappInbox() {
                           reaction={messageReactions[message.id]}
                           onReply={handleReply}
                           onReaction={handleReaction}
+                          onDelete={handleDeleteRequest}
                           onTranscript={handleTranscript}
                         />
+                        {renderForwards(index)}
                       </div>
                     ))}
                   </AnimatePresence>
@@ -989,6 +1023,10 @@ export function WhatsappInbox() {
                 onDraftChange={setDraftMessage}
                 onSubmit={() => void sendMessage()}
                 onCancelReply={() => setReplyTo(null)}
+                onForwardLead={(userId) => {
+                  setForwardPreset(userId);
+                  setForwardOpen(true);
+                }}
                 onSent={(message) => {
                   setReplyTo(null);
                   setMessages((prev) => mergeMessages(prev, message));
@@ -1051,8 +1089,21 @@ export function WhatsappInbox() {
           conversation={selected}
           open={forwardOpen}
           onOpenChange={setForwardOpen}
+          presetRecipientUserId={forwardPreset}
+          onForwarded={() => {
+            void loadMessages(selected.id, true);
+            // A conversa de quem recebeu ganha nome e responsável alguns segundos depois.
+            window.setTimeout(() => void loadConversations(true), 15_000);
+          }}
         />
       )}
+
+      <DeleteMessageDialog
+        message={deleteTarget}
+        leadName={selected ? leadDisplayName(selected) : "contato"}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={handleDeleted}
+      />
 
       <Dialog open={detailsOpen && Boolean(selected)} onOpenChange={setDetailsOpen}>
         <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-md">

@@ -10,6 +10,9 @@ import {
   canAccessGustavoContent,
   isGustavoContentPath,
 } from "@/lib/gustavo-content/access";
+import { CONTENT_CHOICES_PATH, canSeeContentChoices } from "@/lib/content-escolhas";
+import { CONTENT_SETTINGS_PATH } from "@/lib/content-generator/settings";
+import { isContentManager } from "@/lib/content-areas";
 
 export interface AccessSection {
   key: string; // rota base
@@ -21,9 +24,23 @@ export interface AccessSection {
   alwaysAllowed?: boolean;
 }
 
+/** Tela inicial de todo usuário logado (dados da pessoa, pendências, atalhos e equipe). */
+export const HOME_PATH = "/";
+/** Dashboard do Planner de marketing: até 10/11/2026 era a rota "/". */
+export const MARKETING_DASHBOARD_PATH = "/painel-marketing";
+/** Chave antiga do dashboard, ainda gravada em `users.permissions` de quem não foi salvo de novo. */
+const LEGACY_DASHBOARD_KEY = "/";
+
+/** Troca a chave antiga do dashboard ("/") pela rota nova, sem duplicar. */
+function withCurrentKeys(keys: string[]): string[] {
+  if (!keys.includes(LEGACY_DASHBOARD_KEY)) return keys;
+  const mapped = keys.map((key) => (key === LEGACY_DASHBOARD_KEY ? MARKETING_DASHBOARD_PATH : key));
+  return [...new Set(mapped)];
+}
+
 /** Seções do sistema (chave = rota base usada no menu e nas rotas). */
 export const ACCESS_SECTIONS: AccessSection[] = [
-  { key: "/", label: "Dashboard" },
+  { key: MARKETING_DASHBOARD_PATH, label: "Dashboard de marketing" },
   { key: "/planner", label: "Planner (quadro)" },
   { key: "/solicitacoes", label: "Planner (solicitações)" },
   { key: "/conteudo/roteiros", label: "Gerador de conteúdo (posts)" },
@@ -39,8 +56,10 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/vios-tarefas", label: "Planner (tarefas do VIOS)" },
   { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
   { key: "/operacoes-legais/vistagem", label: "Vistagem de Publicações BP", manualOnly: true },
+  { key: "/operacoes-legais/processos", label: "Processos e Pessoas (cadastro, autos, Rec. Crédito)", manualOnly: true },
+  { key: "/operacoes-legais/pauta", label: "Pauta de Audiências (distribuição, troca de titular e backup)", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
-  { key: "/facilities", label: "Fornecedores e contratos (Facilities)", manualOnly: true },
+  { key: "/facilities", label: "Gestão de Fornecedores e Prestadores de Serviços (Facilities)", manualOnly: true },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
   { key: "/email-marketing", label: "E-mail marketing" },
   { key: "/certificados", label: "Certificados" },
@@ -50,9 +69,12 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de projetos" },
   { key: "/icp", label: "ICP (cliente ideal)", manualOnly: true },
-  { key: "/rh", label: "RH (férias, dados cadastrais, organograma e boas práticas)", manualOnly: true },
+  { key: "/rh", label: "RH (férias, dados cadastrais, organograma, boas práticas e gestão de PDI)", manualOnly: true },
   { key: "/pe27", label: "PE27 · Planejamento 2027 (só leitura)", manualOnly: true },
   { key: "/pe27/editar", label: "PE27 · editar decisões, alavancas e metas", manualOnly: true },
+  { key: "/documentario", label: "Minidocumentário 10 anos (ver e aprovar)", manualOnly: true },
+  { key: "/documentario/editar", label: "Minidocumentário 10 anos · editar, gravar e subir acervo", manualOnly: true },
+  { key: "/documentario/acervo/enviar", label: "Minidocumentário 10 anos · só subir e catalogar fotos do acervo (junto com “ver e aprovar”)", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
@@ -64,12 +86,23 @@ export const MEUS_CLIENTES_KEY = "/meus-clientes";
 export const CAFE_CULTURA_KEY = "/cafe-cultura";
 export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
 export const VISTAGEM_KEY = "/operacoes-legais/vistagem";
+export const PROCESSOS_KEY = "/operacoes-legais/processos";
+/** Cadastro de pessoas: parte do módulo de Processos (mesma liberação). */
+export const PESSOAS_PATH = "/operacoes-legais/pessoas";
+/** Pauta de Audiências: advogados, coordenação e controladoria (liberação própria, fora do "só admin" de Operações Legais). */
+export const PAUTA_KEY = "/operacoes-legais/pauta";
 export const TEAM_SURVEYS_KEY = "/operacoes-legais/pesquisas";
 export const ICP_KEY = "/icp";
 export const FACILITIES_KEY = "/facilities";
 export const PE27_KEY = "/pe27";
 /** Chave de permissão (não é rota): edição no PE27 para quem não é admin. */
 export const PE27_EDIT_KEY = "/pe27/editar";
+/** Minidocumentário dos 10 anos: contém tópicos biográficos dos sócios. */
+export const DOCUMENTARIO_KEY = "/documentario";
+/** Chave de permissão (não é rota): editar, conduzir a gravação e subir acervo. */
+export const DOCUMENTARIO_EDIT_KEY = "/documentario/editar";
+/** Chave de permissão (não é rota): só subir e catalogar o acervo, junto com a de ver. */
+export const DOCUMENTARIO_ACERVO_KEY = "/documentario/acervo/enviar";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -82,6 +115,17 @@ export const ACCESS_PRESETS: Record<string, string[]> = {
   "Marketing completo": [...NON_ADMIN_KEYS],
   Administrador: [...ALL_KEYS],
 };
+
+/**
+ * Trava de teste do PDI (Meu PDI, página do plano, gestão e API): com true, só admin
+ * abre. Ligada em 16/11/2026 a pedido do usuário enquanto o módulo está em teste;
+ * para liberar, trocar para false ("/pdi" volta a ser de todos e "/rh/pdi" do RH).
+ */
+export const PDI_ADMIN_ONLY = true;
+
+export function isPdiPath(pathname: string): boolean {
+  return pathname === "/pdi" || pathname.startsWith("/pdi/") || pathname === "/rh/pdi" || pathname.startsWith("/rh/pdi/");
+}
 
 /** Rotas sempre acessíveis para qualquer usuário autenticado. */
 export const ALWAYS_ALLOWED_PATHS = [
@@ -96,18 +140,24 @@ export const ALWAYS_ALLOWED_PATHS = [
   MEUS_CLIENTES_KEY,
   // Peças de campanha do planner para quem vai postar (ex.: sócios).
   "/entregas",
+  // O que o Marketing concluiu para a própria pessoa (a API só devolve o que ela pediu).
+  "/minhas-entregas",
   // Atualização da própria ficha cadastral (Pessoas e Cultura).
   "/minha-ficha",
   // Links de boas-vindas da própria área (Pessoas e Cultura).
   "/meus-links",
   // Votação do BP Awards (o comitê fica em /rh/bp-awards, só com RH).
   "/bp-awards",
+  // PDI: o próprio plano e o da equipe que a pessoa lidera (o servidor confere; a gestão fica em /rh/pdi).
+  ...(PDI_ADMIN_ONLY ? [] : ["/pdi"]),
   // Resposta às pesquisas com a equipe (o servidor confere se a pessoa está no público).
   "/pesquisa",
   // Confirmação de presença na festa de 10 anos (o servidor confere se a pessoa é da equipe).
   "/festa-10-anos",
   // Envio dos convites da festa aos clientes: cada remetente vê só os seus (o servidor confere).
   "/convites-festa",
+  // Votação das degustações de drinks no celular (quem foi ao bar vota; a lista fica na degustação).
+  "/degustacao",
 ];
 
 /**
@@ -258,8 +308,65 @@ export function isPe27OnlyProfile(profile: AccessProfile | null | undefined): bo
   return permissions.length > 0 && permissions.every((key) => key === PE27_KEY || key === PE27_EDIT_KEY);
 }
 
-/** Fora do módulo, o perfil só-PE27 abre apenas a troca de senha. */
-const PE27_ONLY_EXTRA_PATHS = ["/alterar-senha"];
+/**
+ * Minidocumentário dos 10 anos: admin ou liberação manual em Usuários (nunca pelo
+ * modo legado). `/documentario` vê e registra as próprias decisões (sócios);
+ * `/documentario/editar` também edita, conduz a gravação e sobe o acervo.
+ */
+export function hasDocumentarioAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.some((key) => key === DOCUMENTARIO_KEY || key === DOCUMENTARIO_EDIT_KEY));
+}
+
+export function canEditDocumentario(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(DOCUMENTARIO_EDIT_KEY));
+}
+
+/**
+ * Subir, catalogar e excluir arquivos do acervo: quem edita o projeto, ou quem vê
+ * o documentário e tem a chave só do acervo (não mexe no documento, nas gravações
+ * nem nas decisões dos sócios).
+ */
+export function canUploadDocumentarioAcervo(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (canEditDocumentario(profile)) return true;
+  return hasDocumentarioAccess(profile) && Boolean(profile.permissions?.includes(DOCUMENTARIO_ACERVO_KEY));
+}
+
+export function isDocumentarioPath(pathname: string): boolean {
+  return pathname === DOCUMENTARIO_KEY || pathname.startsWith(`${DOCUMENTARIO_KEY}/`);
+}
+
+/**
+ * Fora do módulo, o perfil só-PE27 abre apenas a troca de senha e a confirmação da festa
+ * de 10 anos (os consultores foram convidados e confirmam pela mesma página da equipe).
+ */
+const PE27_ONLY_EXTRA_PATHS = ["/alterar-senha", "/festa-10-anos"];
+
+/** Processos e Pessoas (substituto do VIOS): admin ou liberação manual em Usuários. */
+export function hasProcessosAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(PROCESSOS_KEY));
+}
+
+export function isProcessosPath(pathname: string): boolean {
+  return [PROCESSOS_KEY, PESSOAS_PATH].some((base) => pathname === base || pathname.startsWith(`${base}/`));
+}
+
+/** Pauta de Audiências: admin ou liberação manual em Usuários. */
+export function hasPautaAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(PAUTA_KEY));
+}
+
+export function isPautaPath(pathname: string): boolean {
+  return pathname === PAUTA_KEY || pathname.startsWith(`${PAUTA_KEY}/`);
+}
 
 /** Painel de Vistagem e agendamento: admin ou liberação manual em Usuários. */
 export function hasVistagemAccess(profile: AccessProfile | null | undefined): boolean {
@@ -315,7 +422,7 @@ export function hasIcpAccess(profile: AccessProfile | null | undefined): boolean
 }
 
 /**
- * Fornecedores e contratos (valores, contratos e dados de pagamento): admin ou
+ * Facilities: fornecedores, contratos e manutenção (valores, contratos e dados de pagamento): admin ou
  * liberação manual em Usuários. Sem `/facilities` marcado, só admin vê.
  */
 export function hasFacilitiesAccess(profile: AccessProfile | null | undefined): boolean {
@@ -339,9 +446,9 @@ export function isManualOnlyKey(key: string): boolean {
  */
 export function normalizePermissionsInput(raw: unknown): string[] | null {
   if (!Array.isArray(raw)) return null;
-  const keys = raw
-    .filter((k): k is string => typeof k === "string")
-    .filter((k) => VALID_PERMISSION_KEYS.has(k));
+  const keys = withCurrentKeys(raw.filter((k): k is string => typeof k === "string")).filter((k) =>
+    VALID_PERMISSION_KEYS.has(k)
+  );
   // Mantém ordem do catálogo para UI estável.
   const ordered = ALL_KEYS.filter((k) => keys.includes(k));
   return ordered.length > 0 ? ordered : null;
@@ -358,7 +465,7 @@ export function resolveAllowedSections(
   // Admin nunca é limitado pelo catálogo (acesso total, inclusive rotas futuras).
   if (isAdminRole(profile)) return null;
   if (profile.permissions && profile.permissions.length > 0) {
-    return profile.permissions;
+    return withCurrentKeys(profile.permissions);
   }
   return null;
 }
@@ -372,6 +479,10 @@ export function canAccessPath(
     return isPe27Path(pathname) || PE27_ONLY_EXTRA_PATHS.includes(pathname);
   }
 
+  if (pathname === HOME_PATH) return canSeeHome(profile);
+
+  if (PDI_ADMIN_ONLY && isPdiPath(pathname)) return isAdminRole(profile);
+
   if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return true;
   }
@@ -384,8 +495,30 @@ export function canAccessPath(
     return hasTeamSurveysAccess(profile);
   }
 
+  if (isProcessosPath(pathname)) {
+    return hasProcessosAccess(profile);
+  }
+
+  if (isPautaPath(pathname)) {
+    return hasPautaAccess(profile);
+  }
+
   if (isPe27Path(pathname)) {
     return hasPe27Access(profile);
+  }
+
+  if (isDocumentarioPath(pathname)) {
+    return hasDocumentarioAccess(profile);
+  }
+
+  // Escolhas da equipe: mesma regra do menu (Marketing, admin e líderes); a API recorta por área.
+  if (pathname === CONTENT_CHOICES_PATH) {
+    return canSeeContentChoices(profile);
+  }
+
+  // Configurações do Gerador de conteúdo: equipe de Marketing (admin, designer e área Marketing).
+  if (pathname === CONTENT_SETTINGS_PATH) {
+    return isContentManager(profile);
   }
 
   const isOperacoesLegaisRoute =
@@ -446,21 +579,38 @@ export function canAccessPath(
     return true;
   }
 
-  const match = (key: string) =>
-    key === "/" ? pathname === "/" : pathname === key || pathname.startsWith(key + "/");
-  return allowed.some(match);
+  return allowed.some((key) => pathname === key || pathname.startsWith(key + "/"));
 }
 
-/** Primeira rota permitida (para redirecionar). */
+/**
+ * Trava de lançamento da tela inicial ("/"): com true, só admin enxerga. Ficou
+ * ligada de 10 a 11/11/2026; desde então a tela é de todos (decisão do usuário).
+ */
+export const HOME_ADMIN_ONLY = false;
+
+/** Quem abre a tela inicial. O perfil liberado só para o PE27 nunca abre. */
+export function canSeeHome(profile: AccessProfile | null | undefined): boolean {
+  if (!profile || isPe27OnlyProfile(profile)) return false;
+  return HOME_ADMIN_ONLY ? isAdminRole(profile) : true;
+}
+
+/**
+ * Para onde a pessoa vai ao entrar (e quando tenta abrir o que não pode): a
+ * tela inicial, para quem a enxerga; os demais seguem entrando pela primeira
+ * seção liberada, como antes dela existir.
+ */
 export function firstAllowedPath(profile: AccessProfile | null | undefined): string {
+  if (isPe27OnlyProfile(profile)) return PE27_KEY;
+  if (canSeeHome(profile)) return HOME_PATH;
   const allowed = resolveAllowedSections(profile);
-  if (!allowed || allowed.length === 0) return "/";
-  // Colaborador de conteúdo cai na home de desempenho.
-  if (hasContentAccess(allowed) && !allowed.includes("/")) return CONTENT_HOME_PATH;
-  const primeiro = allowed.includes("/") ? "/" : allowed[0];
+  if (!allowed || allowed.length === 0) return MARKETING_DASHBOARD_PATH;
+  // Colaborador de conteúdo cai na tela de desempenho.
+  if (hasContentAccess(allowed) && !allowed.includes(MARKETING_DASHBOARD_PATH)) return CONTENT_HOME_PATH;
+  const primeiro = allowed.includes(MARKETING_DASHBOARD_PATH) ? MARKETING_DASHBOARD_PATH : allowed[0];
   // A chave de edição do PE27 não é uma página: entra pela Visão geral do módulo.
   if (primeiro === PE27_EDIT_KEY) return PE27_KEY;
-  // O jurídico entra direto na aba Vistagem, onde está o trabalho dele (a Visão geral fica a uma aba de distância).
+  if (primeiro === DOCUMENTARIO_EDIT_KEY || primeiro === DOCUMENTARIO_ACERVO_KEY) return DOCUMENTARIO_KEY;
+  // O jurídico entra direto na aba Vistagem, onde está o trabalho dele.
   return primeiro === VISTAGEM_KEY ? entradaDaVistagem(profile) : primeiro;
 }
 

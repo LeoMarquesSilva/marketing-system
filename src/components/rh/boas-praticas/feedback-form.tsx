@@ -1,7 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, ExternalLink, PencilLine, Plus, Search, UserRound, UsersRound, type LucideIcon } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  PencilLine,
+  Search,
+  UserRound,
+  UsersRound,
+  type LucideIcon,
+} from "lucide-react";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,9 +23,12 @@ import { businessDaysToResponse, suggestAreaFromDepartment, todayIso } from "@/l
 import {
   FEEDBACK_AREAS,
   FEEDBACK_CATEGORY_INFO,
+  LEADERS_GROUP,
   categoryInfo,
   manualHref,
+  recipientOf,
   type FeedbackInput,
+  type FeedbackRecipient,
   type FeedbackPerson,
   type GoodPracticeFeedback,
 } from "@/lib/rh/boas-praticas/types";
@@ -320,73 +333,40 @@ function PersonPicker({
 
 /* ------------------------------------------- áreas e categorias */
 
-function CustomOption({
-  value,
-  known,
-  label,
-  placeholder,
-  onChange,
-}: {
-  value: string;
-  known: readonly string[];
-  label: string;
-  placeholder: string;
-  onChange: (value: string) => void;
-}) {
-  const isCustom = !!value && !known.includes(value);
-  const [editing, setEditing] = useState(isCustom);
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          setEditing(true);
-          onChange("");
-        }}
-        className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-dashed border-[#3e84a8]/35 px-3 text-xs font-medium text-[#285f7a] transition-colors hover:bg-[#eef6f8]"
-      >
-        <Plus className="size-3.5" aria-hidden />
-        {label}
-      </button>
-    );
-  }
+/** Só as áreas oficiais (mesma lista de Férias); área digitada não existe mais. */
+function AreaPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const legacy = value && !(FEEDBACK_AREAS as readonly string[]).includes(value) ? value : null;
   return (
-    <Input
-      autoFocus={!isCustom}
-      value={isCustom ? value : known.includes(value) ? "" : value}
-      placeholder={placeholder}
-      className="h-8 w-full text-sm sm:w-64"
-      onChange={(event) => onChange(event.target.value)}
-    />
-  );
-}
-
-function AreaPicker({ value, areas, onChange }: { value: string; areas: string[]; onChange: (value: string) => void }) {
-  return (
-    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Área">
-      {areas.map((area) => {
-        const selected = value === area;
-        return (
-          <button
-            key={area}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            onClick={() => onChange(area)}
-            className={cn(
-              "inline-flex min-h-8 items-center gap-1.5 rounded-full py-1 pl-1 pr-3 text-xs font-medium ring-1 ring-inset transition-colors duration-150",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60",
-              selected ? "bg-[#10293a] text-white ring-[#10293a]" : "bg-white text-foreground ring-[#dce9eb] hover:ring-[#3e84a8]/40"
-            )}
-          >
-            <span className={cn("grid size-6 place-items-center rounded-full", selected ? "bg-white/15 text-white" : getAreaIconStyle(area))}>
-              <AreaGlyph area={area} className="size-3.5" />
-            </span>
-            {area}
-          </button>
-        );
-      })}
-      <CustomOption value={value} known={areas} label="Outra área" placeholder="Nome da área" onChange={onChange} />
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Área">
+        {FEEDBACK_AREAS.map((area) => {
+          const selected = value === area;
+          return (
+            <button
+              key={area}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(area)}
+              className={cn(
+                "inline-flex min-h-8 items-center gap-1.5 rounded-full py-1 pl-1 pr-3 text-xs font-medium ring-1 ring-inset transition-colors duration-150",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60",
+                selected ? "bg-[#10293a] text-white ring-[#10293a]" : "bg-white text-foreground ring-[#dce9eb] hover:ring-[#3e84a8]/40"
+              )}
+            >
+              <span className={cn("grid size-6 place-items-center rounded-full", selected ? "bg-white/15 text-white" : getAreaIconStyle(area))}>
+                <AreaGlyph area={area} className="size-3.5" />
+              </span>
+              {area}
+            </button>
+          );
+        })}
+      </div>
+      {legacy && (
+        <p className="text-xs text-amber-800">
+          Este registro está na área “{legacy}”, que não está na lista oficial. Escolha uma das áreas acima para atualizar.
+        </p>
+      )}
     </div>
   );
 }
@@ -516,7 +496,6 @@ export function FeedbackForm({
 }) {
   const set = <K extends keyof FeedbackInput>(key: K, value: FeedbackInput[K]) => onChange({ ...form, [key]: value });
 
-  const areas = useMemo(() => [...new Set([...FEEDBACK_AREAS, ...items.map((entry) => entry.area)])], [items]);
   const responseDays = form.responded_on ? businessDaysToResponse(form.sent_on, form.responded_on) : null;
   const teamName = resolvedEmployeeName({ ...form, is_team: true });
 
@@ -533,30 +512,47 @@ export function FeedbackForm({
     });
   }
 
+  const recipient = recipientOf(form);
+
+  /** Trocar o tipo de destinatário: "Gestores" usa a área do grupo; voltar dele limpa a área. */
+  function chooseRecipient(next: FeedbackRecipient) {
+    const area = next === "gestores" ? LEADERS_GROUP : form.area === LEADERS_GROUP ? "" : form.area;
+    onChange({ ...form, is_team: next !== "pessoa", area });
+  }
+
   return (
     <div className="divide-y divide-[#e6eef0]">
       <FormSection icon={UsersRound} title="Quem e onde">
         <Field label="Quem recebeu" htmlFor="fb-employee">
           <div className="space-y-2">
-            <Segmented
+            <Segmented<FeedbackRecipient>
               label="Quem recebeu"
-              value={form.is_team ? "equipe" : "pessoa"}
+              value={recipient}
               options={[
                 { value: "pessoa", label: "Colaborador", icon: UserRound },
-                { value: "equipe", label: "Equipe inteira", icon: UsersRound },
+                { value: "equipe", label: "Equipe da área", icon: UsersRound },
+                { value: "gestores", label: "Gestores", icon: BriefcaseBusiness },
               ]}
-              onChange={(value) => set("is_team", value === "equipe")}
+              onChange={chooseRecipient}
             />
-            {form.is_team ? (
+            {recipient === "gestores" ? (
+              <div className="flex min-h-12 items-center gap-3 rounded-md border border-dashed border-[#dce9eb] bg-[#fafcfc] px-3 py-2 text-sm">
+                <PersonAvatar name="Gestores" isTeam />
+                <span className="text-muted-foreground">
+                  Fica como <span className="font-medium text-foreground">Equipe Gestores</span>: todos os gestores (sócios,
+                  coordenadores e gerentes) estavam no lugar. Não entra na conta de nenhuma área.
+                </span>
+              </div>
+            ) : recipient === "equipe" ? (
               <div className="flex min-h-12 items-center gap-3 rounded-md border border-dashed border-[#dce9eb] bg-[#fafcfc] px-3 py-2 text-sm">
                 <PersonAvatar name={teamName || "Equipe"} isTeam />
                 <span className="text-muted-foreground">
                   {teamName ? (
                     <>
-                      Fica como <span className="font-medium text-foreground">{teamName}</span>, pela área escolhida abaixo.
+                      Fica como <span className="font-medium text-foreground">{teamName}</span>: todas as pessoas da área estavam no lugar.
                     </>
                   ) : (
-                    "Escolha a área abaixo: o feedback fica para a equipe da área."
+                    "Escolha a área abaixo: o feedback fica para toda a equipe da área."
                   )}
                 </span>
               </div>
@@ -571,9 +567,11 @@ export function FeedbackForm({
             )}
           </div>
         </Field>
-        <Field label="Área">
-          <AreaPicker value={form.area} areas={areas} onChange={(value) => set("area", value)} />
-        </Field>
+        {recipient !== "gestores" && (
+          <Field label="Área">
+            <AreaPicker value={form.area} onChange={(value) => set("area", value)} />
+          </Field>
+        )}
         <Field label="Gestor que recebeu o feedback" htmlFor="fb-manager">
           <PersonPicker
             id="fb-manager"
@@ -603,7 +601,7 @@ export function FeedbackForm({
             onChange={(event) => set("description", event.target.value)}
           />
         </Field>
-        {photoSlot && <Field label="Fotos da ocorrência">{photoSlot}</Field>}
+        {photoSlot && <Field label="Fotos e vídeos da ocorrência">{photoSlot}</Field>}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Data da ocorrência" htmlFor="fb-occurred">
             <DatePickerField id="fb-occurred" value={form.occurred_on} onChange={(value) => set("occurred_on", value)} />

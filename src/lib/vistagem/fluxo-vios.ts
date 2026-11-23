@@ -39,6 +39,10 @@ export interface TipoNaArvore {
   responsabilidade?: ResponsabilidadeDoTipo | null;
   /** Prazo, Providência ou Compromisso pelas etiquetas do tipo (vios_tipos_tarefa); null: sem etiqueta de classe. */
   classe?: EtiquetaAgendamento | null;
+  /** Dias úteis que o Enviar e o Revisar vêm antes nesta área (`ANTECIPACAO_INSOLVENCIA`); posto por `arvoreDaArea`. */
+  antecipaEnviar?: number;
+  /** Dias úteis que o Enviar e o Revisar vêm depois no prazo curto (`PRAZO_CURTO_INSOLVENCIA`); posto por `arvoreDaArea`. */
+  adiaEnviar?: number;
 }
 
 /**
@@ -77,16 +81,70 @@ export interface FluxoDaTarefa {
   criacao: TarefaDoFluxo[];
   /** Criadas pelo VIOS quando a tarefa for concluída (responsável padrão do VIOS). */
   conclusao: { id: string; nome: string; prazo: string | null }[];
+  /**
+   * Regra da insolvência (`ANTECIPACAO_INSOLVENCIA`): o Enviar e o Revisar vêm estes dias úteis antes da conta do
+   * VIOS, e o Protocolar continua 1 dia útil antes da fatal (o robô grava no VIOS). Ausente nas outras tarefas.
+   */
+  antecipaEnviar?: number;
+  /**
+   * Prazo curto na insolvência (`PRAZO_CURTO_INSOLVENCIA`): o Enviar e o Revisar vêm estes dias úteis depois da conta
+   * do VIOS, e o Protocolar continua 1 dia útil antes da fatal (o robô grava no VIOS). Ausente nas outras tarefas.
+   */
+  adiaEnviar?: number;
 }
 
 /** Dias úteis do Enviar até o Revisar e o Protocolar, conforme o fluxo da tarefa. */
 export interface CadeiaDoPrazo {
   revisar: number | null;
   protocolar: number;
+  /** Dias úteis que o Enviar e o Revisar vieram antes da conta do VIOS (regra da insolvência); o Protocolar não muda. */
+  antecipada?: number;
+  /** Dias úteis que o Enviar e o Revisar vieram depois da conta do VIOS (prazo curto na insolvência); o Protocolar não muda. */
+  adiada?: number;
 }
 
 /** Fluxo padrão (2. REVISAR em 1 dia e 3. PROTOCOLAR em 2): Enviar D-3, Revisar D-2, Protocolar D-1. */
 export const CADEIA_PADRAO: CadeiaDoPrazo = { revisar: 1, protocolar: 2 };
+
+/**
+ * Regra da insolvência (pedido de 11/11/2026): o tipo de tarefa compartilhado com outras áreas segue no VIOS o fluxo
+ * comum (Revisar 1 dia útil e Protocolar 2 depois do Enviar: Enviar D-3, Revisar D-2, Protocolar D-1). Numa pasta de
+ * Insolvência ou Cível | Insolvência, quando o prazo do tipo no VIOS é de 10 dias ou mais E o prazo marcado na
+ * vistagem também (correção de 11/11/2026: com 5 dias, nada muda), o Enviar e o Revisar vão 2 dias úteis antes e o
+ * Protocolar e a fatal ficam: Enviar D-5, Revisar D-4, Protocolar D-1, igual às tarefas próprias da insolvência
+ * (MANIFESTAÇÃO - FLUXO D5, Protocolar 4 dias depois do Enviar), que já vêm certas do VIOS.
+ * A árvore da área marca o tipo (`antecipaEnviar`); o prazo marcado decide em `fluxoDoPrazo` (fluxo-previsto.ts).
+ */
+export const ANTECIPACAO_INSOLVENCIA = {
+  areas: ["INSOLVENCIA", "CIVEL | INSOLVENCIA"],
+  /** Prazo do tipo no VIOS (aba Prazos) a partir do qual vale. */
+  prazoMinimo: 10,
+  /** Prazo marcado na vistagem (dias do atalho ou, com a fatal no calendário, da publicação até ela) a partir do qual vale. */
+  prazoMarcadoMinimo: 10,
+  /** Dias úteis que o Enviar e o Revisar vêm antes. */
+  dias: 2,
+} as const;
+
+/**
+ * O outro lado da regra (pedido de 18/11/2026, 4008806-15, "está pulando 2 dias em prazo de 5 dias"): na Insolvência
+ * e na Cível | Insolvência, o tipo cujo fluxo no VIOS já tem o Protocolar 4 dias úteis depois do Enviar (Enviar D-5:
+ * EMBARGOS DE DECLARAÇÃO, RESPOSTA AOS EMBARGOS, AGRAVO DE INSTRUMENTO…), com prazo marcado de MENOS de 10 dias, vai
+ * como o fluxo comum: o Enviar e o Revisar 2 dias úteis depois (Enviar D-3, Revisar D-2) e o Protocolar onde estava,
+ * 1 dia útil antes da fatal (o robô grava no VIOS). Ex.: fatal 25/11 (feriado 20/11) → Enviar 19/11, Revisar 23/11,
+ * Protocolar 24/11, em vez de Enviar 17/11. A MANIFESTAÇÃO - FLUXO D5 (612) fica sempre como o VIOS cria: o jurídico a
+ * escolhe para ter o Enviar 5 dias antes. Com 10 dias ou mais, ou sem como saber o prazo marcado, nada muda.
+ */
+export const PRAZO_CURTO_INSOLVENCIA = {
+  areas: ANTECIPACAO_INSOLVENCIA.areas,
+  /** Dias úteis do Enviar ao Protocolar no fluxo do VIOS (3. PROTOCOLAR 482) que a regra corrige. */
+  protocolarDoVios: 4,
+  /** Vale com prazo marcado abaixo deste (o mesmo limite da antecipação). */
+  prazoMarcadoLimite: ANTECIPACAO_INSOLVENCIA.prazoMarcadoMinimo,
+  /** Dias úteis que o Enviar e o Revisar vêm depois. */
+  dias: 2,
+  /** Tipos que ficam como o VIOS cria em qualquer prazo (612: MANIFESTAÇÃO - FLUXO D5). */
+  tiposQueFicam: [612] as readonly number[],
+} as const;
 
 function semAcento(texto: string): string {
   return texto
@@ -118,16 +176,37 @@ const NIVEIS_DO_FLUXO = 4;
  * A árvore como vale para uma pasta: o VIOS só cria os tipos disponíveis para a área dela ("disponível para as áreas"
  * na árvore de tarefas). O RECURSO ESPECIAL tem dois INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA, o 414 e o 426; a
  * pasta Cível só recebe o 414. `tiposDaArea` são os ids da lista de tarefas da área no catálogo; sem ela, fica a árvore inteira.
+ *
+ * `area` (nome da área do catálogo): na Insolvência e na Cível | Insolvência, marca os tipos com prazo de 10 dias ou
+ * mais no VIOS para a antecipação do Enviar e do Revisar (`ANTECIPACAO_INSOLVENCIA`) e os outros, menos a MANIFESTAÇÃO -
+ * FLUXO D5, para o prazo curto (`PRAZO_CURTO_INSOLVENCIA`). `montarFluxo` confere em qual fluxo cada uma vale.
  */
-export function arvoreDaArea(arvore: Map<number, TipoNaArvore>, tiposDaArea: (string | number)[] | null): Map<number, TipoNaArvore> {
+export function arvoreDaArea(
+  arvore: Map<number, TipoNaArvore>,
+  tiposDaArea: (string | number)[] | null,
+  area: string | null = null
+): Map<number, TipoNaArvore> {
   if (!tiposDaArea?.length) return arvore;
   const naArea = new Set(tiposDaArea.map(Number));
+  const antecipa = (ANTECIPACAO_INSOLVENCIA.areas as readonly string[]).includes(semAcento(area ?? ""));
   return new Map(
     [...arvore].map(([id, tipo]) => [
       id,
-      { ...tipo, criacao: tipo.criacao.filter((filho) => naArea.has(filho)), conclusao: tipo.conclusao.filter((filho) => naArea.has(filho)) },
+      {
+        ...tipo,
+        criacao: tipo.criacao.filter((filho) => naArea.has(filho)),
+        conclusao: tipo.conclusao.filter((filho) => naArea.has(filho)),
+        ...(antecipa && prazoDoTipo(tipo) >= ANTECIPACAO_INSOLVENCIA.prazoMinimo ? { antecipaEnviar: ANTECIPACAO_INSOLVENCIA.dias } : {}),
+        ...(antecipa && !PRAZO_CURTO_INSOLVENCIA.tiposQueFicam.includes(id) ? { adiaEnviar: PRAZO_CURTO_INSOLVENCIA.dias } : {}),
+      },
     ])
   );
+}
+
+/** Dias da aba Prazos do tipo no VIOS ("12 dias" → 12); 0 sem prazo ou com prazo negativo. */
+function prazoDoTipo(tipo: TipoNaArvore): number {
+  if (tipo.regraPrazo) return tipo.regraPrazo.negativo ? 0 : tipo.regraPrazo.dias;
+  return diasDoPrazo(tipo.prazo) ?? 0;
 }
 
 /** Fluxo de um tipo de tarefa (id do VIOS); null se o VIOS não cria nada junto nem depois. */
@@ -156,7 +235,15 @@ export function montarFluxo(id: string, arvore: Map<number, TipoNaArvore>): Flux
     });
   const criacao = filhasDe(tipo, 1, new Set([Number(id)]));
   const conclusao = tipo.conclusao.map((filho) => ({ id: String(filho), nome: nomeDe(filho), prazo: arvore.get(filho)?.prazo ?? null }));
-  return criacao.length || conclusao.length ? { criacao, conclusao } : null;
+  if (!criacao.length && !conclusao.length) return null;
+  // Regra da insolvência: só no fluxo comum (Protocolar 2 dias úteis depois do Enviar). O tipo que já tem o
+  // Protocolar 4 dias depois (D-5, como os próprios da insolvência e o AGRAVO DE INSTRUMENTO) fica como o VIOS cria.
+  const doVios = cadeiaDoVios({ criacao });
+  const antecipa = tipo.antecipaEnviar && doVios?.protocolar === CADEIA_PADRAO.protocolar ? tipo.antecipaEnviar : 0;
+  // Prazo curto na insolvência: só no fluxo com o Protocolar 4 dias depois do Enviar (o prazo marcado decide em
+  // `fluxoDoPrazo`, fluxo-previsto.ts).
+  const adia = tipo.adiaEnviar && doVios?.protocolar === PRAZO_CURTO_INSOLVENCIA.protocolarDoVios ? tipo.adiaEnviar : 0;
+  return { criacao, conclusao, ...(antecipa ? { antecipaEnviar: antecipa } : {}), ...(adia ? { adiaEnviar: adia } : {}) };
 }
 
 /**
@@ -168,8 +255,8 @@ export function semPrazoProprio(fluxo: FluxoDaTarefa | null | undefined): boolea
   return fluxo.criacao.some((tarefa) => tarefa.filhas.some((filha) => filha.papel === "protocolar"));
 }
 
-/** Cadeia do Prazo pelo fluxo: null quando o VIOS não cria 3. PROTOCOLAR para a tarefa. */
-export function cadeiaDoFluxo(fluxo: FluxoDaTarefa | null | undefined): CadeiaDoPrazo | null {
+/** Cadeia como o VIOS cria, a partir do Enviar: null quando o VIOS não cria 3. PROTOCOLAR para a tarefa. */
+export function cadeiaDoVios(fluxo: Pick<FluxoDaTarefa, "criacao"> | null | undefined): CadeiaDoPrazo | null {
   const protocolar = fluxo?.criacao.find((tarefa) => tarefa.papel === "protocolar");
   if (!protocolar) return null;
   const revisar = fluxo?.criacao.find((tarefa) => tarefa.papel === "revisor");
@@ -177,4 +264,20 @@ export function cadeiaDoFluxo(fluxo: FluxoDaTarefa | null | undefined): CadeiaDo
     protocolar: diasDoPrazo(protocolar.prazo) ?? CADEIA_PADRAO.protocolar,
     revisar: revisar ? diasDoPrazo(revisar.prazo) ?? CADEIA_PADRAO.revisar : null,
   };
+}
+
+/**
+ * Cadeia do Prazo pelo fluxo, para tirar as datas da fatal (`datasDoPrazo`): null quando o VIOS não cria 3. PROTOCOLAR.
+ * Com a regra da insolvência (`antecipaEnviar`), o Enviar vem N dias úteis antes e o Protocolar fica onde estava:
+ * N dias a mais do Enviar até ele. O Revisar continua 1 dia depois do Enviar (também N dias antes). No prazo curto
+ * (`adiaEnviar`), o contrário: o Enviar vem N dias depois e fica N dias a menos até o Protocolar.
+ */
+export function cadeiaDoFluxo(fluxo: FluxoDaTarefa | null | undefined): CadeiaDoPrazo | null {
+  const doVios = cadeiaDoVios(fluxo);
+  if (!doVios) return doVios;
+  const antecipa = fluxo?.antecipaEnviar ?? 0;
+  if (antecipa > 0) return { ...doVios, protocolar: doVios.protocolar + antecipa, antecipada: antecipa };
+  const adia = fluxo?.adiaEnviar ?? 0;
+  if (adia > 0 && doVios.protocolar - adia >= 1) return { ...doVios, protocolar: doVios.protocolar - adia, adiada: adia };
+  return doVios;
 }

@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSioeClient } from "@/lib/sioe-sync-server";
+import { documentoDoClienteEntre } from "./capa-abertura";
 import { VistagemError } from "./errors";
 import { mascararCnj } from "./processo";
 import { chavePessoa, type PastaSioe } from "./triagem";
@@ -82,6 +83,63 @@ export async function buscarPastasPorCnj(digitos: string[]): Promise<Map<string,
   return resultado;
 }
 
+/**
+ * Padrão do `ilike` que acha o texto sem olhar acento nem maiúscula: vogal, "c" e qualquer letra fora do ASCII viram
+ * "_" (um caractere qualquer) e os espaços viram "%". Pega a mais (quem chama compara de novo pelo nome), nunca a menos.
+ */
+export function padraoSemAcento(texto: string): string {
+  const esqueleto = texto
+    .replace(/[​-‍⁠﻿]/g, "")
+    .trim()
+    .split(/\s+/)
+    .map((palavra) => palavra.replace(/[^bdf-hj-np-tv-zBDF-HJ-NP-TV-Z0-9]/g, "_"))
+    .join("%");
+  return `%${esqueleto}%`;
+}
+
+/**
+ * Pastas do SIOE de um grupo de clientes, sem carregar as ~35 mil (a capa da abertura fazia isso a cada instância nova
+ * da Vercel: ~700 ms de CPU). Traz a mais pelo `padraoSemAcento`; quem chama filtra pelo nome do grupo.
+ */
+export async function buscarPastasDoGrupo(grupo: string): Promise<PastaSioe[]> {
+  const db = sioe();
+  const padrao = padraoSemAcento(grupo);
+  const pastas: PastaSioe[] = [];
+  for (let inicio = 0; ; inicio += 1000) {
+    const { data, error } = await db.from("processos_completo").select(COLUNAS).ilike("grupo_cliente", padrao).order("ci").range(inicio, inicio + 999);
+    if (error) throw new VistagemError(`Falha ao consultar as pastas do grupo no SIOE: ${error.message}`, 502);
+    pastas.push(...((data ?? []) as ProcessoRow[]).map(paraPasta));
+    if (!data || data.length < 1000) break;
+  }
+  return pastas;
+}
+
+/**
+ * Abertura de pasta: o CPF/CNPJ do cliente no cadastro de pessoas do VIOS (SIOE `pessoas`), para o robô escolher a
+ * pessoa quando há mais de uma com o mesmo nome (18/11/2026: a AXPR tem matriz e filial com o mesmo nome, e o robô
+ * parou em "não achou nas listas do VIOS: cliente"). Com homônimos, vale a pessoa que as pastas do cliente usam
+ * (`documentoDoClienteEntre`). Null quando não acha ou não dá para escolher: o robô continua pelo nome.
+ */
+export async function documentoDoCliente(nome: string): Promise<string | null> {
+  const db = sioe();
+  const { data, error } = await db.from("pessoas").select("id, nome, cpf_cnpj").ilike("nome", padraoSemAcento(nome)).limit(50);
+  if (error) throw new VistagemError(`Falha ao consultar o cliente no SIOE: ${error.message}`, 502);
+  const pessoas = ((data ?? []) as { id: string; nome: string | null; cpf_cnpj: string | null }[]).filter(
+    (pessoa) => chavePessoa(pessoa.nome) === chavePessoa(nome)
+  );
+  const pastasPorPessoa = new Map<string, number>();
+  if (pessoas.length > 1) {
+    const { data: pastas, error: erroPastas } = await db
+      .from("processos_completo")
+      .select("pessoa_id")
+      .in("pessoa_id", pessoas.map((pessoa) => pessoa.id))
+      .limit(5000);
+    if (erroPastas) throw new VistagemError(`Falha ao consultar as pastas do cliente no SIOE: ${erroPastas.message}`, 502);
+    for (const { pessoa_id: id } of (pastas ?? []) as { pessoa_id: string }[]) pastasPorPessoa.set(id, (pastasPorPessoa.get(id) ?? 0) + 1);
+  }
+  return documentoDoClienteEntre(pessoas, pastasPorPessoa);
+}
+
 let cacheTodas: { carregadoEm: number; pastas: PastaSioe[] } | null = null;
 
 /**
@@ -157,20 +215,38 @@ async function baseComSistema(): Promise<boolean> {
 }
 
 export async function cadastroDaPasta(ci: string): Promise<CadastroDaPasta> {
+  return (await lerCadastroDaPasta(ci, false)).cadastro;
+}
+
+/**
+ * Síntese e cadastro (Matéria e Sistema do Tribunal) da pasta numa leitura só: abrir a publicação no jurídico lia a
+ * mesma linha do SIOE duas vezes (cada consulta custa CPU na Vercel).
+ */
+export async function sinteseECadastroDaPasta(ci: string): Promise<{ sintese: string | null; cadastro: CadastroDaPasta }> {
+  return lerCadastroDaPasta(ci, true);
+}
+
+async function lerCadastroDaPasta(ci: string, comSintese: boolean): Promise<{ sintese: string | null; cadastro: CadastroDaPasta }> {
   const numero = ci.replace(/\D/g, "");
   const vazio: CadastroDaPasta = { naBase: false, materia: null, sistemaTribunal: null, temSistema: false };
-  if (!numero) return vazio;
-  const consulta = (colunas: string) => sioe().from("processos_completo").select(colunas).eq("ci", numero).limit(1);
+  if (!numero) return { sintese: null, cadastro: vazio };
+  const consulta = (colunas: string) =>
+    sioe()
+      .from("processos_completo")
+      .select(comSintese ? `observacoes, ${colunas}` : colunas)
+      .eq("ci", numero)
+      .limit(1);
   // Sem a coluna sistema_tribunal ainda (SQL do SIOE), lê só a Matéria.
   const comSistema = await consulta("materia, sistema_tribunal");
   const temColuna = !comSistema.error;
   const { data, error } = temColuna ? comSistema : await consulta("materia");
   if (error) throw new VistagemError(`Falha ao consultar a matéria do processo no SIOE: ${error.message}`, 502);
-  const [row] = (data ?? []) as unknown as { materia: string | null; sistema_tribunal?: string | null }[];
+  const [row] = (data ?? []) as unknown as { observacoes?: string | null; materia: string | null; sistema_tribunal?: string | null }[];
+  const sintese = row?.observacoes?.trim() || null;
   const sistemaTribunal = row?.sistema_tribunal?.trim() || null;
   const temSistema = temColuna && (Boolean(sistemaTribunal) || (await baseComSistema()));
-  if (!row) return { ...vazio, temSistema };
-  return { naBase: true, materia: row.materia?.trim() || null, sistemaTribunal, temSistema };
+  if (!row) return { sintese, cadastro: { ...vazio, temSistema } };
+  return { sintese, cadastro: { naBase: true, materia: row.materia?.trim() || null, sistemaTribunal, temSistema } };
 }
 
 /** Na base do SIOE e sem Matéria: a síntese pede a Matéria. */

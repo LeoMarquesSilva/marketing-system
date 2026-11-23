@@ -17,6 +17,7 @@ import {
   ExternalLink,
   FolderX,
   Folders,
+  Landmark,
   ListChecks,
   LoaderCircle,
   RefreshCw,
@@ -32,6 +33,7 @@ import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { authFetch } from "@/lib/auth-fetch";
+import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
 import { cn } from "@/lib/utils";
 import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { clienteNoTexto, pastaSugerida, verificacoesSemPasta, type SituacaoVerificacao } from "@/lib/vistagem/controladoria";
@@ -43,15 +45,16 @@ import { linkPastaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { SeloAberturaDePasta } from "./abertura-pasta";
 import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
+import { CapaParaAberturaDePasta } from "./capa-abertura-ui";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { EditorVistagem } from "./juridico-client";
 import { LeitorPublicacao } from "./leitor-publicacao";
 import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
 import { FaixaDoProcesso, SetasDaFila } from "./faixa-processo";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
-import { PENDENCIAS, formatarData, formatarDataHora } from "./publicacao-ui";
+import { PENDENCIAS, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import { ReguaDatas } from "./regua-datas";
-import { Seletor, SeletorBusca } from "./seletor";
+import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import {
   Aviso,
   BarraAba,
@@ -66,8 +69,9 @@ import {
 } from "./ui";
 
 /**
- * As abas seguem o que chega da triagem: sem pasta (possível abertura), mais de uma pasta e, quando houver, dados
- * faltando. Os ex-clientes não aparecem aqui: a controladoria os vista na fila Operações Legais do Jurídico.
+ * As abas seguem o que chega da triagem: sem pasta (possível abertura), mais de uma pasta e dados faltando (sem área
+ * ou grupo). Aparecem sempre, mesmo vazias (pedido de 11/11/2026). Os ex-clientes não aparecem aqui: a controladoria
+ * os vista na fila Operações Legais do Jurídico.
  */
 type Aba = "sem_pasta" | "varias_pastas" | "dados";
 
@@ -136,14 +140,20 @@ function ProcessoDaPasta({ pasta, publicacao }: { pasta: PastaSioe; publicacao: 
   return (
     <div className="space-y-0.5">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-        <span className="tabular-nums text-foreground">{pasta.cnj || "sem número"}</span>
+        {pasta.tipoPasta && pasta.tipoPasta !== "Processo" ? (
+          <span className="font-medium text-foreground">
+            {pasta.tipoPasta === "Atendimento" ? "Pasta de atendimento" : "Pasta informada (fora da cópia do VIOS)"}
+          </span>
+        ) : (
+          <span className="tabular-nums text-foreground">{pasta.cnj || "sem número"}</span>
+        )}
         {pasta.cnj ? (
           <span className={cn("text-[11px] font-medium", mesmo ? "text-emerald-700" : "text-amber-700")}>
             {mesmo ? "mesmo processo da publicação" : "outro número"}
           </span>
         ) : null}
         <a
-          href={linkPastaVios(pasta.ci)}
+          href={linkPastaVios(pasta.ci, pasta.tipoPasta)}
           target="_blank"
           rel="noopener noreferrer"
           title="Abrir a pasta no VIOS (nova aba)"
@@ -515,9 +525,14 @@ function Resolucao({
     setPrevia(null);
     try {
       const resposta = await authFetch(`/api/operacoes-legais/vistagem/sioe/pasta?ci=${encodeURIComponent(ci)}`);
-      const corpo = await resposta.json();
+      const corpo = (await resposta.json()) as { pasta: PastaSioe; escritorioSugerido: string | null; error?: string };
       if (!resposta.ok) throw new Error(corpo.error ?? "CI não encontrada.");
       setPrevia(corpo);
+      // Pasta informada fora da cópia do SIOE (atendimento): o que se sabe dela preenche o "Para onde vai" vazio.
+      if (corpo.pasta.tipoPasta) {
+        if (!escritorio && corpo.escritorioSugerido) setEscritorio(corpo.escritorioSugerido);
+        if (!grupo && corpo.pasta.grupoCliente) setGrupo(corpo.pasta.grupoCliente);
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : "CI não encontrada.");
     } finally {
@@ -534,7 +549,7 @@ function Resolucao({
   return (
     <>
       {!publicacao.pastaCi && !variasPastas ? (
-        <Secao titulo="Achou a pasta no VIOS?" id={`${base}-ci`}>
+        <Secao titulo="Achou a pasta no VIOS? (processo ou atendimento)" id={`${base}-ci`}>
           <div className="flex items-end gap-2" data-tour="tm-escolher-pasta">
             <Campo rotulo="CI da pasta" className="min-w-0 flex-1">
               <Input
@@ -560,9 +575,25 @@ function Resolucao({
                 publicacao={publicacao}
                 acao={
                   <div className="grid gap-1.5">
-                    <Button size="sm" onClick={() => liberar({ ci: previa.pasta.ci })} disabled={ocupado}>
+                    {/* Pasta informada fora da cópia do SIOE (atendimento): escritório e grupo vêm do "Para onde vai". */}
+                    {previa.pasta.tipoPasta ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        Fora da cópia de processos do VIOS: confira escritório e grupo em “Para onde vai”. As tarefas vão direto nesta pasta.
+                      </p>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        liberar(
+                          previa.pasta.tipoPasta
+                            ? { ci: previa.pasta.ci, escritorio, grupo: grupo.trim() || undefined, demandaRisco }
+                            : { ci: previa.pasta.ci }
+                        )
+                      }
+                      disabled={ocupado || (Boolean(previa.pasta.tipoPasta) && !pronto)}
+                    >
                       <Check />
-                      Usar e liberar · {previa.escritorioSugerido ?? "definir escritório"}
+                      Usar e liberar · {(previa.pasta.tipoPasta ? escritorio : null) || previa.escritorioSugerido || "definir escritório"}
                     </Button>
                     <Button
                       size="sm"
@@ -570,8 +601,8 @@ function Resolucao({
                       onClick={() =>
                         onAgendar({
                           ci: previa.pasta.ci,
-                          escritorio: previa.escritorioSugerido ?? "",
-                          grupo: previa.pasta.grupoCliente ?? "",
+                          escritorio: (previa.pasta.tipoPasta ? escritorio : "") || previa.escritorioSugerido || "",
+                          grupo: (previa.pasta.tipoPasta ? grupo : "") || previa.pasta.grupoCliente || "",
                           demandaRisco: demandaRisco,
                         })
                       }
@@ -704,6 +735,15 @@ function DetalhePendencia({
         {/* A coluna da resolução tem o fundo até o fim, como a das tarefas na Conferência. */}
         <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-l @4xl:border-t-0">
           {publicacao.pendencia === "sem_pasta" ? <VerificacaoSemPasta publicacao={publicacao} /> : null}
+          {/* Abertura automática de pasta: o resumo da capa que iria para o VIOS; a capa inteira abre num diálogo, com o lápis. */}
+          {publicacao.pendencia === "sem_pasta" ? (
+            <CapaParaAberturaDePasta
+              key={`capa-${publicacao.id}`}
+              publicacaoId={publicacao.id}
+              // Pasta aberta pelo robô: a publicação continua aqui com a CI nova; "Para onde vai" libera com ela.
+              onPastaAberta={(ci) => setPublicacao((atual) => (atual.pastaCi === ci ? atual : { ...atual, pastaCi: ci }))}
+            />
+          ) : null}
           <Resolucao key={publicacao.id} publicacao={publicacao} onResolvida={resolvida} onAgendar={agendar} />
         </div>
       </div>
@@ -828,6 +868,8 @@ function Controladoria() {
   const [dataPublicacao, setDataPublicacao] = useState("");
   /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataImportacao, setDataImportacao] = useState("");
+  /** Tribunal (sigla, como na Vistagem); vazio é "Todos os tribunais". */
+  const [tribunal, setTribunal] = useState("");
   const [aba, setAba] = useState<Aba | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(null);
   /** A fila abre recolhida, como nas outras abas: a pendência ocupa a largura toda. */
@@ -884,12 +926,20 @@ function Controladoria() {
   const dataAtiva = dataNaLista(dataPublicacao, datasDasPendencias);
   const importacoesDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataImportacao), [dados]);
   const importacaoAtiva = dataNaLista(dataImportacao, importacoesDasPendencias);
-  const pendentesNaData = useMemo(
+  const pendentesNasDatas = useMemo(
     () =>
       (dados?.pendentes ?? []).filter(
         (p) => (!dataAtiva || p.dataPublicacao === dataAtiva) && (!importacaoAtiva || p.dataImportacao === importacaoAtiva)
       ),
     [dados, dataAtiva, importacaoAtiva]
+  );
+  // Tribunal: as opções contam as pendências nas datas escolhidas (de todas as abas); o escolhido filtra a fila e a
+  // contagem das abas. Tribunal que sumiu (outra data) deixa de filtrar.
+  const tribunaisDasPendencias = useMemo(() => contarPor(pendentesNasDatas, tribunalDe), [pendentesNasDatas]);
+  const tribunalAtivo = tribunaisDasPendencias.some(([nome]) => nome === tribunal) ? tribunal : "";
+  const pendentesNaData = useMemo(
+    () => (tribunalAtivo ? pendentesNasDatas.filter((p) => tribunalDe(p) === tribunalAtivo) : pendentesNasDatas),
+    [pendentesNasDatas, tribunalAtivo]
   );
 
   const porAba = useMemo(() => {
@@ -903,7 +953,6 @@ function Controladoria() {
 
   // Sem escolha, abre a primeira aba que tem pendência.
   const abaAtiva: Aba = aba ?? ABAS.find((item) => porAba[item.valor] > 0)?.valor ?? "sem_pasta";
-  const abasVisiveis = ABAS.filter((item) => item.valor !== "dados" || porAba.dados > 0 || abaAtiva === "dados");
 
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
   const camposDeBusca = useMemo(() => new Map((dados?.pendentes ?? []).map((p) => [p.id, camposDaPublicacao(p)])), [dados]);
@@ -971,6 +1020,7 @@ function Controladoria() {
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
     setDados((atual) => (atual ? { ...atual, pendentes: atual.pendentes.filter((p) => p.id !== id) } : atual));
     setAviso({ tom: "sucesso", texto: `${publicacao ? numeroProcesso(publicacao) : "Publicação"} ${resultado}.` });
+    avisarContagensVistagem();
   }
 
   // "Agendar Direto": abre a vistagem com a pendência ainda na triagem; nada muda até as tarefas serem enviadas.
@@ -1011,7 +1061,7 @@ function Controladoria() {
             <Segmented
               label="Tipo de pendência"
               value={abaAtiva}
-              options={abasVisiveis.map((item) => ({
+              options={ABAS.map((item) => ({
                 value: item.valor,
                 label: dados ? `${item.rotulo} ${porAba[item.valor]}` : item.rotulo,
                 icon: ICONE_ABA[item.valor],
@@ -1048,6 +1098,29 @@ function Controladoria() {
         />
         <FiltroData rotulo="Data Publicação" datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
         <FiltroData rotulo="Data da importação" datas={importacoesDasPendencias} valor={importacaoAtiva} onChange={setDataImportacao} />
+        <Seletor
+          rotulo="Tribunal"
+          className="sm:w-auto sm:max-w-56"
+          valor={tribunalAtivo}
+          onChange={(valor) => {
+            setTribunal(valor);
+            setSelecionada(null);
+          }}
+          todos={{ rotulo: "Todos os tribunais", contagem: pendentesNasDatas.length, icone: <IconeOpcao icone={Landmark} /> }}
+          rotuloVazio={
+            <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+              <IconeOpcao icone={Landmark} />
+              <span className="truncate">Tribunal</span>
+            </span>
+          }
+          opcoes={tribunaisDasPendencias.map(([nome, quantidade]) => ({
+            valor: nome,
+            rotulo: nome,
+            descricao: descricaoDoTribunal(nome),
+            contagem: quantidade,
+            icone: <IconeTribunal sigla={nome} />,
+          }))}
+        />
         <Button variant="outline" onClick={rodarTriagem} disabled={triando} data-tour="tm-rodar-triagem" title="Tria de novo o que ainda está pendente, com o SIOE">
           {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
           Rodar triagem agora

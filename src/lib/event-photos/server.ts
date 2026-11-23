@@ -25,7 +25,7 @@ const ALBUM_SELECT =
   "cover:event_photos!event_photo_albums_cover_photo_fk(public_url, preview_url)";
 
 const PHOTO_SELECT =
-  "id, album_id, storage_path, public_url, preview_path, preview_url, original_filename, width, height, size_bytes, created_at";
+  "id, album_id, storage_path, public_url, preview_path, preview_url, original_filename, width, height, size_bytes, guest_hidden, created_at";
 
 interface AlbumRow {
   id: string;
@@ -52,6 +52,7 @@ interface PhotoRow {
   width: number | null;
   height: number | null;
   size_bytes: number | null;
+  guest_hidden: boolean | null;
   created_at: string;
 }
 
@@ -97,6 +98,7 @@ function mapPhoto(row: PhotoRow): EventPhoto {
     width: row.width,
     height: row.height,
     sizeBytes: row.size_bytes,
+    guestHidden: row.guest_hidden === true,
     createdAt: row.created_at,
   };
 }

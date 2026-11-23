@@ -4,6 +4,9 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
+  hasPautaAccess,
+  hasProcessosAccess,
+  isAdminRole,
   papelVistagem,
   type PapelVistagem,
 } from "@/lib/access-control";
@@ -19,7 +22,12 @@ function getAdminClient() {
   return createServiceClient(supabaseUrl, supabaseServiceKey);
 }
 
-export async function requireAuthenticatedUser() {
+/**
+ * Usuário da sessão (cookie), com o token validado localmente (`createClient` do servidor: ver
+ * utils/supabase/usuario-da-sessao.ts). Não confere se está ativo: use quando a próxima consulta já lê `users` e
+ * barra o inativo (ex.: `requireVistagemAccess`, `requireAdminUser`), para não ler a mesma linha duas vezes.
+ */
+export async function requireSessionUser() {
   const supabase = await createPublicClient();
   const {
     data: { user },
@@ -27,6 +35,11 @@ export async function requireAuthenticatedUser() {
   if (!user) {
     throw new Error("Não autenticado.");
   }
+  return user;
+}
+
+export async function requireAuthenticatedUser() {
+  const user = await requireSessionUser();
 
   const admin = getAdminClient();
   const { data: profile, error } = await admin
@@ -121,13 +134,35 @@ export async function requireOperacoesLegaisAccess(authUserId: string) {
   }
 }
 
+/** Processos e Pessoas: admin ou liberação manual (chave /operacoes-legais/processos em Usuários). */
+export async function requireProcessosAccess(authUserId: string) {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase.from("users").select("role, permissions, is_active").eq("auth_id", authUserId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || data.is_active === false) throw new Error("Usuário inativo.");
+  if (!hasProcessosAccess({ role: data.role, permissions: (data.permissions as string[] | null) ?? null })) {
+    throw new Error("Sem permissão para Processos.");
+  }
+}
+
+/** Pauta de Audiências: admin ou liberação da Pauta. Devolve se é admin (configurações). */
+export async function requirePautaAccess(authUserId: string): Promise<{ admin: boolean }> {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase.from("users").select("role, permissions, is_active").eq("auth_id", authUserId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || data.is_active === false) throw new Error("Usuário inativo.");
+  const perfil = { role: data.role, permissions: (data.permissions as string[] | null) ?? null };
+  if (!hasPautaAccess(perfil)) throw new Error("Sem permissão para a Pauta de Audiências.");
+  return { admin: isAdminRole(perfil) };
+}
+
 /**
  * Papel do usuário na Vistagem, as áreas (escritórios) que ele vista e se vista demanda de risco;
  * `areas` null é a controladoria, que vê todas (com e sem risco).
  */
 export async function requireVistagemAccess(
   authUserId: string
-): Promise<{ papel: PapelVistagem; areas: string[] | null; veRisco: boolean }> {
+): Promise<{ papel: PapelVistagem; areas: string[] | null; veRisco: boolean; admin: boolean }> {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("users")
@@ -151,5 +186,6 @@ export async function requireVistagemAccess(
     papel,
     areas: juridico ? ((data.vistagem_areas as string[] | null) ?? []) : null,
     veRisco: !juridico || data.vistagem_risco !== false,
+    admin: (data.role as string | null | undefined)?.toLowerCase() === "admin",
   };
 }

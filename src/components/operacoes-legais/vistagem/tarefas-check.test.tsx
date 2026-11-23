@@ -22,6 +22,7 @@ function agendamento(campos: Partial<AgendamentoResumo>): AgendamentoResumo {
     dataFatal: null,
     diasPrazo: null,
     contagemPrazo: null,
+    origemPrazo: null,
     hora: "13:30",
     horaFim: "14:30",
     dataLimite: null,
@@ -70,5 +71,61 @@ describe("CartoesCheck: linha Revisor", () => {
     const { texto, confere } = linhaDoRevisor(agendamento({ tarefa: "AUDIÊNCIA UNA/INICIAL", viosTarefas: [gravada(`${LORENA}, ${VANESSA}`)] }));
     expect(texto).toContain("Não veio do robô");
     expect(confere).toBe(false);
+  });
+});
+
+describe("CartoesCheck: ajustes da Conferência", () => {
+  const texto = (item: AgendamentoResumo) =>
+    renderToStaticMarkup(<CartoesCheck agendamentos={[item]} fotos={{}} hoje="2026-11-09" />)
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ");
+
+  it("mostra quem alterou a data e o horário, quando e de quanto para quanto", () => {
+    const html = texto(
+      agendamento({
+        ajustes: [
+          {
+            por: "Giovanna Pereira de Souza",
+            em: "2026-11-17T16:29:55.298Z",
+            mudancas: [
+              { campo: "Data e horário", de: "17/11/2026 às 13:30", para: "18/11/2026 às 14:00" },
+              { campo: "Responsável", de: LORENA, para: VANESSA },
+            ],
+          },
+        ],
+      })
+    );
+    expect(html).toContain("Ajustada na conferência por Giovanna Pereira de Souza");
+    expect(html).toContain("17/11");
+    expect(html).toContain("13:29");
+    expect(html).toContain("Data e horário: 17/11/2026 às 13:30");
+    expect(html).toContain("18/11/2026 às 14:00");
+    expect(html).toContain(`Responsável: ${LORENA}`);
+  });
+
+  it("sem ajuste, o cartão não fala nisso", () => {
+    expect(texto(agendamento({ ajustes: [] }))).not.toContain("Ajustada na conferência");
+    expect(texto(agendamento({}))).not.toContain("Ajustada na conferência");
+  });
+});
+
+describe("CartoesCheck: como a fatal foi escolhida (pedido de 18/11/2026)", () => {
+  const texto = (item: AgendamentoResumo) =>
+    renderToStaticMarkup(<CartoesCheck agendamentos={[item]} fotos={{}} hoje="2026-11-09" />)
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ");
+  const prazo = (campos: Partial<AgendamentoResumo>) =>
+    agendamento({ etiqueta: "PRAZO", tarefa: "MANIFESTAÇÃO", tarefaId: "500", hora: null, horaFim: null, revisor: null, dataFatal: "2026-11-24", ...campos });
+
+  it("Prazo pelo botão: o selo diz o botão", () => {
+    expect(texto(prazo({ origemPrazo: "atalho", diasPrazo: 10, contagemPrazo: "uteis" }))).toContain("Fatal: Botão 10 dias úteis");
+  });
+
+  it("Prazo pelo calendário: o selo diz calendário", () => {
+    expect(texto(prazo({ origemPrazo: "calendario" }))).toContain("Fatal: Calendário");
+  });
+
+  it("Compromisso: sem selo de fatal", () => {
+    expect(texto(agendamento({}))).not.toContain("Fatal:");
   });
 });

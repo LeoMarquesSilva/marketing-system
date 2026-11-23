@@ -1,21 +1,69 @@
 "use client";
 
 import { useState } from "react";
-import { Calculator } from "lucide-react";
+import { Calculator, FileDown, LoaderCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CRITERIO_DA_MEMORIA, formatarData, formatarReal, type MemoriaDoCalculo } from "@/lib/processos/rec-credito";
+import type { IdentificacaoDoProcesso } from "@/lib/processos/memoria-pdf";
+import type { ProcessoDetalhe } from "@/lib/processos/types";
 import { cn } from "@/lib/utils";
 import { Aviso } from "../vistagem/ui";
 
 const percentual = (valor: number) => `${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%`;
 const fator = (valor: number) => valor.toLocaleString("pt-BR", { minimumFractionDigits: 6, maximumFractionDigits: 6 });
 
+/** CNJ, CI, cliente e devedor (marcado como tal; sem marca, as partes do polo passivo) para o topo do PDF. */
+export function identificacaoDoProcesso(processo: ProcessoDetalhe): IdentificacaoDoProcesso {
+  const texto = (chave: string) => {
+    const valor = processo.valores[chave];
+    return typeof valor === "string" && valor ? valor : null;
+  };
+  const marcados = processo.partes.filter((parte) => parte.devedor);
+  const devedores = marcados.length ? marcados : processo.partes.filter((parte) => parte.polo === "passivo" && parte.papel === "parte");
+  return { cnj: texto("cnj"), ci: texto("ci"), cliente: texto("cliente"), devedor: devedores.map((parte) => parte.nome).join("; ") || null };
+}
+
 /**
  * O valor da ação atualizado (cálculo do TJSP, com guias e levantamentos) como botão: ao clicar, abre a memória
  * do cálculo, linha a linha. `rotulo` é o texto antes do valor ("Atualizado:"); `vios`, o número do VIOS.
  */
-export function ValorAtualizado({ memoria, vios, rotulo, className }: { memoria: MemoriaDoCalculo; vios?: string | null; rotulo?: string; className?: string }) {
+export function ValorAtualizado({
+  memoria,
+  processo,
+  vios,
+  rotulo,
+  className,
+}: {
+  memoria: MemoriaDoCalculo;
+  processo: IdentificacaoDoProcesso;
+  vios?: string | null;
+  rotulo?: string;
+  className?: string;
+}) {
   const [aberta, setAberta] = useState(false);
+  const [exportando, setExportando] = useState(false);
+  const [falhaPdf, setFalhaPdf] = useState("");
+
+  /** Gera o PDF no navegador (pdf-lib carregado só agora) e baixa. */
+  async function exportarPdf() {
+    setExportando(true);
+    setFalhaPdf("");
+    try {
+      const { montarPdfDaMemoria, nomeDoPdfDaMemoria } = await import("@/lib/processos/memoria-pdf");
+      const bytes = await montarPdfDaMemoria(memoria, processo, vios ?? null);
+      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = nomeDoPdfDaMemoria(processo, memoria.ate);
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch {
+      setFalhaPdf("Não foi possível gerar o PDF. Tente de novo.");
+    } finally {
+      setExportando(false);
+    }
+  }
   return (
     <>
       <button
@@ -104,6 +152,12 @@ export function ValorAtualizado({ memoria, vios, rotulo, className }: { memoria:
                 ))}
               </ul>
             </div>
+          </div>
+          <div className="flex items-center justify-end gap-3 border-t border-[#e6eef0] px-5 py-3">
+            {falhaPdf ? <p className="text-xs text-red-700">{falhaPdf}</p> : null}
+            <Button onClick={() => void exportarPdf()} disabled={exportando}>
+              {exportando ? <LoaderCircle className="animate-spin" /> : <FileDown />} Exportar PDF
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

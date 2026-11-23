@@ -10,7 +10,7 @@ import { IAS_DA_VISTAGEM, ORIGEM_DA_REGRA, REGRAS_DA_ESTEIRA, type EtapaDocument
 import { envioSimulado, modoAgendamento, sinteseSimulada } from "./sama";
 import { admin, falhou, hojeEmSaoPaulo } from "./server";
 import { MOTIVO_EX_CLIENTE_SEM_ESCRITORIO, PREFIXO_DESCARTE_CONTROLADORIA } from "./triagem";
-import { nomeNoRh, nomesDosVistadores } from "./vistadores";
+import { nomeNoRh, nomesDosVistadores, type MapaDeVistadores } from "./vistadores";
 import { chaveNome } from "./agendamento";
 
 /** Janela dos números da tela de configurações. */
@@ -65,6 +65,8 @@ export interface PainelDeRegras {
   pessoas: PessoaParaVistador[];
   /** Foto de cada vistador cadastrado, pelo nome usado na configuração. */
   fotosDosVistadores: Record<string, string>;
+  /** Foto de quem aparece no histórico (quem alterou e quem entrou ou saiu), pelo nome como está lá. */
+  fotosDoHistorico: Record<string, string>;
 }
 
 async function todasAsPaginas<T>(
@@ -192,13 +194,29 @@ export async function painelDeRegras(): Promise<PainelDeRegras> {
     pessoasDoRh(),
   ]);
   const vistadores = nomesDosVistadores(configuracoes.vistadores);
-  const fotos = await pessoasPorNome([...pessoas.map((pessoa) => pessoa.nome), ...vistadores.map(nomeNoRh)])
+  // Nomes do histórico: quem alterou e quem entrou ou saiu dos vistadores (pode não estar mais no mapa).
+  const nomesDoHistorico = [
+    ...new Set(
+      historico.flatMap((item) => [
+        ...(item.alteradoPor ? [item.alteradoPor] : []),
+        ...(item.chave === "vistadores"
+          ? [...nomesDosVistadores((item.valorAnterior ?? {}) as MapaDeVistadores), ...nomesDosVistadores((item.valorNovo ?? {}) as MapaDeVistadores)]
+          : []),
+      ])
+    ),
+  ];
+  const fotos = await pessoasPorNome([...pessoas.map((pessoa) => pessoa.nome), ...vistadores.map(nomeNoRh), ...nomesDoHistorico.map(nomeNoRh)])
     .then((resultado) => resultado.fotos)
     .catch(() => ({}) as Record<string, string>);
   const fotosDosVistadores: Record<string, string> = {};
   for (const nome of vistadores) {
     const foto = fotos[chaveNome(nomeNoRh(nome))];
     if (foto) fotosDosVistadores[nome] = foto;
+  }
+  const fotosDoHistorico: Record<string, string> = {};
+  for (const nome of nomesDoHistorico) {
+    const foto = fotos[chaveNome(nomeNoRh(nome))];
+    if (foto) fotosDoHistorico[nome] = foto;
   }
   return {
     configuracoes,
@@ -220,5 +238,6 @@ export async function painelDeRegras(): Promise<PainelDeRegras> {
     historico,
     pessoas: pessoas.map((pessoa) => ({ ...pessoa, foto: fotos[chaveNome(pessoa.nome)] ?? null })),
     fotosDosVistadores,
+    fotosDoHistorico,
   };
 }

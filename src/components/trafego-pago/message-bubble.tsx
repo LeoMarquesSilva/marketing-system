@@ -2,12 +2,15 @@
 
 import { memo } from "react";
 import { motion } from "framer-motion";
+import { Ban, Contact } from "lucide-react";
 import { WhatsappAudioPlayer } from "@/components/trafego-pago/whatsapp-audio-player";
 import { WhatsappLeadAvatar } from "@/components/trafego-pago/whatsapp-lead-avatar";
 import { WhatsappMediaBubble } from "@/components/trafego-pago/whatsapp-media-bubble";
 import { WhatsappMessageStatus } from "@/components/trafego-pago/whatsapp-message-status";
 import { cn } from "@/lib/utils";
 import { isAudioMessageType, isMediaMessageType, formatWhatsappMessageDisplay } from "@/lib/evolution-leads";
+import { whatsappMessageDeleteBlock, WHATSAPP_DELETED_TEXT } from "@/lib/whatsapp-message-delete";
+import { parseContactBody } from "@/lib/whatsapp-team-contacts";
 import type { WhatsappConversation, WhatsappMessage } from "./whatsapp-crm-types";
 import { formatMessageTime, leadDisplayName } from "./whatsapp-crm-utils";
 import { MessageActions } from "./message-actions";
@@ -26,6 +29,7 @@ interface MessageBubbleProps {
   reaction?: string;
   onReply: (message: WhatsappMessage) => void;
   onReaction: (message: WhatsappMessage, emoji: string) => void;
+  onDelete: (message: WhatsappMessage) => void;
   onTranscript: (messageId: string, text: string) => void;
 }
 
@@ -40,8 +44,11 @@ export const MessageBubble = memo(function MessageBubble({
   reaction,
   onReply,
   onReaction,
+  onDelete,
   onTranscript,
 }: MessageBubbleProps) {
+  const deleted = Boolean(message.deleted_at);
+  const contactCard = message.message_type === "contactMessage" ? parseContactBody(message.body) : null;
   const fromLead = !message.from_me;
   const groupSender = Boolean(conversation.is_group) && fromLead;
   const senderLabel = groupSender ? participantLabel(message) : null;
@@ -96,14 +103,18 @@ export const MessageBubble = memo(function MessageBubble({
         // Focável para as ações aparecerem com um toque no celular.
         tabIndex={0}
       >
-        <MessageActions
-          canReply={Boolean(message.wa_message_id)}
-          canReact={Boolean(message.wa_message_id)}
-          fromMe={message.from_me}
-          messageText={formatWhatsappMessageDisplay(message.body, message.message_type)}
-          onReply={() => onReply(message)}
-          onReaction={(emoji) => onReaction(message, emoji)}
-        />
+        {!deleted && (
+          <MessageActions
+            canReply={Boolean(message.wa_message_id)}
+            canReact={Boolean(message.wa_message_id)}
+            canDelete={whatsappMessageDeleteBlock(message) === null}
+            fromMe={message.from_me}
+            messageText={formatWhatsappMessageDisplay(message.body, message.message_type)}
+            onReply={() => onReply(message)}
+            onReaction={(emoji) => onReaction(message, emoji)}
+            onDelete={() => onDelete(message)}
+          />
+        )}
 
         {groupSender && startsRun && (
           <p className={cn("mb-0.5 text-[13px] font-semibold dark:brightness-150", senderColor?.text)}>
@@ -111,7 +122,7 @@ export const MessageBubble = memo(function MessageBubble({
           </p>
         )}
 
-        {message.quoted_body && (
+        {!deleted && message.quoted_body && (
           <div
             className={cn(
               "mb-2 rounded-lg border-l-2 px-2 py-1 text-xs opacity-90",
@@ -124,7 +135,12 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
-        {isAudioMessageType(message.message_type, message.body) ? (
+        {deleted ? (
+          <p className="flex items-center gap-1.5 italic text-[#667781] dark:text-[#aebac1]">
+            <Ban className="h-4 w-4 shrink-0" aria-hidden />
+            {WHATSAPP_DELETED_TEXT}
+          </p>
+        ) : isAudioMessageType(message.message_type, message.body) ? (
           <WhatsappAudioPlayer
             messageId={message.id}
             mediaUrl={message.media_url}
@@ -141,6 +157,18 @@ export const MessageBubble = memo(function MessageBubble({
             body={message.body}
             fromMe={message.from_me}
           />
+        ) : contactCard ? (
+          <div className="flex min-w-[12rem] items-center gap-3 py-0.5">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-black/5 text-[#285f7a] dark:bg-white/10 dark:text-[#47cdd0]">
+              <Contact className="size-5" aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{contactCard.name ?? "Cartão de contato"}</span>
+              {contactCard.phone ? (
+                <span className="block text-xs text-[#667781] dark:text-[#aebac1]">{contactCard.phone}</span>
+              ) : null}
+            </span>
+          </div>
         ) : (
           <p className="whitespace-pre-wrap break-words">
             {formatWhatsappMessageDisplay(message.body, message.message_type)}
@@ -149,10 +177,10 @@ export const MessageBubble = memo(function MessageBubble({
 
         <div className="mt-1 flex items-center justify-end gap-1 pl-6 text-xs tabular-nums text-[#667781] dark:text-[#aebac1]">
           {formatMessageTime(message.message_timestamp)}
-          <WhatsappMessageStatus status={message.wa_status} fromMe={message.from_me} />
+          {!deleted && <WhatsappMessageStatus status={message.wa_status} fromMe={message.from_me} />}
         </div>
 
-        {(reaction || message.reaction_emoji) && (
+        {!deleted && (reaction || message.reaction_emoji) && (
           <motion.span
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}

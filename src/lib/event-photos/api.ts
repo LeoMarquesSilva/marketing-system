@@ -11,6 +11,7 @@ import type {
   EventPhoto,
   EventPhotoAlbum,
   EventPhotoAlbumDetail,
+  EventPhotoShare,
   FaceStatus,
   ScanQueueAlbum,
 } from "@/lib/event-photos/types";
@@ -270,6 +271,60 @@ export async function rejectFaceMatch(photoId: string): Promise<void> {
     { method: "POST", body: JSON.stringify({ photoId }) },
     "Erro ao remover a marcação."
   );
+}
+
+// ---------- Link de convidado (/galeria/<token>) ----------
+
+export async function fetchAlbumShares(albumId: string): Promise<EventPhotoShare[]> {
+  const data = await jsonRequest<{ shares: EventPhotoShare[] }>(
+    `/api/event-photos/albums/${albumId}/shares`,
+    {},
+    "Erro ao carregar os links."
+  );
+  return data.shares;
+}
+
+export async function createAlbumShare(
+  albumId: string,
+  input: { label: string; logoUrl: string | null; allowDownload: boolean; expiresInDays: number | null }
+): Promise<EventPhotoShare> {
+  const data = await jsonRequest<{ share: EventPhotoShare }>(
+    `/api/event-photos/albums/${albumId}/shares`,
+    { method: "POST", body: JSON.stringify(input) },
+    "Erro ao criar o link."
+  );
+  return data.share;
+}
+
+export async function updateAlbumShare(
+  shareId: string,
+  patch: { revoke?: true; allowDownload?: boolean }
+): Promise<EventPhotoShare> {
+  const data = await jsonRequest<{ share: EventPhotoShare }>(
+    `/api/event-photos/shares/${shareId}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+    "Erro ao atualizar o link."
+  );
+  return data.share;
+}
+
+/** Tira (hidden=true) ou devolve fotos do link de convidado. */
+export async function setPhotosGuestHidden(albumId: string, photoIds: string[], hidden: boolean): Promise<string[]> {
+  const data = await jsonRequest<{ updatedIds: string[] }>(
+    `/api/event-photos/albums/${albumId}/guest-visibility`,
+    { method: "POST", body: JSON.stringify({ photoIds, hidden }) },
+    "Erro ao atualizar as fotos."
+  );
+  return data.updatedIds;
+}
+
+export async function searchShareLogos(query: string): Promise<Array<{ name: string; logoUrl: string }>> {
+  const data = await jsonRequest<{ logos: Array<{ name: string; logoUrl: string }> }>(
+    `/api/event-photos/shares/logos?q=${encodeURIComponent(query)}`,
+    {},
+    "Erro ao buscar logos."
+  );
+  return data.logos;
 }
 
 /** URL pública com `?download=` para o Storage devolver como anexo. */

@@ -1,3 +1,6 @@
+import type { EtiquetaAgendamento, OrigemPrazo } from "./agendamento";
+import { CONFERENCIA_AUTOMATICA } from "./check";
+import type { ContagemPrazo } from "./dias-uteis";
 import { esperandoOVios } from "./situacao-robo";
 import type { Pendencia } from "./triagem";
 import type { AjusteNaTarefa, DuplicidadeResultado, EnvioStatus, InconsistenciaResumo, PublicacaoStatus } from "./types";
@@ -17,6 +20,7 @@ export type TipoEvento =
   | "vistagem"
   | "devolucao"
   | "revistagem"
+  | "reabertura"
   | "inconsistencia"
   | "ajuste"
   | "conferencia"
@@ -37,13 +41,53 @@ export interface EventoHistorico {
   titulo: string;
   /** Quem fez; null quando foi automático (captura, robô) ou não ficou registrado. */
   por: string | null;
-  /** Motivo, observação, mudanças: uma linha cada. */
+  /** Motivo, observação, mensagem do robô: uma linha cada. */
   detalhes: string[];
+  /** Área, para mostrar com o ícone: a da triagem (triagem e pendência) ou a de destino (transferência). */
+  area?: string | null;
+  /** Transferência: a área de antes. */
+  areaDe?: string | null;
+  /** Pasta do VIOS achada na triagem. */
+  pasta?: { ci: string; vinculo: string | null } | null;
+  /** Vistagem: as tarefas como ficaram, com a data e o responsável (para a foto). */
+  tarefas?: TarefaResumida[];
+  /** Ajuste na conferência: cada campo, de → para. */
+  mudancas?: { campo: string; de: string; para: string }[];
+}
+
+/** Prazo: a fatal e como o vistador a escolheu (botão de dias, calendário…), para o selo de todos os históricos. */
+interface FatalDaTarefa {
+  etiqueta?: EtiquetaAgendamento;
+  /** AAAA-MM-DD. */
+  dataFatal?: string | null;
+  diasPrazo?: number | null;
+  contagemPrazo?: ContagemPrazo | null;
+  origemPrazo?: OrigemPrazo | null;
+}
+
+export interface TarefaResumida extends FatalDaTarefa {
+  tarefa: string;
+  /** AAAA-MM-DD. */
+  data: string | null;
+  responsavel: string | null;
+  /** Só para saber se a Conferência mudou a fatal depois ("Mudada na conferência" ao lado do selo). */
+  ajustes?: AjusteNaTarefa[];
+}
+
+/** De quem é a publicação, para o topo do histórico. */
+export interface ContextoDoHistorico {
+  grupo: string | null;
+  cliente: string | null;
+  area: string | null;
+  risco: boolean;
 }
 
 export interface HistoricoPublicacao {
   status: PublicacaoStatus;
   eventos: EventoHistorico[];
+  /** Foto de quem aparece (quem fez e responsáveis das tarefas), pela chave do nome (chaveNome). */
+  fotos?: Record<string, string>;
+  contexto?: ContextoDoHistorico | null;
 }
 
 /** Onde a publicação está agora, no topo do histórico. */
@@ -71,7 +115,7 @@ const PENDENCIA: Record<Pendencia, string> = {
 
 type Marca = { por: string | null; em: string };
 
-export interface TarefaNoHistorico {
+export interface TarefaNoHistorico extends FatalDaTarefa {
   tarefa: string;
   data: string | null;
   responsavel: string | null;
@@ -104,6 +148,8 @@ export interface DadosDoHistorico {
   /** Última devolução e quantas houve. */
   devolucao: (Marca & { motivo: string | null; total: number }) | null;
   revistagem: Marca | null;
+  /** Quem vistou reabriu a vistagem para alterar antes da Conferência (a última vez). */
+  reabertura?: Marca | null;
   conferencia: Marca | null;
   central: { itemId: string | null; enviadaEm: string | null; erro: string | null; tentativaEm: string | null } | null;
   check: (Marca & { nota: string | null }) | null;
@@ -120,9 +166,23 @@ function data(iso: string | null): string | null {
 
 const linhas = (...itens: (string | null | false | undefined)[]): string[] => itens.filter((item): item is string => Boolean(item && item.trim()));
 
-/** "CIÊNCIA NF · 10/11/2026 · Ligia" de cada tarefa, como ficaram. */
-function resumoDasTarefas(tarefas: TarefaNoHistorico[]): string[] {
-  return tarefas.map((tarefa) => [tarefa.tarefa, data(tarefa.data), tarefa.responsavel].filter(Boolean).join(" · "));
+/** Tarefa, data e responsável de cada tarefa, como ficaram; no Prazo, a fatal e como o vistador a escolheu. */
+function resumoDasTarefas(tarefas: TarefaNoHistorico[]): TarefaResumida[] {
+  return tarefas.map((tarefa) => ({
+    tarefa: tarefa.tarefa,
+    data: tarefa.data,
+    responsavel: tarefa.responsavel,
+    ...(tarefa.etiqueta === "PRAZO" && tarefa.dataFatal
+      ? {
+          etiqueta: tarefa.etiqueta,
+          dataFatal: tarefa.dataFatal,
+          diasPrazo: tarefa.diasPrazo ?? null,
+          contagemPrazo: tarefa.contagemPrazo ?? null,
+          origemPrazo: tarefa.origemPrazo ?? null,
+          ajustes: tarefa.ajustes,
+        }
+      : {}),
+  }));
 }
 
 function eventosDoRobo(tarefas: TarefaNoHistorico[]): EventoHistorico[] {
@@ -179,17 +239,27 @@ export function montarHistorico(dados: DadosDoHistorico): EventoHistorico[] {
 
   // Área em que caiu na triagem: a de antes da transferência, se houve.
   const areaDaTriagem = dados.transferencia?.de ?? dados.escritorio;
-  const pasta = dados.pastaCi ? `Pasta CI ${dados.pastaCi}${dados.pastaVinculo ? ` (${dados.pastaVinculo})` : ""}` : null;
+  const pasta = dados.pastaCi ? { ci: dados.pastaCi, vinculo: dados.pastaVinculo } : null;
   if (dados.triadaEm) {
-    eventos.push({
-      tipo: "triagem",
-      em: dados.triadaEm,
-      titulo: "Triada",
-      por: null,
-      detalhes: dados.triagemResolvida
-        ? linhas(dados.pendencia ? `Ficou pendente: ${PENDENCIA[dados.pendencia]}` : "Ficou pendente na triagem")
-        : linhas(pasta ?? (dados.pendencia ? `Pendência: ${PENDENCIA[dados.pendencia]}` : null), areaDaTriagem && `Área: ${areaDaTriagem}`),
-    });
+    eventos.push(
+      dados.triagemResolvida
+        ? {
+            tipo: "triagem",
+            em: dados.triadaEm,
+            titulo: "Triada",
+            por: null,
+            detalhes: linhas(dados.pendencia ? `Ficou pendente: ${PENDENCIA[dados.pendencia]}` : "Ficou pendente na triagem"),
+          }
+        : {
+            tipo: "triagem",
+            em: dados.triadaEm,
+            titulo: "Triada",
+            por: null,
+            detalhes: linhas(!pasta && dados.pendencia && `Pendência: ${PENDENCIA[dados.pendencia]}`),
+            area: areaDaTriagem,
+            pasta,
+          }
+    );
   }
   if (dados.triagemResolvida) {
     eventos.push({
@@ -197,7 +267,9 @@ export function montarHistorico(dados: DadosDoHistorico): EventoHistorico[] {
       em: dados.triagemResolvida.em,
       titulo: "Pendência da triagem resolvida",
       por: dados.triagemResolvida.por,
-      detalhes: linhas(pasta, areaDaTriagem && `Área: ${areaDaTriagem}`),
+      detalhes: [],
+      area: areaDaTriagem,
+      pasta,
     });
   }
   if (dados.duplicidadeRevisada) {
@@ -213,9 +285,11 @@ export function montarHistorico(dados: DadosDoHistorico): EventoHistorico[] {
     eventos.push({
       tipo: "transferencia",
       em: dados.transferencia.em,
-      titulo: `Transferida de ${dados.transferencia.de} para ${dados.escritorio ?? "outra área"}`,
+      titulo: "Transferida de área",
       por: dados.transferencia.por,
       detalhes: linhas(dados.transferencia.motivo && `Motivo: ${dados.transferencia.motivo}`),
+      areaDe: dados.transferencia.de,
+      area: dados.escritorio,
     });
   }
   if (dados.vistagem) {
@@ -224,8 +298,9 @@ export function montarHistorico(dados: DadosDoHistorico): EventoHistorico[] {
       em: dados.vistagem.em,
       titulo: "Vistada",
       por: dados.vistagem.por,
+      detalhes: linhas(dados.vistagem.observacao && `Observação: ${dados.vistagem.observacao}`),
       // As tarefas são as de agora: depois de uma devolução, aparecem na nova vistagem.
-      detalhes: linhas(dados.vistagem.observacao && `Observação: ${dados.vistagem.observacao}`, ...(dados.revistagem ? [] : tarefasNaVistagem)),
+      tarefas: dados.revistagem ? [] : tarefasNaVistagem,
     });
   }
   if (dados.devolucao) {
@@ -240,8 +315,11 @@ export function montarHistorico(dados: DadosDoHistorico): EventoHistorico[] {
       ),
     });
   }
+  if (dados.reabertura) {
+    eventos.push({ tipo: "reabertura", em: dados.reabertura.em, titulo: "Vistagem reaberta para alterar, antes da Conferência", por: dados.reabertura.por, detalhes: [] });
+  }
   if (dados.revistagem) {
-    eventos.push({ tipo: "revistagem", em: dados.revistagem.em, titulo: "Vistada de novo", por: dados.revistagem.por, detalhes: tarefasNaVistagem });
+    eventos.push({ tipo: "revistagem", em: dados.revistagem.em, titulo: "Vistada de novo", por: dados.revistagem.por, detalhes: [], tarefas: tarefasNaVistagem });
   }
 
   for (const inconsistencia of dados.inconsistencias) {
@@ -279,18 +357,27 @@ export function montarHistorico(dados: DadosDoHistorico): EventoHistorico[] {
         em: ajuste.em,
         titulo: `${tarefa.tarefa} ajustada na conferência`,
         por: ajuste.por,
-        detalhes: ajuste.mudancas.map((mudanca) => `${mudanca.campo}: ${mudanca.de || "vazio"} → ${mudanca.para || "vazio"}`),
+        detalhes: [],
+        mudancas: ajuste.mudancas.map((mudanca) => ({ campo: mudanca.campo, de: mudanca.de || "vazio", para: mudanca.para || "vazio" })),
       });
     }
   }
 
   const paraCentral = dados.status === "abertura_pasta" || Boolean(dados.central);
   if (dados.conferencia) {
+    // VERIFICAR RENÚNCIA sozinha da Operações Legais: não passa pela Conferência (pedido de 18/11/2026).
+    const direto = dados.conferencia.por === CONFERENCIA_AUTOMATICA;
     eventos.push({
       tipo: "conferencia",
       em: dados.conferencia.em,
-      titulo: paraCentral ? "Conferida e enviada à Central (abertura de pasta)" : "Conferida e enviada ao robô",
-      por: dados.conferencia.por,
+      titulo: direto
+        ? paraCentral
+          ? "Sem a Conferência: enviada à Central (abertura de pasta)"
+          : "Sem a Conferência: enviada direto ao robô (VERIFICAR RENÚNCIA da Operações Legais)"
+        : paraCentral
+          ? "Conferida e enviada à Central (abertura de pasta)"
+          : "Conferida e enviada ao robô",
+      por: direto ? null : dados.conferencia.por,
       detalhes: [],
     });
   }

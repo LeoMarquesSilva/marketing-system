@@ -16,6 +16,7 @@ import {
   withWhatsappMediaUrls,
 } from "@/lib/evolution-whatsapp";
 import { clearWhatsappConversationUnread } from "@/lib/whatsapp-attendance";
+import { fetchLeadForwards } from "@/lib/whatsapp-lead-forward";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +61,14 @@ export async function GET(request: Request) {
       const syncHistory = searchParams.get("syncHistory") === "1";
 
       // Abre na hora com o que já está no banco (o webhook grava tudo que chega).
-      const [messages, { data: conversation }] = await Promise.all([
+      const [messages, { data: conversation }, forwards] = await Promise.all([
         fetchWhatsappMessages(conversationId).then(withWhatsappMediaUrls),
         supabase.from("whatsapp_conversations").select("*").eq("id", conversationId).maybeSingle(),
+        // Encaminhamentos do lead aparecem na linha do tempo da conversa.
+        fetchLeadForwards(conversationId, 20).catch((err) => {
+          logAfterError("encaminhamentos")(err);
+          return [];
+        }),
       ]);
 
       // Conferência com a Evolution, foto, nome e "lido" depois da resposta: o
@@ -78,7 +84,7 @@ export async function GET(request: Request) {
         await markConversationRead(conversationId).catch(logAfterError("mark read"));
       });
 
-      return NextResponse.json({ messages, conversation });
+      return NextResponse.json({ messages, conversation, forwards });
     }
 
     const conversations = await fetchWhatsappConversations();

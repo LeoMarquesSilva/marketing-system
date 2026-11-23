@@ -32,6 +32,10 @@
       "schedule": "0 16 * * *"
     },
     {
+      "path": "/api/cron/opex-fornecedores-sync",
+      "schedule": "30 6 * * *"
+    },
+    {
       "path": "/api/cron/ga4-sync",
       "schedule": "0 10 * * *"
     },
@@ -54,6 +58,18 @@
     {
       "path": "/api/cron/processos-sync",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/vistagem-djen",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/vistagem-djen?rodada=noite",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/pauta-tick",
+      "schedule": "0 11 * * *"
     }
   ]
 }

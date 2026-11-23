@@ -277,6 +277,90 @@ Conteúdo: Manifeste-se a parte autora. |comunicacao_id: 700000001|
   });
 });
 
+/** Publicação do DJEN repassada por e-mail, tudo numa linha, como chega colada (nomes e números fictícios). */
+function blocoFonte(processo: string, id: number): string {
+  return `Processo: ${processo} Data da Disponibilização: 19/11/2026 Data da Publicação: 23/11/2026 Fonte: Tribunal Regional do Trabalho - 2ª Região - SP - DJEN - 11ª Vara do Trabalho de Guarulhos Notificação - Intimação PROCESSO: ${processo} - AcaO TRABALHISTA - RITO ORDINaRIO PODER JUDICIARIO JUSTICA DO TRABALHO TRIBUNAL REGIONAL DO TRABALHO DA 2ª REGIAO 11ª VARA DO TRABALHO DE GUARULHOS ATOrd ${processo} RECLAMANTE: ANA EXEMPLO RECLAMADO: TRANSPORTADORA FICTICIA LTDA INTIMACAO Fica V. Sa. intimado para tomar ciencia da Decisao ID 904701a proferida nos autos. DESPACHO Vistos. Transfira-se o deposito para os autos da Carta de Sentenca. GUARULHOS/SP, 18 de novembro de 2026. JUIZA FICTICIA Juiza do Trabalho Titular Intimado (s) / Citado (s) - ANA EXEMPLO POLO ATIVO: ADVOGADO DA AUTORA POLO ATIVO: ANA EXEMPLO POLO PASSIVO: TRANSPORTADORA FICTICIA LTDA ADVOGADO: ADVOGADO DA AUTORA - OAB: 111111/SP ADVOGADO: ADVOGADA DA EMPRESA - OAB: 222222/SP Acesso ao documento: https://pje.trt2.jus.br/pjekz/validacao/26111819102720800000500000000?instancia=1 Identificador do documento: ${id}`;
+}
+
+describe("lerPublicacoesColadas: e-mail do DJEN com \"Fonte:\" (pedido de 19/11/2026)", () => {
+  const { publicacoes, ignorados } = lerPublicacoesColadas(blocoFonte("1001000-70.2025.5.02.0321", 792900001));
+
+  it("lê o processo, as datas, o tribunal e o órgão da fonte, e o tipo que abre o texto", () => {
+    expect(ignorados).toEqual([]);
+    expect(publicacoes).toHaveLength(1);
+    expect(publicacoes[0]).toMatchObject({
+      formato: "fonte",
+      processo: "1001000-70.2025.5.02.0321",
+      tribunal: "TRT2",
+      orgao: "11ª Vara do Trabalho de Guarulhos",
+      tipoComunicacao: "Intimação",
+      idComunicacao: 792900001,
+      intimados: ["ANA EXEMPLO"],
+    });
+    expect(publicacoes[0].linha).toMatchObject({ dataDivulgacao: "2026-11-19", dataPublicacao: "2026-11-23", diario: "TRT2_DJEN" });
+  });
+
+  it("monta o teor no formato do DJEN da Kurier (texto, partes, advogados, link)", () => {
+    const djen = lerComunicacaoDjen(publicacoes[0].linha.teor);
+    expect(djen).toMatchObject({ idComunicacao: 792900001, orgao: "11ª Vara do Trabalho de Guarulhos", dataDisponibilizacao: "2026-11-19", intimados: ["ANA EXEMPLO"] });
+    expect(djen?.partes.map((parte) => [parte.nome, parte.polo])).toEqual([
+      ["ADVOGADO DA AUTORA", "A"],
+      ["ANA EXEMPLO", "A"],
+      ["TRANSPORTADORA FICTICIA LTDA", "P"],
+    ]);
+    expect(djen?.advogados).toEqual([
+      { nome: "ADVOGADO DA AUTORA", oab: "111111", uf: "SP" },
+      { nome: "ADVOGADA DA EMPRESA", oab: "222222", uf: "SP" },
+    ]);
+    expect(djen?.corpo).toMatch(/^PODER JUDICIARIO JUSTICA DO TRABALHO/);
+    expect(djen?.corpo).toMatch(/Juiza do Trabalho Titular Acesso ao documento: https:\/\/pje\.trt2\.jus\.br\/\S+$/);
+    expect(lerPublicacao(publicacoes[0].linha.teor).classe).toMatch(/^Notificação Ac[aã]o Trabalhista/i);
+    expect(montarPublicacoes(publicacoes.map((p) => p.linha)).map((p) => p.status)).toEqual(["captada"]);
+  });
+
+  it("o mesmo e-mail com quebras de linha", () => {
+    const comQuebras = blocoFonte("1001000-70.2025.5.02.0321", 792900001)
+      .replace(" Data da Disponibilização", "\nData da Disponibilização")
+      .replace(" Data da Publicação", "\nData da Publicação")
+      .replace(" Fonte:", "\nFonte:")
+      .replace(" Notificação - Intimação ", "\nNotificação - Intimação\n");
+    const [publicacao] = lerPublicacoesColadas(comQuebras).publicacoes;
+    expect(publicacao).toMatchObject({ formato: "fonte", tribunal: "TRT2", orgao: "11ª Vara do Trabalho de Guarulhos", tipoComunicacao: "Intimação" });
+    expect(publicacao.linha).toMatchObject({ dataDivulgacao: "2026-11-19", dataPublicacao: "2026-11-23" });
+  });
+
+  it("várias publicações no mesmo e-mail, com saudação e assinatura", () => {
+    const email = `Bom dia, seguem publicações.
+
+${blocoFonte("1001000-70.2025.5.02.0321", 792900001)}
+
+${blocoFonte("1002000-11.2025.5.02.0322", 792900002)}
+
+Att,
+Fulana`;
+    const lidas = lerPublicacoesColadas(email);
+    expect(lidas.ignorados).toEqual([]);
+    expect(lidas.publicacoes.map((p) => [p.processo, p.idComunicacao])).toEqual([
+      ["1001000-70.2025.5.02.0321", 792900001],
+      ["1002000-11.2025.5.02.0322", 792900002],
+    ]);
+  });
+
+  it("tribunal pelo nome da fonte, não pelo número (o STJ publica com o número do processo de origem)", () => {
+    const stj = blocoFonte("1008871-72.2024.8.26.0224", 1).replace(
+      "Tribunal Regional do Trabalho - 2ª Região - SP - DJEN - 11ª Vara do Trabalho de Guarulhos",
+      "Superior Tribunal de Justiça - DJEN - COORDENADORIA DE PROCESSAMENTO"
+    );
+    expect(lerPublicacoesColadas(stj).publicacoes[0]).toMatchObject({ tribunal: "STJ", orgao: "COORDENADORIA DE PROCESSAMENTO" });
+  });
+
+  it("aponta a publicação sem data de publicação em vez de importar pela metade", () => {
+    const { publicacoes: lidas, ignorados: fora } = lerPublicacoesColadas(blocoFonte("1001000-70.2025.5.02.0321", 1).replace("Data da Publicação: 23/11/2026 ", ""));
+    expect(lidas).toEqual([]);
+    expect(fora).toEqual([expect.objectContaining({ motivo: "sem a data de publicação" })]);
+  });
+});
+
 describe("lerPublicacoesColadas: texto sem publicação", () => {
   it("explica o que aceita", () => {
     const { publicacoes, ignorados } = lerPublicacoesColadas("Bom dia, segue em anexo.");

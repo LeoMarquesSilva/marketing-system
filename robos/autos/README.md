@@ -214,3 +214,13 @@ O robô também roda num contêiner (`Dockerfile` nesta pasta), com o navegador 
 2. Crie `src/conectores/<sistema>.ts` implementando `Conector` (`src/conectores/tipos.ts`): `chave` no formato `sistema:TRIBUNAL`, `entrar` e `baixar`.
 3. Use `ambiente.aguardarPessoa(...)` em login, segundo fator e CAPTCHA, e lance `SegredoDeJustica` quando o processo for sigiloso e `pedido.segredoLiberado` for falso.
 4. Inclua o conector em `CONECTORES` (`src/index.ts`) e o tribunal em `CONECTORES_DISPONIVEIS` (`src/lib/processos/tribunais.ts`, no ORQESTRAI), que é o que libera o botão "Pedir ao robô" na ficha.
+
+## Pauta de Audiências (`npm run pauta`)
+
+Lê a "Minha Pauta" do PJe da Justiça do Trabalho com a sessão do advogado e manda ao ORQESTRAI (`POST /api/robos/pauta`, mesmo `ROBO_AUTOS_TOKEN`). Só leitura.
+
+- `PAUTA_TRIBUNAIS` (padrão `TRT15`): tribunais lidos, separados por vírgula (`TRT15,TRT2`).
+- `PAUTA_DIAS` (padrão 60): quantos dias à frente.
+- Login pelo SSO da PDPJ ("Entrar com PDPJ"): a pessoa entra com o certificado (ou CPF e senha) na janela do robô; o código de 2 fatores vem de `ROBO_2FA_WEBHOOK_URL` com `?sistema=pdpj`, se houver.
+- O navegador fica aberto no fim para a próxima rodada aproveitar a sessão (`-- --fechar` fecha).
+- Agendar três vezes ao dia (ex.: 6h45, 11h45 e 16h45), depois do export do VIOS.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lerSistema, roboDoProcesso, tribunalDoCnj } from "./tribunais";
+import { lerSistema, roboDoProcesso, roboPeloJusbr, tribunalDoCnj } from "./tribunais";
 
 describe("tribunalDoCnj", () => {
   it("lê o tribunal do J.TR", () => {
@@ -63,5 +63,13 @@ describe("roboDoProcesso", () => {
     expect(roboDoProcesso("0001234-56.2020.8.04.0001", "E-saj").disponivel).toBe(false);
     expect(roboDoProcesso("0001234-56.2020.8.13.0024", "pje").motivo).toContain("PJe do TJMG");
     expect(roboDoProcesso("123", "E-saj")).toMatchObject({ disponivel: false, cnj: null });
+  });
+});
+
+describe("Jus.br como fonte dos autos", () => {
+  it("todo tribunal reconhecido vai ao Jus.br, com o robô do tribunal de reserva quando houver", () => {
+    expect(roboPeloJusbr("0012345-67.2019.8.19.0001", "Próprio")).toMatchObject({ sistema: "jusbr", tribunal: "TJRJ", disponivel: true, reserva: "dcp:TJRJ" });
+    expect(roboPeloJusbr("0001234-56.2020.5.15.0001", "pje")).toMatchObject({ sistema: "jusbr", tribunal: "TRT15", disponivel: true, reserva: null });
+    expect(roboPeloJusbr("123", "E-saj")).toMatchObject({ disponivel: false, reserva: null });
   });
 });

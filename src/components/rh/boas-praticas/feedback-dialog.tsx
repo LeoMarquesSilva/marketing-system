@@ -19,15 +19,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { businessDaysToResponse, flowStatus } from "@/lib/rh/boas-praticas/metrics";
+import { isVideoFile, videoProblem } from "@/lib/rh/boas-praticas/media";
 import {
   deleteFeedbackPhoto,
-  imageFilesFrom,
   listFeedbackPhotos,
+  mediaFilesFrom,
   uploadFeedbackPhoto,
 } from "@/lib/rh/boas-praticas/photos-client";
 import {
   FEEDBACK_PHOTOS_MAX,
+  FEEDBACK_VIDEOS_MAX,
   categoryInfo,
+  isFeedbackVideo,
   categoryLabel,
   chapterLabel,
   manualHref,
@@ -367,7 +370,7 @@ export function FeedbackDialog({
       .catch((cause) => {
         if (cancelled) return;
         setPhotos([]);
-        setPhotoError(cause instanceof Error ? cause.message : "Não foi possível carregar as fotos.");
+        setPhotoError(cause instanceof Error ? cause.message : "Não foi possível carregar as fotos e vídeos.");
       });
     return () => {
       cancelled = true;
@@ -385,11 +388,29 @@ export function FeedbackDialog({
   function addPhotos(files: File[]) {
     const room = FEEDBACK_PHOTOS_MAX - keptPhotos.length - pending.length;
     if (room <= 0) {
-      setError(`Cada feedback aceita até ${FEEDBACK_PHOTOS_MAX} fotos.`);
+      setError(`Cada feedback aceita até ${FEEDBACK_PHOTOS_MAX} fotos e vídeos.`);
       return;
     }
-    setPending((current) => [...current, ...toPendingPhotos(files.slice(0, room))]);
-    setError(files.length > room ? `Só cabem mais ${room} ${room === 1 ? "foto" : "fotos"} neste feedback.` : null);
+    // Vídeo é conferido já na escolha (formato, 200 MB e até 3 por feedback), não só ao salvar.
+    let videoRoom = FEEDBACK_VIDEOS_MAX - keptPhotos.filter(isFeedbackVideo).length - pending.filter((entry) => entry.video).length;
+    const problems: string[] = [];
+    const accepted = files.slice(0, room).filter((file) => {
+      if (!isVideoFile(file)) return true;
+      const problem = videoProblem(file);
+      if (problem) {
+        problems.push(problem);
+        return false;
+      }
+      if (videoRoom <= 0) {
+        problems.push(`Cada feedback aceita até ${FEEDBACK_VIDEOS_MAX} vídeos.`);
+        return false;
+      }
+      videoRoom -= 1;
+      return true;
+    });
+    if (files.length > room) problems.push(`Só cabem mais ${room} ${room === 1 ? "arquivo" : "arquivos"} neste feedback.`);
+    setPending((current) => [...current, ...toPendingPhotos(accepted)]);
+    setError(problems.length ? [...new Set(problems)].join(" ") : null);
   }
 
   function removePending(key: string) {
@@ -411,7 +432,7 @@ export function FeedbackDialog({
     clearPendingPhotos();
   }
 
-  /** Aplica as fotos removidas e envia as novas, uma por vez. */
+  /** Aplica as fotos e vídeos removidos e envia os novos, um por vez. */
   async function syncPhotos(feedbackId: string): Promise<{ list: FeedbackPhoto[]; failures: string[] }> {
     let list = keptPhotos;
     const failures: string[] = [];
@@ -425,9 +446,11 @@ export function FeedbackDialog({
       }
     }
     for (const [index, entry] of pending.entries()) {
-      setProgress(`Enviando foto ${index + 1} de ${pending.length}…`);
+      const label = `Enviando ${entry.video ? "vídeo" : "foto"} (${index + 1} de ${pending.length})`;
+      setProgress(`${label}…`);
       try {
-        list = [...list, await uploadFeedbackPhoto(feedbackId, entry.file)];
+        const onProgress = (fraction: number) => setProgress(`${label}… ${Math.round(fraction * 100)}%`);
+        list = [...list, await uploadFeedbackPhoto(feedbackId, entry.file, entry.video ? onProgress : undefined)];
       } catch (cause) {
         failures.push(cause instanceof Error ? cause.message : `Não foi possível enviar "${entry.file.name}".`);
       }
@@ -465,7 +488,7 @@ export function FeedbackDialog({
       setPhotos(list);
       if (failures.length) {
         setError(
-          `Feedback salvo, mas ${failures.length === 1 ? "1 alteração de foto falhou" : `${failures.length} alterações de foto falharam`}: ${failures[0]}`
+          `Feedback salvo, mas ${failures.length === 1 ? "1 alteração de foto ou vídeo falhou" : `${failures.length} alterações de fotos ou vídeos falharam`}: ${failures[0]}`
         );
       }
     } catch (cause) {
@@ -506,7 +529,7 @@ export function FeedbackDialog({
         }}
         onPaste={(event) => {
           if (mode !== "edit" || saving) return;
-          const files = imageFilesFrom(event.clipboardData?.items);
+          const files = mediaFilesFrom(event.clipboardData?.items);
           if (!files.length) return;
           event.preventDefault();
           addPhotos(files);

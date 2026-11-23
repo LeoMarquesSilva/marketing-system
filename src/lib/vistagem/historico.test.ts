@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CONFERENCIA_AUTOMATICA } from "./check";
 import { montarHistorico, type DadosDoHistorico, type TarefaNoHistorico } from "./historico";
 
 const base = (extra: Partial<DadosDoHistorico> = {}): DadosDoHistorico => ({
@@ -49,13 +50,27 @@ describe("montarHistorico", () => {
       })
     );
     expect(eventos.map((evento) => evento.tipo)).toEqual(["chegada", "triagem", "transferencia", "vistagem"]);
-    expect(eventos[1].detalhes).toEqual(["Pasta CI 26160 (PROCESSO PRINCIPAL)", "Área: Cível"]);
+    expect(eventos[1]).toMatchObject({ detalhes: [], area: "Cível", pasta: { ci: "26160", vinculo: "PROCESSO PRINCIPAL" } });
     expect(eventos[2]).toMatchObject({
-      titulo: "Transferida de Cível para Cível | Insolvência",
+      titulo: "Transferida de área",
       por: "Ana",
       detalhes: ["Motivo: Empresa com medida de reestruturação."],
+      areaDe: "Cível",
+      area: "Cível | Insolvência",
     });
-    expect(eventos[3].detalhes).toEqual(["CIÊNCIA NF · 10/11/2026 · Ligia"]);
+    expect(eventos[3]).toMatchObject({ detalhes: [], tarefas: [{ tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Ligia" }] });
+  });
+
+  it("reabertura para alterar antes da Conferência aparece com quem reabriu (pedido de 11/11/2026)", () => {
+    const eventos = montarHistorico(
+      base({
+        reabertura: { por: "Ana", em: "2026-11-09T12:30:00Z" },
+        vistagem: { por: "Ana", em: "2026-11-09T12:40:00Z", observacao: null },
+      })
+    );
+    expect(eventos.map((evento) => evento.tipo)).toEqual(["chegada", "triagem", "reabertura", "vistagem"]);
+    expect(eventos[2]).toMatchObject({ titulo: "Vistagem reaberta para alterar, antes da Conferência", por: "Ana" });
+    expect(montarHistorico(base()).some((evento) => evento.tipo === "reabertura")).toBe(false);
   });
 
   it("põe tudo em ordem de tempo", () => {
@@ -79,10 +94,10 @@ describe("montarHistorico", () => {
       "chegada", "triagem", "vistagem", "devolucao", "inconsistencia", "revistagem", "ajuste", "conferencia",
     ]);
     // Depois da devolução, as tarefas aparecem na nova vistagem, não na primeira.
-    expect(eventos[2].detalhes).toEqual(["Observação: ok"]);
-    expect(eventos[5].detalhes).toEqual(["CIÊNCIA NF · 10/11/2026 · Ligia"]);
+    expect(eventos[2]).toMatchObject({ detalhes: ["Observação: ok"], tarefas: [] });
+    expect(eventos[5].tarefas).toEqual([{ tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Ligia" }]);
     expect(eventos[3].detalhes).toEqual(["Motivo: data errada", "Foi devolvida 2 vezes; aqui aparece a última."]);
-    expect(eventos[6].detalhes).toEqual(["Data: 10/11 → 11/11"]);
+    expect(eventos[6].mudancas).toEqual([{ campo: "Data", de: "10/11", para: "11/11" }]);
   });
 
   it("junta as tarefas enviadas juntas e mostra o que o robô respondeu em cada uma", () => {
@@ -120,7 +135,7 @@ describe("montarHistorico", () => {
         central: { itemId: "64033", enviadaEm: "2026-11-09T15:00:02Z", erro: null, tentativaEm: null },
       })
     );
-    expect(criada.find((evento) => evento.tipo === "triagem")?.detalhes).toEqual(["Pendência: sem pasta no VIOS", "Área: Cível | Insolvência"]);
+    expect(criada.find((evento) => evento.tipo === "triagem")).toMatchObject({ detalhes: ["Pendência: sem pasta no VIOS"], area: "Cível | Insolvência", pasta: null });
     expect(criada.find((evento) => evento.tipo === "conferencia")?.titulo).toBe("Conferida e enviada à Central (abertura de pasta)");
     expect(criada.find((evento) => evento.tipo === "central")?.detalhes).toEqual(["Item 64033"]);
 
@@ -140,6 +155,48 @@ describe("montarHistorico", () => {
     );
     expect(eventos[0]).toMatchObject({ titulo: "Colada na vistagem", detalhes: ["Publicada em 09/11/2026"] });
     expect(eventos[1].detalhes).toEqual(["Ficou pendente na triagem"]);
-    expect(eventos[2]).toMatchObject({ tipo: "pendencia", por: "Bia", detalhes: ["Pasta CI 26160 (PROCESSO PRINCIPAL)", "Área: Cível | Insolvência"] });
+    expect(eventos[2]).toMatchObject({ tipo: "pendencia", por: "Bia", detalhes: [], area: "Cível | Insolvência", pasta: { ci: "26160", vinculo: "PROCESSO PRINCIPAL" } });
+  });
+});
+
+describe("montarHistorico: como a fatal foi escolhida (pedido de 18/11/2026)", () => {
+  const vistada = { vistagem: { por: "Maria", em: "2026-11-09T19:57:48Z", observacao: null } };
+
+  it("no Prazo, a tarefa da vistagem leva a fatal, os dias, a origem e os ajustes", () => {
+    const ajustes = [{ por: "Giovanna", em: "2026-11-10T12:00:00Z", mudancas: [{ campo: "Data fatal", de: "20/11/2026", para: "24/11/2026" }] }];
+    const eventos = montarHistorico(
+      base({
+        ...vistada,
+        tarefas: [
+          tarefa({ tarefa: "MANIFESTAÇÃO", etiqueta: "PRAZO", dataFatal: "2026-11-24", diasPrazo: null, contagemPrazo: null, origemPrazo: "atalho", ajustes }),
+        ],
+      })
+    );
+    const vistagem = eventos.find((evento) => evento.tipo === "vistagem");
+    expect(vistagem?.tarefas).toEqual([
+      { tarefa: "MANIFESTAÇÃO", data: "2026-11-10", responsavel: "Ligia", etiqueta: "PRAZO", dataFatal: "2026-11-24", diasPrazo: null, contagemPrazo: null, origemPrazo: "atalho", ajustes },
+    ]);
+  });
+
+  it("fora do Prazo com fatal, a tarefa fica só com data e responsável", () => {
+    const eventos = montarHistorico(base({ ...vistada, tarefas: [tarefa({ etiqueta: "PROVIDENCIA", dataFatal: null, origemPrazo: null })] }));
+    expect(eventos.find((evento) => evento.tipo === "vistagem")?.tarefas).toEqual([{ tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Ligia" }]);
+  });
+});
+
+describe("VERIFICAR RENÚNCIA da Operações Legais sem a Conferência (pedido de 18/11/2026)", () => {
+  it("o evento diz que foi direto ao robô, sem pessoa", () => {
+    const eventos = montarHistorico(
+      base({
+        status: "agendado",
+        escritorio: "Operações Legais",
+        vistagem: { por: "Giovanna", em: "2026-11-18T12:00:00Z", observacao: null },
+        conferencia: { por: CONFERENCIA_AUTOMATICA, em: "2026-11-18T12:00:01Z" },
+      })
+    );
+    expect(eventos.find((evento) => evento.tipo === "conferencia")).toMatchObject({
+      titulo: "Sem a Conferência: enviada direto ao robô (VERIFICAR RENÚNCIA da Operações Legais)",
+      por: null,
+    });
   });
 });

@@ -1,16 +1,21 @@
 import "server-only";
 
+import { acordoNaCarteira, recebidoEmAcordos } from "./acordos";
+import { acordosPorProcesso, carregarAcordos } from "./acordos-dados";
 import { ProcessosError } from "./errors";
 import { carregarTabelaTjsp, situacaoDosIndices } from "./indices-server";
 import { registrarNoHistorico } from "./processos-server";
 import {
+  SEM_ATUALIZACAO,
   TABELA_DO_ITEM,
+  atualizacaoDosAutos,
   calcularCredito,
   colunasDoItem,
   descreverItem,
   linhaDaCarteira,
   processoEncerrado,
   type Citacao,
+  type AtualizacaoDosAutos,
   type DadosDoProcessoNaCarteira,
   type ItensRecCredito,
   type Lancamento,
@@ -170,10 +175,64 @@ export async function carregarCarteira(ids: string[] | null = null): Promise<{ l
     }
   }
   const doCredito = processos.filter((linha) => /recupera[cç][aã]o de cr[eé]dito/i.test(String(linha.area ?? "")));
-  const [itens, { tabela, indicesAte }] = await Promise.all([itensPorProcesso(ids ? doCredito.map((linha) => linha.id as string) : null), tabelaEIndices()]);
+  const idsDoCredito = doCredito.map((linha) => linha.id as string);
+  const [itens, { tabela, indicesAte }, autos, acordos] = await Promise.all([
+    itensPorProcesso(ids ? idsDoCredito : null),
+    tabelaEIndices(),
+    autosPorProcesso(idsDoCredito),
+    acordosPorProcesso(idsDoCredito),
+  ]);
   const dia = hoje();
   const vazio: ItensRecCredito = { titulos: [], citacoes: [], pedidos: [], lancamentos: [] };
-  return { linhas: doCredito.map((linha) => linhaDaCarteira(dadosDoProcesso(linha), itens.get(linha.id as string) ?? vazio, tabela, dia, indicesAte)), indicesAte };
+  return {
+    linhas: doCredito.map((linha) => {
+      const id = linha.id as string;
+      const doProcesso = acordos.get(id) ?? [];
+      return linhaDaCarteira(dadosDoProcesso(linha), itens.get(id) ?? vazio, tabela, dia, indicesAte, autos.get(id) ?? SEM_ATUALIZACAO, {
+        destaque: acordoNaCarteira(doProcesso, dia),
+        recebido: recebidoEmAcordos(doProcesso),
+      });
+    }),
+    indicesAte,
+  };
+}
+
+/** Pedidos ao robô e leituras da IA de cada processo, para a carteira mostrar quem foi atualizado e quando. */
+async function autosPorProcesso(processos: string[]): Promise<Map<string, AtualizacaoDosAutos>> {
+  const ler = async (tabela: string, colunas: string) => {
+    const linhas: Linha[] = [];
+    for (const lote of emLotes(processos, 200)) {
+      for (let inicio = 0; ; inicio += 1000) {
+        const { data, error } = await db().from(tabela).select(colunas).in("processo_id", lote).range(inicio, inicio + 999);
+        if (error) falhou("carregar a atualização dos autos", error);
+        linhas.push(...((data ?? []) as unknown as Linha[]));
+        if (!data || data.length < 1000) break;
+      }
+    }
+    return linhas;
+  };
+  const [pedidos, documentos] = await Promise.all([
+    ler("proc_autos_pedidos", "processo_id, status, criado_em, concluido_em, erro"),
+    ler("proc_documentos", "processo_id, leitura_status, lido_em"),
+  ]);
+  const agrupar = (linhas: Linha[]) => {
+    const mapa = new Map<string, Linha[]>();
+    for (const linha of linhas) mapa.set(linha.processo_id as string, [...(mapa.get(linha.processo_id as string) ?? []), linha]);
+    return mapa;
+  };
+  const pedidosDe = agrupar(pedidos);
+  const documentosDe = agrupar(documentos);
+  const resultado = new Map<string, AtualizacaoDosAutos>();
+  for (const id of new Set([...pedidosDe.keys(), ...documentosDe.keys()])) {
+    resultado.set(
+      id,
+      atualizacaoDosAutos(
+        (pedidosDe.get(id) ?? []).map((linha) => ({ status: linha.status as string, criadoEm: linha.criado_em as string, concluidoEm: texto(linha.concluido_em), erro: texto(linha.erro) })),
+        (documentosDe.get(id) ?? []).map((linha) => ({ leituraStatus: linha.leitura_status as string, lidoEm: texto(linha.lido_em) }))
+      )
+    );
+  }
+  return resultado;
 }
 
 /** Saneamento da Rec. Crédito de um processo, com o cálculo no ajuizamento e na data final. */
@@ -182,13 +241,13 @@ export async function carregarRecCredito(processoId: string): Promise<RecCredito
   if (error) falhou("carregar o processo", error);
   if (!data) throw new ProcessosError("Processo não encontrado.", 404);
   const dados = dadosDoProcesso(data as unknown as Linha);
-  const [itens, { tabela, indicesAte }] = await Promise.all([itensPorProcesso([processoId]), tabelaEIndices()]);
+  const [itens, { tabela, indicesAte }, acordos] = await Promise.all([itensPorProcesso([processoId]), tabelaEIndices(), carregarAcordos(processoId)]);
   const doProcesso = itens.get(processoId) ?? { titulos: [], citacoes: [], pedidos: [], lancamentos: [] };
   const dataFinal = processoEncerrado(dados) && dados.dataEncerramento ? dados.dataEncerramento : hoje();
   const calculo = tabela
     ? calcularCredito(tabela, doProcesso.titulos, dados.dataDistribuicao, dataFinal, indicesAte)
     : { ajuizamento: null, atual: null, avisos: doProcesso.titulos.length ? ["Os índices do TJSP ainda não foram importados."] : [] };
-  return { ...doProcesso, calculo, dataAjuizamento: dados.dataDistribuicao, dataFinal, indicesAte };
+  return { ...doProcesso, calculo, recebidoEmAcordos: recebidoEmAcordos(acordos), dataAjuizamento: dados.dataDistribuicao, dataFinal, indicesAte };
 }
 
 const ROTULO_HISTORICO = "Rec. Crédito";

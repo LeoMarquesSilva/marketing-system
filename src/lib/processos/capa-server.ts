@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { SugestaoNova } from "./autos-types";
-import { andamentosDoDataJud, indiceDoDataJud, lerCnjDaCapa, registroAtual, sugestoesDaCapa, type RegistroDataJud } from "./capa";
+import { andamentosDoDataJud, indiceDoDataJud, lerCnjDaCapa, registroAtual, registrosDoJusbr, sugestoesDaCapa, type CapaDoJusbr, type FonteOficial, type RegistroDataJud } from "./capa";
 import { ProcessosError } from "./errors";
 import { detalharProcesso } from "./processos-server";
 import { db, falhou, type Ator } from "./server";
@@ -51,7 +51,7 @@ async function municipioDoIbge(codigo: number | null | undefined): Promise<strin
 /** Troca as sugestões de capa ainda pendentes do processo pelas novas. Proposta já recusada não volta (mesma chave). */
 async function gravar(processoId: string, sugestoes: SugestaoNova[]): Promise<string[]> {
   const banco = db();
-  const { error: erroLimpeza } = await banco.from("proc_sugestoes").delete().eq("processo_id", processoId).in("fonte", ["datajud", "cnj"]).eq("situacao", "pendente");
+  const { error: erroLimpeza } = await banco.from("proc_sugestoes").delete().eq("processo_id", processoId).in("fonte", ["datajud", "cnj", "jusbr"]).eq("situacao", "pendente");
   if (erroLimpeza) falhou("limpar as sugestões de capa anteriores", erroLimpeza);
   if (!sugestoes.length) return [];
   const { data, error } = await banco
@@ -82,17 +82,18 @@ async function gravar(processoId: string, sugestoes: SugestaoNova[]): Promise<st
 
 /** Quem grava a capa das fontes oficiais: o próprio sistema (no histórico, sem pessoa). */
 const ATOR_DA_CAPA: Ator = { authUserId: null as unknown as string, nome: "DataJud (automático)" };
+const ATOR_DO_JUSBR: Ator = { authUserId: null as unknown as string, nome: "Jus.br (automático)" };
 
 /**
  * A capa das fontes oficiais (DataJud e número CNJ) entra direto no cadastro, sem esperar aprovação: cada
  * sugestão é aprovada pelo sistema, pelo mesmo caminho da tela (histórico com a fonte, fila do VIOS). A que não
  * puder ser gravada (valor fora da lista de Cadastros, por exemplo) fica na fila para uma pessoa decidir.
  */
-export async function aplicarCapa(ids: string[]): Promise<{ aplicadas: number; pendentes: number }> {
+export async function aplicarCapa(ids: string[], ator: Ator = ATOR_DA_CAPA): Promise<{ aplicadas: number; pendentes: number }> {
   let aplicadas = 0;
   for (const id of ids) {
     try {
-      await decidirSugestao(id, { acao: "aprovar" }, ATOR_DA_CAPA);
+      await decidirSugestao(id, { acao: "aprovar" }, ator);
       aplicadas += 1;
     } catch (erro) {
       console.error("[processos] gravar a capa do DataJud:", erro instanceof Error ? erro.message : erro);
@@ -150,9 +151,19 @@ export async function completarCapa(processoId: string): Promise<ResultadoDaCapa
  * Guarda todos os movimentos do DataJud na linha do tempo (proc_andamentos), sem duplicar. Movimento do tribunal
  * é fato, não sugestão: entra direto. Falha aqui não derruba a capa (a linha do tempo é complemento).
  */
-async function guardarAndamentos(processoId: string, registros: RegistroDataJud[]): Promise<number> {
-  const andamentos = andamentosDoDataJud(registros);
+async function guardarAndamentos(processoId: string, registros: RegistroDataJud[], fonte: FonteOficial = "datajud"): Promise<number> {
+  const andamentos = andamentosDoDataJud(registros, fonte);
   if (!andamentos.length) return 0;
+  if (fonte === "jusbr") {
+    // O Jus.br traz os mesmos eventos do DataJud com o texto do tribunal (e mais atualizados): os movimentos do
+    // DataJud deste processo saem, para a linha do tempo não mostrar o mesmo evento duas vezes. Só quando o Jus.br
+    // trouxer pelo menos tantos movimentos quanto o DataJud tinha.
+    const { count } = await db().from("proc_andamentos").select("id", { count: "exact", head: true }).eq("processo_id", processoId).eq("fonte", "datajud");
+    if (count && andamentos.length >= count) {
+      const { error } = await db().from("proc_andamentos").delete().eq("processo_id", processoId).eq("fonte", "datajud");
+      if (error) console.error("[processos] trocar os andamentos do DataJud pelos do Jus.br:", error.message);
+    }
+  }
   let novos = 0;
   for (let inicio = 0; inicio < andamentos.length; inicio += 500) {
     const { data, error } = await db()
@@ -169,6 +180,21 @@ async function guardarAndamentos(processoId: string, registros: RegistroDataJud[
     novos += data?.length ?? 0;
   }
   return novos;
+}
+
+/**
+ * Capa e linha do tempo pela ficha do Jus.br, que o robô lê ao baixar os autos: o mesmo caminho do DataJud
+ * (sugestões gravadas direto no cadastro e movimentos na linha do tempo), com a origem "jusbr".
+ */
+export async function completarCapaPeloJusbr(processoId: string, capa: CapaDoJusbr): Promise<ResultadoDaCapa> {
+  const processo = await detalharProcesso(processoId);
+  const { registros, municipio } = registrosDoJusbr(capa);
+  const agora = new Date();
+  const sugestoes = sugestoesDaCapa({ valores: processo.valores, datajud: registros, municipio, consultadoEm: agora.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }), fonteOficial: "jusbr" });
+  const gravadas = await gravar(processoId, sugestoes);
+  const { pendentes } = await aplicarCapa(gravadas, ATOR_DO_JUSBR);
+  const andamentos = await guardarAndamentos(processoId, registros, "jusbr");
+  return { achou: registros.length > 0, sugestoes: pendentes, aplicadas: gravadas.length - pendentes, andamentos, aviso: null };
 }
 
 /** Intervalo entre duas consultas do mesmo processo pelo robô. */

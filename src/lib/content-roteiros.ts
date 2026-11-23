@@ -29,52 +29,27 @@ import {
 } from "./content-performance";
 import type { InstagramPost } from "./instagram-posts";
 import { contentRoteiroWordPublicUrl } from "./content-word";
+import { settingsFromRow, type GeneratorSettings } from "./content-generator/settings";
+import { fetchAllPages } from "./supabase-pages";
+import { collaboratorHintForArea, isLearningStale } from "./content-generator/learning";
+import {
+  createFollowupAlerts,
+  getGeneratorSettings,
+  loadGenerationContext,
+  loadRelatedCandidates,
+  refreshLearning,
+  scoreNewsRelevance,
+  writeCarousel,
+} from "./content-generator/server";
+import { isSameStory, rankRelatedCandidates, relatedCarouselGuidance, storyTerms } from "./content-generator/related";
+
+/** Janela da regra "mesma notícia por outro veículo" (as manchetes repetem por umas duas semanas). */
+const SAME_STORY_WINDOW_DAYS = 21;
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
 const supabaseServiceKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-
-const CAROUSEL_PROMPT = `Você é redator jurídico de um escritório de advocacia.
-
-Com base na notícia abaixo, crie um post completo em formato de carrossel para redes sociais, seguindo exatamente a estrutura e estilo abaixo:
-
----
-
-**Slide de Capa**
-Título: Frase impactante e objetiva (manchete)
-Subtítulo: Uma linha curta de apoio que complementa o título
-
-**Slide de Desenvolvimento 1**  
-Título: Subtópico específico  
-Conteúdo: Explicação clara e direta com exemplo
-
-**Slide de Desenvolvimento 2**  
-Título: Benefícios ou Justificativas  
-Conteúdo:
-- Benefício 1
-- Benefício 2
-- Benefício 3
-
-**Slide de Desenvolvimento 3**  
-Título: Impactos ou Desafios  
-Conteúdo: Principais desafios ou controvérsias
-
-**Slide Final**  
-Título: Conclusão ou Perspectiva Futura  
-Conteúdo: Resumo final + Call to Action (ex: "Procure um advogado especializado")
-
----
-
-**Notícia**
-Título: {{TITLE}}
-Resumo: {{SNIPPET}}
-Conteúdo da matéria: {{ARTICLE}}
-Link: {{LINK}}
-Área do Direito: {{AREA}}
-{{PERFORMANCE}}
-
-Baseie-se no conteúdo da matéria quando disponível (é mais completo que o resumo). Use linguagem acessível, objetiva, com tom profissional. Não invente fatos que não estejam na notícia e não cite diretamente o veículo de imprensa.`;
 
 const RSS_BASE =
   "https://news.google.com/rss/search?hl=pt-BR&gl=BR&ceid=BR:pt-419&q=";
@@ -198,34 +173,31 @@ export async function resolveNewsArea(
   return validateClassifiedArea(finalArea, title, snippet);
 }
 
+/**
+ * Escreve o carrossel com as regras das Configurações (tom, nº de slides, CTA,
+ * o que evitar) e o bloco de aprendizado da área (Instagram + equipe).
+ */
 export async function generateCarousel(
   openai: ReturnType<typeof createOpenAI>,
   title: string,
   snippet: string,
   link: string,
   area: string,
-  performanceBlock?: string,
-  articleText?: string
+  learningBlock?: string,
+  articleText?: string,
+  settings?: GeneratorSettings,
+  relatedGuidance?: string
 ): Promise<string> {
-  const prompt = CAROUSEL_PROMPT.replace("{{TITLE}}", title)
-    .replace("{{SNIPPET}}", snippet)
-    .replace(
-      "{{ARTICLE}}",
-      articleText && articleText.length > 0
-        ? articleText
-        : "(não disponível — use o resumo acima)"
-    )
-    .replace("{{LINK}}", link)
-    .replace("{{AREA}}", area)
-    .replace("{{PERFORMANCE}}", performanceBlock ? `\n${performanceBlock}` : "");
-
-  const { text } = await generateText({
-    model: openai(OPENAI_DEFAULT_MODEL),
-    prompt,
-    ...openAIGenerationOptions(OPENAI_DEFAULT_MODEL, { reasoningEffort: "low", temperature: 0.7 }),
+  return writeCarousel(openai, {
+    title,
+    snippet,
+    link,
+    area,
+    articleText,
+    learningBlock,
+    relatedGuidance,
+    settings: settings ?? (await getGeneratorSettings().catch(() => settingsFromRow(null))),
   });
-
-  return text?.trim() ?? "";
 }
 
 export interface ContentRoteiro {
@@ -263,6 +235,10 @@ export interface ContentRoteiro {
   created_by_id?: string | null;
   created_by_name?: string | null;
   source?: string | null;
+  /** Quem descartou a matéria (null enquanto ela está na lista). */
+  rejected_by_id?: string | null;
+  rejected_by_name?: string | null;
+  rejected_at?: string | null;
 }
 
 export interface UserViosTaskOption {
@@ -275,8 +251,17 @@ export interface UserViosTaskOption {
   already_linked: boolean;
 }
 
-const ROTEIRO_LIST_SELECT =
-  "id, topic_id, title, link, content_snippet, area, post, status, published_at, created_at, approved_by_id, approved_by_name, approved_at, has_alterations, alterations_notes, sent_for_manager_review, performance_hint, image_url, original_post, edited_by_id, edited_by_name, edited_at, reviewer_approved_at, sent_to_mkt_at, sent_to_mkt_by_name, marketing_request_id, vios_task_id, boletim_score, boletim_scored_by_name, boletim_scored_at, created_by_id, created_by_name, source";
+/** Colunas de acompanhamento (quem escolheu, editou, descartou, enviou), sem os textos longos. */
+const ROTEIRO_TRACKING_COLUMNS =
+  "id, topic_id, title, link, content_snippet, area, status, published_at, created_at, approved_by_id, approved_by_name, approved_at, has_alterations, alterations_notes, sent_for_manager_review, performance_hint, image_url, edited_by_id, edited_by_name, edited_at, reviewer_approved_at, sent_to_mkt_at, sent_to_mkt_by_name, marketing_request_id, vios_task_id, boletim_score, boletim_scored_by_name, boletim_scored_at, created_by_id, created_by_name, source, rejected_by_id, rejected_by_name, rejected_at, relevance_score, relevance_reason, related_kind, related_note, related_ref";
+
+const ROTEIRO_LIST_SELECT = `${ROTEIRO_TRACKING_COLUMNS}, post, original_post`;
+
+/**
+ * Lista leve da tela de Posts: sem `post` e `original_post` (≈1,7 MB em 60 dias).
+ * O texto completo vem ao abrir o detalhe (`?contentId=`).
+ */
+const ROTEIRO_LITE_SELECT = ROTEIRO_TRACKING_COLUMNS;
 
 function mergeRoteirosById(rows: ContentRoteiro[]): ContentRoteiro[] {
   const seen = new Set<string>();
@@ -296,6 +281,8 @@ export async function fetchContentRoteiros(options?: {
   areas?: string[];
   createdById?: string;
   max_age_days?: number;
+  /** Sem os textos longos do post (a tela carrega o texto ao abrir o detalhe). */
+  lite?: boolean;
 }): Promise<ContentRoteiro[]> {
   const maxAgeDays = options?.max_age_days ?? CONTENT_MAX_AGE_DAYS;
   const since = getContentCutoffDate(maxAgeDays);
@@ -304,10 +291,12 @@ export async function fetchContentRoteiros(options?: {
 
   const applyCommonFilters = (query: ReturnType<typeof supabase.from>) => {
     let next = query
-      .select(ROTEIRO_LIST_SELECT)
+      .select(options?.lite ? ROTEIRO_LITE_SELECT : ROTEIRO_LIST_SELECT)
       .gte("created_at", since.toISOString())
       .order("published_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      // Desempate estável para a paginação não pular nem repetir linhas.
+      .order("id", { ascending: true });
 
     if (options?.status) {
       next = next.eq("status", options.status);
@@ -318,13 +307,16 @@ export async function fetchContentRoteiros(options?: {
     return next;
   };
 
-  if (options?.area) {
-    const { data, error } = await applyCommonFilters(supabase.from("content_roteiros")).eq(
-      "area",
-      options.area
+  // A lista passa de 1.000 linhas em 60 dias: lê em páginas (o Supabase corta em 1.000).
+  type ListQuery = ReturnType<typeof applyCommonFilters>;
+  const readAll = (build: () => ListQuery) =>
+    fetchAllPages<ContentRoteiro>((from, to) =>
+      build().range(from, to) as unknown as PromiseLike<{ data: ContentRoteiro[] | null; error: { message: string } | null }>
     );
-    if (error) throw new Error(error.message);
-    return ((data ?? []) as ContentRoteiro[]).filter((r) => getRoteiroDate(r) >= since);
+
+  if (options?.area) {
+    const rows = await readAll(() => applyCommonFilters(supabase.from("content_roteiros")).eq("area", options.area!));
+    return rows.filter((r) => getRoteiroDate(r) >= since);
   }
 
   if (options?.areas && options.areas.length === 0 && !options.createdById) {
@@ -334,22 +326,18 @@ export async function fetchContentRoteiros(options?: {
   const batches: ContentRoteiro[] = [];
 
   if (!options?.areas || options.areas.length > 0) {
-    let areaQuery = applyCommonFilters(supabase.from("content_roteiros"));
-    if (options?.areas && options.areas.length > 0) {
-      areaQuery = areaQuery.in("area", options.areas);
-    }
-    const { data, error } = await areaQuery;
-    if (error) throw new Error(error.message);
-    batches.push(...((data ?? []) as ContentRoteiro[]));
+    const areas = options?.areas;
+    batches.push(
+      ...(await readAll(() => {
+        const query = applyCommonFilters(supabase.from("content_roteiros"));
+        return areas && areas.length > 0 ? query.in("area", areas) : query;
+      }))
+    );
   }
 
   if (options?.createdById) {
-    const { data, error } = await applyCommonFilters(supabase.from("content_roteiros")).eq(
-      "created_by_id",
-      options.createdById
-    );
-    if (error) throw new Error(error.message);
-    batches.push(...((data ?? []) as ContentRoteiro[]));
+    const createdById = options.createdById;
+    batches.push(...(await readAll(() => applyCommonFilters(supabase.from("content_roteiros")).eq("created_by_id", createdById))));
   }
 
   return mergeRoteirosById(batches).filter((r) => getRoteiroDate(r) >= since);
@@ -536,6 +524,13 @@ export async function updateRoteiroStatus(
     updates.reviewer_approved_at = new Date().toISOString();
   }
 
+  // Matéria volta para a lista: some o registro de quem tinha descartado.
+  if (status === "aguardando_aprovacao") {
+    updates.rejected_by_id = null;
+    updates.rejected_by_name = null;
+    updates.rejected_at = null;
+  }
+
   // Edição avulsa do texto (ex.: colaborador ajustando no modal de detalhe).
   if (postOverride !== undefined) {
     updates.post = postOverride;
@@ -575,6 +570,25 @@ export async function updateRoteiroStatus(
   }
 
   return null;
+}
+
+/** Descarta a matéria registrando quem descartou e quando (aparece em Escolhas da equipe). */
+export async function rejectRoteiro(
+  id: string,
+  actor: { id: string; name: string | null },
+): Promise<{ rejected_by_id: string; rejected_by_name: string | null; rejected_at: string }> {
+  const supabase = getSupabaseAdmin();
+  const rejected = {
+    rejected_by_id: actor.id,
+    rejected_by_name: actor.name,
+    rejected_at: new Date().toISOString(),
+  };
+  const { error } = await supabase
+    .from("content_roteiros")
+    .update({ status: "rejeitado", ...rejected })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  return rejected;
 }
 
 /**
@@ -784,9 +798,27 @@ export async function runFetchPipeline(
   const monthsBack = options?.monthsBack ?? 4;
   const limit = options?.limit ?? 20;
   const fetchArticle = options?.fetchArticle ?? true;
-  const maxCreated = options?.maxCreated;
   const trigger = options?.trigger ?? "manual";
   const startedAt = new Date();
+
+  // Regras das Configurações + aprendizado; o aprendizado velho é refeito antes de buscar.
+  let generation = await loadGenerationContext();
+  if (generation.settings.useLearning && isLearningStale(generation.learning)) {
+    try {
+      await refreshLearning({ trigger: "automatico" });
+      generation = await loadGenerationContext();
+    } catch (err) {
+      console.error("[content-roteiros] não foi possível atualizar o aprendizado", err);
+    }
+  }
+  const maxCreated = options?.maxCreated ?? generation.settings.maxPerRun;
+  const minRelevance = generation.settings.minRelevance;
+  let lowScore = 0;
+  // "Já falamos disso?": posts do Instagram e matérias escolhidas, para comparar com cada notícia.
+  const relatedCandidates = await loadRelatedCandidates().catch((err) => {
+    console.error("[content-roteiros] sem histórico para comparar assuntos", err);
+    return [];
+  });
 
   let topicsToProcess: ContentTopic[];
   if (topics && topics.length > 0) {
@@ -811,17 +843,30 @@ export async function runFetchPipeline(
   const errors: string[] = [];
 
   // Dedupe: carrega links/títulos já existentes (janela recente) para não repetir.
+  // Paginado: até 18/11/2026 lia só as primeiras 1.000 de ~2.100 linhas e a mesma
+  // notícia virava carrossel de novo todo dia (373 cópias em 60 dias).
   const dedupeSince = getContentCutoffDate(120);
-  const { data: existing } = await supabase
-    .from("content_roteiros")
-    .select("link, title")
-    .gte("created_at", dedupeSince.toISOString());
+  const existing = await fetchAllPages<{ link: string | null; title: string | null; created_at: string }>((from, to) =>
+    supabase
+      .from("content_roteiros")
+      .select("link, title, created_at")
+      .gte("created_at", dedupeSince.toISOString())
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
   const seenLinks = new Set<string>(
     (existing ?? []).map((r) => (r.link as string | null) ?? "").filter(Boolean)
   );
   const seenTitles = new Set<string>(
     (existing ?? []).map((r) => normalizeTitleKey((r.title as string) ?? "")).filter(Boolean)
   );
+  // Mesma notícia por outro veículo (título diferente): compara com as das últimas 3 semanas
+  // e com as que entram nesta rodada. Ex.: a decisão da Xuxa veio pelo Migalhas e pelo Jurinews.
+  const storySince = getContentCutoffDate(SAME_STORY_WINDOW_DAYS).toISOString();
+  const recentStories = existing
+    .filter((r) => r.created_at >= storySince && r.title)
+    .map((r) => storyTerms(r.title as string));
 
   // Carrega o histórico de performance do Instagram uma vez e memoiza por área.
   let performancePosts: InstagramPost[] = [];
@@ -872,6 +917,11 @@ export async function runFetchPipeline(
             skipped++;
             continue;
           }
+          const itemStory = storyTerms(title);
+          if (recentStories.some((story) => isSameStory(story, itemStory))) {
+            skipped++;
+            continue;
+          }
 
           // Pré-filtro barato: descarta lixo óbvio (polícia/crime/etc.) ANTES de
           // gastar chamadas de IA. Importante para feeds diretos mais amplos.
@@ -901,13 +951,32 @@ export async function runFetchPipeline(
           if (rawArea.skip) continue;
           const area = rawArea.area;
 
+          // Sem aprendizado ainda, cai na dica antiga (temas das legendas da área).
+          const performance = getPerformance(area);
+          const learningBlock = generation.learningFor(area) || performance?.promptBlock || "";
+
+          // Nota de potencial antes de gastar IA no carrossel: abaixo da mínima, nem escreve.
+          // Junto, a IA diz se já falamos disso (repetido) ou se é um desdobramento com fato novo.
+          const related = rankRelatedCandidates({ title, snippet }, relatedCandidates);
+          const relevance = await scoreNewsRelevance(
+            openai,
+            { title, snippet, area, sourceName: topic.name, learningBlock, areaGuideline: generation.settings.areaGuidelines[area] },
+            related
+          ).catch(() => null);
+          if (relevance && relevance.score < minRelevance) {
+            lowScore++;
+            if (linkKey) seenLinks.add(linkKey);
+            if (titleKey) seenTitles.add(titleKey);
+            recentStories.push(itemStory);
+            continue;
+          }
+
           // Só agora (item aprovado) buscamos o conteúdo real — texto + capa numa
           // única requisição. Limita as buscas HTTP aos itens que viram post.
           const article = fetchArticle
             ? await fetchArticleContent(item.link)
             : { text: "", imageUrl: null };
 
-          const performance = getPerformance(area);
           const imageUrl = article.imageUrl;
 
           const post = await generateCarousel(
@@ -916,12 +985,14 @@ export async function runFetchPipeline(
             snippet,
             item.link ?? "",
             area,
-            performance?.promptBlock,
-            article.text
+            learningBlock,
+            article.text,
+            generation.settings,
+            relatedCarouselGuidance(relevance?.related.kind, relevance?.related.ref, relevance?.related.note)
           );
 
           const publishedAt = item.isoDate ?? item.pubDate;
-          const { error: insertErr } = await supabase.from("content_roteiros").insert({
+          const { data: inserted, error: insertErr } = await supabase.from("content_roteiros").insert({
             topic_id: topic.id,
             title,
             link: item.link ?? null,
@@ -930,18 +1001,32 @@ export async function runFetchPipeline(
             post,
             status: "aguardando_aprovacao",
             published_at: publishedAt ? new Date(publishedAt).toISOString() : null,
-            performance_hint: performance?.collaboratorHint ?? null,
+            performance_hint: collaboratorHintForArea(generation.learning, area) ?? performance?.collaboratorHint ?? null,
             image_url: imageUrl,
-          });
+            relevance_score: relevance?.score ?? null,
+            relevance_reason: relevance?.reason ?? null,
+            related_kind: relevance?.related.kind ?? null,
+            related_ref: relevance?.related.ref ?? null,
+            related_note: relevance?.related.note ?? null,
+          }).select("id").single();
 
           if (insertErr) {
             errors.push(`${item.title}: ${insertErr.message}`);
           } else {
             created++;
             createdThisTopic++;
+            // Desdobramento de assunto nosso: avisa quem fez o post original para fazer a continuação.
+            if (relevance?.related.kind === "desdobramento" && inserted?.id) {
+              await createFollowupAlerts({
+                roteiroId: inserted.id as string,
+                ref: relevance.related.ref,
+                note: relevance.related.note,
+              }).catch((err) => console.error("[content-roteiros] aviso de desdobramento não criado", err));
+            }
             // Registra para não repetir dentro da mesma execução.
             if (linkKey) seenLinks.add(linkKey);
             if (titleKey) seenTitles.add(titleKey);
+            recentStories.push(itemStory);
           }
         } catch (err) {
           errors.push(
@@ -959,6 +1044,7 @@ export async function runFetchPipeline(
   await logFetchRun(supabase, {
     trigger,
     startedAt,
+    lowScore,
     topicsProcessed: topicsToProcess.length,
     created,
     skipped,
@@ -974,6 +1060,8 @@ async function logFetchRun(
   run: {
     trigger: string;
     startedAt: Date;
+    /** Matérias que ficaram abaixo da nota mínima (sem carrossel). */
+    lowScore: number;
     topicsProcessed: number;
     created: number;
     skipped: number;
@@ -988,6 +1076,7 @@ async function logFetchRun(
       topics_processed: run.topicsProcessed,
       created: run.created,
       skipped: run.skipped,
+      low_score: run.lowScore,
       error_count: run.errors.length,
       errors: run.errors.slice(0, 20),
     });
@@ -1004,6 +1093,8 @@ export interface ContentFetchRun {
   topics_processed: number;
   created: number;
   skipped: number;
+  /** Abaixo da nota mínima: a IA não escreveu o carrossel. */
+  low_score?: number;
   error_count: number;
   errors: string[] | null;
 }
@@ -1013,7 +1104,7 @@ export async function fetchRecentFetchRuns(limit = 10): Promise<ContentFetchRun[
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("content_fetch_runs")
-    .select("id, trigger, started_at, finished_at, topics_processed, created, skipped, error_count, errors")
+    .select("id, trigger, started_at, finished_at, topics_processed, created, skipped, low_score, error_count, errors")
     .order("started_at", { ascending: false })
     .limit(limit);
   if (error) return [];

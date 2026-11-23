@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, Reply, SmilePlus } from "lucide-react";
+import { Check, Copy, Reply, SmilePlus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const QUICK_REACTIONS = ["👍", "❤️", "🙏", "👀", "✅", "❗", "🔥"];
@@ -11,20 +11,25 @@ interface MessageActionsProps {
   canReply: boolean;
   /** Reação precisa do id da mensagem no WhatsApp. */
   canReact: boolean;
+  /** Mensagem nossa, dentro do prazo do WhatsApp. */
+  canDelete?: boolean;
   fromMe?: boolean;
   messageText?: string;
   onReply: () => void;
   onReaction: (emoji: string) => void;
+  onDelete?: () => void;
 }
 
 /** Ações que aparecem ao passar o mouse ou tocar na mensagem. */
 export function MessageActions({
   canReply,
   canReact,
+  canDelete = false,
   fromMe = false,
   messageText,
   onReply,
   onReaction,
+  onDelete,
 }: MessageActionsProps) {
   const [openReactions, setOpenReactions] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -92,6 +97,14 @@ export function MessageActions({
           icon={copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
         />
       )}
+      {canDelete && onDelete && (
+        <FloatingAction
+          label="Apagar para todos"
+          onClick={onDelete}
+          icon={<Trash2 className="h-4 w-4" />}
+          danger
+        />
+      )}
     </div>
   );
 }
@@ -100,10 +113,12 @@ function FloatingAction({
   label,
   icon,
   onClick,
+  danger = false,
 }: {
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
+  danger?: boolean;
 }) {
   return (
     <button
@@ -111,7 +126,10 @@ function FloatingAction({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white text-muted-foreground shadow-sm transition-colors hover:text-foreground dark:bg-card"
+      className={cn(
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white text-muted-foreground shadow-sm transition-colors dark:bg-card",
+        danger ? "hover:text-destructive" : "hover:text-foreground"
+      )}
     >
       {icon}
     </button>

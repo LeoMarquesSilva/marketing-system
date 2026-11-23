@@ -24,6 +24,7 @@ import {
   type EventSupplierQuote,
   type ProposalStatus,
 } from "@/lib/eventos";
+import { normalizeSupplierName } from "@/lib/eventos-fornecedor-unico";
 import { parseBrlInput } from "@/lib/money-br";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +52,7 @@ export function EventoFornecedoresTab({
   eventId: string;
   onLinkExisting: (supplierId: string) => void;
   onUnlink: (usageId: string) => void;
-  onSupplierCreated: (supplier: EventSupplier) => void;
+  onSupplierCreated: (supplier: EventSupplier, info: { reused: boolean }) => void;
   onAddQuote: (
     supplierId: string,
     category: string,
@@ -76,10 +77,10 @@ export function EventoFornecedoresTab({
 
   const searchResults = useMemo(() => {
     if (!supplierSearch.trim()) return [];
-    const q = supplierSearch.toLowerCase();
+    const q = normalizeSupplierName(supplierSearch);
     return catalogSuppliers
       .filter((s) => !linkedIds.has(s.id))
-      .filter((s) => s.name.toLowerCase().includes(q) || (s.category ?? "").toLowerCase().includes(q))
+      .filter((s) => normalizeSupplierName(s.name).includes(q) || normalizeSupplierName(s.category ?? "").includes(q))
       .slice(0, 6);
   }, [catalogSuppliers, supplierSearch, linkedIds]);
 
@@ -349,7 +350,7 @@ export function EventoFornecedoresTab({
       <EventoSupplierDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onSuccess={(supplier) => onSupplierCreated(supplier)}
+        onSuccess={(supplier, info) => onSupplierCreated(supplier, info)}
       />
     </div>
   );
