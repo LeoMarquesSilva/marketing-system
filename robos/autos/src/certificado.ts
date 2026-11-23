@@ -83,8 +83,16 @@ export function conferirPfx(pfx: Buffer, senha: string): void {
   } catch (erro) {
     const texto = erro instanceof Error ? erro.message : "";
     if (/mac verify|bad decrypt|invalid password/i.test(texto)) throw new FalhaDoCertificado("A senha não abre o certificado (.pfx).");
-    // .pfx exportado com cifra antiga (RC2 de 40 bits): o OpenSSL 3 do Node não abre sem o provedor legado.
-    if (/unsupported/i.test(texto)) throw new FalhaDoCertificado("O .pfx usa uma cifra antiga (RC2) que o Node não abre. Exporte o certificado de novo com AES-256 (veja docs/easypanel.md).");
+    // .pfx exportado com cifra antiga (RC2 de 40 bits): o OpenSSL 3 do Node só abre com o provedor legado, que o
+    // contêiner liga (NODE_OPTIONS=--openssl-legacy-provider no Dockerfile). Com ele ligado, sobra o .pfx sem chave.
+    if (/unsupported/i.test(texto)) {
+      const legado = /--openssl-legacy-provider/.test(`${process.execArgv.join(" ")} ${process.env.NODE_OPTIONS ?? ""}`);
+      throw new FalhaDoCertificado(
+        legado
+          ? "O .pfx não tem a chave privada (só o certificado). Exporte de novo com a chave privada."
+          : "O .pfx usa uma cifra antiga (RC2). Rode o robô com NODE_OPTIONS=--openssl-legacy-provider (como no Dockerfile) ou exporte o certificado de novo com AES-256."
+      );
+    }
     throw new FalhaDoCertificado("O arquivo do certificado não é um .pfx válido (ou usa um formato que o Node não abre).");
   }
 }

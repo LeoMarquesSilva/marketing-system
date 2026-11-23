@@ -5,6 +5,12 @@
 #   uma-vez                   atende o que estiver na fila e sai
 #   login [eproc|TJCE…]       só abre a sessão do tribunal
 #   inspecionar [eproc] CNJ   abre o processo e descreve a tela, sem baixar
+#   pauta                     uma leitura da Minha Pauta do PJe-JT, mandada ao ORQESTRAI, e sai (src/pauta.ts)
+#   pauta-teste               teste de acesso ao PJe-JT: lê ao subir e nos horários de PAUTA_HORARIOS, só mostra
+#                             os números no log e não manda nada (fica de pé, para o serviço não reiniciar em laço)
+#   pauta-ciclo               fica rodando: lê ao subir e nos horários de PAUTA_HORARIOS e manda ao ORQESTRAI
+#
+# Sem argumento, o comando vem de ROBO_COMANDO (padrão robo): é como o serviço do Easypanel escolhe o programa.
 #
 # Como root, só prepara o volume e passa para o usuário pwuser (o da imagem do Playwright). O navegador,
 # a tela virtual e o robô rodam como pwuser.
@@ -22,6 +28,19 @@ if [ "$(id -u)" = "0" ]; then
     install -o pwuser -g pwuser -m 0400 "$CERTIFICADO_CHAVE_PRIVADA_ARQUIVO" /run/robo/certificado.key
     export CERTIFICADO_CHAVE_PRIVADA_ARQUIVO=/run/robo/certificado.key
   fi
+  # O painel de robôs grava o certificado e os segredos com o grupo dele e permissão 0640. O pwuser entra nesse
+  # grupo (o da pasta compartilhada) para ler, sem a pasta precisar ficar aberta para todos.
+  for pasta_painel in "${CERTIFICADO_PASTA:-}" "${ROBO_2FA_PASTA:-}"; do
+    [ -n "$pasta_painel" ] && [ -d "$pasta_painel" ] || continue
+    gid="$(stat -c %g "$pasta_painel")"
+    [ "$gid" != "0" ] || continue
+    grupo="$(getent group "$gid" | cut -d: -f1)"
+    if [ -z "$grupo" ]; then
+      grupo=painel-robos
+      groupadd -g "$gid" "$grupo"
+    fi
+    usermod -aG "$grupo" pwuser
+  done
   export HOME=/home/pwuser
   exec setpriv --reuid=pwuser --regid=pwuser --init-groups "$0" "$@"
 fi
@@ -64,15 +83,19 @@ if [ "${NAVEGADOR_HEADLESS:-nao}" != "sim" ]; then
   unset senha_vnc VNC_SENHA
 fi
 
-comando="${1:-robo}"
+comando="${1:-${ROBO_COMANDO:-robo}}"
 [ "$#" -gt 0 ] && shift
+programa=src/index.ts
 case "$comando" in
   robo) set -- ;;
   uma-vez) set -- --uma-vez ;;
   login) set -- --login "$@" ;;
   inspecionar) set -- --inspecionar "$@" ;;
-  *) echo "Comando desconhecido: $comando (use robo, uma-vez, login ou inspecionar)"; exit 2 ;;
+  pauta) programa=src/pauta.ts ;;
+  pauta-teste) programa=src/pauta.ts; set -- --so-ler --ciclo "$@" ;;
+  pauta-ciclo) programa=src/pauta.ts; set -- --ciclo "$@" ;;
+  *) echo "Comando desconhecido: $comando (use robo, uma-vez, login, inspecionar, pauta, pauta-teste ou pauta-ciclo)"; exit 2 ;;
 esac
 
 cd /app
-exec /app/node_modules/.bin/tsx src/index.ts "$@"
+exec /app/node_modules/.bin/tsx "$programa" "$@"

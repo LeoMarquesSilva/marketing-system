@@ -24,6 +24,7 @@ import {
   type TribunalEproc,
 } from "./eproc-urls.ts";
 import { lerCnj, type NumeroCnj } from "./esaj-urls.ts";
+import { entrarComCodigoDoPainel } from "../segundo-fator.ts";
 import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./tipos.ts";
 
 /**
@@ -157,12 +158,18 @@ class ConectorEproc implements Conector {
   }
 
   /**
-   * O código de 2 fatores. Se os donos da conta configuraram uma fonte (EPROC_2FA_WEBHOOK_URL, ex.: um webhook
-   * do n8n que gera o TOTP), o robô busca o código ali e digita; senão, espera a pessoa digitar na janela. O
-   * segredo do 2FA não passa pelo robô: a fonte devolve só o código do momento.
+   * O código de 2 fatores, nesta ordem: (1) gerado pelo próprio robô com o segredo do TOTP cadastrado no painel de
+   * robôs (src/segundo-fator.ts); (2) buscado na fonte configurada (ROBO_2FA_WEBHOOK_URL, ex.: um webhook do n8n
+   * que gera o TOTP); (3) digitado pela pessoa na janela. O segredo e o código não vão para log.
    */
   private async aguardarCodigo(ambiente: Ambiente, dentro: () => Promise<boolean>): Promise<void> {
     const { config, registrar } = ambiente;
+    const digitar = (codigo: string) => this.digitarCodigo(ambiente, codigo, dentro);
+    if (await entrarComCodigoDoPainel({ config: config.segundoFator, sistema: this.tribunal.sistema2fa, digitar, registrar })) return;
+    if (await dentro()) {
+      registrar("Login concluído.");
+      return;
+    }
     if (config.webhook2fa.url) {
       // Cada código vale ~30 s; algumas tentativas cobrem um código que chegou no fim da janela.
       for (let tentativa = 0; tentativa < 3 && !(await dentro()); tentativa += 1) {
@@ -214,7 +221,10 @@ class ConectorEproc implements Conector {
     if (await validar.isVisible().catch(() => false)) await validar.click().catch(() => undefined);
     else await campo.press("Enter").catch(() => undefined);
     await pagina.waitForURL((url) => ehAreaLogada(url.toString()), { timeout: 20_000 }).catch(() => undefined);
-    return dentro();
+    if (await dentro()) return true;
+    // Código recusado: sai do campo, para não aparecer em captura de diagnóstico nem na tela remota.
+    await campo.fill("").catch(() => undefined);
+    return false;
   }
 
   async entrar(ambiente: Ambiente, instancia: InstanciaEproc = this.tribunal.instancias[0]): Promise<void> {
