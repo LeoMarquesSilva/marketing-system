@@ -513,8 +513,8 @@ export const NAV_FRONTS: NavFront[] = [
         icon: CalendarCheck,
         pages: [
           { href: "/operacoes-legais/pauta", label: "Pauta" },
-          { href: "/operacoes-legais/pauta/distribuicao", label: "Distribuição" },
-          { href: "/operacoes-legais/pauta/tribunal", label: "Tribunal" },
+          { href: "/operacoes-legais/pauta/distribuicao", label: "Distribuição das Pautas" },
+          { href: "/operacoes-legais/pauta/tribunal", label: "Check Conferências" },
         ],
         configuracoes: { href: "/operacoes-legais/pauta/configuracoes", label: "Equipe, leituras e avisos" },
       },

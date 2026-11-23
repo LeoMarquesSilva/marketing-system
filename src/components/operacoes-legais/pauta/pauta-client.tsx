@@ -1,21 +1,54 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, CircleSlash, Clock, Download, History, LoaderCircle, RefreshCw, Repeat, Video } from "lucide-react";
+import { CalendarDays, CircleSlash, Clock, Download, History, Landmark, LoaderCircle, RefreshCw, Repeat, Tags, Users, Video } from "lucide-react";
+import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { alertasDaAudiencia, estadoNoVios, hojeEmBrasilia, local, pendenteNoVios, somarDias, type Contexto } from "@/lib/audiencias/agenda";
-import { ROTULO_MUDANCA, ROTULO_TIPO, type Audiencia, type Papel } from "@/lib/audiencias/tipos";
+import { ROTULO_MUDANCA, ROTULO_TIPO, type AlertaAudiencia, type Audiencia, type Papel, type TipoAudiencia } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
-import { Aviso, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, campoClasse } from "../vistagem/ui";
-import { AcessoPauta, Dupla, LinkDaSala, LinkDoVios, Local, Modalidade, SeloOrigem, SeloTipo, TextoComCi, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
+import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
+import { IconeTribunal } from "../vistagem/marcas";
+import { IconeOpcao, Seletor } from "../vistagem/seletor";
+import { Aviso, BarraAba, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, campoClasse } from "../vistagem/ui";
+import { AcessoPauta, Avatar, Dupla, LinkDaSala, LinkDoVios, Local, Modalidade, ResumoDoFiltro, SeloOrigem, SeloTipo, TextoComCi, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
 
 const COLUNAS = "lg:grid lg:grid-cols-[4.5rem_minmax(0,1.5fr)_minmax(0,1.1fr)_7.5rem_minmax(0,1.25fr)_minmax(0,1.15fr)_minmax(0,1fr)] lg:items-center lg:gap-4";
 const PERIODOS = [
-  { dias: 7, rotulo: "7 dias" },
-  { dias: 15, rotulo: "15 dias" },
-  { dias: 30, rotulo: "30 dias" },
+  { value: "7", label: "7 dias" },
+  { value: "15", label: "15 dias" },
+  { value: "30", label: "30 dias" },
 ];
+
+/** Os cartões do topo que filtram a lista ("" = todas do período). */
+type CartaoPauta = "" | "mudaram" | "canceladas" | "semLink" | "cedo";
+const ROTULO_CARTAO: Record<Exclude<CartaoPauta, "">, string> = {
+  mudaram: "Mudaram no tribunal",
+  canceladas: "Canceladas no PJe",
+  semLink: "Vídeo sem link",
+  cedo: "Antes das 10h",
+};
+
+interface ComAlertas {
+  aud: Audiencia;
+  alertas: AlertaAudiencia[];
+}
+
+function noCartao(cartao: Exclude<CartaoPauta, "">, { aud, alertas }: ComAlertas): boolean {
+  if (cartao === "canceladas") return aud.situacao === "cancelada";
+  if (aud.situacao !== "designada") return false;
+  if (cartao === "mudaram") return aud.mudancas.length > 0 && !aud.mudancaConferidaEm;
+  if (cartao === "semLink") return alertas.some((x) => x.tipo === "sem_link");
+  return alertas.some((x) => x.tipo === "cedo");
+}
+
+/** Contagem por valor, para os filtros (pessoa, tribunal, tipo). */
+function contar<T>(itens: T[], chaves: (item: T) => (string | null | undefined)[]): Map<string, number> {
+  const contagem = new Map<string, number>();
+  for (const item of itens) for (const chave of new Set(chaves(item))) if (chave) contagem.set(chave, (contagem.get(chave) ?? 0) + 1);
+  return contagem;
+}
 
 function semAcento(texto: string): string {
   return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -43,28 +76,31 @@ export function PautaClient() {
 }
 
 function Pauta() {
-  const [periodo, setPeriodo] = useState(7);
+  const [periodo, setPeriodo] = useState("7");
   const [dados, setDados] = useState<DadosDaPauta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
   const [pessoa, setPessoa] = useState("");
-  const [mostrarCanceladas, setMostrarCanceladas] = useState(true);
+  const [tribunal, setTribunal] = useState("");
+  const [tipo, setTipo] = useState("");
+  const [cartao, setCartao] = useState<CartaoPauta>("");
   const [aberta, setAberta] = useState<Audiencia | null>(null);
   const [troca, setTroca] = useState<{ aud: Audiencia; papel: Papel } | null>(null);
+  const dias = Number(periodo);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro(null);
     try {
       const de = hojeEmBrasilia();
-      setDados(await pautaApi.get<DadosDaPauta>(`?de=${de}&ate=${somarDias(de, periodo)}`));
+      setDados(await pautaApi.get<DadosDaPauta>(`?de=${de}&ate=${somarDias(de, dias)}`));
     } catch (e) {
       setErro(mensagemDeErro(e));
     } finally {
       setCarregando(false);
     }
-  }, [periodo]);
+  }, [dias]);
 
   useEffect(() => {
     void carregar();
@@ -73,38 +109,72 @@ function Pauta() {
   const pessoas = useMemo(() => new Map((dados?.pessoas ?? []).map((p) => [p.id, p])), [dados]);
   const contexto: Contexto = useMemo(() => ({ pessoas, todas: dados?.audiencias ?? [], duracoes: dados?.duracoes }), [pessoas, dados]);
 
-  const filtradas = useMemo(() => {
+  // O período: as designadas e as canceladas no PJe que ainda pedem conferência no VIOS.
+  const doPeriodo: ComAlertas[] = useMemo(
+    () =>
+      (dados?.audiencias ?? [])
+        .filter((a) => a.situacao === "designada" || (a.situacao === "cancelada" && pendenteNoVios(a)))
+        .map((aud) => ({ aud, alertas: alertasDaAudiencia(aud, contexto) })),
+    [dados, contexto]
+  );
+
+  // Busca, pessoa, tribunal e tipo. Os cartões contam o que sobra; o cartão escolhido filtra mais um passo.
+  const semCartao = useMemo(() => {
     const termo = semAcento(busca.trim());
-    return (dados?.audiencias ?? []).filter((a) => {
-      if (a.situacao === "cancelada" && (!mostrarCanceladas || !pendenteNoVios(a))) return false;
-      if (a.situacao === "realizada") return false;
+    return doPeriodo.filter(({ aud: a }) => {
       if (pessoa && a.titularId !== pessoa && a.backupId !== pessoa) return false;
+      if (tribunal && a.tribunal !== tribunal) return false;
+      if (tipo && a.tipo !== tipo) return false;
       if (!termo) return true;
-      const texto = semAcento([a.cnj, cliente(a), a.orgao, a.titularId && pessoas.get(a.titularId)?.nomeVios, a.backupId && pessoas.get(a.backupId)?.nomeVios].filter(Boolean).join(" "));
+      const texto = semAcento([a.cnj, cliente(a), a.orgao, a.viosTarefaCi, a.titularId && pessoas.get(a.titularId)?.nomeVios, a.backupId && pessoas.get(a.backupId)?.nomeVios].filter(Boolean).join(" "));
       return texto.includes(termo);
     });
-  }, [dados, busca, pessoa, mostrarCanceladas, pessoas]);
+  }, [doPeriodo, busca, pessoa, tribunal, tipo, pessoas]);
+
+  const filtradas = useMemo(() => (cartao ? semCartao.filter((x) => noCartao(cartao, x)) : semCartao), [semCartao, cartao]);
 
   const porDia = useMemo(() => {
-    const grupos = new Map<string, Audiencia[]>();
-    for (const a of filtradas) {
-      const dia = local(a.inicio).dia;
-      grupos.set(dia, [...(grupos.get(dia) ?? []), a]);
+    const grupos = new Map<string, ComAlertas[]>();
+    for (const x of filtradas) {
+      const dia = local(x.aud.inicio).dia;
+      grupos.set(dia, [...(grupos.get(dia) ?? []), x]);
     }
     return [...grupos.entries()];
   }, [filtradas]);
 
-  const numeros = useMemo(() => {
-    const ativas = (dados?.audiencias ?? []).filter((a) => a.situacao === "designada");
-    const alertas = ativas.map((a) => alertasDaAudiencia(a, contexto));
-    return {
-      total: ativas.length,
-      mudaram: ativas.filter((a) => a.mudancas.length && !a.mudancaConferidaEm).length,
-      canceladas: (dados?.audiencias ?? []).filter((a) => a.situacao === "cancelada" && pendenteNoVios(a)).length,
-      semLink: alertas.filter((l) => l.some((x) => x.tipo === "sem_link")).length,
-      cedo: alertas.filter((l) => l.some((x) => x.tipo === "cedo")).length,
-    };
-  }, [dados, contexto]);
+  const numeros = useMemo(
+    () => ({
+      total: semCartao.filter((x) => x.aud.situacao === "designada").length,
+      mudaram: semCartao.filter((x) => noCartao("mudaram", x)).length,
+      canceladas: semCartao.filter((x) => noCartao("canceladas", x)).length,
+      semLink: semCartao.filter((x) => noCartao("semLink", x)).length,
+      cedo: semCartao.filter((x) => noCartao("cedo", x)).length,
+    }),
+    [semCartao]
+  );
+
+  // Opções dos filtros, com a contagem do período (como na Vistagem).
+  const porPessoa = useMemo(() => contar(doPeriodo, (x) => [x.aud.titularId, x.aud.backupId]), [doPeriodo]);
+  const porTribunal = useMemo(() => contar(doPeriodo, (x) => [x.aud.tribunal]), [doPeriodo]);
+  const porTipo = useMemo(() => contar(doPeriodo, (x) => [x.aud.tipo]), [doPeriodo]);
+
+  const filtrosAtivos = [
+    cartao ? ROTULO_CARTAO[cartao] : null,
+    pessoa ? `Pessoa: ${pessoas.get(pessoa)?.nomeCurto ?? "—"}` : null,
+    tribunal || null,
+    tipo ? ROTULO_TIPO[tipo as TipoAudiencia] : null,
+    busca.trim() ? `Busca: “${busca.trim()}”` : null,
+  ].filter((f): f is string => Boolean(f));
+
+  function limparFiltros() {
+    setCartao("");
+    setPessoa("");
+    setTribunal("");
+    setTipo("");
+    setBusca("");
+  }
+
+  const alternar = (c: Exclude<CartaoPauta, "">) => () => setCartao((atual) => (atual === c ? "" : c));
 
   function atualizar(aud: Audiencia) {
     setDados((d) => (d ? { ...d, audiencias: d.audiencias.map((a) => (a.id === aud.id ? aud : a)) } : d));
@@ -114,10 +184,10 @@ function Pauta() {
   async function exportar() {
     const XLSX = await import("xlsx");
     const linhas: (string | null)[][] = [];
-    for (const [dia, auds] of porDia) {
+    for (const [dia, itens] of porDia) {
       linhas.push([diaPorExtenso(dia).toUpperCase()]);
       linhas.push(["CLIENTE", "HORÁRIO", "EVENTO", "LOCAL", "MODALIDADE", "PROCESSO", "RECLAMANTE", "RESPONSÁVEL", "LINK", "OBSERVAÇÃO"]);
-      for (const a of auds) {
+      for (const { aud: a } of itens) {
         const dupla = [a.titularId && pessoas.get(a.titularId)?.nomeCurto.split(" ")[0], a.backupId && pessoas.get(a.backupId)?.nomeCurto.split(" ")[0]].filter(Boolean).join("-");
         linhas.push([
           cliente(a),
@@ -142,71 +212,95 @@ function Pauta() {
 
   return (
     <div className="space-y-4">
+      <BarraAba
+        resumo={
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmented label="Período" value={periodo} options={PERIODOS} onChange={setPeriodo} />
+            <Button variant="outline" onClick={() => void carregar()} disabled={carregando} title="Relê a pauta (as leituras do PJe e a conferência com o VIOS)">
+              {carregando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+              Atualizar
+            </Button>
+          </div>
+        }
+      >
+        <Button variant="outline" onClick={() => void exportar()} disabled={!porDia.length} title="Planilha da pauta, com os filtros aplicados">
+          <Download />
+          Exportar Excel
+        </Button>
+      </BarraAba>
+
       <Indicadores className="lg:grid-cols-5">
-        <Indicador icone={CalendarDays} rotulo={`Próximos ${periodo} dias`} valor={dados ? numeros.total : "—"} />
-        <Indicador icone={Repeat} rotulo="Mudaram no tribunal" valor={dados ? numeros.mudaram : "—"} tom={numeros.mudaram ? "perigo" : "neutro"} />
-        <Indicador icone={CircleSlash} rotulo="Canceladas no PJe" valor={dados ? numeros.canceladas : "—"} tom={numeros.canceladas ? "perigo" : "neutro"} />
-        <Indicador icone={Video} rotulo="Vídeo sem link" valor={dados ? numeros.semLink : "—"} tom={numeros.semLink ? "alerta" : "neutro"} />
-        <Indicador icone={Clock} rotulo="Antes das 10h" valor={dados ? numeros.cedo : "—"} tom={numeros.cedo ? "alerta" : "neutro"} />
+        <Indicador icone={CalendarDays} rotulo={`Próximos ${dias} dias`} valor={dados ? numeros.total : "—"} ativo={!cartao} onClick={() => setCartao("")} dica="Todas as audiências do período" />
+        <Indicador icone={Repeat} rotulo={ROTULO_CARTAO.mudaram} valor={dados ? numeros.mudaram : "—"} tom={numeros.mudaram ? "perigo" : "neutro"} ativo={cartao === "mudaram"} onClick={alternar("mudaram")} dica="Mostrar só as que mudaram no PJe e ainda não foram conferidas" />
+        <Indicador icone={CircleSlash} rotulo={ROTULO_CARTAO.canceladas} valor={dados ? numeros.canceladas : "—"} tom={numeros.canceladas ? "perigo" : "neutro"} ativo={cartao === "canceladas"} onClick={alternar("canceladas")} dica="Mostrar só as canceladas no PJe que ainda pedem conferência no VIOS" />
+        <Indicador icone={Video} rotulo={ROTULO_CARTAO.semLink} valor={dados ? numeros.semLink : "—"} tom={numeros.semLink ? "alerta" : "neutro"} ativo={cartao === "semLink"} onClick={alternar("semLink")} dica="Mostrar só as por vídeo ainda sem link da sala" />
+        <Indicador icone={Clock} rotulo={ROTULO_CARTAO.cedo} valor={dados ? numeros.cedo : "—"} tom={numeros.cedo ? "alerta" : "neutro"} ativo={cartao === "cedo"} onClick={alternar("cedo")} dica="Mostrar só as que começam antes das 10h" />
       </Indicadores>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Busca placeholder="Buscar cliente, processo ou pessoa" value={busca} onChange={(e) => setBusca(e.target.value)} className="w-full sm:w-72" aria-label="Buscar" />
-        <div className="flex rounded-md border border-[#dce9eb] bg-white p-0.5" role="group" aria-label="Período">
-          {PERIODOS.map((p) => (
-            <button
-              key={p.dias}
-              type="button"
-              onClick={() => setPeriodo(p.dias)}
-              className={cn("rounded px-3 py-1.5 text-xs font-semibold", periodo === p.dias ? "bg-[#e8f8f8] text-[#285f7a]" : "text-muted-foreground hover:bg-[#f6fafb]")}
-            >
-              {p.rotulo}
-            </button>
-          ))}
-        </div>
-        <select className={cn(campoClasse, "h-9 w-48")} value={pessoa} onChange={(e) => setPessoa(e.target.value)} aria-label="Pessoa">
-          <option value="">Todas as pessoas</option>
-          {(dados?.pessoas ?? [])
+        <Busca placeholder="Buscar cliente, processo, pessoa ou CI" value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={(e) => (e.key === "Escape" ? setBusca("") : null)} className="sm:w-72" aria-label="Buscar audiência" />
+        <Seletor
+          rotulo="Pessoa"
+          className="sm:w-56"
+          valor={pessoa}
+          onChange={setPessoa}
+          todos={{ rotulo: "Todas as pessoas", contagem: doPeriodo.length, icone: <IconeOpcao icone={Users} /> }}
+          opcoes={(dados?.pessoas ?? [])
             .filter((p) => p.fazAudiencia && p.ativo)
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nomeCurto}
-              </option>
-            ))}
-        </select>
-        <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-          <input type="checkbox" className="size-4 accent-[#347796]" checked={mostrarCanceladas} onChange={(e) => setMostrarCanceladas(e.target.checked)} />
-          Canceladas a conferir
-        </label>
-        <div className="ml-auto flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => void carregar()} disabled={carregando}>
-            <RefreshCw className={cn(carregando && "animate-spin")} />
-            Atualizar
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => void exportar()} disabled={!porDia.length}>
-            <Download />
-            Exportar Excel
-          </Button>
-        </div>
+            .map((p) => ({ valor: p.id, rotulo: p.nomeCurto, contagem: porPessoa.get(p.id) ?? 0, icone: <Avatar pessoa={p} className="size-5" /> }))}
+        />
+        <Seletor
+          rotulo="Tribunal"
+          className="sm:w-56"
+          valor={tribunal}
+          onChange={setTribunal}
+          todos={{ rotulo: "Todos os tribunais", contagem: doPeriodo.length, icone: <IconeOpcao icone={Landmark} /> }}
+          opcoes={[...porTribunal.entries()]
+            .sort(([a], [b]) => a.localeCompare(b, "pt-BR", { numeric: true }))
+            .map(([sigla, quantidade]) => ({ valor: sigla, rotulo: sigla, descricao: descricaoDoTribunal(sigla), contagem: quantidade, icone: <IconeTribunal sigla={sigla} /> }))}
+        />
+        <Seletor
+          rotulo="Tipo de audiência"
+          className="sm:w-48"
+          valor={tipo}
+          onChange={setTipo}
+          todos={{ rotulo: "Todos os tipos", contagem: doPeriodo.length, icone: <IconeOpcao icone={Tags} /> }}
+          opcoes={(Object.keys(ROTULO_TIPO) as TipoAudiencia[])
+            .filter((t) => porTipo.has(t))
+            .map((t) => ({ valor: t, rotulo: ROTULO_TIPO[t], contagem: porTipo.get(t) ?? 0, icone: <IconeOpcao icone={Tags} /> }))}
+        />
       </div>
 
+      <ResumoDoFiltro mostrando={filtradas.length} de={doPeriodo.length} unidade="audiências do período" filtros={filtrosAtivos} aoLimpar={limparFiltros} />
       {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
       {carregando && !dados ? <Carregando rotulo="Carregando a pauta" /> : null}
       {dados && !porDia.length ? (
         <Painel>
-          <Vazio icone={CalendarDays} titulo="Nenhuma audiência no período">
-            A pauta é montada pelas leituras do PJe. Se o robô ainda não rodou, a última leitura aparece em Configurações.
-          </Vazio>
+          {filtrosAtivos.length ? (
+            <Vazio icone={CalendarDays} titulo="Nenhuma audiência com estes filtros">
+              <Button variant="outline" size="sm" className="mt-1" onClick={limparFiltros}>
+                Limpar filtros
+              </Button>
+            </Vazio>
+          ) : (
+            <Vazio icone={CalendarDays} titulo="Nenhuma audiência no período">
+              A pauta é montada pelas leituras do PJe. Se o robô ainda não rodou, a última leitura aparece em Configurações.
+            </Vazio>
+          )}
         </Painel>
       ) : null}
 
-      {porDia.map(([dia, auds]) => (
+      {porDia.map(([dia, itens]) => (
         <Painel key={dia}>
           <div className="flex items-center gap-2 border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-2.5 text-sm font-semibold">
             {diaPorExtenso(dia)}
             <span className="text-xs font-medium text-muted-foreground">
-              {auds.filter((a) => a.situacao === "designada").length} audiência(s)
-              {auds.some((a) => a.situacao === "cancelada") ? ` · ${auds.filter((a) => a.situacao === "cancelada").length} cancelada(s) no PJe` : ""}
+              {[
+                itens.some((x) => x.aud.situacao === "designada") ? `${itens.filter((x) => x.aud.situacao === "designada").length} audiência(s)` : null,
+                itens.some((x) => x.aud.situacao === "cancelada") ? `${itens.filter((x) => x.aud.situacao === "cancelada").length} cancelada(s) no PJe` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           </div>
           <div className={cn("hidden border-b border-[#e6eef0] px-4 py-2 text-xs font-medium text-muted-foreground", COLUNAS)}>
@@ -219,8 +313,7 @@ function Pauta() {
             <span>Situação</span>
           </div>
           <ul>
-            {auds.map((a) => {
-              const alertas = alertasDaAudiencia(a, contexto);
+            {itens.map(({ aud: a, alertas }) => {
               const cancelada = a.situacao === "cancelada";
               return (
                 <li key={a.id} className="border-b border-[#e6eef0] last:border-b-0">

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, LoaderCircle, MapPin, MessageCircle, Mail, Video } from "lucide-react";
+import { ExternalLink, ListFilter, LoaderCircle, MapPin, MessageCircle, Mail, Video, X } from "lucide-react";
 import { Avatar as AvatarUi, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -405,5 +405,32 @@ export function TrocaDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ filtros */
+
+/**
+ * Faixa acima da lista quando há filtro (cartão, pessoa, tribunal, tipo ou busca): quantas aparecem, de quantas, quais
+ * filtros e o botão de limpar. Sem filtro, não mostra nada.
+ */
+export function ResumoDoFiltro({ mostrando, de, unidade, filtros, aoLimpar }: { mostrando: number; de: number; unidade: string; filtros: string[]; aoLimpar: () => void }) {
+  if (!filtros.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md border border-[#47cdd0]/30 bg-[#f2fbfb] px-3 py-2 text-sm text-[#285f7a]" role="status">
+      <ListFilter className="size-4 shrink-0" aria-hidden />
+      <span>
+        Mostrando <b className="tabular-nums text-[#10293a]">{mostrando}</b> de <span className="tabular-nums">{de}</span> {unidade}
+      </span>
+      {filtros.map((filtro) => (
+        <Selo key={filtro} tom="marca">
+          {filtro}
+        </Selo>
+      ))}
+      <Button variant="ghost" size="xs" className="ml-auto" onClick={aoLimpar}>
+        <X />
+        Limpar filtros
+      </Button>
+    </div>
   );
 }
