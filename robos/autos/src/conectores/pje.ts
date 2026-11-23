@@ -31,9 +31,10 @@ import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type R
 const TELA = {
   /**
    * Login por certificado no SSO da PDPJ (chama o PJe Office): o botão "CERTIFICADO DIGITAL" (#kc-pje-office) ou, na
-   * tela de 23/11/2026, o link "Seu certificado digital" (<a onclick="autenticar(...)">).
+   * tela de 23/11/2026, o link "Seu certificado digital" (<a onclick="autenticar(...)">). O <a> tem altura zero e o
+   * Playwright o trata como invisível: o robô clica no ícone ou no texto dentro dele, e o clique sobe até o onclick.
    */
-  certificadoPdpj: "#kc-pje-office, a[onclick^='autenticar(']",
+  certificadoPdpj: "#kc-pje-office, a[onclick^='autenticar('] > *",
   /** Código do segundo fator (Keycloak do SSO da PDPJ ou tela do próprio PJe). */
   codigo: "#otp, input[name=otp], input[name=totp], input[autocomplete='one-time-code'], input[id*='codigo' i][maxlength='6']",
   menuProcesso: /^Processo$/i,

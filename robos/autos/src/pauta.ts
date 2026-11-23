@@ -31,8 +31,10 @@ const CODIGO = "#otp, input[name=otp], input[name=totp], input[autocomplete='one
 /**
  * Login por certificado no SSO da PDPJ (chama o PJe Office). Até 2026 era o botão "CERTIFICADO DIGITAL"
  * (#kc-pje-office); em 23/11/2026 a tela trazia o link "Seu certificado digital" (<a onclick="autenticar(...)">).
+ * O <a> tem altura zero (o ícone e o texto dentro dele é que aparecem), e o Playwright o trata como invisível: o
+ * robô procura e clica no que está dentro do link, e o clique sobe até o onclick.
  */
-const CERTIFICADO_PDPJ = "#kc-pje-office, a[onclick^='autenticar(']";
+const CERTIFICADO_PDPJ = "#kc-pje-office, a[onclick^='autenticar('] > *";
 const CONFIRMAR = "#kc-login, button[type=submit], input[type=submit]";
 const DIAS_A_FRENTE = Number(process.env.PAUTA_DIAS?.trim() || 60);
 const SITUACOES = ["M", "C"] as const; // designadas e canceladas (cancelamento e redesignação)
