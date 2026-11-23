@@ -64,8 +64,11 @@ const base = (trt: string) => `https://pje.${trt.toLowerCase()}.jus.br`;
  */
 export function loginTerminou(url: string, trt: string): boolean {
   if (!url.startsWith(base(trt))) return false;
-  return !/login|acesso-negado|authenticatesso|openid-connect|\/auth\/realms\//i.test(url);
+  return !/login|acesso-negado|authenticatesso|authorization|openid-connect|\/auth\/realms\//i.test(url);
 }
+
+/** Painel do advogado no PJe (pjekz): onde o navegador chega depois do login, com o token já no perfil de Advogado. */
+const PAINEL = "/pjekz/painel/usuario-externo";
 
 function dataIso(deslocamentoDias: number): string {
   const d = new Date(Date.now() - 3 * 60 * 60 * 1000 + deslocamentoDias * 24 * 60 * 60 * 1000);
@@ -76,15 +79,76 @@ function dicaDaTela(config: Config): string {
   return config.telaRemotaUrl ? ` Tela do robô: ${config.telaRemotaUrl}` : "";
 }
 
-/** Logado = a sessão do navegador consegue falar com a API do PJe deste tribunal. */
-async function logado(pagina: Page, trt: string): Promise<boolean> {
-  if (!pagina.url().startsWith(base(trt))) return false;
+interface EstadoDaSessao {
+  /** Status HTTP de /token/perfis (200 = sessão válida). */
+  perfis: number;
+  /** Status HTTP de /token/permissoes/recursos. */
+  recursos: number;
+  /** O perfil da sessão libera a tela "Minha Pauta" (page:pauta-usuarios-externos). */
+  pauta: boolean;
+  /** O token (cookie access_token) já traz o perfil escolhido. */
+  tokenComPerfil: boolean;
+}
+
+/**
+ * Como o próprio PJe (pjekz) decide o acesso: o token fica no cookie access_token, as chamadas levam o X-XSRF-TOKEN,
+ * e a tela só abre se /token/permissoes/recursos trouxer page:pauta-usuarios-externos. Sem nomes nem dados pessoais.
+ */
+async function estadoDaSessao(pagina: Page, trt: string): Promise<EstadoDaSessao | null> {
+  if (!pagina.url().startsWith(base(trt))) return null;
   return pagina
     .evaluate(async () => {
-      const r = await fetch("/pje-seguranca/api/token/perfis", { credentials: "include" });
-      return r.ok;
+      const cookie = (nome: string) => decodeURIComponent((document.cookie.match(new RegExp(`(?:^|; )${nome}=([^;]*)`)) || [])[1] || "");
+      const xsrf = cookie("Xsrf-Token");
+      const headers: Record<string, string> = { Accept: "application/json", ...(xsrf ? { "X-XSRF-TOKEN": xsrf } : {}) };
+      const perfis = await fetch("/pje-seguranca/api/token/perfis", { credentials: "include", headers }).then((r) => r.status, () => 0);
+      const recursos = await fetch("/pje-seguranca/api/token/permissoes/recursos", { credentials: "include", headers }).then(
+        async (r) => ({ status: r.status, nomes: r.ok ? ((await r.json()) as { nome?: string }[]).map((x) => x.nome) : [] }),
+        () => ({ status: 0, nomes: [] as (string | undefined)[] }),
+      );
+      let tokenComPerfil = false;
+      try {
+        const token = cookie("access_token");
+        if (token) tokenComPerfil = Boolean(JSON.parse(atob(token.split(".")[1]!.replace(/-/g, "+").replace(/_/g, "/"))).perfil);
+      } catch {
+        tokenComPerfil = false;
+      }
+      return { perfis, recursos: recursos.status, pauta: recursos.nomes.includes("page:pauta-usuarios-externos"), tokenComPerfil };
     })
-    .catch(() => false);
+    .catch(() => null);
+}
+
+/** Logado = a sessão fala com a API do PJe deste tribunal e o perfil libera a Minha Pauta. */
+async function logado(pagina: Page, trt: string): Promise<boolean> {
+  const estado = await estadoDaSessao(pagina, trt);
+  return Boolean(estado && estado.perfis === 200 && estado.pauta);
+}
+
+function descreverSessao(estado: EstadoDaSessao | null): string {
+  if (!estado) return "fora do PJe do tribunal";
+  return `perfis ${estado.perfis} · permissões ${estado.recursos} · Minha Pauta liberada: ${estado.pauta ? "sim" : "não"} · token com perfil: ${estado.tokenComPerfil ? "sim" : "não"}`;
+}
+
+/**
+ * Depois do login, segue o caminho do navegador: espera o PJe chegar sozinho ao painel do advogado (ou abre o painel)
+ * e deixa a tela carregar. Ir direto para a pauta logo depois do login dava "Acesso Negado" (23/11/2026).
+ */
+async function chegarAoPainel(pagina: Page, trt: string): Promise<void> {
+  log(`${trt}: login terminou em ${pagina.url().split("?")[0]}.`);
+  for (const limite = Date.now() + 30_000; Date.now() < limite && !pagina.url().includes("/pjekz/painel"); ) {
+    await pagina.waitForTimeout(1_000);
+  }
+  if (!pagina.url().includes("/pjekz/painel")) {
+    await pagina.goto(`${base(trt)}${PAINEL}`, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+  }
+  let titulo = "";
+  for (const limite = Date.now() + 45_000; Date.now() < limite; ) {
+    titulo = await pagina.title().catch(() => "");
+    if (/Meu Painel/i.test(titulo)) break;
+    await pagina.waitForTimeout(1_000);
+  }
+  await pagina.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
+  log(`${trt}: painel do PJe ${/Meu Painel/i.test(titulo) ? "aberto" : `não abriu (${pagina.url().split("?")[0]} · "${titulo.slice(0, 60)}")`} · ${descreverSessao(await estadoDaSessao(pagina, trt))}.`);
 }
 
 async function codigoDoWebhook(config: Config): Promise<string | null> {
@@ -196,7 +260,10 @@ async function lerPauta(pagina: Page, situacao: string, de: string, ate: string)
   for (let numero = 1; numero <= 40; numero += 1) {
     const parametros = new URLSearchParams({ dataInicio: de, dataFim: ate, codigoSituacao: situacao, numeroPagina: String(numero), tamanhoPagina: "50", ordenacao: "asc" });
     const resposta = await pagina.evaluate(async (consulta) => {
-      const r = await fetch(`/pje-comum-api/api/pauta-usuarios-externos?${consulta}`, { credentials: "include", headers: { Accept: "application/json" } });
+      // Mesmos cabeçalhos que o PJe (pjekz) manda: o X-XSRF-TOKEN sai do cookie Xsrf-Token.
+      const xsrf = decodeURIComponent((document.cookie.match(/(?:^|; )Xsrf-Token=([^;]*)/) || [])[1] || "");
+      const headers: Record<string, string> = { Accept: "application/json", ...(xsrf ? { "X-XSRF-TOKEN": xsrf } : {}) };
+      const r = await fetch(`/pje-comum-api/api/pauta-usuarios-externos?${consulta}`, { credentials: "include", headers });
       return { status: r.status, corpo: r.ok ? ((await r.json()) as unknown) : await r.text() };
     }, parametros.toString());
     if (resposta.status !== 200) throw new Error(`a consulta da pauta respondeu ${resposta.status}: ${String(resposta.corpo).slice(0, 160)}`);
@@ -235,18 +302,23 @@ async function rodada(config: Config, navegador: Navegador, comCertificado: bool
   for (const trt of tribunais()) {
     try {
       const pagina = navegador.pagina;
-      await pagina.goto(`${base(trt)}/pjekz/pauta-usuarios-externos`, { waitUntil: "domcontentloaded" });
+      // A leitura usa a API da pauta a partir de qualquer tela do PJe do tribunal: o robô fica no painel do advogado,
+      // como o navegador depois do login, e não abre a tela da Minha Pauta.
+      await pagina.goto(`${base(trt)}${PAINEL}`, { waitUntil: "domcontentloaded" });
       await pagina.waitForTimeout(3_000);
       if (!(await logado(pagina, trt))) {
         await entrar(config, pagina, trt, comCertificado);
-        await pagina.goto(`${base(trt)}/pjekz/pauta-usuarios-externos`, { waitUntil: "domcontentloaded" });
-        // A tela da pauta (pjekz) às vezes passa de novo pelo SSO, que já reconhece a sessão e volta sozinho.
-        let ok = false;
+        await chegarAoPainel(pagina, trt);
+        let ok = await logado(pagina, trt);
         for (const limite = Date.now() + 45_000; !ok && Date.now() < limite; ) {
           await pagina.waitForTimeout(3_000);
           ok = await logado(pagina, trt);
         }
-        if (!ok) throw new Error(`depois do login, a pauta ainda pede autenticação (${pagina.url().split("?")[0]})`);
+        if (!ok) {
+          throw new Error(
+            `depois do login, a sessão não libera a Minha Pauta (${pagina.url().split("?")[0]} · ${descreverSessao(await estadoDaSessao(pagina, trt))})`,
+          );
+        }
         log(`${trt}: login concluído.`);
       } else log(`${trt}: sessão do PJe já aberta no perfil do robô.`);
       const de = dataIso(-1);

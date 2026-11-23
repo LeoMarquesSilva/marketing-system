@@ -22,6 +22,7 @@ describe("fim do login no PJe", () => {
     expect(loginTerminou("https://pje.trt15.jus.br/primeirograu/authenticateSSO.seam?state=x&code=y", "TRT15")).toBe(false);
     expect(loginTerminou("https://pje.trt15.jus.br/primeirograu/login.seam", "TRT15")).toBe(false);
     expect(loginTerminou("https://sso.cloud.pje.jus.br/auth/realms/pje/protocol/openid-connect/auth?client_id=pje-trt15-1g", "TRT15")).toBe(false);
+    expect(loginTerminou("https://pje.trt15.jus.br/pjekz/authorization?code=x", "TRT15")).toBe(false);
   });
   it("o painel do PJe do mesmo tribunal é o fim; outro tribunal não", () => {
     expect(loginTerminou("https://pje.trt15.jus.br/pjekz/painel/usuario-externo", "TRT15")).toBe(true);
