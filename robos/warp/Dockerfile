@@ -7,6 +7,13 @@
 #
 # Cliente oficial da Cloudflare (pacote cloudflare-warp do repositório pkg.cloudflareclient.com), em modo proxy:
 # não cria interface de rede, só abre um SOCKS5 em 127.0.0.1:40000; o socat expõe esse proxy na 1080 do contêiner.
+#
+# No Easypanel (serviço `warp` do projeto bibliotecabp, 23/11/2026):
+# - Advanced > Cap Add: NET_ADMIN. Sem ela o WARP conecta e cai ("fwmark rule install: Operation not permitted").
+# - Volume em /var/lib/cloudflare-warp (registro e ajustes); sem domínio; 512 MB e 0,5 CPU bastam.
+# - O iniciar.sh liga o MASQUE só por HTTP/2 no endpoint 162.159.198.1:443 (o servidor não deixa o UDP sair).
+# - No robô: a PDPJ (sso.cloud.pje.jus.br) recusa o IP da Cloudflare, então ela sai direto:
+#   NAVEGADOR_PROXY_IGNORAR=sso.cloud.pje.jus.br.
 FROM debian:bookworm-slim
 
 RUN apt-get update \

@@ -24,6 +24,19 @@ if ! warp registration show >/dev/null 2>&1; then
 fi
 warp mode proxy >/dev/null 2>&1 || warp set-mode proxy >/dev/null 2>&1
 warp proxy port 40000 >/dev/null 2>&1 || warp set-proxy-port 40000 >/dev/null 2>&1
+
+# Ajustes do servidor do Easypanel (23/11/2026): o modo proxy só aceita MASQUE; o servidor não deixa o UDP sair até a
+# Cloudflare (o QUIC/HTTP3 dá timeout), então o MASQUE vai só por HTTP/2, no endpoint fixo da porta 443.
+# WARP_MASQUE e WARP_ENDPOINT mudam isso; WARP_ENDPOINT=padrao volta ao endpoint escolhido pela Cloudflare.
+warp tunnel protocol set MASQUE >/dev/null 2>&1 || log "AVISO: não consegui escolher o protocolo MASQUE."
+warp tunnel masque-options set "${WARP_MASQUE:-h2-only}" >/dev/null 2>&1 || log "AVISO: não consegui ajustar o MASQUE (${WARP_MASQUE:-h2-only})."
+if [ "${WARP_ENDPOINT:-}" = "padrao" ]; then
+  warp tunnel endpoint reset >/dev/null 2>&1 || true
+else
+  warp tunnel endpoint set "${WARP_ENDPOINT:-162.159.198.1:443}" >/dev/null 2>&1 || log "AVISO: não consegui fixar o endpoint ${WARP_ENDPOINT:-162.159.198.1:443}."
+fi
+log "$(warp settings list 2>/dev/null | grep -iE 'HTTP Version|Override WARP endpoint|Mode:' | tr -s ' ' | tr '\n' ' ')"
+
 warp connect >/dev/null 2>&1 || true
 
 for _ in $(seq 1 60); do
