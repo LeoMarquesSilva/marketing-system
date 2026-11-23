@@ -1,10 +1,12 @@
 import "server-only";
 
-import { local } from "./agenda";
+import { sama } from "@/lib/vistagem/sama";
+import { estadoNoVios, hojeEmBrasilia, local, somarDias } from "./agenda";
+import { conferirPautaComVios, JANELA_DIAS, mudancaResolvidaNoVios } from "./conferencia-vios";
 import { audienciaNasIntimacoes, type ComunicacaoDjen } from "./djen";
 import { chaveDoLink, horaLocalParaIso } from "./pje";
-import { carregarAudiencias, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
-import { lerCsvDoVios } from "./vios-csv";
+import { AudienciasError, carregarAudiencias, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
+import { deTarefaDoSama, lerCsvDoVios, type AudienciaNoVios, type TarefaDoSama } from "./vios-csv";
 
 /**
  * Conferências da pauta com o DJEN (intimações: hora, modalidade, link) e com o VIOS (relatório de tarefas:
@@ -125,4 +127,180 @@ export async function importarRelatorioDoVios(texto: string, quem: string | null
   resumo.soNoVios = lidas.filter((l) => l.status === "aberta" && new Date(l.inicio).getTime() > Date.now() && !comPauta.has(l.cnj)).length;
   if (leitura) await db().from("aud_leituras").update({ terminada_em: new Date().toISOString(), total: resumo.lidas, alteradas: resumo.divergentes, detalhe: resumo }).eq("id", leitura.id);
   return resumo;
+}
+
+/* ------------------------------------------------------------------ conferência automática com o VIOS (SAMA) */
+
+/** Uma tarefa aberta do VIOS sem audiência no PJe, como fica guardada na leitura. */
+export interface TarefaSoNoVios {
+  tarefaCi: string;
+  ciProcesso: string | null;
+  cnj: string;
+  inicio: string;
+  tarefa: string;
+  responsaveis: string[];
+}
+
+export interface ResumoConferenciaVios {
+  /** Quando o SAMA copiou o VIOS (a conferência vale para o VIOS desse momento). */
+  copiaEm: string | null;
+  tarefas: number;
+  conferidas: number;
+  confere: number;
+  horario: number;
+  falta: number;
+  concluida: number;
+  aberta: number;
+  /** Mudanças do PJe que o VIOS já mostra feitas (marcadas como conferidas sozinhas). */
+  resolvidas: number;
+  soNoVios: number;
+}
+
+const COLUNAS_SAMA = "ci, ci_do_processo, nro_cnj, tarefa, data_limite, data_para_conclusao, horario, vios_status, area_do_processo, responsaveis, auxiliares, sincronizado_em";
+const PAGINA_SAMA = 1000;
+const MAX_LINHAS_SAMA = 30_000;
+const DIAS_A_FRENTE = 400;
+/** Sem leitura nova do PJe, a conferência roda de novo depois disto (o SAMA relê o VIOS às 2h e às 12h). */
+const INTERVALO_MAXIMO_MS = 6 * 60 * 60 * 1000;
+
+/** Tarefas de audiência do VIOS entre `de` e `ate`, da cópia que o SAMA faz do relatório do VIOS. */
+async function copiaDoVios(de: string, ate: string): Promise<{ tarefas: AudienciaNoVios[]; copiaEm: string | null }> {
+  const cliente = sama();
+  const tarefas: AudienciaNoVios[] = [];
+  let copiaEm: number | null = null;
+  for (let desde = 0; desde < MAX_LINHAS_SAMA; desde += PAGINA_SAMA) {
+    const { data, error } = await cliente
+      .from("vios_tarefas")
+      .select(COLUNAS_SAMA)
+      .gte("data_limite", de)
+      .lte("data_limite", ate)
+      .or("tarefa.ilike.*AUD*,tarefa.ilike.*SESS*,tarefa.ilike.*PER*CIA*")
+      .order("ci")
+      .range(desde, desde + PAGINA_SAMA - 1);
+    if (error) throw new AudienciasError(`Não foi possível ler o VIOS no SAMA: ${error.message}`, 502);
+    const linhas = (data ?? []) as unknown as (TarefaDoSama & { sincronizado_em?: string | null })[];
+    for (const l of linhas) {
+      const tarefa = deTarefaDoSama(l);
+      if (tarefa) tarefas.push(tarefa);
+      const em = l.sincronizado_em ? Date.parse(l.sincronizado_em) : NaN;
+      if (Number.isFinite(em) && (copiaEm === null || em > copiaEm)) copiaEm = em;
+    }
+    if (linhas.length < PAGINA_SAMA) break;
+  }
+  return { tarefas, copiaEm: copiaEm === null ? null : new Date(copiaEm).toISOString() };
+}
+
+function mesmoInstante(a: string | null, b: string | null): boolean {
+  if (!a || !b) return a === b;
+  return new Date(a).getTime() === new Date(b).getTime();
+}
+
+/**
+ * Confere a pauta de hoje em diante com as tarefas de audiência do VIOS (cópia do SAMA). Grava em cada audiência
+ * a tarefa que corresponde a ela (ou nenhuma), marca como conferida a mudança que o VIOS já mostra feita e guarda
+ * na leitura as tarefas abertas que só existem no VIOS.
+ */
+export async function conferirComVios(origem = "rotina", agora = new Date()): Promise<ResumoConferenciaVios> {
+  const hoje = hojeEmBrasilia(agora);
+  const { data: leitura } = await db().from("aud_leituras").insert({ fonte: "vios", origem }).select("id").single();
+  try {
+    const [auds, copia] = await Promise.all([
+      carregarAudiencias(`${hoje}T00:00:00-03:00`, `${somarDias(hoje, DIAS_A_FRENTE)}T00:00:00-03:00`),
+      copiaDoVios(somarDias(hoje, -30), somarDias(hoje, DIAS_A_FRENTE + JANELA_DIAS)),
+    ]);
+    const { tarefaDa, soNoVios } = conferirPautaComVios(auds, copia.tarefas, agora);
+    const copiaEm = copia.copiaEm ?? agora.toISOString();
+    const resumo: ResumoConferenciaVios = {
+      copiaEm: copia.copiaEm,
+      tarefas: copia.tarefas.length,
+      conferidas: 0,
+      confere: 0,
+      horario: 0,
+      falta: 0,
+      concluida: 0,
+      aberta: 0,
+      resolvidas: 0,
+      soNoVios: soNoVios.length,
+    };
+
+    const soData: string[] = [];
+    const atualizar: { id: string; campos: Record<string, unknown> }[] = [];
+    const resolvidas: { id: string; mudancas: string[] }[] = [];
+    for (const aud of auds) {
+      if (!tarefaDa.has(aud.id)) continue;
+      const t = tarefaDa.get(aud.id) ?? null;
+      const vios = { viosTarefaCi: t?.tarefaCi ?? null, viosInicio: t?.inicio ?? null, viosSituacao: t?.status ?? null };
+      const resolvida = mudancaResolvidaNoVios(aud, t);
+      const estado = estadoNoVios({ ...aud, ...vios, viosConferidoEm: copiaEm }, agora.getTime());
+      if (estado) resumo[estado] += 1;
+      resumo.conferidas += 1;
+      const igual = aud.viosTarefaCi === vios.viosTarefaCi && aud.viosSituacao === vios.viosSituacao && mesmoInstante(aud.viosInicio, vios.viosInicio);
+      if (igual && !resolvida) {
+        soData.push(aud.id);
+        continue;
+      }
+      const campos: Record<string, unknown> = { vios_tarefa_ci: vios.viosTarefaCi, vios_inicio: vios.viosInicio, vios_situacao: vios.viosSituacao, vios_conferido_em: copiaEm };
+      if (resolvida) {
+        Object.assign(campos, { mudanca_conferida_em: agora.toISOString(), mudanca_conferida_por: "sistema: conferido no VIOS" });
+        resolvidas.push({ id: aud.id, mudancas: aud.mudancas });
+      }
+      atualizar.push({ id: aud.id, campos });
+    }
+
+    for (let i = 0; i < soData.length; i += 200) {
+      const { error } = await db().from("aud_audiencias").update({ vios_conferido_em: copiaEm }).in("id", soData.slice(i, i + 200));
+      if (error) falhou("gravar a conferência com o VIOS", error);
+    }
+    for (let i = 0; i < atualizar.length; i += 10) {
+      await Promise.all(
+        atualizar.slice(i, i + 10).map(async (u) => {
+          const { error } = await db().from("aud_audiencias").update(u.campos).eq("id", u.id);
+          if (error) falhou("gravar a conferência com o VIOS", error);
+        })
+      );
+    }
+    for (const r of resolvidas) await registrarHistorico(r.id, "conferida no VIOS", { para: r.mudancas.join(", "), feitoPor: "conferência automática com o VIOS" });
+    resumo.resolvidas = resolvidas.length;
+
+    const lista: TarefaSoNoVios[] = soNoVios
+      .slice(0, 300)
+      .map((t) => ({ tarefaCi: t.tarefaCi, ciProcesso: t.ciProcesso, cnj: t.cnj, inicio: t.inicio, tarefa: t.tarefa, responsaveis: t.responsaveis }));
+    if (leitura)
+      await db()
+        .from("aud_leituras")
+        .update({
+          terminada_em: new Date().toISOString(),
+          total: resumo.conferidas,
+          alteradas: resumo.horario + resumo.falta + resumo.concluida,
+          canceladas: resumo.aberta,
+          detalhe: { ...resumo, soNoViosLista: lista },
+        })
+        .eq("id", leitura.id);
+    return resumo;
+  } catch (erro) {
+    if (leitura) await db().from("aud_leituras").update({ terminada_em: new Date().toISOString(), erro: erro instanceof Error ? erro.message : String(erro) }).eq("id", leitura.id);
+    throw erro;
+  }
+}
+
+/**
+ * Para a rotina de 10 em 10 minutos: confere com o VIOS só quando chegou leitura nova do PJe depois da última
+ * conferência, ou quando a última tem mais de 6 horas (pega a cópia das 2h e das 12h do SAMA).
+ */
+export async function conferirComViosSeDevido(agora = new Date()): Promise<ResumoConferenciaVios | "em dia"> {
+  const { data, error } = await db()
+    .from("aud_leituras")
+    .select("fonte, origem, iniciada_em, terminada_em, erro")
+    .in("fonte", ["pje", "vios"])
+    .order("iniciada_em", { ascending: false })
+    .limit(20);
+  if (error) falhou("ler as últimas leituras", error);
+  const linhas = (data ?? []) as { fonte: string; origem: string | null; iniciada_em: string; terminada_em: string | null; erro: string | null }[];
+  const ultimaVios = linhas.find((l) => l.fonte === "vios" && l.origem === "rotina");
+  const ultimaPje = linhas.find((l) => l.fonte === "pje" && l.terminada_em && !l.erro);
+  const devida =
+    !ultimaVios ||
+    Boolean(ultimaPje?.terminada_em && Date.parse(ultimaPje.terminada_em) > Date.parse(ultimaVios.iniciada_em)) ||
+    agora.getTime() - Date.parse(ultimaVios.iniciada_em) > INTERVALO_MAXIMO_MS;
+  return devida ? conferirComVios("rotina", agora) : "em dia";
 }

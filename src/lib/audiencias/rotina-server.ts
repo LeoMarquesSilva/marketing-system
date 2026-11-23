@@ -1,7 +1,7 @@
 import "server-only";
 
 import { avisarAlertasGraves, avisarPautaDoDia, horaDeBrasilia } from "./avisos-server";
-import { conferirNoDjen } from "./conferencia-server";
+import { conferirComViosSeDevido, conferirNoDjen } from "./conferencia-server";
 import { lerRespostas, sincronizarConvites } from "./convites-server";
 
 /**
@@ -18,6 +18,7 @@ export async function rodarRotina(agora = new Date()): Promise<Record<string, un
       console.error(`[pauta] rotina/${nome}:`, erro);
     }
   }
+  await passo("vios", () => conferirComViosSeDevido(agora));
   await passo("djen", () => conferirNoDjen(25));
   await passo("convites", () => sincronizarConvites());
   await passo("respostas", () => lerRespostas());

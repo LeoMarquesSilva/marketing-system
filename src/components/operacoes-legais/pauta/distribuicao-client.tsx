@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarDays, CircleCheck, Clock, Repeat, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { alertasDaAudiencia, local, type Contexto } from "@/lib/audiencias/agenda";
+import { ALERTAS_DO_VIOS, alertasDaAudiencia, local, type Contexto } from "@/lib/audiencias/agenda";
 import type { Audiencia, Papel } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
 import { Aviso, Carregando, Indicador, Indicadores, Painel, PainelTopo, Selo, Vazio } from "../vistagem/ui";
@@ -59,7 +59,7 @@ function Distribuicao() {
         total: ativas.length,
         semTitular: ativas.filter((a) => !a.titularId).length,
         choques: comAlertas.filter((x) => x.alertas.some((al) => al.tipo === "choque" || al.tipo === "deslocamento")).length,
-        mudou: comAlertas.filter((x) => x.alertas.some((al) => al.tipo === "mudou" || al.tipo === "cancelada" || al.tipo === "vios_diverge")).length,
+        mudou: comAlertas.filter((x) => x.alertas.some((al) => ALERTAS_DO_VIOS.includes(al.tipo))).length,
         cedo: comAlertas.filter((x) => x.alertas.some((al) => al.tipo === "cedo")).length,
       },
     };
@@ -103,7 +103,7 @@ function Distribuicao() {
         <Indicador icone={CalendarDays} rotulo="Audiências nos 2 dias" valor={numeros.total} />
         <Indicador icone={Users} rotulo="Sem titular" valor={numeros.semTitular} tom={numeros.semTitular ? "perigo" : "neutro"} />
         <Indicador icone={AlertTriangle} rotulo="Choque ou deslocamento" valor={numeros.choques} tom={numeros.choques ? "perigo" : "neutro"} />
-        <Indicador icone={Repeat} rotulo="Mudou ou cancelada" valor={numeros.mudou} tom={numeros.mudou ? "perigo" : "neutro"} />
+        <Indicador icone={Repeat} rotulo="Conferir no VIOS" valor={numeros.mudou} tom={numeros.mudou ? "perigo" : "neutro"} />
         <Indicador icone={Clock} rotulo="Antes das 10h" valor={numeros.cedo} tom={numeros.cedo ? "alerta" : "neutro"} />
       </Indicadores>
 
@@ -128,7 +128,7 @@ function Distribuicao() {
               {atencao.map(({ aud, alertas }) => {
                 const graves = alertas.filter((a) => a.grave);
                 const precisaPessoa = graves.some((a) => ["sem_titular", "choque", "deslocamento"].includes(a.tipo));
-                const precisaConferir = graves.some((a) => ["mudou", "cancelada", "vios_diverge"].includes(a.tipo));
+                const precisaConferir = graves.some((a) => ALERTAS_DO_VIOS.includes(a.tipo));
                 return (
                   <li key={aud.id} className="relative grid grid-cols-[4.25rem_minmax(0,1fr)_auto] gap-3 border-b border-[#e6eef0] px-4 py-3 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-red-600 last:border-b-0">
                     <span className="font-mono text-sm font-medium">

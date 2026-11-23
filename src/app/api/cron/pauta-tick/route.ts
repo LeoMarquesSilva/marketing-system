@@ -6,7 +6,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * Rotina da Pauta de Audiências: DJEN, convites do Outlook, respostas e avisos do horário (7h, 17h, alertas).
+ * Rotina da Pauta de Audiências: conferência com o VIOS (quando há leitura nova do PJe), DJEN, convites do Outlook,
+ * respostas e avisos do horário (7h, 17h, alertas).
  * A Vercel (plano Hobby) chama uma vez por dia; o pg_cron chama a cada 10 minutos com o mesmo CRON_SECRET.
  */
 export async function GET(request: Request) {

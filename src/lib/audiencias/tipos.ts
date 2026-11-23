@@ -90,6 +90,10 @@ export interface Audiencia {
   mudancaConferidaEm: string | null;
   viosInicio: string | null;
   viosSituacao: string | null;
+  /** CI da tarefa de audiência do VIOS que corresponde a esta audiência (null = nenhuma). */
+  viosTarefaCi: string | null;
+  /** Quando a conferência com o VIOS passou por esta audiência (null = ainda não conferida). */
+  viosConferidoEm: string | null;
   djenConferidoEm: string | null;
   djenData: string | null;
   djenInicio: string | null;
@@ -101,7 +105,20 @@ export interface Audiencia {
 
 /** Um alerta de uma audiência na pauta ou na distribuição. */
 export interface AlertaAudiencia {
-  tipo: "sem_titular" | "choque" | "deslocamento" | "backup_ocupado" | "cedo" | "mudou" | "cancelada" | "sem_link" | "a_completar" | "vios_diverge";
+  tipo:
+    | "sem_titular"
+    | "choque"
+    | "deslocamento"
+    | "backup_ocupado"
+    | "cedo"
+    | "mudou"
+    | "cancelada"
+    | "sem_link"
+    | "a_completar"
+    | "vios_diverge"
+    | "vios_falta"
+    | "vios_concluida"
+    | "vios_aberta";
   grave: boolean;
   texto: string;
 }

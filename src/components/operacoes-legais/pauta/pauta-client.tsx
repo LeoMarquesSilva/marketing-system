@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, CircleSlash, Clock, Download, History, LoaderCircle, RefreshCw, Repeat, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { alertasDaAudiencia, hojeEmBrasilia, local, somarDias, type Contexto } from "@/lib/audiencias/agenda";
+import { alertasDaAudiencia, estadoNoVios, hojeEmBrasilia, local, pendenteNoVios, somarDias, type Contexto } from "@/lib/audiencias/agenda";
 import { ROTULO_MUDANCA, ROTULO_TIPO, type Audiencia, type Papel } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
 import { Aviso, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, campoClasse } from "../vistagem/ui";
@@ -19,6 +19,19 @@ const PERIODOS = [
 
 function semAcento(texto: string): string {
   return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+/** A tarefa do VIOS desta audiência, pela última conferência. */
+function textoDoVios(aud: Audiencia): string {
+  const estado = estadoNoVios(aud);
+  if (!aud.viosConferidoEm && !aud.viosInicio) return "Ainda não conferido";
+  if (!aud.viosTarefaCi && !aud.viosInicio) return aud.situacao === "cancelada" ? "Nenhuma tarefa aberta" : "Nenhuma tarefa de audiência no VIOS";
+  const v = aud.viosInicio ? local(aud.viosInicio) : null;
+  const dia = v ? (v.hora === "00:00" ? `${v.dia.slice(8, 10)}/${v.dia.slice(5, 7)} (sem horário)` : quando(aud.viosInicio)) : "—";
+  const situacao = aud.viosSituacao === "concluida" ? "concluída" : aud.viosSituacao ?? "";
+  const ci = aud.viosTarefaCi ? `CI ${aud.viosTarefaCi} · ` : "";
+  const nota = estado === "confere" ? " · confere" : "";
+  return `${ci}${dia} · ${situacao}${nota}${aud.viosConferidoEm ? ` (cópia de ${quando(aud.viosConferidoEm)})` : ""}`;
 }
 
 export function PautaClient() {
@@ -63,7 +76,7 @@ function Pauta() {
   const filtradas = useMemo(() => {
     const termo = semAcento(busca.trim());
     return (dados?.audiencias ?? []).filter((a) => {
-      if (a.situacao === "cancelada" && (!mostrarCanceladas || a.mudancaConferidaEm)) return false;
+      if (a.situacao === "cancelada" && (!mostrarCanceladas || !pendenteNoVios(a))) return false;
       if (a.situacao === "realizada") return false;
       if (pessoa && a.titularId !== pessoa && a.backupId !== pessoa) return false;
       if (!termo) return true;
@@ -87,7 +100,7 @@ function Pauta() {
     return {
       total: ativas.length,
       mudaram: ativas.filter((a) => a.mudancas.length && !a.mudancaConferidaEm).length,
-      canceladas: (dados?.audiencias ?? []).filter((a) => a.situacao === "cancelada" && !a.mudancaConferidaEm).length,
+      canceladas: (dados?.audiencias ?? []).filter((a) => a.situacao === "cancelada" && pendenteNoVios(a)).length,
       semLink: alertas.filter((l) => l.some((x) => x.tipo === "sem_link")).length,
       cedo: alertas.filter((l) => l.some((x) => x.tipo === "cedo")).length,
     };
@@ -352,7 +365,7 @@ function Detalhe({
             <dt className="text-muted-foreground">DJEN</dt>
             <dd>{aud.djenConferidoEm ? (aud.djenData ? `Intimação de ${aud.djenData.slice(8, 10)}/${aud.djenData.slice(5, 7)}${aud.djenInicio ? ` · ${quando(aud.djenInicio)}` : ""}` : "Sem intimação com esta data") : "Ainda não conferido"}</dd>
             <dt className="text-muted-foreground">VIOS</dt>
-            <dd>{aud.viosInicio ? `${quando(aud.viosInicio)} · ${aud.viosSituacao ?? ""}` : "Ainda não conferido"}</dd>
+            <dd>{textoDoVios(aud)}</dd>
           </dl>
           <div className="space-y-2 rounded-md border border-[#dce9eb] p-3">
             <div className="flex items-center justify-between gap-2">
@@ -417,7 +430,7 @@ function Detalhe({
           {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
         </div>
         <DialogFooter className="border-t border-[#e6eef0] bg-[#f7fbfc] px-5 py-3">
-          {(aud.mudancas.length || aud.situacao === "cancelada") && !aud.mudancaConferidaEm ? (
+          {pendenteNoVios(aud) ? (
             <Button variant="outline" onClick={() => void conferir()} disabled={salvando}>
               Conferido no VIOS
             </Button>

@@ -22,7 +22,7 @@ function aud(p: Partial<Audiencia> = {}): Audiencia {
     id: "a1", chave: "pje:TRT15:1", origem: "pje", tribunal: "TRT15", cnj: "0099991-11.2026.5.15.0001", inicio: "2026-11-19T11:40:00.000Z", fim: "2026-11-19T11:50:00.000Z",
     tipo: "inicial", tipoDescricao: "Inicial por videoconferência", ritoSumarissimo: false, modalidadeTribunal: "video", modalidadeEquipe: null, orgao: "CON1 - Piracicaba", sala: null,
     juizoDigital: true, situacao: "designada", linkSala: "https://us02web.zoom.us/j/1111", linkFonte: "pje", linkFonteData: null, linkAnterior: null, cliente: null, grupoCliente: "Grupo Exemplo",
-    ciProcesso: null, reclamanteIniciais: "F. H. M. M.", titularId: "p1", backupId: "p2", substituiId: null, mudancas: [], mudancaConferidaEm: null, viosInicio: null, viosSituacao: null,
+    ciProcesso: null, reclamanteIniciais: "F. H. M. M.", titularId: "p1", backupId: "p2", substituiId: null, mudancas: [], mudancaConferidaEm: null, viosInicio: null, viosSituacao: null, viosTarefaCi: null, viosConferidoEm: null,
     djenConferidoEm: null, djenData: null, djenInicio: null, djenModalidade: null, correspondente: null, observacao: null, lidaEm: "2026-11-18T12:00:00.000Z", ...p,
   };
 }

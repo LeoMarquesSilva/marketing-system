@@ -41,6 +41,8 @@ function aud(p: Partial<Audiencia>): Audiencia {
     mudancaConferidaEm: null,
     viosInicio: null,
     viosSituacao: null,
+    viosTarefaCi: null,
+    viosConferidoEm: null,
     djenConferidoEm: null,
     djenData: null,
     djenInicio: null,
