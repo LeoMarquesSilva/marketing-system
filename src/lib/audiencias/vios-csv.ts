@@ -11,6 +11,7 @@ import type { TipoAudiencia } from "./tipos";
 export interface AudienciaNoVios {
   tarefaCi: string;
   ciProcesso: string | null;
+  /** "" quando o relatório veio sem o número do processo (a conferência completa pela CI do processo). */
   cnj: string;
   inicio: string;
   tipo: TipoAudiencia;
@@ -96,13 +97,15 @@ export function lerCsvDoVios(texto: string): AudienciaNoVios[] {
   const saida: AudienciaNoVios[] = [];
   for (const l of linhas) {
     const tarefa = (l["Tarefa"] ?? "").trim();
-    const cnj = cnjComMascara(l["Nro CNJ"]);
+    // O relatório às vezes vem sem o número do processo: fica "" e a conferência completa pela CI do processo.
+    const cnj = cnjComMascara(l["Nro CNJ"]) ?? "";
+    const ciProcesso = semIgual(l["CI do Processo"]) || null;
     const inicio = inicioDoVios(l["Data limite"] || l["Data para conclusão"], l["Horário"]);
     const tarefaCi = semIgual(l["CI"]);
-    if (!cnj || !inicio || !tarefaCi) continue;
+    if ((!cnj && !ciProcesso) || !inicio || !tarefaCi) continue;
     saida.push({
       tarefaCi,
-      ciProcesso: semIgual(l["CI do Processo"]) || null,
+      ciProcesso,
       cnj,
       inicio,
       tipo: tipoDaDescricao(tarefa.replace(/AUD\./i, "audiência")),

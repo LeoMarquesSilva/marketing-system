@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { alertasDaAudiencia, conferidaDepoisDaCopia, estadoNoVios, mesmoHorario, pendenteNoVios } from "./agenda";
-import { conferirPautaComVios, juntarFontesDoVios, mudancaResolvidaNoVios, tribunalDoCnj } from "./conferencia-vios";
+import { completarCnj, conferirPautaComVios, juntarFontesDoVios, mudancaResolvidaNoVios, tribunalDoCnj } from "./conferencia-vios";
 import type { Audiencia } from "./tipos";
 import { deTarefaDoSama, lerCsvDoVios, type AudienciaNoVios } from "./vios-csv";
 
@@ -168,39 +168,37 @@ describe("Tarefas.csv + cópia do SAMA", () => {
   const antes = Date.parse("2026-11-23T05:00:00.000Z");
   const depois = Date.parse("2026-11-23T15:09:00.000Z");
 
-  it("o relatório traz a tarefa que a cópia do SAMA pulou; a versão mais nova de cada CI vale", () => {
+  const doArquivo = (...ts: AudienciaNoVios[]) => ts.map((t) => ({ tarefa: t, em: RELATORIO_EM }));
+
+  it("soma as fontes: o arquivo traz a tarefa que o SAMA pulou e o SAMA traz o que o recorte do arquivo não tem", () => {
     const pulada = tarefa({ tarefaCi: "882502" });
-    const noRelatorio = tarefa({ tarefaCi: "700001", status: "aberta" });
-    const concluidaDepois = { ...noRelatorio, status: "concluida" as const };
-    const juntas = juntarFontesDoVios([pulada, noRelatorio], RELATORIO_EM, [{ tarefa: concluidaDepois, em: depois }]);
-    expect(juntas.map((t) => [t.tarefaCi, t.status])).toEqual([
-      ["882502", "aberta"],
-      ["700001", "concluida"],
-    ]);
+    const soNoSama = tarefa({ tarefaCi: "700009", inicio: "2026-12-02T12:00:00.000Z" });
+    const juntas = juntarFontesDoVios(doArquivo(pulada), [{ tarefa: soNoSama, em: antes }]);
+    expect(juntas.map((t) => t.tarefaCi).sort()).toEqual(["700009", "882502"]);
   });
 
-  it("cópia antiga do SAMA não desfaz o relatório", () => {
-    const noRelatorio = tarefa({ tarefaCi: "700002", inicio: "2026-12-10T12:00:00.000Z" });
-    const velha = { ...noRelatorio, inicio: "2026-12-01T12:00:00.000Z" };
-    expect(juntarFontesDoVios([noRelatorio], RELATORIO_EM, [{ tarefa: velha, em: antes }])[0]!.inicio).toBe("2026-12-10T12:00:00.000Z");
+  it("para cada CI vale a versão mais nova, venha de onde vier", () => {
+    const noArquivo = tarefa({ tarefaCi: "700001", status: "aberta" });
+    const concluidaDepois = { ...noArquivo, status: "concluida" as const };
+    expect(juntarFontesDoVios(doArquivo(noArquivo), [{ tarefa: concluidaDepois, em: depois }])[0]!.status).toBe("concluida");
+    const velha = { ...noArquivo, inicio: "2026-12-01T12:00:00.000Z" };
+    expect(juntarFontesDoVios(doArquivo(noArquivo), [{ tarefa: velha, em: antes }])[0]!.inicio).toBe(noArquivo.inicio);
   });
 
-  it("só no SAMA: entra se foi criada depois do relatório ou se a data fica fora do período dele", () => {
-    const relatorio = [tarefa({ tarefaCi: "1", inicio: "2026-11-25T12:00:00.000Z" }), tarefa({ tarefaCi: "2", inicio: "2026-12-20T12:00:00.000Z" })];
-    const nova = tarefa({ tarefaCi: "3", inicio: "2026-12-01T12:00:00.000Z" });
-    const apagada = tarefa({ tarefaCi: "4", inicio: "2026-12-02T12:00:00.000Z" });
-    const alemDoPeriodo = tarefa({ tarefaCi: "5", inicio: "2027-02-10T12:00:00.000Z" });
-    const juntas = juntarFontesDoVios(relatorio, RELATORIO_EM, [
-      { tarefa: nova, em: depois },
-      { tarefa: apagada, em: antes },
-      { tarefa: alemDoPeriodo, em: antes },
-    ]);
-    expect(juntas.map((t) => t.tarefaCi).sort()).toEqual(["1", "2", "3", "5"]);
-  });
-
-  it("sem relatório, fica a cópia do SAMA inteira", () => {
+  it("sem arquivo, fica a cópia do SAMA inteira", () => {
     const t = tarefa();
-    expect(juntarFontesDoVios(null, RELATORIO_EM, [{ tarefa: t, em: antes }])).toEqual([t]);
+    expect(juntarFontesDoVios([{ tarefa: t, em: antes }])).toEqual([t]);
+  });
+
+  it("completa o número do processo pela CI do processo; sem como completar, fica de fora", () => {
+    const semNumero = tarefa({ tarefaCi: "1", cnj: "", ciProcesso: "59214" });
+    const semNada = tarefa({ tarefaCi: "2", cnj: "", ciProcesso: "11111" });
+    const r = completarCnj([semNumero, semNada, tarefa({ tarefaCi: "3" })], new Map([["59214", "0010918-11.2026.5.15.0131"]]));
+    expect(r.tarefas.map((t) => [t.tarefaCi, t.cnj])).toEqual([
+      ["1", "0010918-11.2026.5.15.0131"],
+      ["3", CNJ],
+    ]);
+    expect(r.semCnj).toBe(1);
   });
 
   it("lê o Tarefas.csv e descarta o que não é audiência", () => {
@@ -209,8 +207,13 @@ describe("Tarefas.csv + cópia do SAMA", () => {
       '="882502";="59214";0010918-11.2026.5.15.0131;AUDIÊNCIA UNA/INICIAL;Aberta;23/11/2026;23/11/2026;13:00 - 14:00;Trabalhista;Lorena Lourenço Miranda;',
       '="882505";="59214";0010918-11.2026.5.15.0131;CONTESTAÇÃO;Concluída;08/11/2026;08/11/2026;;Trabalhista;Lorena Lourenço Miranda;',
       '="882516";="59214";0010918-11.2026.5.15.0131;VERIFICAR ATA;Aberta;24/11/2026;24/11/2026;;Trabalhista;Larissa de Oliveira Pereira;',
+      '="895090";="59984";;AUDIÊNCIA UNA/INICIAL;Aberta;24/11/2026;24/11/2026;08:35 - 09:35;Trabalhista;Pamela Klava Senna Patricio;',
+      '="895099";;;AUDIÊNCIA UNA/INICIAL;Aberta;24/11/2026;24/11/2026;;Trabalhista;;',
     ].join("\n");
-    expect(lerCsvDoVios(csv)).toEqual([expect.objectContaining({ tarefaCi: "882502", cnj: "0010918-11.2026.5.15.0131", inicio: "2026-11-23T16:00:00.000Z", tipo: "una", status: "aberta" })]);
+    expect(lerCsvDoVios(csv)).toEqual([
+      expect.objectContaining({ tarefaCi: "882502", cnj: "0010918-11.2026.5.15.0131", inicio: "2026-11-23T16:00:00.000Z", tipo: "una", status: "aberta" }),
+      expect.objectContaining({ tarefaCi: "895090", cnj: "", ciProcesso: "59984", inicio: "2026-11-24T11:35:00.000Z" }),
+    ]);
   });
 });
 

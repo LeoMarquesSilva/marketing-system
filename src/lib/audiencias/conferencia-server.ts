@@ -1,10 +1,10 @@
 import "server-only";
 
-import { SITE_CONTROLADORIA, TAREFAS_VIOS } from "@/lib/vistagem/pastas-vios";
+import { AUDIENCIAS_VIOS, SITE_CONTROLADORIA, TAREFAS_VIOS } from "@/lib/vistagem/pastas-vios";
 import { sama } from "@/lib/vistagem/sama";
 import { baixarArquivoComDataPorCaminho } from "@/lib/vistagem/sharepoint";
 import { estadoNoVios, hojeEmBrasilia, local, somarDias } from "./agenda";
-import { conferirPautaComVios, JANELA_DIAS, juntarFontesDoVios, mudancaResolvidaNoVios, type TarefaDaCopia } from "./conferencia-vios";
+import { completarCnj, conferirPautaComVios, JANELA_DIAS, juntarFontesDoVios, mudancaResolvidaNoVios, type TarefaDaFonte } from "./conferencia-vios";
 import { audienciaNasIntimacoes, type ComunicacaoDjen } from "./djen";
 import { chaveDoLink, horaLocalParaIso } from "./pje";
 import { AudienciasError, carregarAudiencias, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
@@ -102,7 +102,7 @@ export interface ResumoVios {
 
 /** Relatório de tarefas do VIOS (CSV): grava em cada audiência do PJe a data e a situação que o VIOS tem. */
 export async function importarRelatorioDoVios(texto: string, quem: string | null): Promise<ResumoVios> {
-  const lidas = lerCsvDoVios(texto);
+  const lidas = lerCsvDoVios(texto).filter((l) => l.cnj);
   const resumo: ResumoVios = { lidas: lidas.length, conferidas: 0, divergentes: 0, soNoVios: 0 };
   const { data: leitura } = await db().from("aud_leituras").insert({ fonte: "vios", origem: quem ?? "upload" }).select("id").single();
   const cnjs = [...new Set(lidas.map((l) => l.cnj))];
@@ -146,10 +146,14 @@ export interface TarefaSoNoVios {
 export interface ResumoConferenciaVios {
   /** A fonte mais nova usada (Tarefas.csv ou cópia do SAMA): a conferência vale para o VIOS desse momento. */
   copiaEm: string | null;
-  /** Quando o Tarefas.csv foi gravado no SharePoint (null = não lido). */
+  /** Quando o arquivo mais novo do SharePoint (Tarefas.csv ou Audiencias.csv) foi gravado (null = nenhum lido). */
   relatorioEm?: string | null;
-  /** Tarefas de audiência no Tarefas.csv (null = não lido). */
+  /** Tarefas de audiência nos arquivos do SharePoint (null = nenhum lido). */
   relatorioTarefas?: number | null;
+  /** Cada arquivo do SharePoint lido: quantas tarefas de audiência, quantas sem número de processo e o período. */
+  arquivos?: { nome: string; em: string | null; linhas: number; semCnj: number; de: string | null; ate: string | null }[];
+  /** Tarefas sem número de processo que nem a CI do processo completou (ficaram de fora). */
+  semCnj?: number;
   /** Quando o SAMA copiou o VIOS pela última vez (null = não lido). */
   samaEm?: string | null;
   /** Fonte que falhou (a conferência seguiu com a outra). */
@@ -187,20 +191,33 @@ function decodificarCsv(bytes: Uint8Array): string {
   }
 }
 
+interface ArquivoDoVios {
+  nome: string;
+  tarefas: AudienciaNoVios[];
+  em: string | null;
+}
+
 /**
- * Tarefas de audiência do Tarefas.csv (relatório de tarefas do VIOS, todas as situações) que um robô do escritório
- * grava no SharePoint da Controladoria, com a hora em que o arquivo foi gravado.
+ * Tarefas de audiência de um relatório de tarefas do VIOS que o robô do escritório (vios-app, máquina bp01) grava no
+ * SharePoint da Controladoria, com a hora em que o arquivo foi gravado. Tarefas.csv é um recorte curto; Audiencias.csv
+ * (vios-app --audiencias: 3 dias atrás a 1 ano à frente) só existe se esse modo estiver agendado: sem ele, null.
  */
-async function relatorioDoVios(): Promise<{ tarefas: AudienciaNoVios[]; em: string | null; tamanho: number }> {
-  const { bytes, modificadoEm, tamanho } = await baixarArquivoComDataPorCaminho(SITE_CONTROLADORIA, TAREFAS_VIOS);
-  if (tamanho > TAMANHO_MAXIMO_RELATORIO) throw new AudienciasError(`Tarefas.csv grande demais (${Math.round(tamanho / 1024 / 1024)} MB).`, 502);
-  return { tarefas: lerCsvDoVios(decodificarCsv(bytes)), em: modificadoEm, tamanho };
+async function arquivoDoVios(nome: string, caminho: string, opcional = false): Promise<ArquivoDoVios | null> {
+  let baixado: Awaited<ReturnType<typeof baixarArquivoComDataPorCaminho>>;
+  try {
+    baixado = await baixarArquivoComDataPorCaminho(SITE_CONTROLADORIA, caminho);
+  } catch (erro) {
+    if (opcional && erro instanceof Error && erro.message.includes("(404)")) return null;
+    throw erro;
+  }
+  if (baixado.tamanho > TAMANHO_MAXIMO_RELATORIO) throw new AudienciasError(`${nome} grande demais (${Math.round(baixado.tamanho / 1024 / 1024)} MB).`, 502);
+  return { nome, tarefas: lerCsvDoVios(decodificarCsv(baixado.bytes)), em: baixado.modificadoEm };
 }
 
 /** Tarefas de audiência do VIOS entre `de` e `ate`, da cópia que o SAMA faz do relatório do VIOS (com a hora de cada uma). */
-async function copiaDoSama(de: string, ate: string): Promise<{ tarefas: TarefaDaCopia[]; copiaEm: string | null }> {
+async function copiaDoSama(de: string, ate: string): Promise<{ tarefas: TarefaDaFonte[]; copiaEm: string | null }> {
   const cliente = sama();
-  const tarefas: TarefaDaCopia[] = [];
+  const tarefas: TarefaDaFonte[] = [];
   let copiaEm: number | null = null;
   for (let desde = 0; desde < MAX_LINHAS_SAMA; desde += PAGINA_SAMA) {
     const { data, error } = await cliente
@@ -236,10 +253,11 @@ function maisNova(...datas: (string | null)[]): string | null {
 }
 
 /**
- * Confere a pauta de hoje em diante com as tarefas de audiência do VIOS: o Tarefas.csv do SharePoint (completo) mais
- * o que a cópia do SAMA viu depois dele. Grava em cada audiência a tarefa que corresponde a ela (ou nenhuma), marca
- * como conferida a mudança que o VIOS já mostra feita e guarda na leitura as tarefas abertas que só existem no VIOS.
- * Se uma das fontes falhar, segue com a outra e avisa; sem as duas, a conferência falha.
+ * Confere a pauta de hoje em diante com as tarefas de audiência do VIOS, somando as fontes (nenhuma é completa): os
+ * relatórios do SharePoint (Tarefas.csv; Audiencias.csv, se existir) e a cópia do SAMA; por CI vale a versão mais
+ * nova. Grava em cada audiência a tarefa que corresponde a ela (ou nenhuma), marca como conferida a mudança que o
+ * VIOS já mostra feita e guarda na leitura as tarefas abertas que só existem no VIOS. Fonte que falha vira aviso;
+ * sem nenhuma, a conferência falha.
  */
 export async function conferirComVios(origem = ORIGEM_AUTOMATICA, agora = new Date()): Promise<ResumoConferenciaVios> {
   const hoje = hojeEmBrasilia(agora);
@@ -248,30 +266,42 @@ export async function conferirComVios(origem = ORIGEM_AUTOMATICA, agora = new Da
   const { data: leitura } = await db().from("aud_leituras").insert({ fonte: "vios", origem }).select("id").single();
   try {
     const avisos: string[] = [];
-    const [auds, relatorio, copia] = await Promise.all([
+    const semFonte = (fonte: string) => (erro: unknown) => {
+      avisos.push(`${fonte} não lido: ${erro instanceof Error ? erro.message : String(erro)}`);
+      return null;
+    };
+    const [auds, tarefasCsv, audienciasCsv, copia] = await Promise.all([
       carregarAudiencias(`${hoje}T00:00:00-03:00`, `${somarDias(hoje, DIAS_A_FRENTE)}T00:00:00-03:00`),
-      relatorioDoVios().catch((erro) => {
-        avisos.push(`Tarefas.csv do SharePoint não lido: ${erro instanceof Error ? erro.message : String(erro)}`);
-        return null;
-      }),
-      copiaDoSama(de, ate).catch((erro) => {
-        avisos.push(`Cópia do VIOS no SAMA não lida: ${erro instanceof Error ? erro.message : String(erro)}`);
-        return null;
-      }),
+      arquivoDoVios("Tarefas.csv", TAREFAS_VIOS).catch(semFonte("Tarefas.csv do SharePoint")),
+      arquivoDoVios("Audiencias.csv", AUDIENCIAS_VIOS, true).catch(semFonte("Audiencias.csv do SharePoint")),
+      copiaDoSama(de, ate).catch(semFonte("Cópia do VIOS no SAMA")),
     ]);
-    if (!relatorio && !copia) throw new AudienciasError(avisos.join(" · "), 502);
+    const arquivos = [tarefasCsv, audienciasCsv].filter((a): a is ArquivoDoVios => Boolean(a));
+    if (!arquivos.length && !copia) throw new AudienciasError(avisos.join(" · "), 502);
     const naJanela = (t: AudienciaNoVios) => {
       const dia = local(t.inicio).dia;
       return dia >= de && dia <= ate;
     };
-    const relatorioEm = relatorio?.em ?? null;
-    const tarefas = juntarFontesDoVios(relatorio ? relatorio.tarefas.filter(naJanela) : null, relatorioEm ? Date.parse(relatorioEm) : agora.getTime(), copia?.tarefas ?? []);
+    const juntas = juntarFontesDoVios(
+      ...arquivos.map((a) => a.tarefas.filter(naJanela).map((tarefa) => ({ tarefa, em: a.em ? Date.parse(a.em) : agora.getTime() }))),
+      copia?.tarefas ?? []
+    );
+    const cnjPorCiProcesso = new Map<string, string>();
+    for (const t of juntas) if (t.cnj && t.ciProcesso) cnjPorCiProcesso.set(t.ciProcesso, t.cnj);
+    for (const a of auds) if (a.ciProcesso) cnjPorCiProcesso.set(a.ciProcesso, a.cnj);
+    const { tarefas, semCnj } = completarCnj(juntas, cnjPorCiProcesso);
     const { tarefaDa, soNoVios } = conferirPautaComVios(auds, tarefas, agora);
+    const relatorioEm = maisNova(...arquivos.map((a) => a.em));
     const copiaEm = maisNova(relatorioEm, copia?.copiaEm ?? null) ?? agora.toISOString();
     const resumo: ResumoConferenciaVios = {
       copiaEm,
       relatorioEm,
-      relatorioTarefas: relatorio ? relatorio.tarefas.length : null,
+      relatorioTarefas: arquivos.length ? arquivos.reduce((n, a) => n + a.tarefas.length, 0) : null,
+      arquivos: arquivos.map((a) => {
+        const dias = a.tarefas.map((t) => local(t.inicio).dia).sort();
+        return { nome: a.nome, em: a.em, linhas: a.tarefas.length, semCnj: a.tarefas.filter((t) => !t.cnj).length, de: dias[0] ?? null, ate: dias[dias.length - 1] ?? null };
+      }),
+      semCnj,
       samaEm: copia?.copiaEm ?? null,
       avisos,
       tarefas: tarefas.length,

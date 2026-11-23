@@ -1,4 +1,4 @@
-import { local, mesmoHorario } from "./agenda";
+import { mesmoHorario } from "./agenda";
 import type { Audiencia, Mudanca } from "./tipos";
 import type { AudienciaNoVios } from "./vios-csv";
 
@@ -69,31 +69,44 @@ export function conferirPautaComVios(audiencias: Audiencia[], tarefas: Audiencia
   return { tarefaDa, soNoVios };
 }
 
-/** Uma tarefa da cópia do SAMA com a hora em que o SAMA a copiou (ms). */
-export interface TarefaDaCopia {
+/** Uma tarefa de uma das fontes do VIOS, com a hora em que a fonte a viu (ms). */
+export interface TarefaDaFonte {
   tarefa: AudienciaNoVios;
   em: number;
 }
 
 /**
- * Junta as duas fontes do VIOS. O relatório (Tarefas.csv do SharePoint) é completo, mas vale para a hora em que foi
- * gerado; a cópia do SAMA é relida às 2h e às 12h, mas pula tarefas. Para cada CI vale o relatório, a não ser que o
- * SAMA tenha visto a tarefa depois dele; tarefa que só o SAMA tem entra se ele a viu depois do relatório (criada
- * depois) ou se a data dela fica fora do período que o relatório cobre. Sem relatório (null), fica a cópia do SAMA.
+ * Junta as fontes do VIOS: os arquivos do SharePoint (Tarefas.csv, recorte curto; Audiencias.csv, se existir) e a
+ * cópia do SAMA (pula tarefas). Nenhuma é completa, então soma todas; para cada CI vale a versão vista por último.
+ * (1ª versão tratava o Tarefas.csv como completo e descartava o SAMA: as faltas subiram de 46 para 56 em 23/11.)
  */
-export function juntarFontesDoVios(relatorio: AudienciaNoVios[] | null, relatorioEm: number, sama: TarefaDaCopia[]): AudienciaNoVios[] {
-  if (!relatorio) return sama.map((s) => s.tarefa);
-  const dias = relatorio.map((t) => local(t.inicio).dia).sort();
-  const cobre = (t: AudienciaNoVios) => {
-    const dia = local(t.inicio).dia;
-    return dias.length > 0 && dia >= dias[0]! && dia <= dias[dias.length - 1]!;
-  };
-  const porCi = new Map(relatorio.map((t) => [t.tarefaCi, t]));
-  for (const s of sama) {
-    if (s.em > relatorioEm) porCi.set(s.tarefa.tarefaCi, s.tarefa);
-    else if (!porCi.has(s.tarefa.tarefaCi) && !cobre(s.tarefa)) porCi.set(s.tarefa.tarefaCi, s.tarefa);
+export function juntarFontesDoVios(...fontes: TarefaDaFonte[][]): AudienciaNoVios[] {
+  const porCi = new Map<string, TarefaDaFonte>();
+  for (const fonte of fontes) {
+    for (const item of fonte) {
+      const atual = porCi.get(item.tarefa.tarefaCi);
+      if (!atual || item.em > atual.em) porCi.set(item.tarefa.tarefaCi, item);
+    }
   }
-  return [...porCi.values()];
+  return [...porCi.values()].map((item) => item.tarefa);
+}
+
+/**
+ * Completa o número do processo das tarefas que vieram sem ele, pela CI do processo (de outras tarefas ou da pauta).
+ * As que continuam sem número ficam de fora (não há como casar com o PJe).
+ */
+export function completarCnj(tarefas: AudienciaNoVios[], cnjPorCiProcesso: Map<string, string>): { tarefas: AudienciaNoVios[]; semCnj: number } {
+  const saida: AudienciaNoVios[] = [];
+  let semCnj = 0;
+  for (const t of tarefas) {
+    if (t.cnj) saida.push(t);
+    else {
+      const cnj = t.ciProcesso ? cnjPorCiProcesso.get(t.ciProcesso) : undefined;
+      if (cnj) saida.push({ ...t, cnj });
+      else semCnj += 1;
+    }
+  }
+  return { tarefas: saida, semCnj };
 }
 
 /**
