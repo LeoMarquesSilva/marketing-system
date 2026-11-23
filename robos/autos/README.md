@@ -221,6 +221,11 @@ Lê a "Minha Pauta" do PJe da Justiça do Trabalho com a sessão do advogado e m
 
 - `PAUTA_TRIBUNAIS` (padrão `TRT15`): tribunais lidos, separados por vírgula (`TRT15,TRT2`).
 - `PAUTA_DIAS` (padrão 60): quantos dias à frente.
-- Login pelo SSO da PDPJ ("Entrar com PDPJ"): a pessoa entra com o certificado (ou CPF e senha) na janela do robô; o código de 2 fatores vem de `ROBO_2FA_WEBHOOK_URL` com `?sistema=pdpj`, se houver.
+- `npm run pauta -- --so-ler`: teste de acesso. Entra, lê e mostra quantas audiências achou, sem mandar nada ao ORQESTRAI.
+- `npm run pauta -- --ciclo`: fica rodando e lê nos horários de `PAUTA_HORARIOS` (padrão `06:45,11:45,16:45`).
+- Login pelo SSO da PDPJ ("Entrar com PDPJ"):
+  - `PDPJ_LOGIN=manual` (padrão): a pessoa entra na janela do robô (no Mac, com o certificado pelo PJe Office; no servidor, com CPF e senha pela tela remota).
+  - `PDPJ_LOGIN=senha`: o robô preenche `PDPJ_USUARIO` (CPF) e `PDPJ_SENHA`, que ficam só no ambiente da máquina do robô.
+  - O código de 2 fatores vem de `ROBO_2FA_WEBHOOK_URL` com `?sistema=pdpj`, se houver.
 - O navegador fica aberto no fim para a próxima rodada aproveitar a sessão (`-- --fechar` fecha).
-- Agendar três vezes ao dia (ex.: 6h45, 11h45 e 16h45), depois do export do VIOS.
+- No servidor (Easypanel): comandos `pauta-teste`, `pauta` e `pauta-ciclo`; passo a passo em `docs/easypanel.md`.

@@ -5,6 +5,9 @@
 #   uma-vez                   atende o que estiver na fila e sai
 #   login [eproc|TJCE…]       só abre a sessão do tribunal
 #   inspecionar [eproc] CNJ   abre o processo e descreve a tela, sem baixar
+#   pauta                     uma leitura da Minha Pauta do PJe-JT, mandada ao ORQESTRAI (src/pauta.ts)
+#   pauta-teste               teste de acesso ao PJe-JT: entra, lê e mostra os números, sem mandar nada
+#   pauta-ciclo               fica rodando e lê a pauta nos horários de PAUTA_HORARIOS
 #
 # Como root, só prepara o volume e passa para o usuário pwuser (o da imagem do Playwright). O navegador,
 # a tela virtual e o robô rodam como pwuser.
@@ -66,13 +69,17 @@ fi
 
 comando="${1:-robo}"
 [ "$#" -gt 0 ] && shift
+programa=src/index.ts
 case "$comando" in
   robo) set -- ;;
   uma-vez) set -- --uma-vez ;;
   login) set -- --login "$@" ;;
   inspecionar) set -- --inspecionar "$@" ;;
-  *) echo "Comando desconhecido: $comando (use robo, uma-vez, login ou inspecionar)"; exit 2 ;;
+  pauta) programa=src/pauta.ts ;;
+  pauta-teste) programa=src/pauta.ts; set -- --so-ler "$@" ;;
+  pauta-ciclo) programa=src/pauta.ts; set -- --ciclo "$@" ;;
+  *) echo "Comando desconhecido: $comando (use robo, uma-vez, login, inspecionar, pauta, pauta-teste ou pauta-ciclo)"; exit 2 ;;
 esac
 
 cd /app
-exec /app/node_modules/.bin/tsx src/index.ts "$@"
+exec /app/node_modules/.bin/tsx "$programa" "$@"

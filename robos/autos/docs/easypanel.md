@@ -269,3 +269,64 @@ Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)).
 - AASP, duplo fator no e-SAJ (certificado não pede código): https://www.aasp.org.br/?p=81735
 - AASP, comunicado da Presidência do TJSP sobre robôs externos (15/07/2019): https://www.aasp.org.br/?p=40632
 - TJSP, atas do Comitê Gestor de TI (2021), citadas pela busca, texto não conferido: https://www.tjsp.jus.br/Download/Portal/PlanejamentoEstrategicoDeTI/PlanejamentoEstrategicoDeTI/ComiteGestaoTI/REGISTROCGesTI09-04-2021v1rev.pdf
+
+## Robô da Pauta de Audiências (PJe da Justiça do Trabalho)
+
+Acrescentado em 23/11/2026. Mesma imagem do robô de autos, outro serviço no Easypanel. Lê a "Minha Pauta" do PJe-JT
+com a sessão do advogado e manda ao ORQESTRAI (`/api/robos/pauta`). Só leitura. Plano do módulo em
+`docs/pauta-audiencias/PLANO.md` (raiz do repositório).
+
+### Comandos do contêiner
+
+| Comando | O que faz |
+|---|---|
+| `pauta-teste` | **Teste de acesso**: entra no PJe-JT, lê a pauta e escreve no log quantas audiências achou. Não manda nada ao ORQESTRAI (não precisa de `ORQESTRAI_URL` nem de `ROBO_AUTOS_TOKEN`). |
+| `pauta` | Uma leitura, mandada ao ORQESTRAI, e sai. |
+| `pauta-ciclo` | Fica rodando e lê nos horários de `PAUTA_HORARIOS` (padrão `06:45,11:45,16:45`). A sessão do PJe fica aberta entre as leituras. |
+
+### Login no servidor
+
+- O login do PJe-JT passa pelo SSO nacional da PDPJ ("Entrar com PDPJ"). No Mac, o advogado entra com o certificado pelo
+  **PJe Office**, que é um aplicativo do computador. **No contêiner não há PJe Office**: o certificado em arquivo
+  (`clientCertificates`) não serve aqui, porque a PDPJ não pede certificado de cliente TLS. No servidor o login é
+  **CPF e senha + código de 2 fatores**.
+- `PDPJ_LOGIN=manual` (padrão): o robô abre a tela e espera. Quem testa abre a tela remota (noVNC) e digita CPF, senha e
+  o código. Nenhuma senha fica no Easypanel.
+- `PDPJ_LOGIN=senha`: o robô preenche `PDPJ_USUARIO` (CPF) e `PDPJ_SENHA`. Guardar a senha do advogado no Easypanel é
+  decisão dele (mesmo cuidado do certificado: acesso ao Easypanel só para quem precisa).
+- O código de 2 fatores vem do webhook do n8n com `?sistema=pdpj` (`ROBO_2FA_WEBHOOK_URL`, `_HEADER`, `_TOKEN`),
+  que já devolveu código válido no teste de 13/11. Sem ele, a pessoa digita pela tela remota.
+- A Minha Pauta só mostra os processos em que o advogado logado está habilitado: o login define a cobertura.
+
+### Passo a passo do teste (Easypanel)
+
+1. **Serviço novo** (App) chamado `robo-pauta`, no mesmo projeto do robô de autos.
+2. **Fonte:** GitHub `LeoMarquesSilva/marketing-system`, branch com este código, **caminho de build `/robos/autos`**,
+   build por **Dockerfile**.
+3. **Comando:** `pauta-teste` (o `ENTRYPOINT` já chama o `iniciar-robo`; no Easypanel, só o argumento).
+4. **Volume:** `/dados` **só deste serviço** (não compartilhar com o robô de autos: dois navegadores no mesmo perfil brigam).
+5. **Variáveis:**
+
+   | Variável | Valor |
+   |---|---|
+   | `PAUTA_TRIBUNAIS` | `TRT15` (depois `TRT15,TRT2,TRT1`) |
+   | `PDPJ_LOGIN` | `manual` no primeiro teste |
+   | `VNC_SENHA` | senha da tela remota (diferente da do Basic Auth) |
+   | `TELA_REMOTA_URL` | o endereço HTTPS do domínio da porta 6080 + `/vnc.html` (só para aparecer no log) |
+   | `ROBO_2FA_WEBHOOK_URL`, `ROBO_2FA_WEBHOOK_HEADER`, `ROBO_2FA_WEBHOOK_TOKEN` | os do robô de autos |
+   | `ROBO_NOME` | `easypanel-pauta` |
+   | `ESPERA_PESSOA_MINUTOS` | `20` |
+
+6. **Domínio** para a porta **6080**, com HTTPS e **Basic Auth** (aba Security). Nunca a porta aberta sem senha.
+7. **Recursos:** 1 réplica, sem zero-downtime; memória com reserva de 1 GB e limite de 2 GB.
+8. **Deploy** e abrir os **Logs**. Quando aparecer "login pelo SSO da PDPJ", abrir a tela remota
+   (`https://<domínio>/vnc.html`), entrar com CPF, senha e código. O log deve terminar com
+   `TRT15: … registro(s) lido(s) … teste de acesso OK`. Conferir os números com a Minha Pauta aberta no navegador.
+9. **Se der errado:** o log diz em que passo parou e guarda a tela em `/dados/diagnostico/pauta-TRT15-…`. Pontos a
+   observar: o SSO recusar IP de datacenter, CAPTCHA na tela de login, ou a consulta da pauta responder 401/403.
+
+### Depois do teste
+
+- Para gravar no ORQESTRAI: migration `20261118190000_audiencias` aplicada em produção, `ROBO_AUTOS_TOKEN` na Vercel e
+  no serviço, `ORQESTRAI_URL` apontando para a produção, e o comando trocado para `pauta-ciclo`.
+- Se for usar `PDPJ_LOGIN=senha`, com o aceite do advogado: `PDPJ_USUARIO` e `PDPJ_SENHA` como segredos do serviço.
