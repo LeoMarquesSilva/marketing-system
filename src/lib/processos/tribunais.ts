@@ -128,6 +128,11 @@ export function roboDoProcesso(cnj: string | null | undefined, sistemaDoCadastro
  * fonte ligada, todo processo com CNJ de tribunal reconhecido vai primeiro ao Jus.br, e o robô do tribunal (se
  * houver) fica de reserva para o que o Jus.br não trouxer. `reserva` é a chave do conector do tribunal.
  */
+/** PROCESSOS_AUTOS_FONTE: "tribunal" manda os pedidos direto ao robô de cada tribunal; vazio ou outro valor, Jus.br primeiro. */
+export function fonteDosAutos(valor: string | null | undefined): "jusbr" | "tribunal" {
+  return valor?.trim().toLowerCase() === "tribunal" ? "tribunal" : "jusbr";
+}
+
 export function roboPeloJusbr(cnj: string | null | undefined, sistemaDoCadastro: string | null | undefined): RoboDoProcesso & { reserva: string | null } {
   const doTribunal = roboDoProcesso(cnj, sistemaDoCadastro);
   const reserva = doTribunal.disponivel && doTribunal.sistema && doTribunal.tribunal ? `${doTribunal.sistema}:${doTribunal.tribunal}` : null;
