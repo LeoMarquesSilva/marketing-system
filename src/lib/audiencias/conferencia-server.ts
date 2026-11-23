@@ -156,6 +156,9 @@ export interface ResumoConferenciaVios {
   soNoVios: number;
 }
 
+/** Origem das conferências automáticas (após a leitura do PJe, rotina e "Rodar a rotina agora"); o upload do CSV grava o nome de quem subiu. */
+export const ORIGEM_AUTOMATICA = "automática";
+
 const COLUNAS_SAMA = "ci, ci_do_processo, nro_cnj, tarefa, data_limite, data_para_conclusao, horario, vios_status, area_do_processo, responsaveis, auxiliares, sincronizado_em";
 const PAGINA_SAMA = 1000;
 const MAX_LINHAS_SAMA = 30_000;
@@ -200,7 +203,7 @@ function mesmoInstante(a: string | null, b: string | null): boolean {
  * a tarefa que corresponde a ela (ou nenhuma), marca como conferida a mudança que o VIOS já mostra feita e guarda
  * na leitura as tarefas abertas que só existem no VIOS.
  */
-export async function conferirComVios(origem = "rotina", agora = new Date()): Promise<ResumoConferenciaVios> {
+export async function conferirComVios(origem = ORIGEM_AUTOMATICA, agora = new Date()): Promise<ResumoConferenciaVios> {
   const hoje = hojeEmBrasilia(agora);
   const { data: leitura } = await db().from("aud_leituras").insert({ fonte: "vios", origem }).select("id").single();
   try {
@@ -296,11 +299,11 @@ export async function conferirComViosSeDevido(agora = new Date()): Promise<Resum
     .limit(20);
   if (error) falhou("ler as últimas leituras", error);
   const linhas = (data ?? []) as { fonte: string; origem: string | null; iniciada_em: string; terminada_em: string | null; erro: string | null }[];
-  const ultimaVios = linhas.find((l) => l.fonte === "vios" && l.origem === "rotina");
+  const ultimaVios = linhas.find((l) => l.fonte === "vios" && l.origem === ORIGEM_AUTOMATICA);
   const ultimaPje = linhas.find((l) => l.fonte === "pje" && l.terminada_em && !l.erro);
   const devida =
     !ultimaVios ||
     Boolean(ultimaPje?.terminada_em && Date.parse(ultimaPje.terminada_em) > Date.parse(ultimaVios.iniciada_em)) ||
     agora.getTime() - Date.parse(ultimaVios.iniciada_em) > INTERVALO_MAXIMO_MS;
-  return devida ? conferirComVios("rotina", agora) : "em dia";
+  return devida ? conferirComVios(ORIGEM_AUTOMATICA, agora) : "em dia";
 }

@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 import { hojeEmBrasilia, proximosDiasUteis, somarDias } from "./agenda";
 import { avisarTroca, ehDiaUtil } from "./avisos-server";
-import type { ResumoConferenciaVios, TarefaSoNoVios } from "./conferencia-server";
+import { ORIGEM_AUTOMATICA, type ResumoConferenciaVios, type TarefaSoNoVios } from "./conferencia-server";
 import { lerConfig, modoOutlook, modoWhatsapp } from "./config-server";
 import { AudienciasError, carregarAudiencias, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico, type Ator } from "./server";
 import type { Audiencia, PessoaPauta } from "./tipos";
@@ -85,7 +85,7 @@ async function ultimaConferenciaVios(): Promise<ConferenciaVios | null> {
     .from("aud_leituras")
     .select("iniciada_em, erro, detalhe")
     .eq("fonte", "vios")
-    .eq("origem", "rotina")
+    .eq("origem", ORIGEM_AUTOMATICA)
     .not("terminada_em", "is", null)
     .order("iniciada_em", { ascending: false })
     .limit(5);

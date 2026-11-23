@@ -130,7 +130,7 @@ function Configuracoes() {
 
         <div className="space-y-4">
           <Painel>
-            <PainelTopo titulo="Leituras" descricao="O robô lê a Minha Pauta do PJe; a rotina confere o DJEN e manda os avisos." />
+            <PainelTopo titulo="Leituras" descricao="O robô lê a Minha Pauta do PJe; depois de cada leitura a pauta é conferida com o VIOS. A rotina confere o DJEN e manda os avisos." />
             <Secao>
               {leituras.length ? (
                 <ul className="space-y-1.5 text-sm">
@@ -179,7 +179,7 @@ function Configuracoes() {
                       void acao("rotina", async () => {
                         await pautaApi.post("/rotina");
                         await carregar();
-                        return "Rotina rodada: DJEN, convites e avisos do horário.";
+                        return "Rotina rodada: conferência com o VIOS, DJEN, convites e avisos do horário.";
                       })
                     }
                   >
