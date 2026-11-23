@@ -1,4 +1,4 @@
-import { mesmoHorario } from "./agenda";
+import { local, mesmoHorario } from "./agenda";
 import type { Audiencia, Mudanca } from "./tipos";
 import type { AudienciaNoVios } from "./vios-csv";
 
@@ -67,6 +67,33 @@ export function conferirPautaComVios(audiencias: Audiencia[], tarefas: Audiencia
     .filter((t) => tribunais.has(tribunalDoCnj(t.cnj)))
     .sort((x, y) => x.inicio.localeCompare(y.inicio));
   return { tarefaDa, soNoVios };
+}
+
+/** Uma tarefa da cópia do SAMA com a hora em que o SAMA a copiou (ms). */
+export interface TarefaDaCopia {
+  tarefa: AudienciaNoVios;
+  em: number;
+}
+
+/**
+ * Junta as duas fontes do VIOS. O relatório (Tarefas.csv do SharePoint) é completo, mas vale para a hora em que foi
+ * gerado; a cópia do SAMA é relida às 2h e às 12h, mas pula tarefas. Para cada CI vale o relatório, a não ser que o
+ * SAMA tenha visto a tarefa depois dele; tarefa que só o SAMA tem entra se ele a viu depois do relatório (criada
+ * depois) ou se a data dela fica fora do período que o relatório cobre. Sem relatório (null), fica a cópia do SAMA.
+ */
+export function juntarFontesDoVios(relatorio: AudienciaNoVios[] | null, relatorioEm: number, sama: TarefaDaCopia[]): AudienciaNoVios[] {
+  if (!relatorio) return sama.map((s) => s.tarefa);
+  const dias = relatorio.map((t) => local(t.inicio).dia).sort();
+  const cobre = (t: AudienciaNoVios) => {
+    const dia = local(t.inicio).dia;
+    return dias.length > 0 && dia >= dias[0]! && dia <= dias[dias.length - 1]!;
+  };
+  const porCi = new Map(relatorio.map((t) => [t.tarefaCi, t]));
+  for (const s of sama) {
+    if (s.em > relatorioEm) porCi.set(s.tarefa.tarefaCi, s.tarefa);
+    else if (!porCi.has(s.tarefa.tarefaCi) && !cobre(s.tarefa)) porCi.set(s.tarefa.tarefaCi, s.tarefa);
+  }
+  return [...porCi.values()];
 }
 
 /**

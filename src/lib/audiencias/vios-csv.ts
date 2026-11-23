@@ -79,12 +79,23 @@ export function inicioDoVios(data: string | null | undefined, horario: string | 
   return horaLocalParaIso(`${dia}T${h ? h[1]!.padStart(2, "0") : "00"}:${h ? h[2] : "00"}:00`);
 }
 
+/**
+ * Lê o relatório de tarefas do VIOS. O Tarefas.csv do SharePoint traz o escritório inteiro: as linhas que não são
+ * audiência saem já na leitura (on_record), para não montar dezenas de milhares de objetos.
+ */
 export function lerCsvDoVios(texto: string): AudienciaNoVios[] {
-  const linhas = parse(texto, { delimiter: ";", columns: true, relax_quotes: true, relax_column_count: true, skip_empty_lines: true, bom: true }) as Record<string, string>[];
+  const linhas = parse(texto, {
+    delimiter: ";",
+    columns: true,
+    relax_quotes: true,
+    relax_column_count: true,
+    skip_empty_lines: true,
+    bom: true,
+    on_record: (registro: Record<string, string>) => (ehTarefaDeAudiencia((registro["Tarefa"] ?? "").trim()) ? registro : null),
+  }) as Record<string, string>[];
   const saida: AudienciaNoVios[] = [];
   for (const l of linhas) {
     const tarefa = (l["Tarefa"] ?? "").trim();
-    if (!ehTarefaDeAudiencia(tarefa)) continue;
     const cnj = cnjComMascara(l["Nro CNJ"]);
     const inicio = inicioDoVios(l["Data limite"] || l["Data para conclusão"], l["Horário"]);
     const tarefaCi = semIgual(l["CI"]);

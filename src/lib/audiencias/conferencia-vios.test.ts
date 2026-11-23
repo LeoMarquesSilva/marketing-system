@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { alertasDaAudiencia, conferidaDepoisDaCopia, estadoNoVios, mesmoHorario, pendenteNoVios } from "./agenda";
-import { conferirPautaComVios, mudancaResolvidaNoVios, tribunalDoCnj } from "./conferencia-vios";
+import { conferirPautaComVios, juntarFontesDoVios, mudancaResolvidaNoVios, tribunalDoCnj } from "./conferencia-vios";
 import type { Audiencia } from "./tipos";
-import { deTarefaDoSama, type AudienciaNoVios } from "./vios-csv";
+import { deTarefaDoSama, lerCsvDoVios, type AudienciaNoVios } from "./vios-csv";
 
 const CNJ = "0011111-22.2026.5.15.0001";
 const AGORA = new Date("2026-11-23T12:00:00.000Z");
@@ -160,6 +160,57 @@ describe("casamento da pauta com o VIOS", () => {
     expect(tribunalDoCnj("0011111-22.2026.5.02.0001")).toBe("TRT2");
     expect(tribunalDoCnj(CNJ)).toBe("TRT15");
     expect(tribunalDoCnj("0033333-44.2026.8.26.0100")).toBeNull();
+  });
+});
+
+describe("Tarefas.csv + cópia do SAMA", () => {
+  const RELATORIO_EM = Date.parse("2026-11-23T10:40:00.000Z");
+  const antes = Date.parse("2026-11-23T05:00:00.000Z");
+  const depois = Date.parse("2026-11-23T15:09:00.000Z");
+
+  it("o relatório traz a tarefa que a cópia do SAMA pulou; a versão mais nova de cada CI vale", () => {
+    const pulada = tarefa({ tarefaCi: "882502" });
+    const noRelatorio = tarefa({ tarefaCi: "700001", status: "aberta" });
+    const concluidaDepois = { ...noRelatorio, status: "concluida" as const };
+    const juntas = juntarFontesDoVios([pulada, noRelatorio], RELATORIO_EM, [{ tarefa: concluidaDepois, em: depois }]);
+    expect(juntas.map((t) => [t.tarefaCi, t.status])).toEqual([
+      ["882502", "aberta"],
+      ["700001", "concluida"],
+    ]);
+  });
+
+  it("cópia antiga do SAMA não desfaz o relatório", () => {
+    const noRelatorio = tarefa({ tarefaCi: "700002", inicio: "2026-12-10T12:00:00.000Z" });
+    const velha = { ...noRelatorio, inicio: "2026-12-01T12:00:00.000Z" };
+    expect(juntarFontesDoVios([noRelatorio], RELATORIO_EM, [{ tarefa: velha, em: antes }])[0]!.inicio).toBe("2026-12-10T12:00:00.000Z");
+  });
+
+  it("só no SAMA: entra se foi criada depois do relatório ou se a data fica fora do período dele", () => {
+    const relatorio = [tarefa({ tarefaCi: "1", inicio: "2026-11-25T12:00:00.000Z" }), tarefa({ tarefaCi: "2", inicio: "2026-12-20T12:00:00.000Z" })];
+    const nova = tarefa({ tarefaCi: "3", inicio: "2026-12-01T12:00:00.000Z" });
+    const apagada = tarefa({ tarefaCi: "4", inicio: "2026-12-02T12:00:00.000Z" });
+    const alemDoPeriodo = tarefa({ tarefaCi: "5", inicio: "2027-02-10T12:00:00.000Z" });
+    const juntas = juntarFontesDoVios(relatorio, RELATORIO_EM, [
+      { tarefa: nova, em: depois },
+      { tarefa: apagada, em: antes },
+      { tarefa: alemDoPeriodo, em: antes },
+    ]);
+    expect(juntas.map((t) => t.tarefaCi).sort()).toEqual(["1", "2", "3", "5"]);
+  });
+
+  it("sem relatório, fica a cópia do SAMA inteira", () => {
+    const t = tarefa();
+    expect(juntarFontesDoVios(null, RELATORIO_EM, [{ tarefa: t, em: antes }])).toEqual([t]);
+  });
+
+  it("lê o Tarefas.csv e descarta o que não é audiência", () => {
+    const csv = [
+      "CI;CI do Processo;Nro CNJ;Tarefa;Status;Data para conclusão;Data limite;Horário;Área do Processo;Responsáveis;Auxiliares",
+      '="882502";="59214";0010918-11.2026.5.15.0131;AUDIÊNCIA UNA/INICIAL;Aberta;23/11/2026;23/11/2026;13:00 - 14:00;Trabalhista;Lorena Lourenço Miranda;',
+      '="882505";="59214";0010918-11.2026.5.15.0131;CONTESTAÇÃO;Concluída;08/11/2026;08/11/2026;;Trabalhista;Lorena Lourenço Miranda;',
+      '="882516";="59214";0010918-11.2026.5.15.0131;VERIFICAR ATA;Aberta;24/11/2026;24/11/2026;;Trabalhista;Larissa de Oliveira Pereira;',
+    ].join("\n");
+    expect(lerCsvDoVios(csv)).toEqual([expect.objectContaining({ tarefaCi: "882502", cnj: "0010918-11.2026.5.15.0131", inicio: "2026-11-23T16:00:00.000Z", tipo: "una", status: "aberta" })]);
   });
 });
 

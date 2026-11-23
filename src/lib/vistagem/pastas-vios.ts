@@ -8,6 +8,8 @@ import { baixarArquivoPorCaminho } from "./sharepoint";
 /** Relatório "Processos Lista" do VIOS (atualizado todo dia ~8h na pasta da Controladoria). */
 export const SITE_CONTROLADORIA = "bpplaw2.sharepoint.com:/sites/Controladoria";
 export const PROCESSOS_LISTA = "Núcleo de Cadastro/Bases Atualizacoes/Processos Lista.csv";
+/** Relatório de tarefas do VIOS (pxe-lista, todas as situações), que um robô do escritório grava na mesma pasta. */
+export const TAREFAS_VIOS = "Núcleo de Cadastro/Bases Atualizacoes/Tarefas.csv";
 
 function limparCi(valor: unknown): string {
   return String(valor ?? "").replace(/[="\s]/g, "");

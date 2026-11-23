@@ -101,6 +101,19 @@ export async function baixarArquivoSharePoint(siteId: string, itemId: string, to
   return new Uint8Array(await resposta.arrayBuffer());
 }
 
+/** Como baixarArquivoPorCaminho, com a data da última modificação e o tamanho do arquivo. */
+export async function baixarArquivoComDataPorCaminho(site: string, caminho: string): Promise<{ bytes: Uint8Array; modificadoEm: string | null; tamanho: number }> {
+  const token = await tokenGraph();
+  const siteInfo = await graphJson<{ id: string }>(`/sites/${site}`, token);
+  const base = `${GRAPH}/sites/${siteInfo.id}/drive/root:/${encodeURI(caminho)}`;
+  const meta = await fetch(`${base}?$select=lastModifiedDateTime,size`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!meta.ok) throw new VistagemError(`Falha ao ler ${caminho} no SharePoint (${meta.status}).`, 502);
+  const info = (await meta.json()) as { lastModifiedDateTime?: string; size?: number };
+  const resposta = await fetch(`${base}:/content`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!resposta.ok) throw new VistagemError(`Falha ao baixar ${caminho} do SharePoint (${resposta.status}).`, 502);
+  return { bytes: new Uint8Array(await resposta.arrayBuffer()), modificadoEm: info.lastModifiedDateTime ?? null, tamanho: info.size ?? 0 };
+}
+
 /** Baixa um arquivo pelo caminho dentro da biblioteca padrão de um site (ex.: relatórios do VIOS). */
 export async function baixarArquivoPorCaminho(site: string, caminho: string): Promise<Uint8Array> {
   const token = await tokenGraph();

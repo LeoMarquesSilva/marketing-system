@@ -1,8 +1,10 @@
 import "server-only";
 
+import { SITE_CONTROLADORIA, TAREFAS_VIOS } from "@/lib/vistagem/pastas-vios";
 import { sama } from "@/lib/vistagem/sama";
+import { baixarArquivoComDataPorCaminho } from "@/lib/vistagem/sharepoint";
 import { estadoNoVios, hojeEmBrasilia, local, somarDias } from "./agenda";
-import { conferirPautaComVios, JANELA_DIAS, mudancaResolvidaNoVios } from "./conferencia-vios";
+import { conferirPautaComVios, JANELA_DIAS, juntarFontesDoVios, mudancaResolvidaNoVios, type TarefaDaCopia } from "./conferencia-vios";
 import { audienciaNasIntimacoes, type ComunicacaoDjen } from "./djen";
 import { chaveDoLink, horaLocalParaIso } from "./pje";
 import { AudienciasError, carregarAudiencias, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
@@ -129,7 +131,7 @@ export async function importarRelatorioDoVios(texto: string, quem: string | null
   return resumo;
 }
 
-/* ------------------------------------------------------------------ conferência automática com o VIOS (SAMA) */
+/* ------------------------------------------------------------------ conferência automática com o VIOS (Tarefas.csv + SAMA) */
 
 /** Uma tarefa aberta do VIOS sem audiência no PJe, como fica guardada na leitura. */
 export interface TarefaSoNoVios {
@@ -142,8 +144,16 @@ export interface TarefaSoNoVios {
 }
 
 export interface ResumoConferenciaVios {
-  /** Quando o SAMA copiou o VIOS (a conferência vale para o VIOS desse momento). */
+  /** A fonte mais nova usada (Tarefas.csv ou cópia do SAMA): a conferência vale para o VIOS desse momento. */
   copiaEm: string | null;
+  /** Quando o Tarefas.csv foi gravado no SharePoint (null = não lido). */
+  relatorioEm?: string | null;
+  /** Tarefas de audiência no Tarefas.csv (null = não lido). */
+  relatorioTarefas?: number | null;
+  /** Quando o SAMA copiou o VIOS pela última vez (null = não lido). */
+  samaEm?: string | null;
+  /** Fonte que falhou (a conferência seguiu com a outra). */
+  avisos?: string[];
   tarefas: number;
   conferidas: number;
   confere: number;
@@ -166,10 +176,31 @@ const DIAS_A_FRENTE = 400;
 /** Sem leitura nova do PJe, a conferência roda de novo depois disto (o SAMA relê o VIOS às 2h e às 12h). */
 const INTERVALO_MAXIMO_MS = 6 * 60 * 60 * 1000;
 
-/** Tarefas de audiência do VIOS entre `de` e `ate`, da cópia que o SAMA faz do relatório do VIOS. */
-async function copiaDoVios(de: string, ate: string): Promise<{ tarefas: AudienciaNoVios[]; copiaEm: string | null }> {
+/** O Tarefas.csv tem dezenas de megabytes; acima disto a conferência fica só com o SAMA, para não estourar a memória. */
+const TAMANHO_MAXIMO_RELATORIO = 200 * 1024 * 1024;
+
+function decodificarCsv(bytes: Uint8Array): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("windows-1252").decode(bytes);
+  }
+}
+
+/**
+ * Tarefas de audiência do Tarefas.csv (relatório de tarefas do VIOS, todas as situações) que um robô do escritório
+ * grava no SharePoint da Controladoria, com a hora em que o arquivo foi gravado.
+ */
+async function relatorioDoVios(): Promise<{ tarefas: AudienciaNoVios[]; em: string | null; tamanho: number }> {
+  const { bytes, modificadoEm, tamanho } = await baixarArquivoComDataPorCaminho(SITE_CONTROLADORIA, TAREFAS_VIOS);
+  if (tamanho > TAMANHO_MAXIMO_RELATORIO) throw new AudienciasError(`Tarefas.csv grande demais (${Math.round(tamanho / 1024 / 1024)} MB).`, 502);
+  return { tarefas: lerCsvDoVios(decodificarCsv(bytes)), em: modificadoEm, tamanho };
+}
+
+/** Tarefas de audiência do VIOS entre `de` e `ate`, da cópia que o SAMA faz do relatório do VIOS (com a hora de cada uma). */
+async function copiaDoSama(de: string, ate: string): Promise<{ tarefas: TarefaDaCopia[]; copiaEm: string | null }> {
   const cliente = sama();
-  const tarefas: AudienciaNoVios[] = [];
+  const tarefas: TarefaDaCopia[] = [];
   let copiaEm: number | null = null;
   for (let desde = 0; desde < MAX_LINHAS_SAMA; desde += PAGINA_SAMA) {
     const { data, error } = await cliente
@@ -184,8 +215,8 @@ async function copiaDoVios(de: string, ate: string): Promise<{ tarefas: Audienci
     const linhas = (data ?? []) as unknown as (TarefaDoSama & { sincronizado_em?: string | null })[];
     for (const l of linhas) {
       const tarefa = deTarefaDoSama(l);
-      if (tarefa) tarefas.push(tarefa);
       const em = l.sincronizado_em ? Date.parse(l.sincronizado_em) : NaN;
+      if (tarefa) tarefas.push({ tarefa, em: Number.isFinite(em) ? em : 0 });
       if (Number.isFinite(em) && (copiaEm === null || em > copiaEm)) copiaEm = em;
     }
     if (linhas.length < PAGINA_SAMA) break;
@@ -198,24 +229,52 @@ function mesmoInstante(a: string | null, b: string | null): boolean {
   return new Date(a).getTime() === new Date(b).getTime();
 }
 
+function maisNova(...datas: (string | null)[]): string | null {
+  const validas = datas.filter((d): d is string => Boolean(d) && Number.isFinite(Date.parse(d!)));
+  if (!validas.length) return null;
+  return new Date(Math.max(...validas.map((d) => Date.parse(d)))).toISOString();
+}
+
 /**
- * Confere a pauta de hoje em diante com as tarefas de audiência do VIOS (cópia do SAMA). Grava em cada audiência
- * a tarefa que corresponde a ela (ou nenhuma), marca como conferida a mudança que o VIOS já mostra feita e guarda
- * na leitura as tarefas abertas que só existem no VIOS.
+ * Confere a pauta de hoje em diante com as tarefas de audiência do VIOS: o Tarefas.csv do SharePoint (completo) mais
+ * o que a cópia do SAMA viu depois dele. Grava em cada audiência a tarefa que corresponde a ela (ou nenhuma), marca
+ * como conferida a mudança que o VIOS já mostra feita e guarda na leitura as tarefas abertas que só existem no VIOS.
+ * Se uma das fontes falhar, segue com a outra e avisa; sem as duas, a conferência falha.
  */
 export async function conferirComVios(origem = ORIGEM_AUTOMATICA, agora = new Date()): Promise<ResumoConferenciaVios> {
   const hoje = hojeEmBrasilia(agora);
+  const de = somarDias(hoje, -30);
+  const ate = somarDias(hoje, DIAS_A_FRENTE + JANELA_DIAS);
   const { data: leitura } = await db().from("aud_leituras").insert({ fonte: "vios", origem }).select("id").single();
   try {
-    const [auds, copia] = await Promise.all([
+    const avisos: string[] = [];
+    const [auds, relatorio, copia] = await Promise.all([
       carregarAudiencias(`${hoje}T00:00:00-03:00`, `${somarDias(hoje, DIAS_A_FRENTE)}T00:00:00-03:00`),
-      copiaDoVios(somarDias(hoje, -30), somarDias(hoje, DIAS_A_FRENTE + JANELA_DIAS)),
+      relatorioDoVios().catch((erro) => {
+        avisos.push(`Tarefas.csv do SharePoint não lido: ${erro instanceof Error ? erro.message : String(erro)}`);
+        return null;
+      }),
+      copiaDoSama(de, ate).catch((erro) => {
+        avisos.push(`Cópia do VIOS no SAMA não lida: ${erro instanceof Error ? erro.message : String(erro)}`);
+        return null;
+      }),
     ]);
-    const { tarefaDa, soNoVios } = conferirPautaComVios(auds, copia.tarefas, agora);
-    const copiaEm = copia.copiaEm ?? agora.toISOString();
+    if (!relatorio && !copia) throw new AudienciasError(avisos.join(" · "), 502);
+    const naJanela = (t: AudienciaNoVios) => {
+      const dia = local(t.inicio).dia;
+      return dia >= de && dia <= ate;
+    };
+    const relatorioEm = relatorio?.em ?? null;
+    const tarefas = juntarFontesDoVios(relatorio ? relatorio.tarefas.filter(naJanela) : null, relatorioEm ? Date.parse(relatorioEm) : agora.getTime(), copia?.tarefas ?? []);
+    const { tarefaDa, soNoVios } = conferirPautaComVios(auds, tarefas, agora);
+    const copiaEm = maisNova(relatorioEm, copia?.copiaEm ?? null) ?? agora.toISOString();
     const resumo: ResumoConferenciaVios = {
-      copiaEm: copia.copiaEm,
-      tarefas: copia.tarefas.length,
+      copiaEm,
+      relatorioEm,
+      relatorioTarefas: relatorio ? relatorio.tarefas.length : null,
+      samaEm: copia?.copiaEm ?? null,
+      avisos,
+      tarefas: tarefas.length,
       conferidas: 0,
       confere: 0,
       horario: 0,

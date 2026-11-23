@@ -131,9 +131,16 @@ function Tribunal() {
               {l.fonte === "pje" ? `PJe ${l.tribunal ?? ""} · ${quando(l.iniciadaEm)}` : l.fonte === "djen" ? `DJEN · ${quando(l.iniciadaEm)}` : `VIOS · ${quando(l.iniciadaEm)}`}
             </Selo>
           ))}
-          {vios?.resumo?.copiaEm ? (
-            <Selo tom="neutro" titulo="O SAMA copia as tarefas do VIOS às 2h e às 12h; a conferência usa a cópia mais recente.">
-              Cópia do VIOS de {quando(vios.resumo.copiaEm)}
+          {vios?.resumo?.relatorioEm ? (
+            <Selo
+              tom="neutro"
+              titulo={`Tarefas.csv do SharePoint da Controladoria (relatório completo do VIOS), mais o que a cópia do SAMA viu depois${vios.resumo.samaEm ? ` (SAMA de ${quando(vios.resumo.samaEm)})` : ""}.`}
+            >
+              Tarefas do VIOS de {quando(vios.resumo.relatorioEm)}
+            </Selo>
+          ) : vios?.resumo?.copiaEm ? (
+            <Selo tom="neutro" titulo="Só a cópia do SAMA (relida às 2h e às 12h), que pode não ter todas as tarefas.">
+              Cópia do SAMA de {quando(vios.resumo.copiaEm)}
             </Selo>
           ) : null}
           {!leituras.length ? <Selo tom="alerta">Nenhuma leitura ainda</Selo> : null}
@@ -141,6 +148,7 @@ function Tribunal() {
       </div>
       {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
       {vios?.erro ? <Aviso tom="erro">A última conferência com o VIOS falhou: {vios.erro}</Aviso> : null}
+      {vios?.resumo?.avisos?.length ? <Aviso tom="alerta">A conferência com o VIOS usou só uma fonte: {vios.resumo.avisos.join(" · ")}</Aviso> : null}
       {carregando && !dados ? <Carregando rotulo="Carregando a conferência" /> : null}
 
       {dados ? (
