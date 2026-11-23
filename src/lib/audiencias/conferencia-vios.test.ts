@@ -178,6 +178,16 @@ describe("casamento da pauta com o VIOS", () => {
     expect(r.soNoVios).toEqual([sobra]);
   });
 
+  it("só no VIOS vai até onde o robô leu cada tribunal (a audiência mais distante que ele trouxe)", () => {
+    const trt15 = aud({ inicio: "2026-12-10T12:00:00.000Z" });
+    const trt2 = aud({ tribunal: "TRT2", cnj: "1000001-11.2026.5.02.0001", inicio: "2027-01-20T12:00:00.000Z" });
+    const dentro15 = tarefa({ cnj: "0022222-33.2026.5.15.0002", inicio: "2026-12-10T18:00:00.000Z" });
+    const depois15 = tarefa({ cnj: "0022222-33.2026.5.15.0002", inicio: "2026-12-11T12:00:00.000Z" });
+    const dentro2 = tarefa({ cnj: "1000002-22.2026.5.02.0002", inicio: "2027-01-05T12:00:00.000Z" });
+    const r = conferirPautaComVios([trt15, trt2], [dentro15, depois15, dentro2], AGORA);
+    expect(r.soNoVios).toEqual([dentro15, dentro2]);
+  });
+
   it("tribunal pelo CNJ", () => {
     expect(tribunalDoCnj("0011111-22.2026.5.02.0001")).toBe("TRT2");
     expect(tribunalDoCnj(CNJ)).toBe("TRT15");
