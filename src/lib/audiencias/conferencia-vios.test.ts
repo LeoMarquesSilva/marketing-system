@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { alertasDaAudiencia, conferidaDepoisDaCopia, estadoNoVios, mesmoHorario, pendenteNoVios } from "./agenda";
 import { completarCnj, conferirPautaComVios, juntarFontesDoVios, mudancaResolvidaNoVios, tribunalDoCnj } from "./conferencia-vios";
 import type { Audiencia } from "./tipos";
-import { deTarefaDoSama, lerCsvDoVios, type AudienciaNoVios } from "./vios-csv";
+import { deTarefaDoSama, ehTarefaDeAudiencia, lerCsvDoVios, type AudienciaNoVios } from "./vios-csv";
 
 const CNJ = "0011111-22.2026.5.15.0001";
 const AGORA = new Date("2026-11-23T12:00:00.000Z");
@@ -99,6 +99,28 @@ describe("cópia do VIOS no SAMA", () => {
     expect(deTarefaDoSama({ ci: 8, nro_cnj: CNJ, tarefa: "AUD. INSTRUÇÃO", data_limite: "2026-12-10" })?.tipo).toBe("instrucao");
     expect(deTarefaDoSama({ ci: 9, nro_cnj: CNJ, tarefa: "AUDIÊNCIA UNA/INICIAL", data_limite: "2026-12-10" })?.tipo).toBe("una");
     expect(deTarefaDoSama({ ci: 5, nro_cnj: "123", tarefa: "AUDIÊNCIA UNA", data_limite: "2026-12-10" })).toBeNull();
+  });
+
+  it("os tipos do VIOS: só a audiência em si conta (lista lida no VIOS em 23/11/2026)", () => {
+    const audiencia = ["AUDIÊNCIA UNA/INICIAL", "AUD. INSTRUÇÃO", "AUDIÊNCIA DE INSTRUÇÃO", "AUD. CONCILIAÇÃO", "AUDIÊNCIA DE JULGAMENTO", "SESSÃO DE JULGAMENTO", "PERÍCIA"];
+    const emVolta = [
+      "ABERTURA DE PASTA + AUD.",
+      "ANÁLISAR TERMO AUDIÊNCIA/COMPROMISSO",
+      "CHECK LINKS AUD. D+1",
+      "ELABORAR ORIENTAÇÕES PARA AUDIÊNCIA",
+      "ENCAMINHAR AS ORIENTAÇÕES PARA AUDIÊNCIA",
+      "PROVIDÊNCIAS AUDIÊNCIA + INTIMAR TESTEMUNHA",
+      "ALERTA DE AUDIÊNCIA/JULGAMENTO",
+      "ALERTA/LEMBRETE DE PERÍCIA",
+      "ENVIAR ATA DE AUDIÊNCIA",
+      "JUNTADA DE ATA DE AUDIÊNCIA / DECISÃO",
+      "LEMBRETE AUDIÊNCIA + REGULARIZAÇÃO PROCESSUAL",
+      "MANIFESTAÇÃO SOBRE LAUDO PERICIAL",
+      "SOLICITAR AGENDAMENTO DA REUNIAO PREVIA À PERÍCIA",
+      "VERIFICAR AUDIÊNCIA - ALTERAÇÃO/INCLUSÃO/CANCELAMENTO DE AUDIÊNCIA - ALTERAR PAUTA",
+    ];
+    expect(audiencia.filter((t) => !ehTarefaDeAudiencia(t))).toEqual([]);
+    expect(emVolta.filter((t) => ehTarefaDeAudiencia(t))).toEqual([]);
   });
 });
 
