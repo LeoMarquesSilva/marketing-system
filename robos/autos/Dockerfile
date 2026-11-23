@@ -39,4 +39,4 @@ VOLUME ["/dados"]
 EXPOSE 6080
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/iniciar-robo"]
-CMD ["robo"]
+# Sem CMD: o script escolhe o comando pelo argumento ou, sem ele, por ROBO_COMANDO (padrão robo).

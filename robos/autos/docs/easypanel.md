@@ -409,6 +409,68 @@ Enquanto o Mac não foi desligado: volte para ele o sistema com problema (ou tod
 
 `docker/compose.exemplo.yml` reúne o mesmo serviço em formato compose, para referência.
 
+## Robô da Pauta de Audiências (PJe-JT)
+
+O mesmo código e a mesma imagem rodam um segundo programa, `src/pauta.ts`, num serviço à parte (`robo-pauta`). Ele entra no PJe da Justiça do Trabalho como o advogado do certificado, lê a "Minha Pauta" e manda o resultado ao ORQESTRAI (`POST /api/robos/pauta`, com o mesmo `ROBO_AUTOS_TOKEN`). No tribunal, só lê. O módulo que recebe a pauta está em `docs/pauta-audiencias/PLANO.md`, na raiz do repositório.
+
+### Como entra
+
+1. Abre `https://pje.trtNN.jus.br/primeirograu/login.seam` e clica em "Entrar com PDPJ".
+2. No SSO da PDPJ (`sso.cloud.pje.jus.br`), clica no botão do certificado. O PJe Office do robô (`src/pje-office.ts`) assina o desafio com o certificado A1 do painel: sem PJe Office instalado e sem CPF e senha.
+3. Se o SSO pedir o código de 2 fatores, o robô gera com o segredo `pdpj` do painel ([Segredo do TOTP](#segredo-do-totp-2-fatores)). Sem esse segredo, tenta o webhook do n8n (`ROBO_2FA_WEBHOOK_URL` com `?sistema=pdpj`). Sem os dois, avisa no log e espera a pessoa digitar pela tela remota (até `ESPERA_PESSOA_MINUTOS`, 15).
+4. A sessão fica no perfil do volume `/dados`. As leituras seguintes aproveitam e só refazem o login quando ela cai.
+5. Com a sessão aberta, chama a consulta da Minha Pauta (designadas e canceladas, de hoje até `PAUTA_DIAS` à frente) em cada tribunal de `PAUTA_TRIBUNAIS`.
+
+A Minha Pauta só mostra os processos em que o advogado do certificado está habilitado. Os outros advogados da área ficam com o DJEN até cada um ter o seu login no robô.
+
+### Serviço `robo-pauta` no projeto `bibliotecaBP`
+
+Igual aos [serviços do robô de autos](#3-serviços-do-robô-app-um-por-linha-da-tabela), com estas diferenças:
+
+1. **Fonte:** branch `feat/robo-pauta-certificado` (traz a branch do robô de autos e o main); **Build Path** `/robos/autos`; **Dockerfile**.
+2. **Environment** (valores só no Easypanel):
+
+   | Variável | Valor |
+   |---|---|
+   | `ROBO_COMANDO` | `pauta-teste` no primeiro teste; `pauta-ciclo` quando o ORQESTRAI estiver pronto para receber |
+   | `ROBO_NOME` | `servidor-pauta` |
+   | `PAUTA_TRIBUNAIS` | `TRT15`; outros tribunais separados por vírgula, depois do primeiro teste |
+   | `PAUTA_DIAS` | `60` |
+   | `PAUTA_HORARIOS` | `06:45,11:45,16:45` (horário de Brasília) |
+   | `CERTIFICADO_PASTA` | `/certificados` |
+   | `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO` | `/segredos/robo-certificado.key` |
+   | `ROBO_2FA_WEBHOOK_URL`, `ROBO_2FA_WEBHOOK_TOKEN` | os do n8n, só se o segredo `pdpj` não estiver no painel |
+   | `VNC_SENHA` | senha da tela remota deste serviço |
+   | `TELA_REMOTA_URL` | `https://<domínio da tela>/vnc.html` |
+   | `ORQESTRAI_URL`, `ROBO_AUTOS_TOKEN` | os de produção; no `pauta-teste` podem ficar de fora |
+
+   Não precisa de `ROBO_CONECTORES`, `EPROC_*`, `ESAJ_LOGIN`, `CERTIFICADO_ORIGENS` nem `CAPA_DATAJUD`: o programa da pauta não atende a fila de autos, e o PJe Office do robô só responde ao SSO da PDPJ.
+3. **Mounts:** volume `/dados` **próprio** (o perfil do navegador é de um robô só); bind de `/srv/robos/certificados` em `/certificados` e o arquivo `/segredos/robo-certificado.key`, os mesmos dos outros serviços.
+4. **Domains:** domínio próprio para a tela remota, HTTPS, porta **6080**, com **Basic Auth** ligado antes do primeiro deploy.
+5. **Resources:** 1 vCPU e 2 GB de memória bastam (uma aba aberta poucas vezes ao dia); reserva 0.
+6. **Deploy:** 1 réplica, sem zero-downtime.
+
+### Primeiro teste (`ROBO_COMANDO=pauta-teste`)
+
+O robô lê logo ao subir e de novo em cada horário de `PAUTA_HORARIOS`, sem mandar nada ao ORQESTRAI. Ele fica de pé entre as leituras, para o serviço não reiniciar em laço e refazer o login sem parar.
+
+1. Confira no painel que o certificado está válido e, se houver, que o segredo `pdpj` está cadastrado.
+2. Faça o deploy e acompanhe os logs. O esperado, nesta ordem:
+   - "Certificado do painel carregado (…)" e "Robô da pauta · TRT15 · login pelo certificado do painel · teste (só lê) · ciclo";
+   - "TRT15: entrando pelo certificado (PJe Office do robô).";
+   - "Código de 2 fatores gerado pelo segredo do painel e aceito. Login concluído." (ou "obtido do webhook e aceito");
+   - "TRT15: login concluído." e "TRT15: N registro(s) lido(s) de … a … · …", só com contagens;
+   - "TRT15: teste de acesso OK. Nada foi mandado ao ORQESTRAI (--so-ler)."
+3. Se aparecer "esperando a pessoa" ou "o SSO pediu o código de 2 fatores e o robô não conseguiu", abra a tela remota e conclua o login. O robô segue sozinho.
+4. Se aparecer "não deu certo", a captura da tela fica em `/dados/diagnostico` (sai depois de `DIAGNOSTICO_DIAS`).
+5. Compare as contagens do log com a tela "Minha Pauta" do mesmo advogado no PJe.
+
+### Depois do teste
+
+1. Aplicar a migration da pauta no Supabase e preparar o ORQESTRAI (`docs/pauta-audiencias/PLANO.md`).
+2. Trocar para `ROBO_COMANDO=pauta-ciclo`, com `ORQESTRAI_URL` e `ROBO_AUTOS_TOKEN`, e fazer o deploy. O log passa a dizer "gravado no ORQESTRAI · {…}".
+3. Para uma leitura fora de hora, reinicie o serviço: ele lê ao subir. Não rode `iniciar-robo pauta` dentro do contêiner em funcionamento: seriam dois navegadores no mesmo perfil.
+
 ## Decisões que ficam com o usuário e os advogados
 
 1. **Código do e-SAJ por e-mail:** no servidor, a pessoa digita pela tela remota a cada login. Para automatizar: uma regra na caixa do advogado encaminha só os e-mails de código do e-SAJ para uma caixa que o robô lê (exige ajuste no robô, não feito); ou um piloto do Web Signer em Linux.
@@ -434,6 +496,10 @@ Enquanto o Mac não foi desligado: volte para ele o sistema com problema (ou tod
 | `CERTIFICADO_ORIGENS` | `https://certificado-sso.tjsp.jus.br` | Onde o certificado é apresentado. |
 | `VNC_SENHA`, `VNC_SENHA_ARQUIVO` | — | Senha da tela remota (só no contêiner). |
 | `DIAGNOSTICO_DIAS` | 7 | Idade máxima dos diagnósticos (só no contêiner). |
+| `ROBO_COMANDO` | `robo` | Programa do contêiner quando o serviço não passa argumento: `robo`, `pauta-teste`, `pauta-ciclo`… (só no contêiner). |
+| `PAUTA_TRIBUNAIS` | `TRT15` | Tribunais lidos pelo robô da pauta, separados por vírgula. |
+| `PAUTA_DIAS` | 60 | Quantos dias à frente o robô da pauta lê. |
+| `PAUTA_HORARIOS` | `06:45,11:45,16:45` | Horários de leitura do robô da pauta (Brasília), no `pauta-ciclo` e no `pauta-teste`. |
 
 ## Fontes
 

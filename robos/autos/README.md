@@ -221,6 +221,12 @@ Lê a "Minha Pauta" do PJe da Justiça do Trabalho com a sessão do advogado e m
 
 - `PAUTA_TRIBUNAIS` (padrão `TRT15`): tribunais lidos, separados por vírgula (`TRT15,TRT2`).
 - `PAUTA_DIAS` (padrão 60): quantos dias à frente.
-- Login pelo SSO da PDPJ ("Entrar com PDPJ"): a pessoa entra com o certificado (ou CPF e senha) na janela do robô; o código de 2 fatores vem de `ROBO_2FA_WEBHOOK_URL` com `?sistema=pdpj`, se houver.
+- `PAUTA_HORARIOS` (padrão `06:45,11:45,16:45`, Brasília): horários de leitura no modo `--ciclo`.
+- Login pelo SSO da PDPJ ("Entrar com PDPJ"):
+  - com o certificado do painel (`CERTIFICADO_PASTA`, modo playwright), o PJe Office do robô (`src/pje-office.ts`) assina o login sozinho;
+  - o código de 2 fatores sai do segredo `pdpj` do painel; sem ele, de `ROBO_2FA_WEBHOOK_URL` com `?sistema=pdpj`;
+  - sem certificado ou sem código, a pessoa conclui na janela do robô (no servidor, pela tela remota). O robô não digita senha.
+- `npm run pauta -- --so-ler`: teste de acesso; entra, lê e mostra só as contagens, sem mandar nada ao ORQESTRAI (nem precisa de `ORQESTRAI_URL` e `ROBO_AUTOS_TOKEN`).
+- `npm run pauta -- --ciclo`: fica rodando, lê ao começar e em cada horário de `PAUTA_HORARIOS`.
 - O navegador fica aberto no fim para a próxima rodada aproveitar a sessão (`-- --fechar` fecha).
-- Agendar três vezes ao dia (ex.: 6h45, 11h45 e 16h45), depois do export do VIOS.
+- No servidor, é o serviço `robo-pauta` do Easypanel, com `ROBO_COMANDO=pauta-teste` ou `pauta-ciclo` ([guia](docs/easypanel.md#robô-da-pauta-de-audiências-pje-jt)).

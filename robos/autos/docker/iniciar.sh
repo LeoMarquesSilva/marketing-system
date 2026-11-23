@@ -5,9 +5,12 @@
 #   uma-vez                   atende o que estiver na fila e sai
 #   login [eproc|TJCE…]       só abre a sessão do tribunal
 #   inspecionar [eproc] CNJ   abre o processo e descreve a tela, sem baixar
-#   pauta                     uma leitura da Minha Pauta do PJe-JT, mandada ao ORQESTRAI (src/pauta.ts)
-#   pauta-teste               teste de acesso ao PJe-JT: entra, lê e mostra os números, sem mandar nada
-#   pauta-ciclo               fica rodando e lê a pauta nos horários de PAUTA_HORARIOS
+#   pauta                     uma leitura da Minha Pauta do PJe-JT, mandada ao ORQESTRAI, e sai (src/pauta.ts)
+#   pauta-teste               teste de acesso ao PJe-JT: lê ao subir e nos horários de PAUTA_HORARIOS, só mostra
+#                             os números no log e não manda nada (fica de pé, para o serviço não reiniciar em laço)
+#   pauta-ciclo               fica rodando: lê ao subir e nos horários de PAUTA_HORARIOS e manda ao ORQESTRAI
+#
+# Sem argumento, o comando vem de ROBO_COMANDO (padrão robo): é como o serviço do Easypanel escolhe o programa.
 #
 # Como root, só prepara o volume e passa para o usuário pwuser (o da imagem do Playwright). O navegador,
 # a tela virtual e o robô rodam como pwuser.
@@ -80,7 +83,7 @@ if [ "${NAVEGADOR_HEADLESS:-nao}" != "sim" ]; then
   unset senha_vnc VNC_SENHA
 fi
 
-comando="${1:-robo}"
+comando="${1:-${ROBO_COMANDO:-robo}}"
 [ "$#" -gt 0 ] && shift
 programa=src/index.ts
 case "$comando" in
@@ -89,7 +92,7 @@ case "$comando" in
   login) set -- --login "$@" ;;
   inspecionar) set -- --inspecionar "$@" ;;
   pauta) programa=src/pauta.ts ;;
-  pauta-teste) programa=src/pauta.ts; set -- --so-ler "$@" ;;
+  pauta-teste) programa=src/pauta.ts; set -- --so-ler --ciclo "$@" ;;
   pauta-ciclo) programa=src/pauta.ts; set -- --ciclo "$@" ;;
   *) echo "Comando desconhecido: $comando (use robo, uma-vez, login, inspecionar, pauta, pauta-teste ou pauta-ciclo)"; exit 2 ;;
 esac
