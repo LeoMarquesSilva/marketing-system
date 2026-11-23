@@ -3,7 +3,7 @@ import { FalhaDoCertificado, diasParaVencer, lerCertificado, type CertificadoCli
 import { API_JUSBR, CONSULTA_JUSBR, digitosDoCnj, ehAreaLogadaJusbr, motivoDaResposta, type FichaJusbr } from "./conectores/jusbr-urls.ts";
 import { lerConfig, type Config } from "./config.ts";
 import { abrirNavegador, guardarDiagnostico, type Navegador } from "./navegador.ts";
-import { audienciasDosMovimentos, lerAcompanhar, lerSoNoVios, movimentosDeAudiencia, type AudienciaDoJusbr, type AudienciaSoNoVios } from "./pauta-jusbr.ts";
+import { audienciasDosMovimentos, esperaParaTentarDeNovo, lerAcompanhar, lerSoNoVios, movimentosDeAudiencia, resumoDoLog, type AudienciaDoJusbr, type AudienciaSoNoVios } from "./pauta-jusbr.ts";
 import { entrarComCodigoDoPainel } from "./segundo-fator.ts";
 
 /**
@@ -474,6 +474,7 @@ async function audienciasPeloJusbr(config: Config, navegador: Navegador, comCert
       await aguardarLoginPdpj(config, aba, "Jus.br", ehAreaLogadaJusbr, comCertificado);
     }
     let autorizacao: string | null = null;
+    let foraDoAr = 0;
     for (const cnj of cnjs.slice(0, JUSBR_POR_RODADA)) {
       const digitos = digitosDoCnj(cnj);
       if (!digitos) continue;
@@ -486,22 +487,35 @@ async function audienciasPeloJusbr(config: Config, navegador: Navegador, comCert
           if (!autorizacao) log(`Jus.br: a busca pela tela respondeu ${busca.status} sem cabeçalho de autorização.`);
         }
         const url = `${API_JUSBR}/processos/${digitos}`;
-        let resposta = await aba.context().request.get(url, { headers: { authorization: autorizacao ?? "" }, timeout: 60_000 });
+        const consultar = () => aba.context().request.get(url, { headers: { authorization: autorizacao ?? "" }, timeout: 60_000 });
+        let resposta = await consultar();
         if (resposta.status() === 401) {
           autorizacao = (await autorizacaoPelaTela(aba, digitos)).autorizacao;
-          resposta = await aba.context().request.get(url, { headers: { authorization: autorizacao ?? "" }, timeout: 60_000 });
+          resposta = await consultar();
+        }
+        for (let tentativa = 1; ; tentativa += 1) {
+          const espera = esperaParaTentarDeNovo(resposta.status(), tentativa);
+          if (espera === null) break;
+          log(`Jus.br ${cnj}: respondeu ${resposta.status()}; tentando de novo em ${espera / 1_000} s.`);
+          await aba.waitForTimeout(espera);
+          resposta = await consultar();
         }
         const motivo = motivoDaResposta(resposta.status());
         if (motivo) {
           log(`Jus.br ${cnj}${noVios}: ${motivo}.`);
+          foraDoAr = resposta.status() >= 500 ? foraDoAr + 1 : 0;
+          if (foraDoAr >= 3) {
+            log(`Jus.br: ${foraDoAr} processos seguidos sem resposta mesmo tentando de novo; o resto fica para a próxima rodada.`);
+            break;
+          }
           continue;
         }
+        foraDoAr = 0;
         const corpo = (await resposta.json()) as FichaJusbr[] | FichaJusbr;
         const daqui = audienciasDosMovimentos(cnj, movimentosDeAudiencia(Array.isArray(corpo) ? corpo : [corpo])).filter((a) => a.inicio.slice(0, 10) >= hoje);
         consultados.push(cnj);
         audiencias.push(...daqui);
-        const resumo = daqui.map((a) => `${a.inicio.slice(8, 10)}/${a.inicio.slice(5, 7)} ${a.inicio.slice(11, 16)} ${a.situacao}`).join(" · ");
-        log(`Jus.br ${cnj}${noVios}: ${daqui.length ? resumo : "nenhuma audiência de hoje em diante"}.`);
+        log(`Jus.br ${cnj}${noVios}: ${daqui.length ? resumoDoLog(daqui) : "nenhuma audiência de hoje em diante"}.`);
       } catch (erro) {
         log(`Jus.br ${cnj}: falhou · ${erro instanceof Error ? erro.message.split("\n")[0] : String(erro)}`);
       }

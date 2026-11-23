@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FichaJusbr } from "./conectores/jusbr-urls.ts";
-import { audienciasDosMovimentos, lerAcompanhar, lerSoNoVios, linhaDoMovimento, movimentosDeAudiencia, salaEOrgao, type MovimentoDeAudiencia } from "./pauta-jusbr.ts";
+import { audienciasDosMovimentos, esperaParaTentarDeNovo, lerAcompanhar, lerSoNoVios, linhaDoMovimento, movimentosDeAudiencia, resumoDoLog, salaEOrgao, type MovimentoDeAudiencia } from "./pauta-jusbr.ts";
 
 // Textos reais do log do robô (Jus.br, 23/11/2026), com os nomes trocados.
 const mov = (dataHora: string, descricao: string): MovimentoDeAudiencia => ({ dataHora, descricao, complementos: [] });
@@ -54,6 +54,23 @@ describe("audiências tiradas dos movimentos do Jus.br", () => {
   it("lista de acompanhamento do ORQESTRAI", () => {
     expect(lerAcompanhar({ acompanhar: ["a", "a", 3, "b"] })).toEqual(["a", "b"]);
     expect(lerAcompanhar({})).toEqual([]);
+  });
+
+  it("o log mostra o ano (a audiência pode ser no ano que vem)", () => {
+    const r = audienciasDosMovimentos("0010327-36.2026.5.15.0001", [
+      mov("2026-11-10T10:00:00", "Audiência una designada (09/12/2027 13:45 SALA A - 1ª Vara do Trabalho de Campinas)"),
+      mov("2026-11-10T10:00:00", "Audiência una cancelada (09/12/2026 13:45 SALA A - 1ª Vara do Trabalho de Campinas)"),
+    ]);
+    expect(resumoDoLog(r)).toBe("09/12/2026 13:45 cancelada · 09/12/2027 13:45 designada");
+  });
+});
+
+describe("Jus.br instável", () => {
+  it("tenta de novo só quando o Jus.br dá erro 5xx, até 3 tentativas, esperando 5 s e depois 10 s", () => {
+    expect(esperaParaTentarDeNovo(503, 1)).toBe(5_000);
+    expect(esperaParaTentarDeNovo(502, 2)).toBe(10_000);
+    expect(esperaParaTentarDeNovo(503, 3)).toBeNull();
+    expect([200, 401, 403, 404].map((status) => esperaParaTentarDeNovo(status, 1))).toEqual([null, null, null, null]);
   });
 });
 

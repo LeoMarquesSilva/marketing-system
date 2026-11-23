@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { alertasDaAudiencia, conferidaDepoisDaCopia, estadoNoVios, mesmoHorario, pendenteNoVios } from "./agenda";
-import { completarCnj, conferirPautaComVios, juntarFontesDoVios, mudancaResolvidaNoVios, tribunalDoCnj } from "./conferencia-vios";
+import { completarCnj, conferirPautaComVios, datasNoTribunal, juntarFontesDoVios, mudancaResolvidaNoVios, tribunalDoCnj } from "./conferencia-vios";
 import type { Audiencia } from "./tipos";
 import { deTarefaDoSama, ehTarefaDeAudiencia, lerCsvDoVios, type AudienciaNoVios } from "./vios-csv";
 
@@ -246,6 +246,28 @@ describe("Tarefas.csv + cópia do SAMA", () => {
       expect.objectContaining({ tarefaCi: "882502", cnj: "0010918-11.2026.5.15.0131", inicio: "2026-11-23T16:00:00.000Z", tipo: "una", status: "aberta" }),
       expect.objectContaining({ tarefaCi: "895090", cnj: "", ciProcesso: "59984", inicio: "2026-11-24T11:35:00.000Z" }),
     ]);
+  });
+});
+
+describe("só no VIOS com o processo em outra data no tribunal", () => {
+  it("lista as designadas do PJe e do Jus.br do mesmo processo, em ordem, sem as do VIOS ou canceladas", () => {
+    const outro = "0022222-33.2026.5.15.0002";
+    const porCnj = datasNoTribunal([
+      aud({ origem: "jusbr", inicio: "2027-12-09T16:45:00.000Z" }),
+      aud({ inicio: "2026-12-20T12:00:00.000Z" }),
+      aud({ inicio: "2026-12-20T12:00:00.000Z" }),
+      aud({ inicio: "2026-12-15T12:00:00.000Z", situacao: "cancelada" }),
+      aud({ origem: "vios", inicio: "2026-12-16T12:00:00.000Z" }),
+      aud({ origem: "manual", cnj: outro }),
+    ]);
+    expect(porCnj.get(CNJ)).toEqual(["2026-12-20T12:00:00.000Z", "2027-12-09T16:45:00.000Z"]);
+    expect(porCnj.has(outro)).toBe(false);
+  });
+  it("a tarefa com a data errada no VIOS fica só no VIOS e a lista mostra a data do tribunal", () => {
+    // A do PJe em outro processo marca até onde o robô leu o TRT15 (o "só no VIOS" vai só até ali).
+    const pauta = [aud({ origem: "jusbr", inicio: "2027-12-09T16:45:00.000Z" }), aud({ cnj: "0033333-44.2026.5.15.0003", inicio: "2027-01-20T12:00:00.000Z" })];
+    const { soNoVios } = conferirPautaComVios(pauta, [tarefa({ inicio: "2026-12-09T16:45:00.000Z" })], AGORA);
+    expect(soNoVios.map((t) => datasNoTribunal(pauta).get(t.cnj))).toEqual([["2027-12-09T16:45:00.000Z"]]);
   });
 });
 

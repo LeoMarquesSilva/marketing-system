@@ -80,6 +80,21 @@ export function conferirPautaComVios(audiencias: Audiencia[], tarefas: Audiencia
   return { tarefaDa, soNoVios };
 }
 
+/**
+ * As audiências designadas que o tribunal (PJe ou Jus.br) tem para cada processo, em ordem de data. Serve para a lista
+ * "só no VIOS": a tarefa não casou com nada, mas o processo tem audiência em outra data (ex.: VIOS com 09/12/2026 e o
+ * tribunal com 09/12/2027, ano errado no VIOS). Até 3 por processo.
+ */
+export function datasNoTribunal(audiencias: Pick<Audiencia, "cnj" | "origem" | "situacao" | "inicio">[]): Map<string, string[]> {
+  const porCnj = new Map<string, string[]>();
+  for (const a of audiencias) {
+    if (a.situacao !== "designada" || (a.origem !== "pje" && a.origem !== "jusbr")) continue;
+    porCnj.set(a.cnj, [...(porCnj.get(a.cnj) ?? []), a.inicio]);
+  }
+  for (const [cnj, inicios] of porCnj) porCnj.set(cnj, [...new Set(inicios)].sort().slice(0, 3));
+  return porCnj;
+}
+
 /** Uma tarefa de uma das fontes do VIOS, com a hora em que a fonte a viu (ms). */
 export interface TarefaDaFonte {
   tarefa: AudienciaNoVios;

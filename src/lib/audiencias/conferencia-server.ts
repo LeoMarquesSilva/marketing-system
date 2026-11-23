@@ -4,7 +4,7 @@ import { AUDIENCIAS_VIOS, SITE_CONTROLADORIA, TAREFAS_VIOS } from "@/lib/vistage
 import { sama } from "@/lib/vistagem/sama";
 import { baixarArquivoComDataPorCaminho } from "@/lib/vistagem/sharepoint";
 import { estadoNoVios, hojeEmBrasilia, local, somarDias } from "./agenda";
-import { completarCnj, conferirPautaComVios, JANELA_DIAS, juntarFontesDoVios, mudancaResolvidaNoVios, tribunalDoCnj, type TarefaDaFonte } from "./conferencia-vios";
+import { completarCnj, conferirPautaComVios, datasNoTribunal, JANELA_DIAS, juntarFontesDoVios, mudancaResolvidaNoVios, tribunalDoCnj, type TarefaDaFonte } from "./conferencia-vios";
 import { audienciaNasIntimacoes, type ComunicacaoDjen } from "./djen";
 import { chaveDoLink, horaLocalParaIso } from "./pje";
 import { AudienciasError, carregarAudiencias, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
@@ -142,6 +142,8 @@ export interface TarefaSoNoVios {
   inicio: string;
   tarefa: string;
   responsaveis: string[];
+  /** Audiências designadas do mesmo processo que o tribunal tem em outra data (ISO), quando há. */
+  noTribunal?: string[];
 }
 
 export interface ResumoConferenciaVios {
@@ -361,9 +363,11 @@ export async function conferirComVios(origem = ORIGEM_AUTOMATICA, agora = new Da
     for (const r of resolvidas) await registrarHistorico(r.id, "conferida no VIOS", { para: r.mudancas.join(", "), feitoPor: "conferência automática com o VIOS" });
     resumo.resolvidas = resolvidas.length;
 
-    const lista: TarefaSoNoVios[] = soNoVios
-      .slice(0, 300)
-      .map((t) => ({ tarefaCi: t.tarefaCi, ciProcesso: t.ciProcesso, cnj: t.cnj, inicio: t.inicio, tarefa: t.tarefa, responsaveis: t.responsaveis }));
+    const noTribunal = datasNoTribunal(auds);
+    const lista: TarefaSoNoVios[] = soNoVios.slice(0, 300).map((t) => {
+      const outras = noTribunal.get(t.cnj);
+      return { tarefaCi: t.tarefaCi, ciProcesso: t.ciProcesso, cnj: t.cnj, inicio: t.inicio, tarefa: t.tarefa, responsaveis: t.responsaveis, ...(outras ? { noTribunal: outras } : {}) };
+    });
     if (leitura)
       await db()
         .from("aud_leituras")

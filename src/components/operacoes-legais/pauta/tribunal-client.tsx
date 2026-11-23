@@ -27,6 +27,12 @@ function quandoNoVios(iso: string): string {
   return v.hora === "00:00" ? `${diaCurto(v.dia)} (sem horário)` : quando(iso);
 }
 
+/** "09/12/2027 às 13h45": com o ano, porque a diferença com o VIOS costuma ser justamente o ano. */
+function dataNoTribunal(iso: string): string {
+  const v = local(iso);
+  return `${v.dia.slice(8, 10)}/${v.dia.slice(5, 7)}/${v.dia.slice(0, 4)} às ${v.hora.replace(":", "h")}`;
+}
+
 function oQueMudou(aud: Audiencia): string {
   const partes: string[] = aud.situacao === "cancelada" ? ["Cancelada no PJe, sem nova data"] : aud.mudancas.map((m) => ROTULO_MUDANCA[m]);
   const estado = estadoNoVios(aud);
@@ -267,7 +273,12 @@ function Tribunal() {
                         ) : null}
                       </span>
                     </span>
-                    <span className="block font-mono text-sm">{quandoNoVios(t.inicio)}</span>
+                    <span className="block">
+                      <span className="block font-mono text-sm">{quandoNoVios(t.inicio)}</span>
+                      {t.noTribunal?.length ? (
+                        <span className="mt-0.5 block text-xs font-medium text-amber-700">No tribunal: {t.noTribunal.map(dataNoTribunal).join(" · ")}</span>
+                      ) : null}
+                    </span>
                     <span className="block truncate text-xs text-muted-foreground">{t.responsaveis.join(", ") || "—"}</span>
                     <span className="block text-xs">
                       <CiDoVios ci={t.tarefaCi} />

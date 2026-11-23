@@ -59,7 +59,7 @@ function situacaoDoMovimento(texto: string): AudienciaDoJusbr["situacao"] {
   return "cancelada"; // cancelada, adiada, não realizada, convertida em diligência
 }
 
-/** "BRUNO FURTADO SILVEIRA - CON1 - Jundiaí" → sala "BRUNO FURTADO SILVEIRA", órgão "CON1 - Jundiaí". */
+/** "FULANA DE TAL - CON1 - Jundiaí" → sala "FULANA DE TAL", órgão "CON1 - Jundiaí". */
 export function salaEOrgao(resto: string): { sala: string | null; orgao: string | null } {
   const texto = resto.replace(/\s+/g, " ").trim();
   if (!texto) return { sala: null, orgao: null };
@@ -125,6 +125,26 @@ export function movimentosDeAudiencia(fichas: FichaJusbr[]): MovimentoDeAudienci
     }
   }
   return saida.sort((a, b) => (b.dataHora ?? "").localeCompare(a.dataHora ?? ""));
+}
+
+/** "2026-12-10T14:05" → "10/12/2026 14:05" (com o ano: uma audiência pode estar marcada para o ano que vem). */
+export function dataDoLog(inicio: string): string {
+  return `${inicio.slice(8, 10)}/${inicio.slice(5, 7)}/${inicio.slice(0, 4)} ${inicio.slice(11, 16)}`;
+}
+
+/** "10/12/2026 14:05 designada · 09/12/2027 13:45 cancelada". */
+export function resumoDoLog(audiencias: AudienciaDoJusbr[]): string {
+  return audiencias.map((a) => `${dataDoLog(a.inicio)} ${a.situacao}`).join(" · ");
+}
+
+/**
+ * O Jus.br às vezes responde 502/503/504 por alguns segundos. Tenta de novo até 2 vezes, esperando 5 s e depois 10 s;
+ * `tentativa` é a que acabou de falhar (1 = a primeira). Devolve null quando não vale tentar de novo.
+ */
+export const JUSBR_TENTATIVAS = 3;
+export function esperaParaTentarDeNovo(status: number, tentativa: number): number | null {
+  if (status < 500 || tentativa >= JUSBR_TENTATIVAS) return null;
+  return 5_000 * tentativa;
 }
 
 /** Uma linha de log: "2026-10-14 17:12 · Audiência … designada (…) · [tipo: …; situação: …]". */
