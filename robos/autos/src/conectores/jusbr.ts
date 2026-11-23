@@ -87,8 +87,18 @@ export class ConectorJusbr implements Conector {
     await campo.waitFor({ state: "visible", timeout: 30_000 });
     const resposta = aba.waitForResponse((r) => r.url().includes(`/api/v2/processos?numeroProcesso=${digitos}`), { timeout: 60_000 });
     const pedido = aba.waitForRequest((r) => r.url().includes(`/api/v2/processos?numeroProcesso=${digitos}`), { timeout: 60_000 });
+    // Se algo abaixo falhar, as duas esperas ficariam sem dono e, ao vencer, derrubariam o robô inteiro (23/11/2026:
+    // o clique em "Buscar" não aconteceu e, 60 s depois, a espera órfã matou o processo no meio do pedido seguinte).
+    resposta.catch(() => undefined);
+    pedido.catch(() => undefined);
     await campo.fill(digitos);
-    await aba.getByRole("button", { name: /Buscar/i }).first().click();
+    // "Buscar" às vezes não aceita o clique (coberto ou ainda desabilitado): o Enter no campo faz a mesma busca.
+    const clicou = await aba
+      .getByRole("button", { name: /Buscar/i })
+      .first()
+      .click({ timeout: 10_000 })
+      .then(() => true, () => false);
+    if (!clicou) await campo.press("Enter");
     const cabecalho = (await pedido).headers()["authorization"];
     if (cabecalho) this.autorizacao = cabecalho;
     return (await resposta).status();
