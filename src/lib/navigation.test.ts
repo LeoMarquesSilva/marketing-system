@@ -226,7 +226,7 @@ describe("rota ativa e cabeçalho", () => {
     const header = resolveHeaderContext("/linkedin-insights", nav);
     expect(header.eyebrow).toBe("Marketing");
     expect(header.title).toBe("Métricas de redes sociais");
-    expect(header.tabs.map((tab) => tab.label)).toEqual(["Instagram", "LinkedIn", "Site (GA4)"]);
+    expect(header.tabs.map((tab) => tab.label)).toEqual(["Resumo", "Instagram", "LinkedIn", "Site (GA4)"]);
     expect(header.activeHref).toBe("/linkedin-insights");
   });
 

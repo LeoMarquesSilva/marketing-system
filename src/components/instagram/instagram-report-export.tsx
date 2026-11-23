@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FileSpreadsheet, FileText, Copy, Check, Loader2 } from "lucide-react";
+import { FileSpreadsheet, FileText, Copy, Check, Loader2, Download, ChevronDown } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,6 +31,8 @@ interface InstagramReportExportProps {
   filterDescription: string;
   focusArea?: string;
   compact?: boolean;
+  /** Um botão "Exportar" com as opções (Excel, texto, ver escrito) num menu. */
+  menu?: boolean;
   dialogTitle?: string;
   /** Título do relatório gerado (planilha e texto). */
   reportTitle?: string;
@@ -47,6 +50,7 @@ export function InstagramReportExport({
   filterDescription,
   focusArea,
   compact = false,
+  menu = false,
   dialogTitle,
   reportTitle,
   team,
@@ -97,6 +101,55 @@ export function InstagramReportExport({
   const title =
     dialogTitle ??
     (focusArea ? `Relatório — ${focusArea}` : "Relatório Instagram por área");
+
+  if (menu) {
+    return (
+      <>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" disabled={disabled}>
+              <Download className="size-4" aria-hidden />
+              Exportar
+              <ChevronDown className="size-3.5" aria-hidden />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-64 p-1.5">
+            <button type="button" onClick={handleExcel} disabled={exportingExcel} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-[#47cdd0]/10">
+              {exportingExcel ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <FileSpreadsheet className="size-4 text-[#347796]" aria-hidden />}
+              Planilha (Excel)
+            </button>
+            <button type="button" onClick={() => downloadInstagramReportText(report, { filenameBase })} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-[#47cdd0]/10">
+              <FileText className="size-4 text-[#347796]" aria-hidden />
+              Relatório em texto (.txt)
+            </button>
+            <button type="button" onClick={() => setDialogOpen(true)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-[#47cdd0]/10">
+              <Copy className="size-4 text-[#347796]" aria-hidden />
+              Ver e copiar o texto
+            </button>
+          </PopoverContent>
+        </Popover>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>{title}</DialogTitle>
+              <DialogDescription>
+                {report.totalPosts} posts · gerado em {new Date(report.generatedAt).toLocaleString("pt-BR")}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex gap-2 shrink-0">
+              <Button size="sm" variant="secondary" onClick={handleCopy}>
+                {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+                {copied ? "Copiado!" : "Copiar"}
+              </Button>
+            </div>
+            <pre className="flex-1 overflow-auto rounded-md border bg-muted/30 p-4 text-xs leading-relaxed whitespace-pre-wrap font-mono">
+              {report.narrative}
+            </pre>
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
 
   if (compact) {
     return (

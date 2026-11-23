@@ -188,6 +188,10 @@ export interface AccessProfile {
   vistagem_papel?: string | null;
 }
 
+/** Métricas de redes sociais: Resumo (/metricas) + uma página por canal. */
+export const METRICS_SUMMARY_PATH = "/metricas";
+export const METRICS_CHANNEL_PATHS = ["/instagram-insights", "/linkedin-insights", "/ga4-insights"] as const;
+
 /** Postagens da equipe: desempenho no Instagram dos posts de cada área. */
 export const TEAM_POSTS_PATH = "/postagens-equipe";
 
@@ -571,6 +575,11 @@ export function canAccessPath(
 
   if (isGustavoContentPath(pathname)) {
     return canAccessGustavoContent(profile);
+  }
+
+  // Resumo de Métricas: quem vê ao menos um canal (o conteúdo é recortado por canal no servidor).
+  if (pathname === METRICS_SUMMARY_PATH) {
+    return METRICS_CHANNEL_PATHS.some((channel) => canAccessPath(profile, channel));
   }
 
   const allowed = resolveAllowedSections(profile);

@@ -51,6 +51,8 @@ export interface InstagramPost {
   link_clicks: number;
   reels_avg_watch_time: number;
   reels_total_watch_time: number;
+  /** Capa copiada para o Storage (bucket instagram-covers). */
+  cover_path?: string | null;
   synced_at: string;
   created_at: string;
 }
@@ -121,6 +123,7 @@ export function mapInstagramPostRow(row: Record<string, unknown>): InstagramPost
     reels_avg_watch_time: post.reels_avg_watch_time ?? 0,
     reels_total_watch_time: post.reels_total_watch_time ?? 0,
     media_product_type: post.media_product_type ?? null,
+    cover_path: post.cover_path ?? null,
   };
 }
 

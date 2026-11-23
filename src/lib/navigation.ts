@@ -307,6 +307,7 @@ export const NAV_FRONTS: NavFront[] = [
         shortLabel: "Métricas",
         icon: TrendingUp,
         pages: [
+          { href: "/metricas", label: "Resumo" },
           { href: "/instagram-insights", label: "Instagram" },
           { href: "/linkedin-insights", label: "LinkedIn" },
           { href: "/ga4-insights", label: "Site (GA4)" },

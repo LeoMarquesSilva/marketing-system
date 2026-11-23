@@ -47,12 +47,16 @@ export interface MetaAccountStats {
   name: string | null;
 }
 
+/**
+ * Um dia da conta. Campos `null` = a Meta não tem esse detalhe para o dia
+ * (ex.: ganhos/perdas e alcance por seguidor só existem a partir de 2026).
+ */
 export interface MetaAccountInsightsDay {
   date: string;
   reach: number;
   views: number;
-  reach_followers: number;
-  reach_non_followers: number;
+  reach_followers: number | null;
+  reach_non_followers: number | null;
   accounts_engaged: number;
   total_interactions: number;
   likes: number;
@@ -60,9 +64,16 @@ export interface MetaAccountInsightsDay {
   saves: number;
   shares: number;
   replies: number;
-  follows: number;
-  unfollows: number;
+  follows: number | null;
+  unfollows: number | null;
   profile_links_taps: number;
+  reposts: number;
+  /** Novos seguidores do dia (follower_count; só os últimos ~30 dias têm série). */
+  new_followers: number | null;
+  views_reels: number | null;
+  views_stories: number | null;
+  views_carousel: number | null;
+  views_posts: number | null;
 }
 
 export interface MetaDemographicEntry {
@@ -585,123 +596,256 @@ export async function syncStories(): Promise<SyncStoriesResult> {
 // ---------------------------------------------------------------------------
 // Insights de CONTA (diários) e DEMOGRAFIA da audiência
 // ---------------------------------------------------------------------------
+//
+// Regras da Graph API v23 (testadas em 23/11/2026):
+// - `since`/`until` cobrem no máximo 30 dias por chamada.
+// - Só `reach` e `follower_count` aceitam metric_type=time_series. O resto
+//   (views, accounts_engaged, total_interactions, likes...) só vem como
+//   total_value do intervalo, então o valor de cada dia é pedido dia a dia.
+// - O dia D é pedido com since = D 00:00 UTC e until = D+1 00:00 UTC; a série
+//   devolve o mesmo dia com end_time começando por "D".
+// - A Meta ainda pode ajustar os números por ~48 h: a coleta diária repete os
+//   últimos dias e grava por cima.
 
-function unixDay(date: Date): number {
-  return Math.floor(date.getTime() / 1000);
+const DAY_SECONDS = 86_400;
+const ACCOUNT_SERIES_MAX_DAYS = 30;
+const ACCOUNT_DAY_CONCURRENCY = 3;
+
+/** Totais do dia pedidos numa chamada só (todos aceitam total_value sem breakdown). */
+const ACCOUNT_DAY_TOTAL_METRICS = [
+  "views",
+  "accounts_engaged",
+  "total_interactions",
+  "likes",
+  "comments",
+  "saves",
+  "shares",
+  "replies",
+  "profile_links_taps",
+  "reposts",
+] as const;
+
+export function emptyAccountInsightsDay(date: string): MetaAccountInsightsDay {
+  return {
+    date,
+    reach: 0,
+    views: 0,
+    reach_followers: null,
+    reach_non_followers: null,
+    accounts_engaged: 0,
+    total_interactions: 0,
+    likes: 0,
+    comments: 0,
+    saves: 0,
+    shares: 0,
+    replies: 0,
+    follows: null,
+    unfollows: null,
+    profile_links_taps: 0,
+    reposts: 0,
+    new_followers: null,
+    views_reels: null,
+    views_stories: null,
+    views_carousel: null,
+    views_posts: null,
+  };
 }
 
-/** Janelas de até 89 dias (limite prático da Graph API por requisição). */
-function* insightDateChunks(
-  from: Date,
-  to: Date,
-  chunkDays = 89
-): Generator<{ since: Date; until: Date }> {
-  let cursor = new Date(from);
-  while (cursor.getTime() < to.getTime()) {
-    const until = new Date(
-      Math.min(cursor.getTime() + chunkDays * 86_400_000, to.getTime())
-    );
-    yield { since: new Date(cursor), until };
-    cursor = new Date(until.getTime() + 86_400_000);
+function utcDayStart(date: string): number {
+  return Math.floor(Date.parse(`${date}T00:00:00Z`) / 1000);
+}
+
+/** Datas (YYYY-MM-DD) de `from` a `to`, inclusive. */
+export function accountInsightDates(from: string, to: string): string[] {
+  const dates: string[] = [];
+  let cursor = utcDayStart(from);
+  const end = utcDayStart(to);
+  while (cursor <= end) {
+    dates.push(new Date(cursor * 1000).toISOString().slice(0, 10));
+    cursor += DAY_SECONDS;
   }
+  return dates;
 }
 
-async function mergeAccountMetricTimeSeries(
+async function fetchDayTotalValue(
   igAccountId: string,
-  metric: string,
-  since: Date,
-  until: Date,
-  apply: (date: string, value: number) => void
-): Promise<void> {
-  const range = `since=${unixDay(since)}&until=${unixDay(until)}`;
-  try {
-    const data = await graphFetch<{
-      data: { name: string; values: { value: number; end_time: string }[] }[];
-    }>(
-      `/${igAccountId}/insights?metric=${metric}&period=day&metric_type=time_series&${range}`
-    );
-    for (const row of data.data ?? []) {
-      for (const v of row.values ?? []) {
-        const date = (v.end_time ?? "").slice(0, 10);
-        if (!date || date < SYNC_SINCE_DEFAULT.slice(0, 10)) continue;
-        apply(date, v.value ?? 0);
-      }
-    }
-  } catch {
-    // métrica indisponível nesta janela
+  metrics: string,
+  date: string,
+  breakdown?: string
+): Promise<InsightRow[]> {
+  const since = utcDayStart(date);
+  const breakdownParam = breakdown ? `&breakdown=${breakdown}` : "";
+  const data = await graphFetch<{ data: InsightRow[] }>(
+    `/${igAccountId}/insights?metric=${metrics}&period=day&metric_type=total_value&since=${since}&until=${since + DAY_SECONDS}${breakdownParam}`
+  );
+  return data.data ?? [];
+}
+
+function breakdownValues(row: InsightRow | undefined): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const result of row?.total_value?.breakdowns?.[0]?.results ?? []) {
+    const key = (result.dimension_values ?? []).join("/").toUpperCase();
+    if (key) map.set(key, (map.get(key) ?? 0) + (result.value ?? 0));
   }
+  return map;
+}
+
+/** Um dia da conta: totais + ganhos/perdas + alcance por seguidor + views por formato. */
+async function fetchAccountDay(igAccountId: string, date: string): Promise<MetaAccountInsightsDay> {
+  const day = emptyAccountInsightsDay(date);
+
+  // Se os totais falharem, o dia inteiro conta como falha (quem chama registra).
+  const totals = await fetchDayTotalValue(igAccountId, ACCOUNT_DAY_TOTAL_METRICS.join(","), date);
+  for (const row of totals) {
+    const value = row.total_value?.value ?? 0;
+    switch (row.name) {
+      case "views": day.views = value; break;
+      case "accounts_engaged": day.accounts_engaged = value; break;
+      case "total_interactions": day.total_interactions = value; break;
+      case "likes": day.likes = value; break;
+      case "comments": day.comments = value; break;
+      case "saves": day.saves = value; break;
+      case "shares": day.shares = value; break;
+      case "replies": day.replies = value; break;
+      case "profile_links_taps": day.profile_links_taps = value; break;
+      case "reposts": day.reposts = value; break;
+    }
+  }
+
+  const [follows, reach, views] = await Promise.allSettled([
+    fetchDayTotalValue(igAccountId, "follows_and_unfollows", date, "follow_type"),
+    fetchDayTotalValue(igAccountId, "reach", date, "follow_type"),
+    fetchDayTotalValue(igAccountId, "views", date, "media_product_type"),
+  ]);
+
+  // Sem `results` no detalhe = a Meta não tem esse dado para o dia: fica null.
+  if (follows.status === "fulfilled") {
+    // FOLLOWER = contas que passaram a seguir; NON_FOLLOWER = deixaram de seguir.
+    const map = breakdownValues(follows.value.find((r) => r.name === "follows_and_unfollows"));
+    if (map.size > 0) {
+      day.follows = map.get("FOLLOWER") ?? 0;
+      day.unfollows = map.get("NON_FOLLOWER") ?? 0;
+    }
+  }
+  if (reach.status === "fulfilled") {
+    const row = reach.value.find((r) => r.name === "reach");
+    const map = breakdownValues(row);
+    if (map.size > 0) {
+      day.reach_followers = map.get("FOLLOWER") ?? 0;
+      day.reach_non_followers = map.get("NON_FOLLOWER") ?? 0;
+    }
+    // O alcance do dia vem da série (abaixo); este total é a reserva.
+    day.reach = row?.total_value?.value ?? (day.reach_followers ?? 0) + (day.reach_non_followers ?? 0);
+  }
+  if (views.status === "fulfilled") {
+    const map = breakdownValues(views.value.find((r) => r.name === "views"));
+    if (map.size > 0) {
+      day.views_reels = map.get("REEL") ?? 0;
+      day.views_stories = map.get("STORY") ?? 0;
+      day.views_carousel = map.get("CAROUSEL_CONTAINER") ?? 0;
+      day.views_posts = map.get("POST") ?? 0;
+    }
+  }
+
+  return day;
+}
+
+/** reach e follower_count (novos seguidores por dia) em série, janelas de até 30 dias. */
+async function fetchAccountSeries(
+  igAccountId: string,
+  from: string,
+  to: string
+): Promise<Map<string, { reach?: number; new_followers?: number }>> {
+  const byDate = new Map<string, { reach?: number; new_followers?: number }>();
+  let cursor = utcDayStart(from);
+  const end = utcDayStart(to) + DAY_SECONDS;
+  while (cursor < end) {
+    const until = Math.min(cursor + ACCOUNT_SERIES_MAX_DAYS * DAY_SECONDS, end);
+    try {
+      const data = await graphFetch<{
+        data: { name: string; values?: { value: number; end_time: string }[] }[];
+      }>(
+        `/${igAccountId}/insights?metric=reach,follower_count&period=day&metric_type=time_series&since=${cursor}&until=${until}`
+      );
+      for (const row of data.data ?? []) {
+        for (const point of row.values ?? []) {
+          const date = (point.end_time ?? "").slice(0, 10);
+          if (!date) continue;
+          const entry = byDate.get(date) ?? {};
+          if (row.name === "reach") entry.reach = point.value ?? 0;
+          else if (row.name === "follower_count") entry.new_followers = point.value ?? 0;
+          byDate.set(date, entry);
+        }
+      }
+    } catch {
+      // follower_count só existe para os últimos ~30 dias; janela antiga fica com a reserva.
+    }
+    cursor = until;
+  }
+  return byDate;
+}
+
+export interface AccountDailyInsightsResult {
+  days: MetaAccountInsightsDay[];
+  failedDates: string[];
 }
 
 /**
- * Insights diários da conta desde SYNC_SINCE_DEFAULT (2025), em janelas de 89 dias.
- * Persistidos no Supabase — o histórico vai crescendo a cada sincronização.
+ * Insights da conta para cada data pedida. Dias que a Meta não devolver vão em
+ * `failedDates` (não viram zero no banco).
  */
-export async function fetchAccountInsights(
+export async function fetchAccountDailyInsights(
   igAccountId: string,
-  sinceIso: string = SYNC_SINCE_DEFAULT
-): Promise<MetaAccountInsightsDay[]> {
-  const byDate = new Map<string, MetaAccountInsightsDay>();
-  const ensure = (date: string): MetaAccountInsightsDay => {
-    let row = byDate.get(date);
-    if (!row) {
-      row = {
-        date,
-        reach: 0,
-        views: 0,
-        reach_followers: 0,
-        reach_non_followers: 0,
-        accounts_engaged: 0,
-        total_interactions: 0,
-        likes: 0,
-        comments: 0,
-        saves: 0,
-        shares: 0,
-        replies: 0,
-        follows: 0,
-        unfollows: 0,
-        profile_links_taps: 0,
-      };
-      byDate.set(date, row);
-    }
-    return row;
-  };
+  dates: string[]
+): Promise<AccountDailyInsightsResult> {
+  if (dates.length === 0) return { days: [], failedDates: [] };
+  const sorted = [...dates].sort();
+  const failedDates: string[] = [];
 
+  const fetched = await mapWithConcurrency(sorted, ACCOUNT_DAY_CONCURRENCY, async (date) => {
+    try {
+      return await fetchAccountDay(igAccountId, date);
+    } catch {
+      failedDates.push(date);
+      return null;
+    }
+  });
+  const days = fetched.filter((day): day is MetaAccountInsightsDay => day !== null);
+
+  const series = await fetchAccountSeries(igAccountId, sorted[0], sorted[sorted.length - 1]);
+  for (const day of days) {
+    const point = series.get(day.date);
+    if (point?.reach !== undefined) day.reach = point.reach;
+    day.new_followers = point?.new_followers ?? day.follows;
+  }
+
+  return { days, failedDates: failedDates.sort() };
+}
+
+/** Posts publicados desde `sinceIso`, com insights, paginando a lista de mídia. */
+export async function fetchMediaSince(
+  igAccountId: string,
+  sinceIso: string
+): Promise<SyncedMediaPost[]> {
   const since = new Date(sinceIso);
-  if (Number.isNaN(since.getTime())) {
-    throw new Error("Data 'since' inválida para insights de conta.");
-  }
-  const until = new Date();
-
-  const timeSeriesMetrics = [
-    "reach",
-    "views",
-    "accounts_engaged",
-    "total_interactions",
-    "likes",
-    "comments",
-    "saves",
-    "shares",
-    "profile_links_taps",
-  ] as const;
-
-  for (const chunk of insightDateChunks(since, until)) {
-    for (const metric of timeSeriesMetrics) {
-      await mergeAccountMetricTimeSeries(igAccountId, metric, chunk.since, chunk.until, (date, val) => {
-        const day = ensure(date);
-        if (metric === "reach") day.reach = val;
-        else if (metric === "views") day.views = val;
-        else if (metric === "accounts_engaged") day.accounts_engaged = val;
-        else if (metric === "total_interactions") day.total_interactions = val;
-        else if (metric === "likes") day.likes = val;
-        else if (metric === "comments") day.comments = val;
-        else if (metric === "saves") day.saves = val;
-        else if (metric === "shares") day.shares = val;
-        else if (metric === "profile_links_taps") day.profile_links_taps = val;
-      });
+  if (Number.isNaN(since.getTime())) throw new Error("Data 'since' inválida.");
+  const collected: MetaMediaItem[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await fetchMediaPage(igAccountId, after);
+    let reachedCutoff = false;
+    for (const item of page.data) {
+      const published = item.timestamp ? new Date(item.timestamp) : null;
+      if (published && published < since) {
+        reachedCutoff = true;
+        break;
+      }
+      collected.push(item);
     }
+    if (reachedCutoff || !page.nextAfter || page.data.length === 0) break;
+    after = page.nextAfter;
   }
-
-  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  return collected.length ? enrichWithInsights(collected) : [];
 }
 
 const DEMOGRAPHIC_REQUESTS: {
@@ -740,22 +884,6 @@ export async function fetchAudienceDemographics(
   }
 
   return entries;
-}
-
-export interface SyncAccountExtrasResult {
-  account: MetaAccountStats;
-  insights: MetaAccountInsightsDay[];
-  demographics: MetaDemographicEntry[];
-}
-
-export async function syncAccountExtras(): Promise<SyncAccountExtrasResult> {
-  const igAccountId = await getInstagramAccountId();
-  const [account, insights, demographics] = await Promise.all([
-    fetchAccountStats(igAccountId),
-    fetchAccountInsights(igAccountId),
-    fetchAudienceDemographics(igAccountId),
-  ]);
-  return { account, insights, demographics };
 }
 
 export async function syncMediaPage(

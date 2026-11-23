@@ -66,14 +66,28 @@ export function resolveInstagramThumbnailSrc(
   return getInstagramThumbnailProxyUrl(igMediaId);
 }
 
+/** Bucket público onde a coleta guarda a capa de cada post e story. */
+export const INSTAGRAM_COVERS_BUCKET = "instagram-covers";
+
+/** Link público da capa no Storage do Supabase (não passa pela Vercel). */
+export function instagramCoverPublicUrl(coverPath: string | null | undefined): string | null {
+  if (!coverPath) return null;
+  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
+  if (!base) return null;
+  return `${base}/storage/v1/object/public/${INSTAGRAM_COVERS_BUCKET}/${coverPath}`;
+}
+
 /** Substitui URLs do CDN por proxy antes de enviar dados ao browser. */
 export function sanitizeInstagramPostForClient<
   T extends {
     ig_media_id: string;
     thumbnail_url?: string | null;
     media_url?: string | null;
+    cover_path?: string | null;
   },
 >(post: T): T {
+  const cover = instagramCoverPublicUrl(post.cover_path);
+  if (cover) return { ...post, thumbnail_url: cover, media_url: cover };
   if (!hasInstagramThumbnail(post)) return post;
   const proxy = getInstagramThumbnailProxyUrl(post.ig_media_id);
   return { ...post, thumbnail_url: proxy, media_url: proxy };
@@ -95,8 +109,11 @@ export function sanitizeInstagramStoryForClient<
     id?: string;
     thumbnail_url?: string | null;
     media_url?: string | null;
+    cover_path?: string | null;
   },
 >(story: T): T {
+  const cover = instagramCoverPublicUrl(story.cover_path);
+  if (cover) return { ...story, thumbnail_url: cover, media_url: cover };
   const igMediaId = story.ig_story_id ?? story.id;
   // Sem link de proxy para capa morta: cada um virava uma função com 502.
   if (isDeadInstagramStoryMedia(story)) {
