@@ -2,6 +2,8 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { requireAuthenticatedUser, requirePautaAccess } from "@/lib/api-auth";
+import { chaveNome } from "@/lib/vistagem/agendamento";
+import { pessoasPorNome } from "@/lib/vistagem/pessoas-server";
 import type { Audiencia, Modalidade, Mudanca, PessoaPauta } from "./tipos";
 
 /** Erro com status HTTP, como o de Processos. */
@@ -124,6 +126,22 @@ export async function carregarPessoas(): Promise<PessoaPauta[]> {
   const { data, error } = await db().from("aud_pessoas").select(COLUNAS_PESSOA).order("nome_vios");
   if (error) falhou("carregar as pessoas da pauta", error);
   return ((data ?? []) as Linha[]).map(paraPessoa);
+}
+
+/**
+ * As pessoas da pauta com a foto, para as telas (as rotinas e os avisos usam carregarPessoas, sem foto). A foto vem
+ * do mesmo lugar da vistagem e de Processos (RH, organograma e cadastro de usuários, pelo nome); se essa busca falhar,
+ * as telas mostram as iniciais.
+ */
+export async function carregarPessoasComFotos(): Promise<PessoaPauta[]> {
+  const pessoas = await carregarPessoas();
+  try {
+    const { fotos } = await pessoasPorNome(pessoas.map((p) => p.nomeVios));
+    return pessoas.map((p) => ({ ...p, foto: fotos[chaveNome(p.nomeVios)] ?? null }));
+  } catch (erro) {
+    console.error("[pauta] fotos da equipe:", erro instanceof Error ? erro.message : erro);
+    return pessoas;
+  }
 }
 
 export async function carregarAudiencias(de: string, ate: string): Promise<Audiencia[]> {

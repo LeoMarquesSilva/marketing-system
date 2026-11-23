@@ -55,6 +55,8 @@ export interface PessoaPauta {
   fazAudiencia: boolean;
   coordenacao: boolean;
   ativo: boolean;
+  /** Foto da pessoa (RH, organograma ou cadastro de usuários, pelo nome); sem foto, a tela mostra as iniciais. */
+  foto?: string | null;
 }
 
 /** Uma audiência como as telas recebem. Datas em ISO (UTC); a tela mostra no horário de Brasília. */

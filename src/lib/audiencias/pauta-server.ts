@@ -5,7 +5,7 @@ import { hojeEmBrasilia, proximosDiasUteis, somarDias } from "./agenda";
 import { avisarTroca, ehDiaUtil } from "./avisos-server";
 import { ORIGEM_AUTOMATICA, type ResumoConferenciaVios, type TarefaSoNoVios } from "./conferencia-server";
 import { lerConfig, modoOutlook, modoWhatsapp } from "./config-server";
-import { AudienciasError, carregarAudiencias, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico, type Ator } from "./server";
+import { AudienciasError, carregarAudiencias, carregarPessoas, carregarPessoasComFotos, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico, type Ator } from "./server";
 import type { Audiencia, PessoaPauta } from "./tipos";
 
 /** O que as telas pedem: pauta de um período, distribuição dos próximos dias úteis, troca e conferência. */
@@ -103,7 +103,7 @@ async function ultimaConferenciaVios(): Promise<ConferenciaVios | null> {
 
 async function montar(audiencias: Audiencia[]): Promise<DadosDaPauta> {
   const [pessoas, convites, leituras, vios, config] = await Promise.all([
-    carregarPessoas(),
+    carregarPessoasComFotos(),
     convitesDe(audiencias.map((a) => a.id)),
     ultimasLeituras(),
     ultimaConferenciaVios(),

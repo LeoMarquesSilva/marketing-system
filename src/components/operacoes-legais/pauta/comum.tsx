@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, MapPin, MessageCircle, Mail, Video } from "lucide-react";
+import { ExternalLink, LoaderCircle, MapPin, MessageCircle, Mail, Video } from "lucide-react";
+import { Avatar as AvatarUi, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/auth-context";
@@ -12,6 +13,7 @@ import { cidadeDoOrgao, local, opcoesDeTroca, type Contexto } from "@/lib/audien
 import { ROTULO_MODALIDADE, ROTULO_TIPO, type Audiencia, type Papel, type PessoaPauta } from "@/lib/audiencias/tipos";
 import type { DadosDaPauta } from "@/lib/audiencias/pauta-server";
 import { cn } from "@/lib/utils";
+import { linkPastaVios, linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { Aviso, Selo, campoClasse } from "../vistagem/ui";
 
 /* ------------------------------------------------------------------ API */
@@ -103,14 +105,16 @@ export function iniciaisDe(nome: string): string {
     .join("");
 }
 
+/** Miniatura da pessoa: a foto (RH, organograma ou cadastro de usuários) ou, sem foto ou se ela não carregar, as iniciais. */
 export function Avatar({ pessoa, className }: { pessoa: PessoaPauta | null | undefined; className?: string }) {
   if (!pessoa) return <span className={cn("grid size-6 shrink-0 place-items-center rounded-full border border-dashed border-red-400 text-[10px] font-semibold text-red-600", className)}>?</span>;
   let h = 0;
   for (const c of pessoa.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return (
-    <span className={cn("grid size-6 shrink-0 place-items-center rounded-full text-[10px] font-semibold text-white", CORES[h % CORES.length], className)} aria-hidden>
-      {iniciaisDe(pessoa.nomeCurto)}
-    </span>
+    <AvatarUi className={cn("size-6 shrink-0 ring-1 ring-black/5", className)} aria-hidden title={pessoa.nomeCurto}>
+      {pessoa.foto ? <AvatarImage src={pessoa.foto} alt="" className="object-cover" /> : null}
+      <AvatarFallback className={cn("text-[10px] font-semibold text-white", CORES[h % CORES.length])}>{iniciaisDe(pessoa.nomeCurto)}</AvatarFallback>
+    </AvatarUi>
   );
 }
 
@@ -190,6 +194,30 @@ export function LinkDaSala({ aud }: { aud: Audiencia }) {
       <p className="text-xs text-muted-foreground">{fonte}</p>
     </div>
   );
+}
+
+/**
+ * Link para o VIOS, como na vistagem: a tarefa da audiência (CI casado na conferência) ou, sem tarefa, o processo.
+ * Fica dentro de linhas clicáveis: o clique no link não abre o detalhe.
+ */
+export function LinkDoVios({ aud, className }: { aud: Audiencia; className?: string }) {
+  const parar = (e: { stopPropagation: () => void }) => e.stopPropagation();
+  const classe = cn("inline-flex items-center gap-1 text-xs font-medium text-[#0f5f9e] underline-offset-2 hover:underline", className);
+  if (aud.viosTarefaCi)
+    return (
+      <a href={linkTarefaVios(aud.viosTarefaCi)} target="_blank" rel="noreferrer" onClick={parar} onKeyDown={parar} className={classe} title="Abrir a tarefa da audiência no VIOS">
+        Tarefa <span className="font-mono tabular-nums">{aud.viosTarefaCi}</span> no VIOS
+        <ExternalLink className="size-3" aria-hidden />
+      </a>
+    );
+  if (aud.ciProcesso)
+    return (
+      <a href={linkPastaVios(aud.ciProcesso)} target="_blank" rel="noreferrer" onClick={parar} onKeyDown={parar} className={classe} title="Sem tarefa de audiência casada: abre o processo no VIOS">
+        Processo <span className="font-mono tabular-nums">{aud.ciProcesso}</span> no VIOS
+        <ExternalLink className="size-3" aria-hidden />
+      </a>
+    );
+  return null;
 }
 
 /* ------------------------------------------------------------------ troca */

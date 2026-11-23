@@ -8,7 +8,7 @@ import { alertasDaAudiencia, estadoNoVios, hojeEmBrasilia, local, pendenteNoVios
 import { ROTULO_MUDANCA, ROTULO_TIPO, type Audiencia, type Papel } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
 import { Aviso, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, campoClasse } from "../vistagem/ui";
-import { AcessoPauta, Dupla, LinkDaSala, Local, Modalidade, SeloTipo, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
+import { AcessoPauta, Dupla, LinkDaSala, LinkDoVios, Local, Modalidade, SeloTipo, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
 
 const COLUNAS = "lg:grid lg:grid-cols-[4.5rem_minmax(0,1.5fr)_minmax(0,1.1fr)_7.5rem_minmax(0,1.25fr)_minmax(0,1.15fr)_minmax(0,1fr)] lg:items-center lg:gap-4";
 const PERIODOS = [
@@ -224,7 +224,18 @@ function Pauta() {
               const cancelada = a.situacao === "cancelada";
               return (
                 <li key={a.id} className="border-b border-[#e6eef0] last:border-b-0">
-                  <button type="button" onClick={() => setAberta(a)} className={cn("w-full space-y-2 px-4 py-3 text-left hover:bg-[#f6fafb] focus-visible:bg-[#f6fafb] focus-visible:outline-none lg:space-y-0", COLUNAS, cancelada && "bg-[#fafcfc]")}>
+                  {/* Linha clicável (e não <button>) porque leva o link do VIOS dentro: link dentro de botão não é HTML válido. */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setAberta(a)}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                      e.preventDefault();
+                      setAberta(a);
+                    }}
+                    className={cn("w-full cursor-pointer space-y-2 px-4 py-3 text-left hover:bg-[#f6fafb] focus-visible:bg-[#f6fafb] focus-visible:outline-none lg:space-y-0", COLUNAS, cancelada && "bg-[#fafcfc]")}
+                  >
                     <span className={cn("block font-mono text-sm font-medium tabular-nums", cancelada && "text-muted-foreground line-through")}>{hora(a.inicio)}</span>
                     <span className="block min-w-0">
                       <span className="flex min-w-0 items-center gap-1.5">
@@ -232,6 +243,7 @@ function Pauta() {
                         <span className={cn("truncate text-sm font-semibold", cancelada && "text-muted-foreground line-through")}>{cliente(a)}</span>
                       </span>
                       <span className="mt-0.5 block font-mono text-xs text-muted-foreground">{a.cnj}</span>
+                      <LinkDoVios aud={a} className="mt-0.5" />
                     </span>
                     <Local aud={a} />
                     <Modalidade aud={a} />
@@ -244,7 +256,7 @@ function Pauta() {
                       {alertas.some((x) => x.tipo === "cedo") ? <Selo tom="alerta" icone={Clock}>Antes das 10h</Selo> : null}
                       {!cancelada && !alertas.some((x) => x.grave) ? <Selo tom="marca">Designada</Selo> : null}
                     </span>
-                  </button>
+                  </div>
                 </li>
               );
             })}
@@ -339,6 +351,7 @@ function Detalhe({
           <DialogDescription>
             {diaPorExtenso(local(aud.inicio).dia)}, {hora(aud.inicio)} · <span className="font-mono">{aud.cnj}</span>
           </DialogDescription>
+          <LinkDoVios aud={aud} className="mt-1 text-sm" />
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {alertas.filter((a) => a.tipo !== "cedo").map((a) => (
