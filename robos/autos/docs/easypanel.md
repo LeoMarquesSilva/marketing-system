@@ -133,7 +133,7 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out robo-certifica
 openssl pkey -in robo-certificado.key -pubout -out robo-certificado.pub
 ```
 
-- `robo-certificado.key` (privada): só no serviço do robô, como montagem de arquivo do Easypanel, apontada por `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO`.
+- `robo-certificado.key` (privada): fica no servidor, em `/srv/robos/segredos` (dono root, `0600`), e chega aos serviços do robô por bind dessa pasta em `/segredos`, apontada por `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO`. Ninguém copia o conteúdo dela para tela, conversa ou campo do Easypanel.
 - `robo-certificado.pub` (pública, não é segredo): no painel, numa variável como `ROBO_CERTIFICADO_CHAVE_PUBLICA`.
 
 ### Formulário de envio
@@ -322,6 +322,16 @@ Enquanto o DCP estiver no Mac (etapas 1 e 2), o eproc do TJRJ fica nos dois lado
 
 Gerada por quem administra o servidor, fora do repositório ([comandos](#chave-do-robô-uma-vez)). A mesma chave serve para a senha do certificado e para os segredos do TOTP.
 
+**Já feito em 18/11/2026:** o par foi gerado direto no servidor, em `/srv/robos/segredos` (`robo-certificado.key`, root, `0600`; e `robo-certificado.pub`), e a pública foi para a `ROBO_CERTIFICADO_CHAVE_PUBLICA` do `painel-robos`. Para conferir que a privada é o par da pública do painel, compare as impressões digitais, sem imprimir a privada:
+
+```bash
+# no servidor, como root
+openssl pkey -in /srv/robos/segredos/robo-certificado.key -pubout -outform DER | openssl dgst -sha256
+openssl pkey -pubin -in /srv/robos/segredos/robo-certificado.pub -outform DER | openssl dgst -sha256
+```
+
+A prova final é o log do robô ao subir: "Certificado do painel carregado (…)" só aparece quando a privada decifra a senha que o painel cifrou com a pública.
+
 ### 2. Pasta compartilhada no servidor
 
 ```bash
@@ -360,7 +370,7 @@ Os três serviços são iguais, menos `ROBO_NOME`, `ROBO_CONECTORES`, `CAPA_DATA
 3. **Mounts:**
    - **Volume** em `/dados` (perfil, PDFs em trânsito, diagnósticos), um por serviço;
    - **Bind** de `/srv/robos/certificados` em `/certificados` (o formulário do Easypanel 2.37 não tem opção de só leitura: o robô não escreve nessa pasta, e as permissões da pasta no servidor fazem o resto);
-   - **File** em `/segredos/robo-certificado.key`, com o conteúdo de `robo-certificado.key`. O script de início copia para `/run/robo/certificado.key`, que só o `pwuser` lê, fora do volume.
+   - **Bind** de `/srv/robos/segredos` em `/segredos`: a pasta do servidor onde está a chave privada do robô. A chave não sai do servidor e ninguém precisa copiá-la. O script de início, que começa como root, copia a chave para `/run/robo/certificado.key`, que só o `pwuser` lê, fora do volume.
 4. **Domains:** um domínio por serviço para a tela remota, HTTPS, porta **6080**; em Security, **Basic Auth** ligado, com usuário e senha diferentes da `VNC_SENHA`. O `TELA_REMOTA_URL` de cada serviço aponta para o domínio dele.
 5. **Resources:** por serviço, limite de 2 vCPU e 3 GB de memória, reserva 0 (uma reserva maior que a sobra do servidor impede o serviço de subir) ([Operação](#operação)).
 6. **Deploy:** 1 réplica, **sem** zero-downtime (aba Avançado; o Easypanel cria o serviço com ele ligado). **Antes do primeiro deploy**, ligue o Basic Auth do domínio (aba Segurança): sem ele, a tela remota fica protegida só pela `VNC_SENHA`.
@@ -445,7 +455,7 @@ Igual aos [serviços do robô de autos](#3-serviços-do-robô-app-um-por-linha-d
    | `ORQESTRAI_URL`, `ROBO_AUTOS_TOKEN` | os de produção; no `pauta-teste` podem ficar de fora |
 
    Não precisa de `ROBO_CONECTORES`, `EPROC_*`, `ESAJ_LOGIN`, `CERTIFICADO_ORIGENS` nem `CAPA_DATAJUD`: o programa da pauta não atende a fila de autos, e o PJe Office do robô só responde ao SSO da PDPJ.
-3. **Mounts:** volume `/dados` **próprio** (o perfil do navegador é de um robô só); bind de `/srv/robos/certificados` em `/certificados` e o arquivo `/segredos/robo-certificado.key`, os mesmos dos outros serviços.
+3. **Mounts:** volume `/dados` **próprio** (o perfil do navegador é de um robô só); binds de `/srv/robos/certificados` em `/certificados` e de `/srv/robos/segredos` em `/segredos`, os mesmos dos outros serviços.
 4. **Domains:** domínio próprio para a tela remota, HTTPS, porta **6080**, com **Basic Auth** ligado antes do primeiro deploy.
 5. **Resources:** 1 vCPU e 2 GB de memória bastam (uma aba aberta poucas vezes ao dia); reserva 0.
 6. **Deploy:** 1 réplica, sem zero-downtime.

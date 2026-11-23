@@ -41,7 +41,7 @@ services:
       # Pasta do servidor compartilhada com o painel de robôs; o robô só lê.
       - /srv/robos/certificados:/certificados:ro
       # Chave privada do robô (par da chave pública que o painel usa para cifrar a senha).
-      - /srv/robos/segredos/robo-certificado.key:/segredos/robo-certificado.key:ro
+      - /srv/robos/segredos:/segredos:ro
     ports:
       - "127.0.0.1:6080:6080"   # no Easypanel: domínio HTTPS com Basic Auth apontando para a porta 6080
     deploy:
