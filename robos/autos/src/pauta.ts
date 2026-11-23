@@ -96,10 +96,13 @@ interface EstadoDaSessao {
  */
 async function estadoDaSessao(pagina: Page, trt: string): Promise<EstadoDaSessao | null> {
   if (!pagina.url().startsWith(base(trt))) return null;
+  // Atenção: nada de função com nome dentro do evaluate. O tsx (esbuild, keepNames) embrulha a função em __name(),
+  // que não existe no navegador, e o evaluate falha calado (23/11/2026).
   return pagina
     .evaluate(async () => {
-      const cookie = (nome: string) => decodeURIComponent((document.cookie.match(new RegExp(`(?:^|; )${nome}=([^;]*)`)) || [])[1] || "");
-      const xsrf = cookie("Xsrf-Token");
+      const cookies = document.cookie;
+      const xsrf = decodeURIComponent((cookies.match(/(?:^|; )Xsrf-Token=([^;]*)/) || [])[1] || "");
+      const token = decodeURIComponent((cookies.match(/(?:^|; )access_token=([^;]*)/) || [])[1] || "");
       const headers: Record<string, string> = { Accept: "application/json", ...(xsrf ? { "X-XSRF-TOKEN": xsrf } : {}) };
       const perfis = await fetch("/pje-seguranca/api/token/perfis", { credentials: "include", headers }).then((r) => r.status, () => 0);
       const recursos = await fetch("/pje-seguranca/api/token/permissoes/recursos", { credentials: "include", headers }).then(
@@ -108,7 +111,6 @@ async function estadoDaSessao(pagina: Page, trt: string): Promise<EstadoDaSessao
       );
       let tokenComPerfil = false;
       try {
-        const token = cookie("access_token");
         if (token) tokenComPerfil = Boolean(JSON.parse(atob(token.split(".")[1]!.replace(/-/g, "+").replace(/_/g, "/"))).perfil);
       } catch {
         tokenComPerfil = false;
