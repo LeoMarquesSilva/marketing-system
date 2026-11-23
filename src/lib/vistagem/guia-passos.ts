@@ -75,7 +75,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "vg-gestao-buscar",
       titulo: "Buscar ou enviar o arquivo",
       texto:
-        "Se o arquivo atrasou, \"Buscar no SharePoint\" procura de novo; se você já tem o arquivo, use \"Enviar xlsx\" ao lado (até 20 MB). Enviar o mesmo arquivo de novo não duplica nada, e a triagem roda logo depois.",
+        "Se o arquivo atrasou, \"Buscar no SharePoint\" procura de novo; se você já tem o arquivo, use \"Enviar xlsx\" ao lado (até 20 MB). Os dois rodam a mesma rodada do cron da manhã: pastas do VIOS, triagem, Central, BKP do SIOE, sugestões da IA e envios ao robô, e podem levar alguns minutos. Enviar o mesmo arquivo de novo não duplica nada.",
     },
     {
       id: "colar",
