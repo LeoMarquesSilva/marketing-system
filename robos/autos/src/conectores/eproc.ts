@@ -62,6 +62,33 @@ export const CODIGO_2FA_EPROC = {
   validar: "#btnValidar, #kc-otp-login-form [type=submit]",
 } as const;
 
+/**
+ * Tela "Seleção de perfil" do eproc (advogado com mais de uma inscrição, ex.: SP e ES), depois do 2FA. O título da
+ * aba é o sinal firme: o texto também aparece escondido no menu, e o primeiro achado escondido fazia o robô não
+ * reconhecer a tela (24/11). A lista de perfis é uma tabela dentro do quadro: só as linhas de dentro contam (a de
+ * fora traz o texto todo e era escolhida no lugar da linha do perfil).
+ */
+export const PERFIL_EPROC = {
+  titulo: /Sele[çc][ãa]o de perfil/i,
+  linhas: "tr:has(td):not(:has(tr))",
+} as const;
+
+/** Escolhe na tela o perfil cuja sigla começa pelo prefixo (padrão SP). Devolve se escolheu. */
+export async function escolherPerfilNaTela(pagina: Page, prefixo: string): Promise<boolean> {
+  const naTela =
+    PERFIL_EPROC.titulo.test(await pagina.title().catch(() => "")) ||
+    (await pagina.getByText(PERFIL_EPROC.titulo).filter({ visible: true }).count().catch(() => 0)) > 0;
+  if (!naTela) return false;
+  const linhas = pagina.locator(PERFIL_EPROC.linhas).filter({ visible: true });
+  const textos = await linhas.allInnerTexts().catch(() => [] as string[]);
+  const indice = perfilDoEproc(textos, prefixo);
+  if (indice < 0) return false;
+  const linha = linhas.nth(indice);
+  const link = linha.locator("a").first();
+  await ((await link.count()) ? link : linha.locator("td").first()).click().catch(() => undefined);
+  return true;
+}
+
 const TELA = {
   login: {
     usuario: "#username",
@@ -246,15 +273,9 @@ class ConectorEproc implements Conector {
   /** Na tela "Seleção de perfil", escolhe o perfil configurado (EPROC_PERFIL, padrão SP). Devolve se escolheu. */
   private async escolherPerfil(ambiente: Ambiente): Promise<boolean> {
     const { pagina, config, registrar } = ambiente;
-    if (!(await pagina.getByText(/Sele[çc][ãa]o de perfil/i).first().isVisible().catch(() => false))) return false;
-    const linhas = pagina.locator("tr:has(td)");
-    const indice = perfilDoEproc(await linhas.allInnerTexts().catch(() => []), config.eproc.perfil);
-    if (indice < 0) return false;
-    const linha = linhas.nth(indice);
-    const link = linha.locator("a").first();
-    await ((await link.count()) ? link : linha.locator("td").first()).click().catch(() => undefined);
-    registrar(`Perfil do ${this.sistema} escolhido: o da inscrição ${config.eproc.perfil}.`);
-    return true;
+    const escolhido = await escolherPerfilNaTela(pagina, config.eproc.perfil);
+    if (escolhido) registrar(`Perfil do ${this.sistema} escolhido: o da inscrição ${config.eproc.perfil}.`);
+    return escolhido;
   }
 
   async entrar(ambiente: Ambiente, instancia: InstanciaEproc = this.tribunal.instancias[0]): Promise<void> {
