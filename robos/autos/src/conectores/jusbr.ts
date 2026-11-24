@@ -17,7 +17,8 @@ import {
   type DocumentoJusbr,
   type FichaJusbr,
 } from "./jusbr-urls.ts";
-import { entrarComAPessoa } from "./mapeamento.ts";
+import { entrarComAPessoa, type OpcoesDeLogin } from "./mapeamento.ts";
+import { loginAutomaticoPdpj } from "./pje.ts";
 import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./tipos.ts";
 
 const SISTEMA = "Jus.br (Portal de Serviços do CNJ)";
@@ -46,19 +47,21 @@ export class ConectorJusbr implements Conector {
     return ambiente.contexto.pages().find((aba) => !aba.isClosed() && ehAreaLogadaJusbr(aba.url())) ?? null;
   }
 
-  private opcoesDeLogin() {
+  /** O login é o SSO da PDPJ (o mesmo do PJe): no servidor, certificado pelo PJe Office do robô e código do painel. */
+  private opcoesDeLogin(ambiente: Ambiente): OpcoesDeLogin {
     return {
       sistema: SISTEMA,
       urlDeLogin: CONSULTA_JUSBR,
       logado: ehAreaLogadaJusbr,
       instrucao: () => "Entre no Jus.br na janela do robô: CPF e senha (ou gov.br, ou certificado), e o código do aplicativo autenticador.",
+      ...loginAutomaticoPdpj(ambiente.config.pjeOffice),
     };
   }
 
   async entrar(ambiente: Ambiente): Promise<void> {
     if (this.abaDoPortal(ambiente)) return;
     const nova = await ambiente.contexto.newPage();
-    await entrarComAPessoa({ ...ambiente, pagina: nova }, this.opcoesDeLogin());
+    await entrarComAPessoa({ ...ambiente, pagina: nova }, this.opcoesDeLogin(ambiente));
   }
 
   private async portal(ambiente: Ambiente): Promise<Page> {
@@ -66,7 +69,7 @@ export class ConectorJusbr implements Conector {
     const aba = this.abaDoPortal(ambiente);
     if (!aba) throw new FalhaDoConector(`O ${SISTEMA} não abriu depois do login.`);
     if (!aba.url().startsWith(CONSULTA_JUSBR)) await aba.goto(CONSULTA_JUSBR, { waitUntil: "domcontentloaded" });
-    if (ehLoginPdpj(aba.url())) await entrarComAPessoa({ ...ambiente, pagina: aba }, this.opcoesDeLogin());
+    if (ehLoginPdpj(aba.url())) await entrarComAPessoa({ ...ambiente, pagina: aba }, this.opcoesDeLogin(ambiente));
     return aba;
   }
 
@@ -84,8 +87,18 @@ export class ConectorJusbr implements Conector {
     await campo.waitFor({ state: "visible", timeout: 30_000 });
     const resposta = aba.waitForResponse((r) => r.url().includes(`/api/v2/processos?numeroProcesso=${digitos}`), { timeout: 60_000 });
     const pedido = aba.waitForRequest((r) => r.url().includes(`/api/v2/processos?numeroProcesso=${digitos}`), { timeout: 60_000 });
+    // Se algo abaixo falhar, as duas esperas ficariam sem dono e, ao vencer, derrubariam o robô inteiro (23/11/2026:
+    // o clique em "Buscar" não aconteceu e, 60 s depois, a espera órfã matou o processo no meio do pedido seguinte).
+    resposta.catch(() => undefined);
+    pedido.catch(() => undefined);
     await campo.fill(digitos);
-    await aba.getByRole("button", { name: /Buscar/i }).first().click();
+    // "Buscar" às vezes não aceita o clique (coberto ou ainda desabilitado): o Enter no campo faz a mesma busca.
+    const clicou = await aba
+      .getByRole("button", { name: /Buscar/i })
+      .first()
+      .click({ timeout: 10_000 })
+      .then(() => true, () => false);
+    if (!clicou) await campo.press("Enter");
     const cabecalho = (await pedido).headers()["authorization"];
     if (cabecalho) this.autorizacao = cabecalho;
     return (await resposta).status();

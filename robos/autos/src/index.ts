@@ -92,6 +92,12 @@ function registrar(mensagem: string): void {
   console.log(`[${new Date().toLocaleTimeString("pt-BR")}] ${mensagem}`);
 }
 
+// Uma espera esquecida num conector (ex.: waitForResponse que venceu depois de o pedido já ter falhado) não pode
+// derrubar o robô no meio de outro pedido: vira aviso no log, só a primeira linha (sem o "Call log" do Playwright).
+process.on("unhandledRejection", (erro) => {
+  registrar(`Aviso: erro solto ignorado (${erro instanceof Error ? erro.message.split("\n")[0] : String(erro).split("\n")[0]}).`);
+});
+
 /** Só a primeira linha, sem o "Call log" do Playwright (que pode citar o que foi digitado na tela). */
 function mensagemLimpa(erro: unknown): string {
   if (erro instanceof FalhaDoConector) return erro.message;

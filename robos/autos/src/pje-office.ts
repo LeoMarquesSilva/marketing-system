@@ -119,10 +119,14 @@ export function pedidoAutorizado(pedido: RequisicaoPjeOffice, origemDaPagina: st
   return new URL(pedido.servidor + pedido.tarefa.enviarPara).origin === origemDoServidor;
 }
 
+/** Envia a assinatura ao SSO e devolve o status HTTP. */
+export type EnviarAssinatura = (url: string, corpo: string, cabecalhos: Record<string, string>) => Promise<number>;
+
 export interface OpcoesPjeOffice {
   registrar: (mensagem: string) => void;
   servidores?: string[];
-  fetchFn?: typeof fetch;
+  /** Para testes. Sem ele, o envio sai pelo próprio navegador (contexto.request): mesmo proxy e mesma sessão. */
+  enviar?: EnviarAssinatura;
 }
 
 /**
@@ -132,7 +136,11 @@ export interface OpcoesPjeOffice {
 export async function instalarPjeOffice(contexto: BrowserContext, certificado: CertificadoCliente, opcoes: OpcoesPjeOffice): Promise<boolean> {
   const { registrar } = opcoes;
   const servidores = opcoes.servidores ?? SERVIDORES_PJE_OFFICE;
-  const fetchFn = opcoes.fetchFn ?? fetch;
+  // A assinatura sai pelo navegador, e não pelo fetch do Node: com NAVEGADOR_PROXY (o WARP, contra o bloqueio do
+  // CloudFront ao IP do servidor), o SSO vê o mesmo endereço do login e recebe os cookies da sessão.
+  const enviar: EnviarAssinatura =
+    opcoes.enviar ??
+    (async (url, corpo, cabecalhos) => (await contexto.request.post(url, { data: corpo, headers: cabecalhos, timeout: 20_000 })).status());
   let assinador: AssinadorPjeOffice;
   try {
     assinador = abrirAssinador(certificado.pfx, certificado.senha);
@@ -173,25 +181,23 @@ export async function instalarPjeOffice(contexto: BrowserContext, certificado: C
       return responderImagem(route, false);
     }
     try {
-      const resposta = await fetchFn(pedido.servidor + pedido.tarefa.enviarPara, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          Cookie: pedido.sessao,
-          versao: VERSAO_PJE_OFFICE,
-          "User-Agent": await pedidoHttp.headerValue("user-agent").then((v) => v ?? "Mozilla/5.0"),
-        },
-        body: JSON.stringify({
+      const status = await enviar(
+        pedido.servidor + pedido.tarefa.enviarPara,
+        JSON.stringify({
           uuid: pedido.tarefa.token,
           mensagem: pedido.tarefa.mensagem,
           assinatura: assinador.assinar(pedido.tarefa.mensagem),
           certChain: assinador.cadeia64,
         }),
-        signal: AbortSignal.timeout(20_000),
-      });
-      if (!resposta.ok) {
-        registrar(`PJe Office do robô: o SSO da PDPJ recusou a assinatura (HTTP ${resposta.status}).`);
+        {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          versao: VERSAO_PJE_OFFICE,
+          "User-Agent": (await pedidoHttp.headerValue("user-agent")) ?? "Mozilla/5.0",
+        }
+      );
+      if (status < 200 || status >= 300) {
+        registrar(`PJe Office do robô: o SSO da PDPJ recusou a assinatura (HTTP ${status}).`);
         return responderImagem(route, false);
       }
       registrar("PJe Office do robô: certificado apresentado ao SSO da PDPJ.");
