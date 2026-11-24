@@ -202,7 +202,7 @@ export function Modalidade({ aud }: { aud: Audiencia }) {
     <span className="inline-flex items-center gap-1.5 text-sm">
       <Icone className="size-3.5 text-[#3e84a8]" aria-hidden />
       {ROTULO_MODALIDADE[m]}
-      {m === "hibrida" ? <span className="text-xs text-muted-foreground">{aud.modalidadeEquipe ? `· vamos ${aud.modalidadeEquipe === "video" ? "por vídeo" : "presencial"}` : "· escolher"}</span> : null}
+      {m === "hibrida" ? <span className="text-xs text-muted-foreground">{aud.modalidadeEquipe ? `· vamos ${aud.modalidadeEquipe === "video" ? "online" : "presencial"}` : "· escolher"}</span> : null}
     </span>
   );
 }

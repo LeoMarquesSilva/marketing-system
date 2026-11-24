@@ -48,7 +48,7 @@ describe("mensagens do WhatsApp", () => {
   it("marca quem tem número e escreve o nome de quem não tem", () => {
     const m = mensagemDaPauta("Pauta de amanhã", "2026-11-19", [aud()], mapa)!;
     expect(m.texto).toContain("qui 19/11");
-    expect(m.texto).toContain("08:40 Inicial · Exemplo · vídeo · @5519999990001 (backup Carla)");
+    expect(m.texto).toContain("08:40 Inicial · Exemplo · online · @5519999990001 (backup Carla)");
     expect(m.mencoes).toEqual(["5519999990001"]);
     expect(soDigitos("123")).toBeNull();
   });
@@ -63,7 +63,7 @@ describe("convite do Outlook", () => {
   it("titular ocupada, backup livre e com [BACKUP]", () => {
     const titular = eventoDoConvite(aud(), "titular", equipe[0]!, mapa);
     const backup = eventoDoConvite(aud(), "backup", equipe[1]!, mapa);
-    expect(titular.subject).toBe("Inicial · Exemplo · 08:40 · Vídeo");
+    expect(titular.subject).toBe("Inicial · Exemplo · 08:40 · Online");
     expect(titular.showAs).toBe("busy");
     expect(titular.start).toEqual({ dateTime: "2026-11-19T08:40:00", timeZone: "America/Sao_Paulo" });
     expect(titular.end.dateTime).toBe("2026-11-19T09:40:00");

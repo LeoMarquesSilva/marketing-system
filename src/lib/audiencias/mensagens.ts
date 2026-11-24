@@ -43,7 +43,7 @@ function onde(aud: Audiencia): string {
     const cidade = cidadeDoOrgao(aud.orgao);
     return `presencial${cidade ? ` ${cidade.replace(/\b\w/g, (c) => c.toUpperCase())}` : ""}`;
   }
-  if (m === "video") return "vídeo";
+  if (m === "video") return "online";
   return aud.modalidadeTribunal === "hibrida" ? "híbrida" : "modalidade a confirmar";
 }
 

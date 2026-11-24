@@ -20,7 +20,7 @@ export const ROTULO_TIPO: Record<TipoAudiencia, string> = {
   outro: "Audiência",
 };
 
-export const ROTULO_MODALIDADE: Record<Modalidade, string> = { presencial: "Presencial", video: "Vídeo", hibrida: "Híbrida" };
+export const ROTULO_MODALIDADE: Record<Modalidade, string> = { presencial: "Presencial", video: "Online", hibrida: "Híbrida" };
 
 export const ROTULO_MUDANCA: Record<Mudanca, string> = {
   tipo: "Tipo mudou",

@@ -26,7 +26,7 @@ type CartaoPauta = "" | "mudaram" | "canceladas" | "semLink" | "cedo";
 const ROTULO_CARTAO: Record<Exclude<CartaoPauta, "">, string> = {
   mudaram: "Mudaram no tribunal",
   canceladas: "Canceladas no PJe",
-  semLink: "Vídeo sem link",
+  semLink: "Online sem link",
   cedo: "Antes das 10h",
 };
 
@@ -197,7 +197,7 @@ function Pauta() {
           hora(a.inicio),
           a.tipoDescricao ?? ROTULO_TIPO[a.tipo],
           a.orgao,
-          a.modalidadeTribunal === "presencial" ? "Presencial" : a.modalidadeTribunal === "hibrida" ? "Híbrida" : "Virtual",
+          a.modalidadeTribunal === "presencial" ? "Presencial" : a.modalidadeTribunal === "hibrida" ? "Híbrida" : "Online",
           a.cnj,
           a.reclamanteIniciais,
           dupla,
@@ -236,7 +236,7 @@ function Pauta() {
         <Indicador icone={CalendarDays} rotulo={`Próximos ${dias} dias`} valor={dados ? numeros.total : "—"} ativo={!cartao} onClick={() => setCartao("")} dica="Todas as audiências do período" />
         <Indicador icone={Repeat} rotulo={ROTULO_CARTAO.mudaram} valor={dados ? numeros.mudaram : "—"} tom={numeros.mudaram ? "perigo" : "neutro"} ativo={cartao === "mudaram"} onClick={alternar("mudaram")} dica="Mostrar só as que mudaram no PJe e ainda não foram conferidas" />
         <Indicador icone={CircleSlash} rotulo={ROTULO_CARTAO.canceladas} valor={dados ? numeros.canceladas : "—"} tom={numeros.canceladas ? "perigo" : "neutro"} ativo={cartao === "canceladas"} onClick={alternar("canceladas")} dica="Mostrar só as canceladas no PJe que ainda pedem conferência no VIOS" />
-        <Indicador icone={Video} rotulo={ROTULO_CARTAO.semLink} valor={dados ? numeros.semLink : "—"} tom={numeros.semLink ? "alerta" : "neutro"} ativo={cartao === "semLink"} onClick={alternar("semLink")} dica="Mostrar só as por vídeo ainda sem link da sala" />
+        <Indicador icone={Video} rotulo={ROTULO_CARTAO.semLink} valor={dados ? numeros.semLink : "—"} tom={numeros.semLink ? "alerta" : "neutro"} ativo={cartao === "semLink"} onClick={alternar("semLink")} dica="Mostrar só as online ainda sem link da sala" />
         <Indicador icone={Clock} rotulo={ROTULO_CARTAO.cedo} valor={dados ? numeros.cedo : "—"} tom={numeros.cedo ? "alerta" : "neutro"} ativo={cartao === "cedo"} onClick={alternar("cedo")} dica="Mostrar só as que começam antes das 10h" />
       </Indicadores>
 
@@ -502,7 +502,7 @@ function Detalhe({
                 <span className="text-xs font-semibold">Como a equipe vai</span>
                 <select className={cn(campoClasse, "h-9 w-full")} value={campos.modalidadeEquipe} onChange={(e) => setCampos({ ...campos, modalidadeEquipe: e.target.value })}>
                   <option value="">Escolher</option>
-                  <option value="video">Por vídeo</option>
+                  <option value="video">Online</option>
                   <option value="presencial">Presencial</option>
                 </select>
               </label>

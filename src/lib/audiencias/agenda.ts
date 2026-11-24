@@ -238,8 +238,8 @@ export function alertasDaAudiencia(aud: Audiencia, ctx: Contexto): AlertaAudienc
   const doVios = vistaDepois ? null : alertaDoVios(aud, estado);
   if (doVios) alertas.push(doVios);
   if (local(aud.inicio).minutos < HORA_CEDO * 60) alertas.push({ tipo: "cedo", grave: false, texto: `Antes das ${HORA_CEDO}h.` });
-  if (aud.modalidadeTribunal === "video" && !aud.linkSala) alertas.push({ tipo: "sem_link", grave: false, texto: "Por vídeo e ainda sem link da sala." });
-  if (aud.modalidadeTribunal === "hibrida" && !aud.modalidadeEquipe) alertas.push({ tipo: "a_completar", grave: false, texto: "Híbrida: dizer se a equipe vai presencial ou por vídeo." });
+  if (aud.modalidadeTribunal === "video" && !aud.linkSala) alertas.push({ tipo: "sem_link", grave: false, texto: "Online e ainda sem link da sala." });
+  if (aud.modalidadeTribunal === "hibrida" && !aud.modalidadeEquipe) alertas.push({ tipo: "a_completar", grave: false, texto: "Híbrida: dizer se a equipe vai presencial ou online." });
   if (!aud.modalidadeTribunal) alertas.push({ tipo: "a_completar", grave: false, texto: "Modalidade a completar." });
   return alertas;
 }
