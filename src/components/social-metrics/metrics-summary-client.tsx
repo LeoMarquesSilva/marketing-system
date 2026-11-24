@@ -21,12 +21,13 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { FreshnessBadge, MetricsEmpty, MetricsSection } from "@/components/social-metrics/metrics-ui";
+import { FreshnessBadge, GoalBar, MetricsEmpty, MetricsSection } from "@/components/social-metrics/metrics-ui";
+import { ENGAGEMENT_RATE_GOAL_PCT, REACH_GOAL_MONTHLY } from "@/lib/instagram-goals";
 import { CHANNEL_COLORS, LineSeriesChart, Sparkline, TrendChart } from "@/components/social-metrics/metrics-charts";
 import { MetricsPeriodBar, useMetricsPeriod } from "@/components/social-metrics/metrics-period-bar";
 import { deltaPercent, formatCompact, formatDateTime, formatDelta, formatInt, formatPercent, formatSigned } from "@/lib/social-metrics/format";
 import { dateInSaoPaulo, eachDate, formatFullDate, isDateInRange } from "@/lib/social-metrics/period";
-import { dailySeries, postDate, postsInRange, sortPosts } from "@/lib/social-metrics/instagram";
+import { computePeriodGoals, dailySeries, postDate, postsInRange, sortPosts } from "@/lib/social-metrics/instagram";
 import { computeMetricsSummary, type MetricsSummaryData } from "@/lib/social-metrics/summary";
 import type { SourceFreshness } from "@/lib/social-metrics/freshness";
 
@@ -284,7 +285,15 @@ export function MetricsSummaryClient({ data, canWriteReading }: { data: MetricsS
   const note = data.notes.find((item) => item.periodStart === period.from && item.periodEnd === period.to) ?? null;
   const dates = React.useMemo(() => eachDate(period.from, period.to), [period.from, period.to]);
 
-  const igSpark = (field: "views" | "follows") =>
+  const igGoals =
+    data.instagram && summary.instagram
+      ? computePeriodGoals(summary.instagram.current, period.days, {
+          reachMonthly: REACH_GOAL_MONTHLY,
+          engagementPct: ENGAGEMENT_RATE_GOAL_PCT,
+          postsMonthly: data.instagram.monthlyGoal,
+        })
+      : null;
+  const igSpark = (field: "reach" | "views" | "follows") =>
     data.instagram ? dailySeries(data.instagram.insights, field, period.from, period.to).map((p) => p.value) : undefined;
   const liByDate = React.useMemo(() => new Map((data.linkedin?.days ?? []).map((day) => [day.date, day])), [data.linkedin]);
   const liFollowersByDate = React.useMemo(() => new Map((data.linkedin?.followers ?? []).map((day) => [day.date, day.newFollowers])), [data.linkedin]);
@@ -381,14 +390,15 @@ export function MetricsSummaryClient({ data, canWriteReading }: { data: MetricsS
         {data.instagram && summary.instagram && (
           <ChannelColumn channel="instagram" title="Instagram" href={`/instagram-insights`} freshness={data.instagram.freshness}>
             <MiniKpi
-              label="Visualizações"
+              label="Alcance dos posts"
               icon={Sparkles}
-              value={formatCompact(summary.instagram.current.views)}
-              current={summary.instagram.current.views}
-              previous={summary.instagram.previous.views}
-              spark={igSpark("views")}
+              value={formatCompact(summary.instagram.current.postsReach)}
+              current={summary.instagram.current.postsReach}
+              previous={summary.instagram.previous.postsReach}
+              spark={igSpark("reach")}
               color={CHANNEL_COLORS.instagram}
             />
+            {igGoals && <GoalBar label={`Meta de alcance: ${formatCompact(igGoals.reach.target)}`} pct={igGoals.reach.pct} />}
             <MiniKpi
               label="Saldo de seguidores"
               icon={UserPlus}

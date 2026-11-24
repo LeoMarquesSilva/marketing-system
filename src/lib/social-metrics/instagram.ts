@@ -118,6 +118,8 @@ export function followersAt(byDay: Map<string, number>, date: string): number | 
 }
 
 export interface InstagramKpis {
+  /** Soma do alcance dos posts publicados no período (como o escritório sempre mediu). */
+  postsReach: number;
   views: number | null;
   reachAvg: number | null;
   interactions: number | null;
@@ -146,6 +148,7 @@ export function computeInstagramKpis(days: InsightDay[], posts: InstagramPost[],
   const unfollows = sumCovered(days, "unfollows", from, to);
   const periodPosts = postsInRange(posts, from, to);
   return {
+    postsReach: periodPosts.reduce((sum, post) => sum + post.reach, 0),
     views: views.value,
     reachAvg: averageInsight(days, "reach", from, to),
     interactions: interactions.value,
@@ -157,6 +160,70 @@ export function computeInstagramKpis(days: InsightDay[], posts: InstagramPost[],
     followsCoverageStart: follows.coverageStart,
     viewsCoverageStart: views.coverageStart,
   };
+}
+
+export interface PeriodGoal {
+  target: number;
+  /** % atingido (null sem meta). */
+  pct: number | null;
+}
+
+export interface InstagramPeriodGoals {
+  reach: PeriodGoal;
+  engagement: PeriodGoal;
+  posts: PeriodGoal;
+}
+
+/**
+ * Metas do período, proporcionais ao número de dias (mês = 30 dias), igual à
+ * tela antiga: alcance 15 mil/mês, engajamento 3,5% e a meta mensal de posts.
+ */
+export function computePeriodGoals(
+  kpis: Pick<InstagramKpis, "postsReach" | "engagementRate" | "posts">,
+  days: number,
+  goals: { reachMonthly: number; engagementPct: number; postsMonthly: number }
+): InstagramPeriodGoals {
+  const factor = Math.max(1, days) / 30;
+  const reachTarget = Math.round(goals.reachMonthly * factor);
+  const postsTarget = Math.max(1, Math.round(goals.postsMonthly * factor));
+  return {
+    reach: { target: reachTarget, pct: reachTarget > 0 ? (kpis.postsReach / reachTarget) * 100 : null },
+    engagement: {
+      target: goals.engagementPct,
+      pct: kpis.engagementRate === null ? null : (kpis.engagementRate / goals.engagementPct) * 100,
+    },
+    posts: { target: postsTarget, pct: (kpis.posts / postsTarget) * 100 },
+  };
+}
+
+export interface MonthVolume {
+  month: string;
+  label: string;
+  posts: number;
+  current: boolean;
+}
+
+/** Posts por mês (fuso de São Paulo) dos últimos N meses até `until`. */
+export function monthlyPostVolume(posts: Pick<InstagramPost, "published_at">[], until: string, months = 12): MonthVolume[] {
+  const counts = new Map<string, number>();
+  for (const post of posts) {
+    const date = postDate(post);
+    if (date) counts.set(date.slice(0, 7), (counts.get(date.slice(0, 7)) ?? 0) + 1);
+  }
+  const labels = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  const [year, month] = until.slice(0, 7).split("-").map(Number);
+  const result: MonthVolume[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(year, month - 1 - i, 1));
+    const key = d.toISOString().slice(0, 7);
+    result.push({
+      month: key,
+      label: `${labels[d.getUTCMonth()]}/${String(d.getUTCFullYear()).slice(2)}`,
+      posts: counts.get(key) ?? 0,
+      current: i === 0,
+    });
+  }
+  return result;
 }
 
 export interface FormatStats {

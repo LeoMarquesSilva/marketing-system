@@ -3,6 +3,8 @@ import type { InstagramPost } from "@/lib/instagram-posts";
 import {
   computeFormatStats,
   computeInstagramKpis,
+  computePeriodGoals,
+  monthlyPostVolume,
   computeViewsByFormat,
   dailySeries,
   followersAt,
@@ -191,5 +193,27 @@ describe("capa", () => {
     expect(coverSourceUrl({ mediaType: "IMAGE", thumbnailUrl: null, mediaUrl: cdn("i.jpg", future) })).toContain("i.jpg");
     expect(coverSourceUrl({ mediaType: "IMAGE", thumbnailUrl: null, mediaUrl: cdn("i.jpg", past) })).toBeNull();
     expect(coverSourceUrl({ mediaType: "VIDEO", thumbnailUrl: null, mediaUrl: cdn("v.mp4", future) })).toBeNull();
+  });
+});
+
+describe("metas e ritmo", () => {
+  it("alcance dos posts soma o alcance dos posts publicados no período", () => {
+    const kpis = computeInstagramKpis([], [post({ id: "a", reach: 100 }), post({ id: "b", reach: 250 }), post({ id: "c", reach: 999, published_at: "2026-10-10T15:00:00Z" })], "2026-11-01", "2026-11-30");
+    expect(kpis.postsReach).toBe(350);
+  });
+
+  it("metas proporcionais aos dias do período (mês = 30 dias)", () => {
+    const goals = computePeriodGoals({ postsReach: 7000, engagementRate: 3.5, posts: 3 }, 15, { reachMonthly: 15000, engagementPct: 3.5, postsMonthly: 12 });
+    expect(goals.reach).toEqual({ target: 7500, pct: (7000 / 7500) * 100 });
+    expect(goals.engagement.pct).toBe(100);
+    expect(goals.posts).toEqual({ target: 6, pct: 50 });
+  });
+
+  it("posts por mês nos últimos 12 meses, com o mês atual marcado", () => {
+    const months = monthlyPostVolume([post({ published_at: "2026-11-05T15:00:00Z" }), post({ published_at: "2026-10-31T23:30:00Z" })], "2026-11-22");
+    expect(months).toHaveLength(12);
+    expect(months[11]).toMatchObject({ month: "2026-11", posts: 1, current: true, label: "nov/26" });
+    expect(months[10]).toMatchObject({ month: "2026-10", posts: 1 });
+    expect(months[0].month).toBe("2025-12");
   });
 });

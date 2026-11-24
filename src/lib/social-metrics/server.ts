@@ -408,11 +408,12 @@ export async function fetchSocialMetricsNotes(): Promise<SocialMetricsNote[]> {
 export async function fetchMetricsSummaryData(channels: MetricsSummaryData["channels"]): Promise<MetricsSummaryData> {
   const [instagram, linkedin, site, notes] = await Promise.all([
     channels.instagram
-      ? Promise.all([fetchInstagramPosts(), fetchAccountInsightsHistory(), fetchFollowersHistory(), fetchInstagramFreshness()]).then(
-          ([posts, insights, followersHistory, freshness]) => ({
+      ? Promise.all([fetchInstagramPosts(), fetchAccountInsightsHistory(), fetchFollowersHistory(), fetchInstagramFreshness(), fetchInstagramMonthlyGoal()]).then(
+          ([posts, insights, followersHistory, freshness, monthlyGoal]) => ({
             posts: sanitizeInstagramPostsForClient(posts),
             insights: insights.map(stripInsightRow),
             followersHistory,
+            monthlyGoal,
             freshness,
           })
         )

@@ -50,6 +50,24 @@ export function InstagramMetricsClient({ data }: { data: InstagramMetricsData })
   const [openPost, setOpenPost] = React.useState<InstagramPost | null>(null);
   const [savingId, setSavingId] = React.useState<string | null>(null);
   const [syncing, setSyncing] = React.useState(false);
+  const [monthlyGoal, setMonthlyGoal] = React.useState(data.monthlyGoal);
+  const goalSave = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Meta mensal de posts: muda na hora e salva meio segundo depois do último clique.
+  const changeMonthlyGoal = (goal: number) => {
+    const safe = Math.max(1, Math.floor(goal));
+    setMonthlyGoal(safe);
+    if (goalSave.current) clearTimeout(goalSave.current);
+    goalSave.current = setTimeout(() => {
+      void fetch("/api/instagram/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthlyGoal: safe }),
+      }).then((res) => {
+        if (!res.ok) setNotice({ tone: "error", text: "Não foi possível salvar a meta mensal." });
+      });
+    }, 500);
+  };
   const [notice, setNotice] = React.useState<{ tone: "ok" | "warning" | "error"; text: string } | null>(null);
 
   const setTab = (next: TabKey) => {
@@ -223,7 +241,8 @@ export function InstagramMetricsClient({ data }: { data: InstagramMetricsData })
           insights={data.insights}
           posts={posts}
           followersHistory={data.followersHistory}
-          monthlyGoal={data.monthlyGoal}
+          monthlyGoal={monthlyGoal}
+          onMonthlyGoalChange={changeMonthlyGoal}
           onOpenPost={setOpenPost}
         />
       )}

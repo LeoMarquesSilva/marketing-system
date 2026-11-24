@@ -73,6 +73,8 @@ export interface KpiTileProps {
   selected?: boolean;
   onSelect?: () => void;
   hint?: string;
+  /** Meta do período: barra de progresso com o % atingido. */
+  goal?: { label: string; pct: number | null };
 }
 
 export function KpiTile({
@@ -90,6 +92,7 @@ export function KpiTile({
   selected,
   onSelect,
   hint,
+  goal,
 }: KpiTileProps) {
   const delta = deltaPercent(current, previous);
   const good = delta === null || Math.abs(delta) < 0.5 ? null : inverse ? delta < 0 : delta > 0;
@@ -151,6 +154,8 @@ export function KpiTile({
         )}
       </div>
 
+      {goal && <GoalBar label={goal.label} pct={goal.pct} />}
+
       {(sub || note) && (
         <div className="space-y-1 text-xs text-muted-foreground">
           {sub && <div>{sub}</div>}
@@ -163,6 +168,34 @@ export function KpiTile({
         </div>
       )}
     </Wrapper>
+  );
+}
+
+/** Barra de meta: verde quando atingida, âmbar a partir de 80%, rosa abaixo. */
+export function GoalBar({ label, pct }: { label: string; pct: number | null }) {
+  const value = pct === null || !Number.isFinite(pct) ? null : pct;
+  const tone = value === null ? "none" : value >= 100 ? "good" : value >= 80 ? "near" : "low";
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="text-[#4a6470]">{label}</span>
+        <span
+          className={cn(
+            "font-mono font-semibold",
+            tone === "good" ? "text-emerald-700" : tone === "near" ? "text-amber-700" : tone === "low" ? "text-rose-700" : "text-muted-foreground"
+          )}
+        >
+          {value === null ? "—" : `${Math.round(value)}%`}
+          {tone === "good" && <span className="ml-1 font-sans font-medium">· meta batida</span>}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-[#eef3f5]" role="progressbar" aria-valuenow={value === null ? undefined : Math.round(value)} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
+        <div
+          className={cn("h-1.5 rounded-full", tone === "good" ? "bg-emerald-500" : tone === "near" ? "bg-amber-500" : "bg-rose-500")}
+          style={{ width: `${Math.min(100, Math.max(value ?? 0, value ? 2 : 0))}%` }}
+        />
+      </div>
+    </div>
   );
 }
 

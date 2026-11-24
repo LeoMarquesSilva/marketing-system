@@ -3,6 +3,7 @@
  * usado na tela e no texto que vai para a IA ("Leitura do período").
  */
 import type { InstagramPost } from "@/lib/instagram-posts";
+import { ENGAGEMENT_RATE_GOAL_PCT, REACH_GOAL_MONTHLY } from "@/lib/instagram-goals";
 import type { FollowersPoint } from "@/lib/social-metrics/server";
 import type { SourceFreshness } from "@/lib/social-metrics/freshness";
 import { formatCompact, formatDelta, formatInt, formatPercent, formatSigned, deltaPercent } from "@/lib/social-metrics/format";
@@ -10,6 +11,7 @@ import { formatRange, isDateInRange, type ResolvedMetricsPeriod } from "@/lib/so
 import {
   computeFormatStats,
   computeInstagramKpis,
+  computePeriodGoals,
   POST_FORMAT_LABELS,
   postsInRange,
   sortPosts,
@@ -71,6 +73,8 @@ export interface MetricsSummaryData {
     insights: InsightDay[];
     posts: InstagramPost[];
     followersHistory: FollowersPoint[];
+    /** Meta mensal de posts (tela do Instagram). */
+    monthlyGoal: number;
     freshness: SourceFreshness;
   } | null;
   linkedin: {
@@ -200,11 +204,17 @@ export function buildSummaryFacts(data: MetricsSummaryData, period: ResolvedMetr
     const posts = postsInRange(data.instagram.posts, period.from, period.to);
     const formats = computeFormatStats(posts).filter((stat) => stat.posts > 0);
     const top = sortPosts(posts, "reach").slice(0, 3);
+    const goals = computePeriodGoals(current, period.days, {
+      reachMonthly: REACH_GOAL_MONTHLY,
+      engagementPct: ENGAGEMENT_RATE_GOAL_PCT,
+      postsMonthly: data.instagram.monthlyGoal,
+    });
     parts.push(
       "",
       "INSTAGRAM (@bismarchipires)",
-      line("Visualizações", current.views, previous.views, formatCompact),
-      line("Alcance médio por dia", current.reachAvg, previous.reachAvg, formatCompact),
+      line("Alcance dos posts publicados (soma, a medida principal do escritório)", current.postsReach, previous.postsReach, formatCompact),
+      `- Metas do período: alcance ${formatCompact(goals.reach.target)} (${goals.reach.pct === null ? "—" : Math.round(goals.reach.pct) + "% atingido"}); engajamento ${formatPercent(ENGAGEMENT_RATE_GOAL_PCT, 1)} (${goals.engagement.pct === null ? "—" : Math.round(goals.engagement.pct) + "% atingido"}); posts ${goals.posts.target} (${goals.posts.pct === null ? "—" : Math.round(goals.posts.pct) + "% atingido"})`,
+      line("Visualizações (conta)", current.views, previous.views, formatCompact),
       line("Interações", current.interactions, previous.interactions, formatCompact),
       line("Taxa de engajamento dos posts (%)", current.engagementRate, previous.engagementRate, (v) => formatPercent(v, 2)),
       line("Saldo de seguidores", current.netFollowers, previous.netFollowers, formatSigned),

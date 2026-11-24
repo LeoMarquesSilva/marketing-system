@@ -3,7 +3,8 @@
 import * as React from "react";
 import { CalendarClock, Eye, Flame, Hand, Layers, Percent, Rocket, Sparkles, Trophy, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { KpiTile, MetricsEmpty, MetricsSection } from "@/components/social-metrics/metrics-ui";
+import { FilterChip, KpiTile, MetricsEmpty, MetricsSection } from "@/components/social-metrics/metrics-ui";
+import { PublishingPace } from "@/components/instagram/metrics/instagram-publishing-pace";
 import {
   CHART_COLORS,
   DayHourHeatmap,
@@ -16,18 +17,20 @@ import {
 import { FORMAT_ICONS, PostRankRow } from "@/components/instagram/metrics/instagram-post-pieces";
 import { computePostEngagementRate } from "@/lib/instagram-engagement";
 import { computePostingHeatmap } from "@/lib/instagram-analytics";
-import { ENGAGEMENT_RATE_GOAL_PCT } from "@/lib/instagram-goals";
+import { ENGAGEMENT_RATE_GOAL_PCT, REACH_GOAL_MONTHLY } from "@/lib/instagram-goals";
 import { formatCompact, formatInt, formatPercent, formatSigned } from "@/lib/social-metrics/format";
 import { addDays, eachDate, formatFullDate, type ResolvedMetricsPeriod } from "@/lib/social-metrics/period";
 import {
   POST_FORMAT_LABELS,
   computeFormatStats,
   computeInstagramKpis,
+  computePeriodGoals,
   computeViewsByFormat,
   dailySeries,
   followersAt,
   followersByDay,
   postsEngagementRate,
+  postDate,
   postsInRange,
   sortPosts,
   sumInsight,
@@ -39,10 +42,25 @@ import type { FollowersPoint } from "@/lib/social-metrics/server";
 
 type ChartMetric = Extract<InsightField, "views" | "reach" | "total_interactions">;
 
-const CHART_METRICS: Record<ChartMetric, { label: string; color: string }> = {
-  views: { label: "Visualizações", color: CHART_COLORS.blue },
-  reach: { label: "Alcance do dia", color: CHART_COLORS.purple },
-  total_interactions: { label: "Interações", color: CHART_COLORS.teal },
+const CHART_METRICS: Record<ChartMetric, { label: string; chip: string; color: string; description: string }> = {
+  reach: {
+    label: "Alcance da conta",
+    chip: "Alcance",
+    color: CHART_COLORS.blue,
+    description: "Contas alcançadas em cada dia, por todo o conteúdo (posts, reels e stories). Tracejado: período de comparação.",
+  },
+  views: {
+    label: "Visualizações",
+    chip: "Visualizações",
+    color: CHART_COLORS.purple,
+    description: "Quantas vezes o conteúdo foi exibido em cada dia. Tracejado: período de comparação.",
+  },
+  total_interactions: {
+    label: "Interações",
+    chip: "Interações",
+    color: CHART_COLORS.teal,
+    description: "Curtidas, comentários, salvamentos e compartilhamentos em cada dia. Tracejado: período de comparação.",
+  },
 };
 
 export function InstagramOverviewTab({
@@ -51,6 +69,7 @@ export function InstagramOverviewTab({
   posts,
   followersHistory,
   monthlyGoal,
+  onMonthlyGoalChange,
   onOpenPost,
 }: {
   period: ResolvedMetricsPeriod;
@@ -58,9 +77,10 @@ export function InstagramOverviewTab({
   posts: InstagramPost[];
   followersHistory: FollowersPoint[];
   monthlyGoal: number;
+  onMonthlyGoalChange: (goal: number) => void;
   onOpenPost: (post: InstagramPost) => void;
 }) {
-  const [chartMetric, setChartMetric] = React.useState<ChartMetric>("views");
+  const [chartMetric, setChartMetric] = React.useState<ChartMetric>("reach");
   const { from, to, compareFrom, compareTo } = period;
 
   const current = React.useMemo(() => computeInstagramKpis(insights, posts, from, to), [insights, posts, from, to]);
@@ -111,7 +131,16 @@ export function InstagramOverviewTab({
   const bestCell = heatmap.cells.filter((cell) => cell.postsCount >= 2).sort((a, b) => b.engagementRate - a.engagementRate)[0];
 
   const topPosts = React.useMemo(() => sortPosts(periodPosts, "reach").slice(0, 5), [periodPosts]);
-  const goalForPeriod = Math.max(1, Math.round((monthlyGoal * period.days) / 30));
+  const goals = computePeriodGoals(current, period.days, {
+    reachMonthly: REACH_GOAL_MONTHLY,
+    engagementPct: ENGAGEMENT_RATE_GOAL_PCT,
+    postsMonthly: monthlyGoal,
+  });
+  const postsReachSpark = React.useMemo(() => {
+    const byDay = new Map<string, number>();
+    for (const post of periodPosts) byDay.set(postDate(post), (byDay.get(postDate(post)) ?? 0) + post.reach);
+    return eachDate(from, to).map((date) => byDay.get(date) ?? 0);
+  }, [periodPosts, from, to]);
 
   const followsNote =
     current.followsCoverageStart && current.followsCoverageStart > from
@@ -126,44 +155,18 @@ export function InstagramOverviewTab({
     <div className="flex flex-col gap-5">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <KpiTile
-          label="Visualizações"
-          icon={Eye}
-          value={formatCompact(current.views)}
-          current={current.views}
-          previous={previous.views}
-          previousText={formatCompact(previous.views)}
-          compareLabel={compareLabel}
-          spark={spark("views")}
-          selected={chartMetric === "views"}
-          onSelect={() => setChartMetric("views")}
-          note={viewsNote}
-          hint="Quantas vezes o conteúdo (posts, reels e stories) foi exibido no período."
-        />
-        <KpiTile
-          label="Alcance médio por dia"
+          label="Alcance dos posts"
           icon={Users}
-          value={formatCompact(current.reachAvg)}
-          current={current.reachAvg}
-          previous={previous.reachAvg}
-          previousText={formatCompact(previous.reachAvg)}
+          value={formatCompact(current.postsReach)}
+          current={current.postsReach}
+          previous={previous.postsReach}
+          previousText={formatCompact(previous.postsReach)}
           compareLabel={compareLabel}
-          spark={spark("reach")}
+          spark={postsReachSpark}
           selected={chartMetric === "reach"}
           onSelect={() => setChartMetric("reach")}
-          hint="Contas diferentes que viram o conteúdo em cada dia, na média do período. Alcance não se soma entre dias (a mesma pessoa contaria de novo)."
-        />
-        <KpiTile
-          label="Interações"
-          icon={Hand}
-          value={formatCompact(current.interactions)}
-          current={current.interactions}
-          previous={previous.interactions}
-          previousText={formatCompact(previous.interactions)}
-          compareLabel={compareLabel}
-          spark={spark("total_interactions")}
-          selected={chartMetric === "total_interactions"}
-          onSelect={() => setChartMetric("total_interactions")}
-          hint="Curtidas, comentários, salvamentos, compartilhamentos e respostas em todo o conteúdo."
+          goal={{ label: `Meta do período: ${formatCompact(goals.reach.target)} (${formatCompact(REACH_GOAL_MONTHLY)} por mês)`, pct: goals.reach.pct }}
+          hint="Soma do alcance de cada post publicado no período, como o escritório sempre mediu (stories ficam de fora)."
         />
         <KpiTile
           label="Taxa de engajamento dos posts"
@@ -173,13 +176,18 @@ export function InstagramOverviewTab({
           previous={previous.engagementRate}
           previousText={formatPercent(previous.engagementRate, 2)}
           compareLabel={compareLabel}
-          sub={
-            <span className="inline-flex items-center gap-1.5">
-              <span className={cn("size-1.5 rounded-full", (current.engagementRate ?? 0) >= ENGAGEMENT_RATE_GOAL_PCT ? "bg-emerald-500" : "bg-amber-500")} aria-hidden />
-              Meta: {formatPercent(ENGAGEMENT_RATE_GOAL_PCT, 1)}
-            </span>
-          }
+          goal={{ label: `Meta: ${formatPercent(ENGAGEMENT_RATE_GOAL_PCT, 1)}`, pct: goals.engagement.pct }}
           hint="(curtidas + comentários + salvamentos) ÷ alcance dos posts publicados no período."
+        />
+        <KpiTile
+          label="Posts publicados"
+          icon={CalendarClock}
+          value={formatInt(current.posts)}
+          current={current.posts}
+          previous={previous.posts}
+          previousText={formatInt(previous.posts)}
+          compareLabel={compareLabel}
+          goal={{ label: `Meta do período: ${goals.posts.target} (${monthlyGoal} por mês)`, pct: goals.posts.pct }}
         />
         <KpiTile
           label="Saldo de seguidores"
@@ -200,26 +208,47 @@ export function InstagramOverviewTab({
           note={followsNote}
         />
         <KpiTile
-          label="Posts publicados"
-          icon={CalendarClock}
-          value={formatInt(current.posts)}
-          current={current.posts}
-          previous={previous.posts}
-          previousText={formatInt(previous.posts)}
+          label="Visualizações"
+          icon={Eye}
+          value={formatCompact(current.views)}
+          current={current.views}
+          previous={previous.views}
+          previousText={formatCompact(previous.views)}
           compareLabel={compareLabel}
-          sub={
-            <span className="inline-flex items-center gap-1.5">
-              <span className={cn("size-1.5 rounded-full", current.posts >= goalForPeriod ? "bg-emerald-500" : "bg-amber-500")} aria-hidden />
-              Meta para o período: {goalForPeriod} ({monthlyGoal} por mês)
-            </span>
-          }
+          spark={spark("views")}
+          selected={chartMetric === "views"}
+          onSelect={() => setChartMetric("views")}
+          note={viewsNote}
+          hint="Quantas vezes o conteúdo (posts, reels e stories) foi exibido no período. Número novo da Meta, que substituiu as impressões."
+        />
+        <KpiTile
+          label="Interações"
+          icon={Hand}
+          value={formatCompact(current.interactions)}
+          current={current.interactions}
+          previous={previous.interactions}
+          previousText={formatCompact(previous.interactions)}
+          compareLabel={compareLabel}
+          spark={spark("total_interactions")}
+          selected={chartMetric === "total_interactions"}
+          onSelect={() => setChartMetric("total_interactions")}
+          hint="Curtidas, comentários, salvamentos, compartilhamentos e respostas em todo o conteúdo, inclusive stories."
         />
       </div>
 
       <MetricsSection
         title={`${CHART_METRICS[chartMetric].label} dia a dia`}
-        description="Clique em um indicador acima para trocar a linha. Tracejado: período de comparação."
+        description={CHART_METRICS[chartMetric].description}
         icon={Sparkles}
+        action={
+          <div className="flex flex-wrap gap-1.5">
+            {(Object.keys(CHART_METRICS) as ChartMetric[]).map((metric) => (
+              <FilterChip key={metric} selected={chartMetric === metric} onClick={() => setChartMetric(metric)}>
+                {CHART_METRICS[metric].chip}
+              </FilterChip>
+            ))}
+          </div>
+        }
       >
         {trend.some((point) => point.value !== null) ? (
           <TrendChart
@@ -232,6 +261,8 @@ export function InstagramOverviewTab({
           <MetricsEmpty icon={Eye} title="Sem dados da conta neste período" description="A Meta não tem esse número para as datas escolhidas." />
         )}
       </MetricsSection>
+
+      <PublishingPace posts={posts} until={to} monthlyGoal={monthlyGoal} onGoalChange={onMonthlyGoalChange} />
 
       <div className="grid gap-5 lg:grid-cols-5">
         <MetricsSection
