@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { alertasDaAudiencia, respostasDosConvites } from "./agenda";
 import { duplaDaPasta, nomeCurto, pessoaPorSigla, siglaDoNome } from "./duplas";
 import { mensagemDaPauta, mensagemDeTroca, soDigitos } from "./mensagens";
-import { eventoDoConvite, respostaDoGraph, versaoDoEvento } from "./outlook";
-import type { Audiencia, PessoaPauta } from "./tipos";
+import { eventoDoConvite, localDoConvite, respostaDoGraph, versaoDoEvento } from "./outlook";
+import type { Audiencia, ConvitePauta, PessoaPauta } from "./tipos";
 import { inicioDoVios, lerCsvDoVios } from "./vios-csv";
 
 function pessoa(id: string, nome: string, extra: Partial<PessoaPauta> = {}): PessoaPauta {
@@ -22,7 +23,7 @@ function aud(p: Partial<Audiencia> = {}): Audiencia {
     id: "a1", chave: "pje:TRT15:1", origem: "pje", tribunal: "TRT15", cnj: "0099991-11.2026.5.15.0001", inicio: "2026-11-19T11:40:00.000Z", fim: "2026-11-19T11:50:00.000Z",
     tipo: "inicial", tipoDescricao: "Inicial por videoconferência", ritoSumarissimo: false, modalidadeTribunal: "video", modalidadeEquipe: null, orgao: "CON1 - Piracicaba", sala: null,
     juizoDigital: true, situacao: "designada", linkSala: "https://us02web.zoom.us/j/1111", linkFonte: "pje", linkFonteData: null, linkAnterior: null, cliente: null, grupoCliente: "Grupo Exemplo",
-    ciProcesso: null, reclamanteIniciais: "F. H. M. M.", titularId: "p1", backupId: "p2", substituiId: null, mudancas: [], mudancaConferidaEm: null, viosInicio: null, viosSituacao: null,
+    ciProcesso: null, reclamanteIniciais: "F. H. M. M.", titularId: "p1", backupId: "p2", substituiId: null, mudancas: [], mudancaConferidaEm: null, viosInicio: null, viosSituacao: null, viosTarefaCi: null, viosConferidoEm: null,
     djenConferidoEm: null, djenData: null, djenInicio: null, djenModalidade: null, correspondente: null, observacao: null, lidaEm: "2026-11-18T12:00:00.000Z", ...p,
   };
 }
@@ -77,6 +78,49 @@ describe("convite do Outlook", () => {
   it("sem e-mail não há convite", () => {
     expect(() => eventoDoConvite(aud(), "titular", equipe[2]!, mapa)).toThrow(/e-mail/);
     expect(respostaDoGraph("tentativelyAccepted")).toBe("provisorio");
+  });
+  it("corpo como no desenho: Juízo 100% Digital, papel do backup e links da tarefa e da pasta no VIOS", () => {
+    const comVios = aud({ viosTarefaCi: "882538", ciProcesso: "59984" });
+    const titular = eventoDoConvite(comVios, "titular", equipe[0]!, mapa).body.content;
+    expect(titular).toContain("Juízo 100% Digital");
+    expect(titular).toContain('href="https://bp.vios.com.br/index.php?pag=sys/processos/pxe.php&amp;pxe_id=882538">CI 882538</a>');
+    expect(titular).toContain("processos_id=59984");
+    expect(titular).not.toContain("Seu papel");
+    const backup = eventoDoConvite(comVios, "backup", equipe[1]!, mapa).body.content;
+    expect(backup).toContain("Assumir se a titular não puder");
+    expect(eventoDoConvite(aud({ juizoDigital: false }), "titular", equipe[0]!, mapa).body.content).not.toContain("Juízo 100% Digital");
+  });
+  it("local: vara e link da sala por vídeo; vara e sala presencial", () => {
+    expect(localDoConvite(aud())).toBe("CON1 - Piracicaba · https://us02web.zoom.us/j/1111");
+    expect(localDoConvite(aud({ modalidadeTribunal: "presencial", sala: "Sala 2" }))).toBe("CON1 - Piracicaba · Sala 2");
+    expect(localDoConvite(aud({ modalidadeTribunal: "hibrida", modalidadeEquipe: "presencial", sala: "Sala 2" }))).toBe("CON1 - Piracicaba · Sala 2");
+    expect(localDoConvite(aud({ orgao: null, linkSala: null }))).toBe("A confirmar");
+  });
+  it("a tarefa do VIOS aparecer depois não atualiza o convite sozinha (cada atualização manda e-mail)", () => {
+    const v1 = versaoDoEvento(eventoDoConvite(aud(), "titular", equipe[0]!, mapa));
+    expect(versaoDoEvento(eventoDoConvite(aud({ viosTarefaCi: "882538", ciProcesso: "59984" }), "titular", equipe[0]!, mapa))).toBe(v1);
+    expect(versaoDoEvento(eventoDoConvite(aud({ observacao: "levar preposto" }), "titular", equipe[0]!, mapa))).not.toBe(v1);
+  });
+});
+
+describe("resposta ao convite", () => {
+  const convite = (p: Partial<ConvitePauta>): ConvitePauta => ({ audienciaId: "a1", papel: "titular", pessoaId: "p1", status: "enviado", resposta: "sem_resposta", ...p });
+  it("vale só o convite enviado de verdade e da pessoa que está hoje no papel", () => {
+    const r = respostasDosConvites(
+      [convite({ resposta: "recusado" }), convite({ papel: "backup", pessoaId: "p2", resposta: "aceito" }), convite({ audienciaId: "a2", status: "simulado" })],
+      [aud(), aud({ id: "a2" })]
+    );
+    expect(r.get("a1")).toEqual({ titular: "recusado", backup: "aceito" });
+    expect(r.has("a2")).toBe(false);
+    // Trocou a titular: a recusa era da anterior.
+    expect(respostasDosConvites([convite({ resposta: "recusado" })], [aud({ titularId: "p3" })]).get("a1")).toBeUndefined();
+  });
+  it("titular que recusou vai para o vermelho; backup que recusou é só aviso", () => {
+    const respostas = respostasDosConvites([convite({ resposta: "recusado" }), convite({ papel: "backup", pessoaId: "p2", resposta: "recusado" })], [aud()]);
+    const alertas = alertasDaAudiencia(aud(), { pessoas: mapa, todas: [aud()], respostas });
+    expect(alertas.find((a) => a.tipo === "recusou")).toMatchObject({ grave: true, texto: "Bruna Teixeira recusou o convite do Outlook: trocar a titular." });
+    expect(alertas.find((a) => a.tipo === "backup_recusou")?.grave).toBe(false);
+    expect(alertasDaAudiencia(aud(), { pessoas: mapa, todas: [aud()] }).some((a) => a.tipo === "recusou")).toBe(false);
   });
 });
 

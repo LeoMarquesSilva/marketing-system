@@ -86,6 +86,10 @@ interface LeadForwardDialogProps {
   conversation: WhatsappConversation;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Depois de enviar: a conversa recarrega para mostrar o encaminhamento. */
+  onForwarded?: () => void;
+  /** Pessoa já escolhida ao abrir (ação sugerida pela IA). */
+  presetRecipientUserId?: string | null;
 }
 
 /**
@@ -93,7 +97,13 @@ interface LeadForwardDialogProps {
  * WhatsApp do escritório o resumo da conversa, feito pela IA e editável, e o
  * cartão de contato do lead.
  */
-export function LeadForwardDialog({ conversation, open, onOpenChange }: LeadForwardDialogProps) {
+export function LeadForwardDialog({
+  conversation,
+  open,
+  onOpenChange,
+  onForwarded,
+  presetRecipientUserId,
+}: LeadForwardDialogProps) {
   const { profile } = useAuth();
   const leadName = leadDisplayName(conversation);
   const origin = leadOriginMeta(conversation);
@@ -172,8 +182,11 @@ export function LeadForwardDialog({ conversation, open, onOpenChange }: LeadForw
         const list = json.recipients ?? [];
         setRecipients(list);
         setForwards(json.forwards ?? []);
+        const preset = presetRecipientUserId && list.some((r) => r.userId === presetRecipientUserId)
+          ? presetRecipientUserId
+          : null;
         const last = readLastRecipient();
-        setSelectedId(last && list.some((r) => r.userId === last) ? last : null);
+        setSelectedId(preset ?? (last && list.some((r) => r.userId === last) ? last : null));
       })
       .catch((err: Error) => {
         if (!cancelled) setRecipientsError(err.message);
@@ -221,6 +234,7 @@ export function LeadForwardDialog({ conversation, open, onOpenChange }: LeadForw
       const json = (await res.json().catch(() => ({}))) as { contactSent?: boolean; error?: string };
       if (!res.ok) throw new Error(json.error || "Não foi possível encaminhar o lead.");
       if (selected) saveLastRecipient(selected.userId);
+      onForwarded?.();
       setSent({
         name: selected?.name ?? formatBrazilPhone(otherPhone),
         contactSent: Boolean(json.contactSent),

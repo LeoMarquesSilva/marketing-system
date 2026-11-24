@@ -31,6 +31,8 @@ export interface InstagramStory {
   nav_taps_back: number;
   nav_exits: number;
   nav_swipe_forward: number;
+  /** Capa copiada para o Storage (bucket instagram-covers). */
+  cover_path?: string | null;
   first_synced_at: string;
   last_synced_at: string;
   created_at: string;

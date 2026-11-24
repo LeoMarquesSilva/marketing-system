@@ -55,13 +55,16 @@ export interface PessoaPauta {
   fazAudiencia: boolean;
   coordenacao: boolean;
   ativo: boolean;
+  /** Foto da pessoa (RH, organograma ou cadastro de usuários, pelo nome); sem foto, a tela mostra as iniciais. */
+  foto?: string | null;
 }
 
 /** Uma audiência como as telas recebem. Datas em ISO (UTC); a tela mostra no horário de Brasília. */
 export interface Audiencia {
   id: string;
   chave: string;
-  origem: "pje" | "vios" | "manual";
+  /** pje: Minha Pauta do PJe; jusbr: processo fora da Minha Pauta, lido no Jus.br (audiência "só no VIOS"). */
+  origem: "pje" | "vios" | "manual" | "jusbr";
   tribunal: string | null;
   cnj: string;
   inicio: string;
@@ -90,6 +93,10 @@ export interface Audiencia {
   mudancaConferidaEm: string | null;
   viosInicio: string | null;
   viosSituacao: string | null;
+  /** CI da tarefa de audiência do VIOS que corresponde a esta audiência (null = nenhuma). */
+  viosTarefaCi: string | null;
+  /** Quando a conferência com o VIOS passou por esta audiência (null = ainda não conferida). */
+  viosConferidoEm: string | null;
   djenConferidoEm: string | null;
   djenData: string | null;
   djenInicio: string | null;
@@ -101,7 +108,35 @@ export interface Audiencia {
 
 /** Um alerta de uma audiência na pauta ou na distribuição. */
 export interface AlertaAudiencia {
-  tipo: "sem_titular" | "choque" | "deslocamento" | "backup_ocupado" | "cedo" | "mudou" | "cancelada" | "sem_link" | "a_completar" | "vios_diverge";
+  tipo:
+    | "sem_titular"
+    | "choque"
+    | "deslocamento"
+    | "backup_ocupado"
+    | "cedo"
+    | "mudou"
+    | "cancelada"
+    | "sem_link"
+    | "a_completar"
+    | "vios_diverge"
+    | "vios_falta"
+    | "vios_concluida"
+    | "vios_aberta"
+    | "recusou"
+    | "backup_recusou";
   grave: boolean;
   texto: string;
+}
+
+/** Resposta ao convite do Outlook, lida no Graph. */
+export type RespostaConvite = "aceito" | "recusado" | "provisorio" | "sem_resposta";
+
+/** Um convite do Outlook como as telas recebem (aud_convites). */
+export interface ConvitePauta {
+  audienciaId: string;
+  papel: Papel;
+  pessoaId: string | null;
+  /** pendente, enviado (saiu de verdade), simulado (modo teste), cancelado ou erro. */
+  status: string;
+  resposta: string | null;
 }

@@ -50,6 +50,7 @@ import {
 } from "./feedback-form";
 import { PhotoField, PhotoGallery, PhotoViewer, toPendingPhotos, type PendingPhoto } from "./feedback-photos";
 import { AreaChip, CategoryIcon, PersonAvatar, PersonLine, useFeedbackPeople } from "./feedback-visuals";
+import { SendToManager } from "./send-to-manager";
 
 /* ----------------------------------------------------------- detalhe */
 
@@ -217,7 +218,7 @@ function FeedbackDetail({
             <TimelineStep
               icon={Eye}
               tone="done"
-              title="Visualizado no Feedz"
+              title={item.feedz_key ? "Visualizado no Feedz" : "Visualizado pelo gestor"}
               date={
                 item.viewed_on
                   ? `${longDate(item.viewed_on)}${item.feedz_viewed_at && isoDateSP(item.feedz_viewed_at) === item.viewed_on ? ` · ${formatTimeSP(item.feedz_viewed_at)}` : ""}`
@@ -225,7 +226,7 @@ function FeedbackDetail({
               }
             />
           ) : item.viewed === false ? (
-            <TimelineStep icon={EyeOff} tone="warning" title="Não visualizado no Feedz" />
+            <TimelineStep icon={EyeOff} tone="warning" title={item.feedz_key ? "Não visualizado no Feedz" : "Ainda não visualizado pelo gestor"} />
           ) : (
             <TimelineStep icon={CircleDashed} tone="muted" title="Sem dado do Feedz">
               Importe o relatório do Feedz para preencher a visualização.
@@ -619,10 +620,13 @@ export function FeedbackDialog({
               ))}
           </div>
           {mode === "view" ? (
-            <Button type="button" className="gap-2" disabled={confirmDelete} onClick={() => setMode("edit")}>
-              <PencilLine className="size-4" />
-              Editar
-            </Button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {item && <SendToManager goodPracticeId={item.id} managerName={item.manager_name} sentOn={item.sent_on} />}
+              <Button type="button" className="gap-2" disabled={confirmDelete} onClick={() => setMode("edit")}>
+                <PencilLine className="size-4" />
+                Editar
+              </Button>
+            </div>
           ) : (
             <div className="flex gap-2">
               <Button

@@ -18,10 +18,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FilterMenu } from "@/components/ui/filter-menu";
 import { isStale, todayInBrasilia } from "@/lib/rh/pdi/progress";
 import type { PdiManagerRow, PdiPerson, PdiPlanSummary, PdiType } from "@/lib/rh/pdi/types";
 import { cn } from "@/lib/utils";
+import { ChoiceChips, PersonPicker } from "../form-controls";
+import { Hint } from "../hint";
 import { PlanEditorDialog } from "./plan-editor-dialog";
 import { PlanRow, WithoutPlan, sortByAttention } from "./plan-list";
 import { AreaTile, BODY, INK, MUTED, PersonLine, ProgressBar, SURFACE, StatTile } from "./pdi-visuals";
@@ -29,8 +31,6 @@ import { AreaTile, BODY, INK, MUTED, PersonLine, ProgressBar, SURFACE, StatTile 
 type Tab = "planos" | "gestores" | "tipos";
 type StatusFilter = "ativos" | "atrasados" | "parados" | "concluidos" | "todos";
 
-const NONE = "__nenhum__";
-const ALL = "__todas__";
 
 function normalize(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -185,22 +185,15 @@ function ManagersTab({ rows: initialRows, people }: { rows: PdiManagerRow[]; peo
                 size="md"
                 extra={count > 0 ? <span className="text-xs font-medium text-[#285f7a]">lidera {count} {count === 1 ? "pessoa" : "pessoas"}</span> : undefined}
               />
-              <Select value={row.manager_employee_id ?? NONE} onValueChange={(value) => change(row.employee.id, value === NONE ? null : value)} disabled={savingId === row.employee.id}>
-                <SelectTrigger className={cn("w-full", !row.manager_employee_id && "border-amber-300 bg-amber-50/50")} aria-label={`Gestor direto de ${row.employee.name}`}>
-                  <SelectValue>{row.manager_employee_id ? byId.get(row.manager_employee_id)?.name ?? "Gestor removido" : "Sem gestor direto"}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>Sem gestor direto</SelectItem>
-                  {people
-                    .filter((person) => person.id !== row.employee.id)
-                    .map((person) => (
-                      <SelectItem key={person.id} value={person.id}>
-                        {person.name}
-                        {person.position ? ` · ${person.position}` : ""}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              <PersonPicker
+                label={`Gestor direto de ${row.employee.name}`}
+                emptyLabel="Sem gestor direto"
+                value={row.manager_employee_id && byId.has(row.manager_employee_id) ? row.manager_employee_id : null}
+                people={people.filter((person) => person.id !== row.employee.id)}
+                invalid={!row.manager_employee_id}
+                disabled={savingId === row.employee.id}
+                onChange={(value) => change(row.employee.id, value)}
+              />
               <span className="grid place-items-center" aria-live="polite">
                 {savingId === row.employee.id ? (
                   <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="Salvando" />
@@ -307,7 +300,7 @@ export function GestaoPdiClient({
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("planos");
   const [status, setStatus] = useState<StatusFilter>("ativos");
-  const [area, setArea] = useState<string>(ALL);
+  const [areasOn, setAreasOn] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [creatingFor, setCreatingFor] = useState<PdiPerson | null>(null);
   const today = todayInBrasilia();
@@ -330,7 +323,7 @@ export function GestaoPdiClient({
     if (status === "atrasados" && !(plan.status === "ativo" && plan.due_state === "atrasado")) return false;
     if (status === "parados" && !isStale(plan, today)) return false;
     if (status === "concluidos" && plan.status !== "concluido") return false;
-    if (area !== ALL && (plan.employee.department ?? "Sem área") !== area) return false;
+    if (areasOn.length && !areasOn.includes(plan.employee.department ?? "Sem área")) return false;
     if (needle && !normalize(`${plan.employee.full_name} ${plan.title} ${plan.manager?.full_name ?? ""}`).includes(needle)) return false;
     return true;
   });
@@ -362,21 +355,22 @@ export function GestaoPdiClient({
               onClick={() => setTab(item.id)}
               className={cn(
                 "inline-flex min-h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
-                tab === item.id ? "bg-[#04202f] text-white" : cn("hover:bg-[#f4fafb]", BODY)
+                tab === item.id ? "bg-[#e8f8f8] text-[#1d5670] shadow-[inset_0_0_0_1px_#47cdd0]" : cn("hover:bg-[#f4fafb]", BODY)
               )}
             >
               <item.icon className="size-4" aria-hidden />
               {item.label}
               {item.count > 0 && (
-                <span
-                  className={cn(
-                    "rounded-full px-1.5 text-xs tabular-nums",
-                    tab === item.id ? "bg-[#E1B16D] text-[#0D1E2E]" : item.alert ? "bg-amber-100 text-amber-800" : "bg-[#eaf2f5] text-[#285f7a]"
-                  )}
-                  title={item.alert ? "Pessoas sem gestor direto" : undefined}
-                >
-                  {item.count}
-                </span>
+                <Hint label={item.alert ? "Pessoas sem gestor direto" : undefined}>
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 text-xs tabular-nums",
+                      tab === item.id ? "bg-[#E1B16D] text-[#0D1E2E]" : item.alert ? "bg-amber-100 text-amber-800" : "bg-[#eaf2f5] text-[#285f7a]"
+                    )}
+                  >
+                    {item.count}
+                  </span>
+                </Hint>
               )}
             </button>
           ))}
@@ -405,31 +399,31 @@ export function GestaoPdiClient({
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Pessoa, plano ou gestor" className="w-64 pl-8" aria-label="Buscar" />
             </div>
-            <Select value={status} onValueChange={(value) => setStatus(value as StatusFilter)}>
-              <SelectTrigger className="w-48" aria-label="Status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ativos">Ativos</SelectItem>
-                <SelectItem value="atrasados">Atrasados</SelectItem>
-                <SelectItem value="parados">Parados há 30+ dias</SelectItem>
-                <SelectItem value="concluidos">Concluídos</SelectItem>
-                <SelectItem value="todos">Todos</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={area} onValueChange={setArea}>
-              <SelectTrigger className="w-52" aria-label="Área">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>Todas as áreas</SelectItem>
-                {areas.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {item}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ChoiceChips
+              label="Situação do plano"
+              size="sm"
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: "ativos", label: "Ativos", icon: Sprout, count: counts.ativos },
+                { value: "atrasados", label: "Atrasados", icon: AlarmClock, count: counts.atrasados },
+                { value: "parados", label: "Parados há 30+ dias", icon: Hourglass, count: counts.parados },
+                { value: "concluidos", label: "Concluídos", icon: CircleCheckBig, count: counts.concluidos },
+                { value: "todos", label: "Todos", count: plans.length },
+              ]}
+            />
+            <FilterMenu
+              label="Área"
+              options={areas.map((item) => ({
+                value: item,
+                label: item,
+                count: plans.filter((plan) => (plan.employee.department ?? "Sem área") === item).length,
+                leading: <AreaTile area={item} className="size-5 rounded [&_svg]:size-3" />,
+              }))}
+              selected={areasOn}
+              onToggle={(value) => setAreasOn((current) => (current.includes(value) ? current.filter((item) => item !== value) : [...current, value]))}
+              onClear={() => setAreasOn([])}
+            />
             <span className={cn("ml-auto text-sm", MUTED)}>
               <span className={cn("font-semibold tabular-nums", INK)}>{filtered.length}</span> {filtered.length === 1 ? "plano" : "planos"}
             </span>

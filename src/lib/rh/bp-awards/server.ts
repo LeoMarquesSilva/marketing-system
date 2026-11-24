@@ -101,6 +101,30 @@ function requireOpen(edition: AwardEdition) {
   }
 }
 
+/**
+ * Comitê do BP Awards: quem tem RH e está em `committee_user_ids` da edição
+ * corrente. Indicados com acesso ao RH ou admin não podem ver apuração nem
+ * vencedores. Lista vazia = qualquer pessoa com RH (regra antiga).
+ */
+async function requireCommitteeMember(): Promise<Awaited<ReturnType<typeof requireHrManager>>> {
+  const manager = await requireHrManager();
+  const { data, error } = await createAwardsAdminClient()
+    .from("hr_award_editions")
+    .select("committee_user_ids")
+    .order("year", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error(`[${LOG}] comitê:`, error);
+    throw new RhHttpError("Falha ao conferir o comitê do BP Awards.", 500, "QUERY_FAILED");
+  }
+  const committee = ((data?.committee_user_ids as string[] | null) ?? []).filter(Boolean);
+  if (committee.length > 0 && !committee.includes(manager.profileId)) {
+    throw new RhHttpError("Só o comitê do BP Awards acessa esta tela.", 403, "FORBIDDEN");
+  }
+  return manager;
+}
+
 /** Regra da edição: área de cada hub + exceções por pessoa. */
 async function loadRules(db: SupabaseClient, edition: AwardEdition): Promise<AwardRules> {
   const { data, error } = await db
@@ -206,7 +230,7 @@ export async function getVoterView({
   preview = false,
   previewAs = null,
 }: { preview?: boolean; previewAs?: AwardHubKey | "socio" | null } = {}): Promise<VoterView> {
-  const user = preview ? await requireHrManager() : await requireAuthenticatedUser();
+  const user = preview ? await requireCommitteeMember() : await requireAuthenticatedUser();
   const db = createAwardsAdminClient();
   const edition = await loadCurrentEdition(db);
   if (!edition) return { state: "no_edition" };
@@ -420,7 +444,7 @@ export async function getInviteStatus(): Promise<AwardInviteStatus> {
 /* ----------------------------------------------------------------- comitê */
 
 export async function getCommitteeView(): Promise<CommitteeView> {
-  await requireHrManager();
+  await requireCommitteeMember();
   const db = createAwardsAdminClient();
   const edition = await requireCurrentEdition(db);
 
@@ -544,7 +568,7 @@ export async function updateEdition(input: unknown): Promise<AwardEdition> {
     throw new RhHttpError(parsed.error.issues[0]?.message ?? "Dados inválidos.", 400, "INVALID_INPUT");
   }
   const value = parsed.data;
-  const manager = await requireHrManager();
+  const manager = await requireCommitteeMember();
   const db = createAwardsAdminClient();
   const edition = await requireCurrentEdition(db);
 
@@ -597,7 +621,7 @@ const finalistCreateSchema = z.object({
 export async function addFinalist(input: unknown): Promise<AwardFinalist> {
   const parsed = finalistCreateSchema.safeParse(input);
   if (!parsed.success) throw new RhHttpError("Dados inválidos.", 400, "INVALID_INPUT");
-  const manager = await requireHrManager();
+  const manager = await requireCommitteeMember();
   const db = createAwardsAdminClient();
   const edition = await requireCurrentEdition(db);
 
@@ -655,7 +679,7 @@ export async function updateFinalist(id: string, input: unknown): Promise<AwardF
   if (!parsed.success) {
     throw new RhHttpError(parsed.error.issues[0]?.message ?? "Dados inválidos.", 400, "INVALID_INPUT");
   }
-  const manager = await requireHrManager();
+  const manager = await requireCommitteeMember();
   const db = createAwardsAdminClient();
   const { data: finalist, error: readError } = await db
     .from("hr_award_finalists")
@@ -688,7 +712,7 @@ export async function updateFinalist(id: string, input: unknown): Promise<AwardF
 }
 
 export async function removeFinalist(id: string): Promise<void> {
-  await requireHrManager();
+  await requireCommitteeMember();
   const db = createAwardsAdminClient();
   const { error } = await db.from("hr_award_finalists").delete().eq("id", id);
   if (error) {
@@ -712,7 +736,7 @@ export async function saveParticipant(employeeId: string, input: unknown): Promi
   if (!parsed.success) {
     throw new RhHttpError(parsed.error.issues[0]?.message ?? "Dados inválidos.", 400, "INVALID_INPUT");
   }
-  const manager = await requireHrManager();
+  const manager = await requireCommitteeMember();
   const db = createAwardsAdminClient();
   const edition = await requireCurrentEdition(db);
   const { data: employee, error: employeeError } = await db
@@ -753,7 +777,7 @@ export async function saveParticipant(employeeId: string, input: unknown): Promi
 
 /** Tira a exceção: a pessoa volta a seguir a regra da área. */
 export async function resetParticipant(employeeId: string): Promise<void> {
-  await requireHrManager();
+  await requireCommitteeMember();
   const db = createAwardsAdminClient();
   const edition = await requireCurrentEdition(db);
   const { error } = await db
@@ -769,7 +793,7 @@ export async function resetParticipant(employeeId: string): Promise<void> {
 
 /** Telão da festa: por hub, finalistas em ordem alfabética (sem ranking) e o vencedor de cada valor. */
 export async function getRevealData(): Promise<{ edition: AwardEdition; hubs: RevealHub[] }> {
-  await requireHrManager();
+  await requireCommitteeMember();
   const db = createAwardsAdminClient();
   const edition = await requireCurrentEdition(db);
   const [people, finalists, rules] = await Promise.all([

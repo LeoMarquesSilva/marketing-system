@@ -2,6 +2,8 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { requireAuthenticatedUser, requirePautaAccess } from "@/lib/api-auth";
+import { chaveNome } from "@/lib/vistagem/agendamento";
+import { pessoasPorNome } from "@/lib/vistagem/pessoas-server";
 import type { Audiencia, Modalidade, Mudanca, PessoaPauta } from "./tipos";
 
 /** Erro com status HTTP, como o de Processos. */
@@ -52,7 +54,7 @@ export function exigirAdmin(ator: Ator): void {
 /* ------------------------------------------------------------------ linhas do banco */
 
 export const COLUNAS_AUDIENCIA =
-  "id, chave, origem, tribunal, cnj, inicio, fim, tipo, tipo_descricao, rito_sumarissimo, modalidade_tribunal, modalidade_equipe, orgao, sala, juizo_digital, situacao, link_sala, link_fonte, link_fonte_data, link_anterior, cliente, grupo_cliente, ci_processo, reclamante_iniciais, titular_id, backup_id, substitui_id, mudancas, mudanca_conferida_em, vios_inicio, vios_situacao, djen_conferido_em, djen_data, djen_inicio, djen_modalidade, correspondente, observacao, lida_em";
+  "id, chave, origem, tribunal, cnj, inicio, fim, tipo, tipo_descricao, rito_sumarissimo, modalidade_tribunal, modalidade_equipe, orgao, sala, juizo_digital, situacao, link_sala, link_fonte, link_fonte_data, link_anterior, cliente, grupo_cliente, ci_processo, reclamante_iniciais, titular_id, backup_id, substitui_id, mudancas, mudanca_conferida_em, vios_inicio, vios_situacao, vios_tarefa_ci, vios_conferido_em, djen_conferido_em, djen_data, djen_inicio, djen_modalidade, correspondente, observacao, lida_em";
 
 type Linha = Record<string, unknown>;
 const s = (v: unknown) => (v === null || v === undefined ? null : String(v));
@@ -90,6 +92,8 @@ export function paraAudiencia(l: Linha): Audiencia {
     mudancaConferidaEm: s(l.mudanca_conferida_em),
     viosInicio: l.vios_inicio ? new Date(String(l.vios_inicio)).toISOString() : null,
     viosSituacao: s(l.vios_situacao),
+    viosTarefaCi: s(l.vios_tarefa_ci),
+    viosConferidoEm: l.vios_conferido_em ? new Date(String(l.vios_conferido_em)).toISOString() : null,
     djenConferidoEm: s(l.djen_conferido_em),
     djenData: s(l.djen_data),
     djenInicio: l.djen_inicio ? new Date(String(l.djen_inicio)).toISOString() : null,
@@ -122,6 +126,22 @@ export async function carregarPessoas(): Promise<PessoaPauta[]> {
   const { data, error } = await db().from("aud_pessoas").select(COLUNAS_PESSOA).order("nome_vios");
   if (error) falhou("carregar as pessoas da pauta", error);
   return ((data ?? []) as Linha[]).map(paraPessoa);
+}
+
+/**
+ * As pessoas da pauta com a foto, para as telas (as rotinas e os avisos usam carregarPessoas, sem foto). A foto vem
+ * do mesmo lugar da vistagem e de Processos (RH, organograma e cadastro de usuários, pelo nome); se essa busca falhar,
+ * as telas mostram as iniciais.
+ */
+export async function carregarPessoasComFotos(): Promise<PessoaPauta[]> {
+  const pessoas = await carregarPessoas();
+  try {
+    const { fotos } = await pessoasPorNome(pessoas.map((p) => p.nomeVios));
+    return pessoas.map((p) => ({ ...p, foto: fotos[chaveNome(p.nomeVios)] ?? null }));
+  } catch (erro) {
+    console.error("[pauta] fotos da equipe:", erro instanceof Error ? erro.message : erro);
+    return pessoas;
+  }
 }
 
 export async function carregarAudiencias(de: string, ate: string): Promise<Audiencia[]> {

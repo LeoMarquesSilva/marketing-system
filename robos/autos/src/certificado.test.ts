@@ -107,3 +107,24 @@ describe("vencimento", () => {
     expect(diasParaVencer("", agora)).toBeNull();
   });
 });
+
+describe("cifra antiga (RC2, comum no .pfx exportado pelo Windows)", () => {
+  it("o contêiner liga o provedor legado do OpenSSL, sem o qual o Node recusa o .pfx", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const dockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
+    expect(dockerfile).toMatch(/NODE_OPTIONS=--openssl-legacy-provider/);
+  });
+
+  it("com o provedor legado, um .pfx RC2 de teste abre", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const pasta = await pastaTemporaria();
+    try {
+      execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", join(pasta, "k.pem"), "-out", join(pasta, "c.pem"), "-days", "30", "-subj", "/CN=TESTE RC2"], { stdio: "ignore" });
+      execFileSync("openssl", ["pkcs12", "-export", "-inkey", join(pasta, "k.pem"), "-in", join(pasta, "c.pem"), "-out", join(pasta, "rc2.pfx"), "-passout", "pass:senha-rc2", "-certpbe", "PBE-SHA1-RC2-40", "-keypbe", "PBE-SHA1-3DES"], { stdio: "ignore" });
+    } catch {
+      return; // sem openssl com RC2 nesta máquina
+    }
+    const roteiro = `require("tls").createSecureContext({ pfx: require("fs").readFileSync(${JSON.stringify(join(pasta, "rc2.pfx"))}), passphrase: "senha-rc2" }); console.log("abriu");`;
+    expect(execFileSync(process.execPath, ["--openssl-legacy-provider", "-e", roteiro], { encoding: "utf8" }).trim()).toBe("abriu");
+  });
+});

@@ -56,6 +56,9 @@ PJe "Minha Pauta" (robô, 3x ao dia, por advogado e por TRT) ─▶ POST /api/ro
    · registro cancelado + novo no mesmo processo = redesignação: herda a dupla, marca tipo/horário/vara/link
    · designada que virou cancelada: "Cancelada no PJe" até alguém conferir no VIOS
 rotina (pauta-tick) ─▶ DJEN por processo (link, modalidade, hora) ─▶ convites do Outlook ─▶ respostas ─▶ avisos
+leitura do PJe (e "Rodar a rotina agora") ─▶ conferência com o VIOS pela cópia do SAMA (vios_tarefas, 2h e 12h)
+   ─▶ vios_tarefa_ci / vios_inicio / vios_situacao / vios_conferido_em: falta, concluída, horário diferente, aberta
+      com a audiência cancelada; "só no VIOS" na aba Tribunal
 upload do relatório de tarefas do VIOS (Configurações) ─▶ vios_inicio / vios_situacao (diverge = vermelho)
 ```
 

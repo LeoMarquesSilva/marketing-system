@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
     after(async () => {
       try {
-        await tagTeamConversation(result.recipientPhone);
+        await tagTeamConversation(result.recipientPhone, { name: result.recipientName, ownerId: sentBy });
       } catch (err) {
         console.error("[evolution/forward] marcar conversa da equipe:", err);
       }

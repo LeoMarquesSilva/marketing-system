@@ -2,6 +2,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { certificadoConfigurado, type ConfigCertificado } from "./certificado.ts";
+import type { ConfigSegundoFator } from "./segundo-fator.ts";
 
 /**
  * Configuração do robô, toda por variável de ambiente (arquivo .env nesta pasta, fora do repositório).
@@ -19,6 +20,40 @@ export type ModoDeLogin = "certificado" | "senha" | "manual";
  */
 export type ModoDoNavegador = "comum" | "playwright";
 
+export interface ProxyDoNavegador {
+  server: string;
+  username?: string;
+  password?: string;
+  bypass?: string;
+}
+
+/**
+ * Lê NAVEGADOR_PROXY ("socks5://host:porta" ou "http://usuario:senha@host:porta") e NAVEGADOR_PROXY_IGNORAR
+ * (domínios que saem direto, separados por vírgula). Usuário e senha saem da URL e vão em campos próprios.
+ */
+export function lerProxy(valor: string, ignorar = ""): ProxyDoNavegador | null {
+  const texto = valor.trim();
+  if (!texto) return null;
+  let url: URL;
+  try {
+    url = new URL(texto);
+  } catch {
+    throw new Error("NAVEGADOR_PROXY inválido: use socks5://host:porta ou http://usuario:senha@host:porta.");
+  }
+  if (!/^(http|https|socks5):$/.test(url.protocol) || !url.hostname || !url.port) {
+    throw new Error("NAVEGADOR_PROXY deve ter protocolo (http, https ou socks5), host e porta.");
+  }
+  if (url.protocol === "socks5:" && (url.username || url.password)) {
+    throw new Error("O navegador não aceita usuário e senha em proxy socks5: use http://usuario:senha@host:porta.");
+  }
+  const proxy: ProxyDoNavegador = { server: `${url.protocol}//${url.hostname}:${url.port}` };
+  if (url.username) proxy.username = decodeURIComponent(url.username);
+  if (url.password) proxy.password = decodeURIComponent(url.password);
+  const lista = ignorar.split(/[,\s]+/).map((d) => d.trim()).filter(Boolean);
+  if (lista.length) proxy.bypass = lista.join(",");
+  return proxy;
+}
+
 export interface Config {
   orqestraiUrl: string;
   token: string;
@@ -32,6 +67,11 @@ export interface Config {
   navegadorArgs: string[];
   /** Endereço da tela remota do robô (noVNC), mostrado no log quando ele precisa de uma pessoa. */
   telaRemotaUrl: string;
+  /**
+   * Saída do navegador por um proxy (NAVEGADOR_PROXY, só no modo playwright). Os tribunais (CloudFront) bloqueiam IP de
+   * data center: no servidor, o navegador sai por um proxy aceito (ex.: socks5://warp:1080). Null = conexão direta.
+   */
+  navegadorProxy: ProxyDoNavegador | null;
   /** Conectores que este robô atende (ROBO_CONECTORES); vazio = todos. Ex.: "eproc" ou "esaj:TJSP,esaj:TJCE". */
   conectores: string[];
   /** Certificado A1 em arquivo (só no modo playwright). */
@@ -53,12 +93,22 @@ export interface Config {
    */
   eprocTjrj: { login: ModoDeLogin; usuario: string; senha: string };
   /**
-   * Fonte do código de 2 fatores, montada pelos donos da conta (ex.: um webhook do n8n que gera o TOTP de cada
+   * Fonte alternativa do código de 2 fatores, montada pelos donos da conta (ex.: um webhook do n8n que gera o TOTP de cada
    * tribunal). Com `url` preenchida, o robô busca o código ali, por sistema (`?sistema=eproc`, `?sistema=pdpj`…),
    * e digita sozinho; sem ela, espera a pessoa. O segredo do 2FA NÃO fica aqui: fica na fonte. Isto só guarda o
    * endereço e o token de acesso dela.
    */
   webhook2fa: { url: string; header: string; token: string };
+  /**
+   * Segredo do TOTP cadastrado no painel de robôs (`segundo-fator.json`, cifrado com a chave pública do robô).
+   * Vem antes do webhook: com ele, o robô gera o código sozinho. Pasta: ROBO_2FA_PASTA ou, sem ela, CERTIFICADO_PASTA.
+   */
+  segundoFator: ConfigSegundoFator;
+  /**
+   * O robô faz o papel do PJe Office no login por certificado do jus.br (PDPJ), com o mesmo A1 (src/pje-office.ts).
+   * Só no modo playwright com certificado; PJE_OFFICE=nao desliga (aí o login no jus.br fica com a pessoa).
+   */
+  pjeOffice: boolean;
   pastas: { perfil: string; downloads: string; diagnostico: string };
 }
 
@@ -117,6 +167,8 @@ export function lerConfig(): Config {
   if (comCertificado && navegadorModo !== "playwright") throw new Error("O certificado em arquivo (CERTIFICADO_PFX ou CERTIFICADO_PASTA) só funciona com NAVEGADOR_MODO=playwright.");
   const navegadorHeadless = /^(sim|1|true)$/i.test(texto("NAVEGADOR_HEADLESS"));
   if (navegadorHeadless && navegadorModo !== "playwright") throw new Error("NAVEGADOR_HEADLESS só vale com NAVEGADOR_MODO=playwright.");
+  const navegadorProxy = lerProxy(texto("NAVEGADOR_PROXY"), texto("NAVEGADOR_PROXY_IGNORAR"));
+  if (navegadorProxy && navegadorModo !== "playwright") throw new Error("NAVEGADOR_PROXY só vale com NAVEGADOR_MODO=playwright.");
 
   return {
     orqestraiUrl,
@@ -128,6 +180,7 @@ export function lerConfig(): Config {
     navegadorHeadless,
     navegadorArgs: texto("NAVEGADOR_ARGS").split(/\s+/).filter(Boolean),
     telaRemotaUrl: texto("TELA_REMOTA_URL"),
+    navegadorProxy,
     conectores: lista("ROBO_CONECTORES").map((item) => item.toLowerCase()),
     certificado,
     intervaloMs: numero("INTERVALO_SEGUNDOS", 30) * 1000,
@@ -140,6 +193,8 @@ export function lerConfig(): Config {
     eproc: { login: loginEproc, usuario: texto("EPROC_USUARIO"), senha: texto("EPROC_SENHA") },
     eprocTjrj: { login: loginEprocTjrj, usuario: texto("EPROC_TJRJ_USUARIO"), senha: texto("EPROC_TJRJ_SENHA") },
     webhook2fa: { url: texto("ROBO_2FA_WEBHOOK_URL"), header: texto("ROBO_2FA_WEBHOOK_HEADER") || "x-robo-token", token: texto("ROBO_2FA_WEBHOOK_TOKEN") },
+    pjeOffice: comCertificado && navegadorModo === "playwright" && !/^(nao|não|0|false)$/i.test(texto("PJE_OFFICE")),
+    segundoFator: { pasta: texto("ROBO_2FA_PASTA") || certificado.pasta, chavePrivadaArquivo: certificado.chavePrivadaArquivo },
     pastas: { perfil: pasta("perfil"), downloads: pasta("downloads"), diagnostico: pasta("diagnostico") },
   };
 }

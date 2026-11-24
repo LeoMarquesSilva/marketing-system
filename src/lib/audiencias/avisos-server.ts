@@ -5,6 +5,7 @@ import { criarCalendario } from "@/lib/vistagem/dias-uteis";
 import { carregarFeriados } from "@/lib/vistagem/feriados";
 import { alertasDaAudiencia, hojeEmBrasilia, local, proximosDiasUteis, somarDias } from "./agenda";
 import { lerConfig, modoWhatsapp } from "./config-server";
+import { respostasDasAudiencias } from "./convites-server";
 import { mensagemDaPauta, mensagemDeAlerta, mensagemDeMudanca, mensagemDeTroca, type Mensagem } from "./mensagens";
 import { carregarAudiencias, carregarPessoas, db } from "./server";
 import type { Audiencia, Papel } from "./tipos";
@@ -96,11 +97,12 @@ export async function avisarAlertasGraves(agora = new Date()): Promise<number> {
   const lista = await carregarPessoas();
   const pessoas = new Map(lista.map((p) => [p.id, p]));
   const coordenacao = lista.filter((p) => p.coordenacao && p.ativo).map((p) => p.id);
+  const respostas = await respostasDasAudiencias(auds);
   let enviados = 0;
   for (const aud of auds) {
     if (aud.situacao !== "designada" || new Date(aud.inicio).getTime() < agora.getTime()) continue;
-    for (const alerta of alertasDaAudiencia(aud, { pessoas, todas: auds })) {
-      if (!["sem_titular", "choque", "deslocamento"].includes(alerta.tipo)) continue;
+    for (const alerta of alertasDaAudiencia(aud, { pessoas, todas: auds, respostas })) {
+      if (!["sem_titular", "choque", "deslocamento", "recusou"].includes(alerta.tipo)) continue;
       const r = await enviarAviso(`alerta:${aud.id}:${alerta.tipo}:${hoje}`, mensagemDeAlerta(aud, alerta.texto, coordenacao, pessoas), aud.id);
       if (r !== "repetido") enviados += 1;
     }

@@ -16,7 +16,7 @@ import {
 import { ProcessosError } from "./errors";
 import { registrarNoHistorico } from "./processos-server";
 import { db, falhou, type Ator } from "./server";
-import { roboDoProcesso, roboPeloJusbr } from "./tribunais";
+import { fonteDosAutos, roboDoProcesso, roboPeloJusbr } from "./tribunais";
 
 type Linha = Record<string, unknown>;
 
@@ -91,9 +91,13 @@ export function paraSugestao(linha: Linha): Sugestao {
   };
 }
 
-/** PROCESSOS_AUTOS_FONTE=jusbr: os pedidos vão primeiro ao Jus.br (robô único), com o robô do tribunal de reserva. */
+/**
+ * Os pedidos de autos vão primeiro ao Jus.br (robô único), com o robô do tribunal de reserva. É o padrão desde
+ * 23/11/2026 (o login no Jus.br pelo certificado e pelo código do painel já roda no servidor);
+ * PROCESSOS_AUTOS_FONTE=tribunal volta ao robô de cada tribunal.
+ */
 export function fonteJusbr(): boolean {
-  return process.env.PROCESSOS_AUTOS_FONTE?.trim().toLowerCase() === "jusbr";
+  return fonteDosAutos(process.env.PROCESSOS_AUTOS_FONTE) === "jusbr";
 }
 
 /** Que robô atende os autos do processo agora: o do tribunal, ou o Jus.br quando a fonte estiver ligada. */

@@ -29,6 +29,12 @@ import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type R
 
 /** Seletores e textos do roteiro do mapa (o conector usa os ids vistos nas telas, mais abaixo). */
 const TELA = {
+  /**
+   * Login por certificado no SSO da PDPJ (chama o PJe Office): o botão "CERTIFICADO DIGITAL" (#kc-pje-office) ou, na
+   * tela de 23/11/2026, o link "Seu certificado digital" (<a onclick="autenticar(...)">). O <a> tem altura zero e o
+   * Playwright o trata como invisível: o robô clica no ícone ou no texto dentro dele, e o clique sobe até o onclick.
+   */
+  certificadoPdpj: "#kc-pje-office, a[onclick^='autenticar('] > *",
   /** Código do segundo fator (Keycloak do SSO da PDPJ ou tela do próprio PJe). */
   codigo: "#otp, input[name=otp], input[name=totp], input[autocomplete='one-time-code'], input[id*='codigo' i][maxlength='6']",
   menuProcesso: /^Processo$/i,
@@ -64,6 +70,40 @@ function opcoesDeLogin(instancia: InstanciaPje, extra: Partial<OpcoesDeLogin> = 
         : `Entre no ${sistemaDe(instancia)} na janela do robô (login próprio do 2º grau: CPF e senha, ou certificado pelo PJe Office).`,
     pedeCodigo: (pagina) => visivel(pagina, TELA.codigo),
     ...extra,
+  };
+}
+
+/**
+ * Login do conector (o mapear usa o de cima, que não digita nada): no 1º grau, que passa pelo SSO da PDPJ, o código
+ * do Microsoft Authenticator sai do segredo "pdpj" do painel de robôs, se houver. CPF e senha continuam com a pessoa.
+ */
+function loginDoConector(instancia: InstanciaPje, pjeOffice: boolean): OpcoesDeLogin {
+  if (!instancia.sso) return opcoesDeLogin(instancia);
+  return opcoesDeLogin(instancia, loginAutomaticoPdpj(pjeOffice));
+}
+
+/**
+ * Login sem a pessoa no SSO da PDPJ (o mesmo do PJe e do Jus.br): com o PJe Office do robô (servidor, A1 do painel),
+ * o robô clica no certificado ("CERTIFICADO DIGITAL" ou o link "Seu certificado digital"); depois digita o código do
+ * segredo "pdpj" do painel. O que falhar fica com a pessoa, como antes.
+ */
+export function loginAutomaticoPdpj(pjeOffice: boolean): Partial<OpcoesDeLogin> {
+  return {
+    ...(pjeOffice && {
+      entrarSozinho: async (pagina: Page) => {
+        const botao = pagina.locator(TELA.certificadoPdpj).first();
+        if (!(await botao.isVisible().catch(() => false))) return false;
+        await botao.click().catch(() => undefined);
+        return true;
+      },
+    }),
+    sistema2fa: "pdpj",
+    digitarCodigo: async (pagina, codigo) => {
+      const campo = pagina.locator(TELA.codigo).first();
+      await campo.fill(codigo);
+      await campo.press("Enter");
+    },
+    pedeCodigo: (pagina) => visivel(pagina, TELA.codigo),
   };
 }
 
@@ -250,7 +290,7 @@ export class ConectorPjeTjrj implements Conector {
     const aberta = this.abaDoPje(ambiente);
     if (aberta) return aberta;
     const nova = await ambiente.contexto.newPage();
-    return entrarComAPessoa({ ...ambiente, pagina: nova }, opcoesDeLogin(this.instancia));
+    return entrarComAPessoa({ ...ambiente, pagina: nova }, loginDoConector(this.instancia, ambiente.config.pjeOffice));
   }
 
   private falha(ambiente: Ambiente, alvo: Page, oQue: string): Promise<never> {
@@ -265,7 +305,7 @@ export class ConectorPjeTjrj implements Conector {
     await pagina.goto(urlDaConsultaPje(this.instancia), { waitUntil: "domcontentloaded" }).catch(() => undefined);
     if (!ehAreaLogadaPje(pagina.url(), this.instancia)) {
       // Sessão vencida: o PJe mandou para o SSO. A pessoa entra de novo nesta aba.
-      pagina = await entrarComAPessoa({ ...ambiente, pagina }, opcoesDeLogin(this.instancia));
+      pagina = await entrarComAPessoa({ ...ambiente, pagina }, loginDoConector(this.instancia, ambiente.config.pjeOffice));
       await pagina.goto(urlDaConsultaPje(this.instancia), { waitUntil: "domcontentloaded" }).catch(() => undefined);
     }
     const sequencial = pagina.locator(PJE.campo("numeroSequencial"));

@@ -75,7 +75,7 @@ A sessão do e-SAJ vale enquanto o Chrome do robô estiver aberto: o tribunal us
 O eproc do TJSP tem uma instalação por competência (1º grau cível; execução fiscal e Fazenda Pública; 2º grau), todas atrás do mesmo login, o SSO do tribunal. O robô procura o processo nessa ordem (o número com origem `0000` começa pelo 2º grau) e entra pela pesquisa rápida da capa.
 
 - **Login com certificado:** o robô clica em "Certificado digital" e o Chrome mostra a **lista de certificados dele** (janela do próprio navegador, que o robô não toca). A pessoa escolhe o certificado do advogado e clica em OK. Enquanto o Chrome do robô ficar aberto, a sessão vale para todas as instalações.
-- **Login com certificado em arquivo** (servidor): com `NAVEGADOR_MODO=playwright` e o `.pfx` em `CERTIFICADO_PFX` ou `CERTIFICADO_PASTA`, o próprio robô apresenta o certificado ao SSO (`certificado-sso.tjsp.jus.br`), sem a lista do Chrome. Depois vem o código de 2 fatores, pelo webhook ou pela pessoa. Detalhes em [docs/easypanel.md](docs/easypanel.md).
+- **Login com certificado em arquivo** (servidor): com `NAVEGADOR_MODO=playwright` e o `.pfx` em `CERTIFICADO_PFX` ou `CERTIFICADO_PASTA`, o próprio robô apresenta o certificado ao SSO (`certificado-sso.tjsp.jus.br`), sem a lista do Chrome. Depois vem o código de 2 fatores: o robô gera sozinho com o segredo do TOTP cadastrado no painel de robôs; sem ele, vem do webhook ou da pessoa. Detalhes em [docs/easypanel.md](docs/easypanel.md).
 - **Login com senha:** o robô preenche usuário e senha e para no código de verificação, se o tribunal pedir.
 - **Os autos:** o eproc não tem botão para baixar o processo inteiro. O robô baixa cada documento da tabela de eventos com a sessão do advogado e monta um PDF único, do evento mais antigo para o mais novo, com um índice na primeira página (evento, documento e página onde começa). Documento que não é PDF nem imagem (vídeo, áudio, página) vira uma página de aviso no lugar.
 - **Acesso à íntegra:** quando o advogado não representa nenhuma parte, o eproc só libera os documentos pela "Acesso à íntegra do processo", que é uma declaração de interesse (Res. CNJ 121/2010) com CAPTCHA. O robô não faz essa declaração: o pedido volta com erro e o PDF é anexado à mão.
@@ -93,8 +93,8 @@ O TJRJ tem três sistemas, e o mesmo número CNJ (`…8.19.…`) pode estar em q
 Por isso o ORQESTRAI manda o "Próprio" do TJRJ ao conector `dcp:TJRJ`, o PJe ao `pje:TJRJ` e o resto (eproc, sem sistema) ao `eproc:TJRJ`. O DCP e o PJe, quando o processo já migrou, seguem pelo eproc no mesmo pedido e avisam o ORQESTRAI, que manda as atualizações seguintes direto ao eproc.
 
 - **Login:** o mesmo desenho do TJSP (SSO Keycloak com usuário e senha, ou "Certificado Digital"), com cadastro e senha próprios do advogado no TJRJ (`EPROC_TJRJ_*`). No caminho, o navegador passa pelo SSO nacional da PDPJ (`sso.cloud.pje.jus.br`), que redireciona sozinho para o SSO do TJRJ.
-- **2 fatores:** o eproc do TJRJ tem autenticação em dois fatores, como o do TJSP. Com o webhook configurado, o robô pede o código com `?sistema=eproc-tjrj` (o segredo do TOTP do TJRJ é outro); sem ele, ou se o webhook não conhecer esse sistema, a pessoa digita o código.
-- **Certificado em arquivo (servidor):** o endereço que pede o certificado no login do TJRJ não foi conferido. Ache-o no primeiro teste (a captura do `diagnostico/` mostra o endereço) e acrescente a origem em `CERTIFICADO_ORIGENS`, junto com a do TJSP.
+- **2 fatores:** o eproc do TJRJ tem autenticação em dois fatores, como o do TJSP. O segredo do TOTP do TJRJ é outro: no painel de robôs ele fica no sistema `eproc-tjrj`, e no webhook o robô pede `?sistema=eproc-tjrj`. Sem nenhum dos dois, ou se falharem, a pessoa digita o código.
+- **Certificado em arquivo (servidor):** `certificado-eproc-sso.tjrj.jus.br` pede o certificado de cliente na conexão (conferido em 18/11/2026, sem login). Acrescente `https://certificado-eproc-sso.tjrj.jus.br` em `CERTIFICADO_ORIGENS`, junto com a do TJSP; o login de verdade ainda não foi testado.
 - **Consulta pública:** existe, mas tem CAPTCHA (Cloudflare Turnstile). O robô não usa: entra sempre com a sessão do advogado.
 
 Para conferir: `npm run inspecionar -- eproc 0000000-00.0000.8.19.0000`. Para abrir só a sessão: `npm run login -- eproc TJRJ`.
@@ -221,6 +221,12 @@ Lê a "Minha Pauta" do PJe da Justiça do Trabalho com a sessão do advogado e m
 
 - `PAUTA_TRIBUNAIS` (padrão `TRT15`): tribunais lidos, separados por vírgula (`TRT15,TRT2`).
 - `PAUTA_DIAS` (padrão 60): quantos dias à frente.
-- Login pelo SSO da PDPJ ("Entrar com PDPJ"): a pessoa entra com o certificado (ou CPF e senha) na janela do robô; o código de 2 fatores vem de `ROBO_2FA_WEBHOOK_URL` com `?sistema=pdpj`, se houver.
+- `PAUTA_HORARIOS` (padrão `06:45,11:45,16:45`, Brasília): horários de leitura no modo `--ciclo`.
+- Login pelo SSO da PDPJ ("Entrar com PDPJ"):
+  - com o certificado do painel (`CERTIFICADO_PASTA`, modo playwright), o PJe Office do robô (`src/pje-office.ts`) assina o login sozinho;
+  - o código de 2 fatores sai do segredo `pdpj` do painel; sem ele, de `ROBO_2FA_WEBHOOK_URL` com `?sistema=pdpj`;
+  - sem certificado ou sem código, a pessoa conclui na janela do robô (no servidor, pela tela remota). O robô não digita senha.
+- `npm run pauta -- --so-ler`: teste de acesso; entra, lê e mostra só as contagens, sem mandar nada ao ORQESTRAI (nem precisa de `ORQESTRAI_URL` e `ROBO_AUTOS_TOKEN`).
+- `npm run pauta -- --ciclo`: fica rodando, lê ao começar e em cada horário de `PAUTA_HORARIOS`.
 - O navegador fica aberto no fim para a próxima rodada aproveitar a sessão (`-- --fechar` fecha).
-- Agendar três vezes ao dia (ex.: 6h45, 11h45 e 16h45), depois do export do VIOS.
+- No servidor, é o serviço `robo-pauta` do Easypanel, com `ROBO_COMANDO=pauta-teste` ou `pauta-ciclo` ([guia](docs/easypanel.md#robô-da-pauta-de-audiências-pje-jt)).

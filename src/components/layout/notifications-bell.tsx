@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { Bell } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ContentScheduleNotificationsList } from "@/components/conteudo/content-schedule-notifications-list";
 import { FollowupAlertCard, requestOpenPost, useFollowupAlerts } from "@/components/conteudo/followup-alerts";
+import { AppNotificationsList, useAppNotifications } from "@/components/notifications/notifications-bell";
 import { OpsNotificationsList, useOpsNotifications } from "@/components/ops-planner/ops-notifications-list";
 import { useUnseenDeliveries } from "@/components/planner/delivery-notices-bell";
 import { FichaColaboradorDialog } from "@/components/rh/ficha-colaborador-dialog";
@@ -31,13 +33,16 @@ function Section({ title, count, action, children }: { title: string; count: num
 }
 
 /**
- * Sino único da sidebar: junta os avisos do Planner Ops, as atualizações de
- * colaboradores do RH, os ajustes do calendário editorial no VIOS, as novidades
- * nos assuntos já postados (desdobramento do conteúdo) e as entregas novas do
- * Marketing para quem pediu. Cada seção só aparece para quem recebe aquele tipo
- * de aviso; as de novidades e de entregas, só quando há alguma.
+ * Sino único da sidebar: junta os avisos gerais do ORQESTRAI (tabela
+ * notifications: feedback, boas práticas e o que vier), os do Planner Ops, as
+ * atualizações de colaboradores do RH, os ajustes do calendário editorial no
+ * VIOS, as novidades nos assuntos já postados (desdobramento do conteúdo) e as
+ * entregas novas do Marketing para quem pediu. Cada seção só aparece para quem
+ * recebe aquele tipo de aviso; as de novidades e de entregas, só quando há alguma.
  */
 export function NotificationsBell({ className }: { className?: string }) {
+  const router = useRouter();
+  const general = useAppNotifications();
   const ops = useOpsNotifications();
   const hr = useHrPendingNotifications();
   const content = useContentScheduleNotifications();
@@ -48,9 +53,12 @@ export function NotificationsBell({ className }: { className?: string }) {
 
   const hasFollowups = followup.enabled && followup.alerts.length > 0;
   const hasDeliveries = deliveries > 0;
-  if (!ops.canReceive && !hr.canReceive && !content.canReceive && !hasFollowups && !hasDeliveries) return null;
+  if (!general.enabled && !ops.canReceive && !hr.canReceive && !content.canReceive && !hasFollowups && !hasDeliveries) {
+    return null;
+  }
 
   const total =
+    (general.enabled ? general.unread : 0) +
     (ops.canReceive ? ops.unread : 0) +
     (hr.canReceive ? hr.pendingCount : 0) +
     (content.canReceive ? content.notifications.length : 0) +
@@ -65,6 +73,7 @@ export function NotificationsBell({ className }: { className?: string }) {
         onOpenChange={(next) => {
           setOpen(next);
           if (!next) return;
+          if (general.enabled) void general.loadList();
           if (ops.canReceive) void ops.load();
           if (hr.canReceive) void hr.refetch();
           if (content.canReceive) void content.load();
@@ -95,6 +104,31 @@ export function NotificationsBell({ className }: { className?: string }) {
           className="flex max-h-[min(80dvh,40rem)] w-96 max-w-[calc(100vw-2rem)] flex-col overflow-hidden p-0"
         >
           <div className="min-h-0 overflow-y-auto">
+            {general.enabled && (
+              <Section
+                title="Avisos gerais"
+                count={general.unread}
+                action={
+                  general.unread > 0 && (
+                    <button type="button" className="text-xs text-[#285f7a] hover:underline" onClick={() => void general.markRead(null)}>
+                      Marcar como lidos
+                    </button>
+                  )
+                }
+              >
+                <div className="-mx-3">
+                  <AppNotificationsList
+                    items={general.items}
+                    loading={general.loading}
+                    onOpen={(item) => {
+                      if (!item.read_at) void general.markRead([item.id]);
+                      close();
+                      if (item.link) router.push(item.link);
+                    }}
+                  />
+                </div>
+              </Section>
+            )}
             {hasDeliveries && (
               <Section title="Entregas do Marketing" count={deliveries}>
                 <div className="flex items-center justify-between gap-3 px-1">

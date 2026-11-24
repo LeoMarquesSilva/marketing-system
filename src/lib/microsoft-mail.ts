@@ -59,7 +59,7 @@ async function tokenGraph(): Promise<string> {
 // O token do app vale ~1h: reaproveitar evita uma chamada de login por e-mail nos envios em sequência.
 let tokenCache: { valor: string; expiraEm: number } | null = null;
 
-async function tokenGraphReaproveitado(): Promise<string> {
+export async function tokenGraphReaproveitado(): Promise<string> {
   if (tokenCache && tokenCache.expiraEm > Date.now()) return tokenCache.valor;
   const valor = await tokenGraph();
   tokenCache = { valor, expiraEm: Date.now() + 45 * 60 * 1000 };
@@ -73,7 +73,7 @@ const caixaPorEndereco = new Map<string, string>();
  * caixa @bpplaw (ex.: daniel@bismarchipires.com.br → daniel@bpplaw.com.br) é procurado pelos apelidos.
  * O e-mail sai pelo endereço principal da caixa.
  */
-async function resolverCaixa(endereco: string, token: string): Promise<string> {
+export async function resolverCaixa(endereco: string, token: string): Promise<string> {
   const chave = endereco.toLowerCase();
   const emCache = caixaPorEndereco.get(chave);
   if (emCache) return emCache;

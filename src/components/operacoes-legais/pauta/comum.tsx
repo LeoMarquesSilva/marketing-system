@@ -2,16 +2,18 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { LoaderCircle, MapPin, MessageCircle, Mail, Video } from "lucide-react";
+import { CircleCheck, CircleHelp, CircleX, Clock, ExternalLink, ListFilter, LoaderCircle, MapPin, MessageCircle, Mail, Video, X } from "lucide-react";
+import { Avatar as AvatarUi, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/auth-context";
 import { hasPautaAccess } from "@/lib/access-control";
 import { authFetch } from "@/lib/auth-fetch";
 import { cidadeDoOrgao, local, opcoesDeTroca, type Contexto } from "@/lib/audiencias/agenda";
-import { ROTULO_MODALIDADE, ROTULO_TIPO, type Audiencia, type Papel, type PessoaPauta } from "@/lib/audiencias/tipos";
+import { ROTULO_MODALIDADE, ROTULO_TIPO, type Audiencia, type Papel, type PessoaPauta, type RespostaConvite } from "@/lib/audiencias/tipos";
 import type { DadosDaPauta } from "@/lib/audiencias/pauta-server";
 import { cn } from "@/lib/utils";
+import { linkPastaVios, linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { Aviso, Selo, campoClasse } from "../vistagem/ui";
 
 /* ------------------------------------------------------------------ API */
@@ -103,18 +105,50 @@ export function iniciaisDe(nome: string): string {
     .join("");
 }
 
+/** Miniatura da pessoa: a foto (RH, organograma ou cadastro de usuários) ou, sem foto ou se ela não carregar, as iniciais. */
 export function Avatar({ pessoa, className }: { pessoa: PessoaPauta | null | undefined; className?: string }) {
   if (!pessoa) return <span className={cn("grid size-6 shrink-0 place-items-center rounded-full border border-dashed border-red-400 text-[10px] font-semibold text-red-600", className)}>?</span>;
   let h = 0;
   for (const c of pessoa.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return (
-    <span className={cn("grid size-6 shrink-0 place-items-center rounded-full text-[10px] font-semibold text-white", CORES[h % CORES.length], className)} aria-hidden>
-      {iniciaisDe(pessoa.nomeCurto)}
+    <AvatarUi className={cn("size-6 shrink-0 ring-1 ring-black/5", className)} aria-hidden title={pessoa.nomeCurto}>
+      {pessoa.foto ? <AvatarImage src={pessoa.foto} alt="" className="object-cover" /> : null}
+      <AvatarFallback className={cn("text-[10px] font-semibold text-white", CORES[h % CORES.length])}>{iniciaisDe(pessoa.nomeCurto)}</AvatarFallback>
+    </AvatarUi>
+  );
+}
+
+const RESPOSTA: Record<RespostaConvite, { icone: typeof CircleCheck; classe: string; texto: string }> = {
+  aceito: { icone: CircleCheck, classe: "text-emerald-600", texto: "Aceitou o convite do Outlook" },
+  recusado: { icone: CircleX, classe: "text-red-600", texto: "Recusou o convite do Outlook" },
+  provisorio: { icone: CircleHelp, classe: "text-amber-600", texto: "Aceitou como provisório no Outlook" },
+  sem_resposta: { icone: Clock, classe: "text-slate-400", texto: "Ainda não respondeu ao convite do Outlook" },
+};
+
+/** Ícone da resposta ao convite do Outlook, ao lado do nome (só quando o convite saiu de verdade). */
+export function IconeResposta({ resposta }: { resposta: RespostaConvite | undefined }) {
+  if (!resposta) return null;
+  const { icone: Icone, classe, texto } = RESPOSTA[resposta];
+  return (
+    <span className="inline-flex shrink-0" title={texto}>
+      <Icone className={cn("size-3.5", classe)} aria-hidden />
+      <span className="sr-only">{texto}</span>
     </span>
   );
 }
 
-export function Dupla({ aud, pessoas, compacto = false }: { aud: Audiencia; pessoas: Map<string, PessoaPauta>; compacto?: boolean }) {
+export function Dupla({
+  aud,
+  pessoas,
+  compacto = false,
+  respostas,
+}: {
+  aud: Audiencia;
+  pessoas: Map<string, PessoaPauta>;
+  compacto?: boolean;
+  /** Resposta de cada papel ao convite do Outlook (contexto.respostas da audiência). */
+  respostas?: Partial<Record<Papel, RespostaConvite>>;
+}) {
   const titular = aud.titularId ? pessoas.get(aud.titularId) : null;
   const backup = aud.backupId ? pessoas.get(aud.backupId) : null;
   const nome = (p: PessoaPauta) => (compacto ? p.nomeCurto.split(" ")[0] : p.nomeCurto);
@@ -124,11 +158,13 @@ export function Dupla({ aud, pessoas, compacto = false }: { aud: Audiencia; pess
         <span className="w-3 text-[10px] font-semibold text-muted-foreground">T</span>
         <Avatar pessoa={titular} />
         {titular ? <span className="truncate">{nome(titular)}</span> : <span className="font-semibold text-red-700">Sem titular</span>}
+        {titular ? <IconeResposta resposta={respostas?.titular} /> : null}
       </span>
       <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
         <span className="w-3 text-[10px] font-semibold">B</span>
         <Avatar pessoa={backup} className={backup ? undefined : "border-slate-300 text-slate-400"} />
         <span className="truncate">{backup ? nome(backup) : "—"}</span>
+        {backup ? <IconeResposta resposta={respostas?.backup} /> : null}
       </span>
     </div>
   );
@@ -144,6 +180,16 @@ export function SeloTipo({ aud }: { aud: Audiencia }) {
   return (
     <Selo tom={aud.situacao === "cancelada" ? "neutro" : "ia"} titulo={aud.tipoDescricao ?? undefined}>
       {ROTULO_TIPO[aud.tipo]}
+    </Selo>
+  );
+}
+
+/** Audiência que não veio da Minha Pauta do PJe: o processo não está na pauta do certificado e foi lido no Jus.br. */
+export function SeloOrigem({ aud }: { aud: Audiencia }) {
+  if (aud.origem !== "jusbr") return null;
+  return (
+    <Selo tom="etiqueta" titulo="O processo não está na Minha Pauta do PJe do certificado: a audiência foi lida no Jus.br (Portal de Serviços do CNJ).">
+      Do Jus.br
     </Selo>
   );
 }
@@ -192,9 +238,68 @@ export function LinkDaSala({ aud }: { aud: Audiencia }) {
   );
 }
 
+const pararClique = (e: { stopPropagation: () => void }) => e.stopPropagation();
+
+/**
+ * Toda CI da pauta é link para o VIOS, como na vistagem: CI de tarefa abre a tarefa, CI de processo abre a pasta. O
+ * clique no link não abre o detalhe da linha onde ele está.
+ */
+export function CiDoVios({ ci, tipo = "tarefa", className }: { ci: string; tipo?: "tarefa" | "processo"; className?: string }) {
+  return (
+    <a
+      href={tipo === "tarefa" ? linkTarefaVios(ci) : linkPastaVios(ci)}
+      target="_blank"
+      rel="noreferrer"
+      onClick={pararClique}
+      onKeyDown={pararClique}
+      title={tipo === "tarefa" ? `Abrir a tarefa ${ci} no VIOS` : `Abrir o processo ${ci} no VIOS`}
+      className={cn("font-mono tabular-nums text-[#0f5f9e] underline underline-offset-2 hover:text-[#0b4677]", className)}
+    >
+      {ci}
+    </a>
+  );
+}
+
+/** Texto com CIs de tarefa ("CI 882502", "Tarefa 882502"): cada número vira link para a tarefa no VIOS. */
+export function TextoComCi({ texto }: { texto: string }) {
+  const partes: ReactNode[] = [];
+  let ultimo = 0;
+  for (const m of texto.matchAll(/(CI|Tarefa) (\d{4,})/g)) {
+    const inicio = m.index ?? 0;
+    partes.push(texto.slice(ultimo, inicio), `${m[1]} `, <CiDoVios key={inicio} ci={m[2]!} />);
+    ultimo = inicio + m[0].length;
+  }
+  partes.push(texto.slice(ultimo));
+  return <>{partes}</>;
+}
+
+/**
+ * Link para o VIOS, como na vistagem: a tarefa da audiência (CI casado na conferência) ou, sem tarefa, o processo.
+ * Fica dentro de linhas clicáveis: o clique no link não abre o detalhe.
+ */
+export function LinkDoVios({ aud, className }: { aud: Audiencia; className?: string }) {
+  const parar = (e: { stopPropagation: () => void }) => e.stopPropagation();
+  const classe = cn("inline-flex items-center gap-1 text-xs font-medium text-[#0f5f9e] underline-offset-2 hover:underline", className);
+  if (aud.viosTarefaCi)
+    return (
+      <a href={linkTarefaVios(aud.viosTarefaCi)} target="_blank" rel="noreferrer" onClick={parar} onKeyDown={parar} className={classe} title="Abrir a tarefa da audiência no VIOS">
+        Tarefa <span className="font-mono tabular-nums">{aud.viosTarefaCi}</span> no VIOS
+        <ExternalLink className="size-3" aria-hidden />
+      </a>
+    );
+  if (aud.ciProcesso)
+    return (
+      <a href={linkPastaVios(aud.ciProcesso)} target="_blank" rel="noreferrer" onClick={parar} onKeyDown={parar} className={classe} title="Sem tarefa de audiência casada: abre o processo no VIOS">
+        Processo <span className="font-mono tabular-nums">{aud.ciProcesso}</span> no VIOS
+        <ExternalLink className="size-3" aria-hidden />
+      </a>
+    );
+  return null;
+}
+
 /* ------------------------------------------------------------------ troca */
 
-const MOTIVOS = ["Choque de horário", "Deslocamento", "Ausência ou compromisso pessoal", "Equilibrar a carga do dia", "Pasta sem responsável", "Outro"];
+const MOTIVOS = ["Conflito de horário", "Deslocamento", "Ausência ou compromisso pessoal", "Equilibrar a carga do dia", "Pasta sem responsável", "Outro"];
 
 export function TrocaDialog({
   aud,
@@ -332,5 +437,32 @@ export function TrocaDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ filtros */
+
+/**
+ * Faixa acima da lista quando há filtro (cartão, pessoa, tribunal, tipo ou busca): quantas aparecem, de quantas, quais
+ * filtros e o botão de limpar. Sem filtro, não mostra nada.
+ */
+export function ResumoDoFiltro({ mostrando, de, unidade, filtros, aoLimpar }: { mostrando: number; de: number; unidade: string; filtros: string[]; aoLimpar: () => void }) {
+  if (!filtros.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md border border-[#47cdd0]/30 bg-[#f2fbfb] px-3 py-2 text-sm text-[#285f7a]" role="status">
+      <ListFilter className="size-4 shrink-0" aria-hidden />
+      <span>
+        Mostrando <b className="tabular-nums text-[#10293a]">{mostrando}</b> de <span className="tabular-nums">{de}</span> {unidade}
+      </span>
+      {filtros.map((filtro) => (
+        <Selo key={filtro} tom="marca">
+          {filtro}
+        </Selo>
+      ))}
+      <Button variant="ghost" size="xs" className="ml-auto" onClick={aoLimpar}>
+        <X />
+        Limpar filtros
+      </Button>
+    </div>
   );
 }

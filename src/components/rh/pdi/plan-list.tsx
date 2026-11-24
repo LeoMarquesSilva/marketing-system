@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { isStale, todayInBrasilia } from "@/lib/rh/pdi/progress";
 import type { PdiPerson, PdiPlanSummary } from "@/lib/rh/pdi/types";
 import { cn } from "@/lib/utils";
+import { Hint } from "../hint";
 import { AreaTile, BODY, DueBadge, INK, MUTED, PersonLine, PersonPhoto, ProgressBar, SURFACE, progressTone, relativeDays } from "./pdi-visuals";
 
 /** Ordem de atenção: atrasado → parado → ações vencidas → vence em breve → em dia → encerrados. */
@@ -41,10 +42,12 @@ function PlanSignals({ plan, className }: { plan: PdiPlanSummary; className?: st
         </span>
       )}
       {stale && (
-        <span className="inline-flex items-center gap-1 font-medium text-amber-700" title="Sem atualização há mais de 30 dias">
-          <Hourglass className="size-3.5" aria-hidden />
-          {plan.last_update_at ? `parado ${relativeDays(plan.last_update_at)}` : "sem atualização registrada"}
-        </span>
+        <Hint label="Sem atualização há mais de 30 dias">
+          <span className="inline-flex items-center gap-1 font-medium text-amber-700">
+            <Hourglass className="size-3.5" aria-hidden />
+            {plan.last_update_at ? `parado ${relativeDays(plan.last_update_at)}` : "sem atualização registrada"}
+          </span>
+        </Hint>
       )}
       {plan.agreed_at ? (
         <span className="inline-flex items-center gap-1 text-emerald-700">
@@ -85,9 +88,9 @@ export function PersonPlanCard({ plan }: { plan: PdiPlanSummary }) {
         <DueBadge state={plan.due_state} daysLeft={plan.days_left} status={plan.status} />
       </div>
       <div>
-        <p className={cn("truncate text-xs", MUTED)} title={plan.title}>
-          {plan.title}
-        </p>
+        <Hint label={plan.title}>
+          <p className={cn("truncate text-xs", MUTED)}>{plan.title}</p>
+        </Hint>
         <div className="mt-2 flex items-center gap-3">
           <span className={cn("w-12 text-xl font-semibold leading-none tabular-nums", INK)}>
             {plan.progress}
@@ -121,14 +124,16 @@ export function PlanRow({ plan }: { plan: PdiPlanSummary }) {
             <span className={cn("w-11 text-base font-semibold tabular-nums", INK)}>{plan.progress}%</span>
             <ProgressBar value={plan.progress} size="sm" tone={progressTone(plan.progress, plan.due_state)} />
           </div>
-          <p className={cn("mt-1 truncate text-xs", MUTED)} title={plan.title}>
-            {plan.actions_done}/{plan.actions_total} ações · {plan.title}
-          </p>
+          <Hint label={plan.title}>
+            <p className={cn("mt-1 truncate text-xs", MUTED)}>
+              {plan.actions_done}/{plan.actions_total} ações · {plan.title}
+            </p>
+          </Hint>
         </div>
         <div className="flex min-w-0 flex-col gap-1.5 lg:items-end">
           <div className="flex items-center gap-2">
             {plan.manager && (
-              <span className={cn("flex min-w-0 items-center gap-1.5 text-xs", BODY)} title={`Acompanhado por ${plan.manager.name}`}>
+              <span className={cn("flex min-w-0 items-center gap-1.5 text-xs", BODY)}>
                 <PersonPhoto person={plan.manager} size="xs" />
                 <span className="truncate">{plan.manager.name}</span>
               </span>

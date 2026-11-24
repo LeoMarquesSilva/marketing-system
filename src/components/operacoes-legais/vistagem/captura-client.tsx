@@ -27,6 +27,7 @@ import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import type { ArquivoDoDia } from "@/lib/vistagem/alerta-arquivo";
 import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
+import { etapasComErro, resumoDaRodada, type EtapasDaRodada, type RodadaDaKurier } from "@/lib/vistagem/rodada-kurier";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import type { ArquivoKurierResumo, PublicacaoResumo, SincronizacaoResultado } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
@@ -82,6 +83,22 @@ function resumoTriagem(triagem: SincronizacaoResultado["triagem"]): string {
   if (!triagem.triadas) return "";
   const descartadas = triagem.descartadas ? `, ${triagem.descartadas} ex-cliente(s) sem o escritório descartada(s)` : "";
   return ` Triagem: ${triagem.juridico} para o jurídico, ${triagem.pendentes} pendente(s) na controladoria${descartadas}.`;
+}
+
+/** O que aparece enquanto o botão roda a rodada do cron, que pode levar alguns minutos. */
+const RODADA_EM_ANDAMENTO = {
+  sincronizar: "Buscando o arquivo no SharePoint",
+  enviar: "Importando o xlsx",
+} as const;
+
+function textoDaRodadaEmAndamento(ocupado: keyof typeof RODADA_EM_ANDAMENTO): string {
+  return `${RODADA_EM_ANDAMENTO[ocupado]} e rodando a rodada do cron: pastas do VIOS, triagem, Central, BKP do SIOE, sugestões da IA e envios ao robô. Pode levar alguns minutos; não feche esta tela.`;
+}
+
+/** Importação ou triagem com erro: vermelho. Só uma etapa da rodada: amarelo. */
+function tomDoResultado(falhouImportacao: boolean, etapas: Partial<EtapasDaRodada>): "ok" | "erro" | "alerta" {
+  if (falhouImportacao) return "erro";
+  return etapasComErro(etapas).length ? "alerta" : "ok";
 }
 
 function resumoSincronizacao(resultado: SincronizacaoResultado): string {
@@ -194,7 +211,7 @@ function Captura() {
   /** Publicação aberta no detalhe (modal). */
   const [aberta, setAberta] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<"sincronizar" | "enviar" | null>(null);
-  const [aviso, setAviso] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+  const [aviso, setAviso] = useState<{ tipo: "ok" | "erro" | "alerta"; texto: string } | null>(null);
   const [colando, setColando] = useState(false);
   const [erroLista, setErroLista] = useState("");
   const inputArquivo = useRef<HTMLInputElement>(null);
@@ -245,9 +262,9 @@ function Captura() {
       const resposta = await authFetch("/api/operacoes-legais/vistagem/sincronizar", { method: "POST" });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao buscar no SharePoint.");
-      const resultado = corpo as SincronizacaoResultado;
+      const resultado = corpo as RodadaDaKurier;
       const falhou = resultado.resultados.some((item) => item.situacao === "erro") || Boolean(resultado.triagem?.erro);
-      setAviso({ tipo: falhou ? "erro" : "ok", texto: resumoSincronizacao(resultado) });
+      setAviso({ tipo: tomDoResultado(falhou, resultado), texto: `${resumoSincronizacao(resultado)}${resumoDaRodada(resultado)}` });
       await carregarArquivos();
     } catch (e) {
       setAviso({ tipo: "erro", texto: e instanceof Error ? e.message : "Falha ao buscar no SharePoint." });
@@ -265,12 +282,10 @@ function Captura() {
       const resposta = await authFetch("/api/operacoes-legais/vistagem/arquivos", { method: "POST", body: form });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao importar o arquivo.");
-      setAviso({
-        tipo: "ok",
-        texto: corpo.novo
-          ? `${arquivo.name} importado.${resumoTriagem(corpo.triagem)}`
-          : `${arquivo.name} já tinha sido importado; nada foi duplicado.`,
-      });
+      const importacao = corpo.novo
+        ? `${arquivo.name} importado.${resumoTriagem(corpo.triagem)}`
+        : `${arquivo.name} já tinha sido importado; nada foi duplicado.`;
+      setAviso({ tipo: tomDoResultado(Boolean(corpo.triagem?.erro), corpo), texto: `${importacao}${resumoDaRodada(corpo)}` });
       await carregarArquivos(corpo.arquivo.id);
     } catch (e) {
       setAviso({ tipo: "erro", texto: e instanceof Error ? e.message : "Falha ao importar o arquivo." });
@@ -382,9 +397,11 @@ function Captura() {
           />
         </BarraAba>
 
-        {aviso ? (
+        {ocupado ? (
+          <Aviso tom="info">{textoDaRodadaEmAndamento(ocupado)}</Aviso>
+        ) : aviso ? (
           <Aviso
-            tom={aviso.tipo === "ok" ? "sucesso" : "erro"}
+            tom={aviso.tipo === "ok" ? "sucesso" : aviso.tipo}
             acao={
               <Button variant="ghost" size="icon-xs" className="-my-1 text-current" aria-label="Fechar aviso" onClick={() => setAviso(null)}>
                 <X />

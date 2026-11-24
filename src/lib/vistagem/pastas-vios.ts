@@ -8,6 +8,10 @@ import { baixarArquivoPorCaminho } from "./sharepoint";
 /** Relatório "Processos Lista" do VIOS (atualizado todo dia ~8h na pasta da Controladoria). */
 export const SITE_CONTROLADORIA = "bpplaw2.sharepoint.com:/sites/Controladoria";
 export const PROCESSOS_LISTA = "Núcleo de Cadastro/Bases Atualizacoes/Processos Lista.csv";
+/** Relatório de tarefas do VIOS (pxe-lista, todas as situações, recorte curto) que o vios-app da máquina bp01 grava na mesma pasta. */
+export const TAREFAS_VIOS = "Núcleo de Cadastro/Bases Atualizacoes/Tarefas.csv";
+/** O mesmo relatório de 3 dias atrás a 1 ano à frente (vios-app --audiencias), quando esse modo estiver agendado na bp01. */
+export const AUDIENCIAS_VIOS = "Núcleo de Cadastro/Bases Atualizacoes/Audiencias.csv";
 
 function limparCi(valor: unknown): string {
   return String(valor ?? "").replace(/[="\s]/g, "");

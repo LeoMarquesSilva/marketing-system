@@ -1,40 +1,22 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth";
 import { alertarArquivoAtrasado, situacaoArquivoDoDia } from "@/lib/vistagem/alerta-arquivo-server";
-import { repassarAoBkp } from "@/lib/vistagem/bkp-sioe-server";
-import { repassarPendentesACentral } from "@/lib/vistagem/central-server";
-import { atualizarEnvios } from "@/lib/vistagem/juridico-server";
-import { sincronizarPastasVios } from "@/lib/vistagem/pastas-vios";
-import { sincronizarKurierSharePoint } from "@/lib/vistagem/server";
-import { gerarSugestoesPendentes } from "@/lib/vistagem/sugestao-ia-server";
-import { gerarSugestoesDeTriagem } from "@/lib/vistagem/sugestao-triagem-server";
+import { rodarRodadaDaKurier } from "@/lib/vistagem/rodada-kurier-server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-/** Importa o xlsx do dia que o Power Automate deixa no SharePoint (~6h35) e tria as publicações com o SIOE. Na Vercel Hobby o cron roda uma vez por dia com precisão de hora: 10h e 12h UTC (7h–8h e 9h–10h em Brasília). */
+/**
+ * Importa o xlsx do dia que o Power Automate deixa no SharePoint (~6h35), tria com o SIOE e roda o resto da
+ * rodada (pastas do VIOS, Central, BKP, sugestões e envios). O botão "Buscar no SharePoint" roda a mesma rodada.
+ * Na Vercel Hobby o cron roda uma vez por dia com precisão de hora: 10h e 12h UTC (7h–8h e 9h–10h em Brasília).
+ */
 export async function GET(request: Request) {
   if (!isAuthorizedCronRequest(request)) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
   try {
-    // Vínculo e auxiliar das pastas (Processos Lista do VIOS) antes de triar o dia.
-    const pastasVios = await sincronizarPastasVios().catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
-    const resultado = await sincronizarKurierSharePoint();
-    // Pedido de abertura de pasta que não chegou à Central do SharePoint: tenta de novo antes de regravar o BKP.
-    const central = await repassarPendentesACentral().catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
-    // Rede de segurança do BKP do SIOE: regrava o que fechou e não entrou na hora (desligado até a troca).
-    const bkp = await repassarAoBkp().catch((erro: unknown) => {
-      const mensagem = erro instanceof Error ? erro.message : String(erro);
-      console.error("[cron/vistagem-kurier] BKP do SIOE", mensagem);
-      return { erro: mensagem };
-    });
-    // Publicações sem pasta: dados sugeridos (processo citado, parte cliente ou IA) para a controladoria conferir.
-    const sugestoesPasta = await gerarSugestoesDeTriagem(60_000).catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
-    // Sugestão da IA para o Trabalhista já pronta quando o jurídico abrir; o que não couber a tela gera.
-    const sugestoesIa = await gerarSugestoesPendentes(150_000).catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
-    // Aproveita a rodada para trazer o andamento das tarefas enviadas ao robô do SAMA.
-    const envios = await atualizarEnvios().catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
+    const rodada = await rodarRodadaDaKurier();
     // Na 2ª tentativa (9h–10h), sem o arquivo do dia, avisa a controladoria pelo WhatsApp.
     const alertaArquivo =
       new URL(request.url).searchParams.get("tentativa") === "2"
@@ -42,12 +24,12 @@ export async function GET(request: Request) {
             .then(async (situacao) => (situacao.atrasado ? { ...situacao, ...(await alertarArquivoAtrasado(situacao)) } : situacao))
             .catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }))
         : null;
-    const falhas = resultado.resultados.filter((item) => item.situacao === "erro");
-    if (falhas.length || resultado.triagem?.erro) {
-      console.error("[cron/vistagem-kurier] falhas", { arquivos: falhas, triagem: resultado.triagem?.erro });
-      return NextResponse.json({ success: false, ...resultado, central, bkp, sugestoesIa, sugestoesPasta, envios, pastasVios, alertaArquivo }, { status: 502 });
+    const falhas = rodada.resultados.filter((item) => item.situacao === "erro");
+    if (falhas.length || rodada.triagem?.erro) {
+      console.error("[cron/vistagem-kurier] falhas", { arquivos: falhas, triagem: rodada.triagem?.erro });
+      return NextResponse.json({ success: false, ...rodada, alertaArquivo }, { status: 502 });
     }
-    return NextResponse.json({ success: true, ...resultado, central, bkp, sugestoesIa, sugestoesPasta, envios, pastasVios, alertaArquivo, finishedAt: new Date().toISOString() });
+    return NextResponse.json({ success: true, ...rodada, alertaArquivo, finishedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao importar a Kurier.";
     console.error("[cron/vistagem-kurier]", message);

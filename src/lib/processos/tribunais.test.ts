@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lerSistema, roboDoProcesso, roboPeloJusbr, tribunalDoCnj } from "./tribunais";
+import { fonteDosAutos, lerSistema, roboDoProcesso, roboPeloJusbr, tribunalDoCnj } from "./tribunais";
 
 describe("tribunalDoCnj", () => {
   it("lê o tribunal do J.TR", () => {
@@ -71,5 +71,14 @@ describe("Jus.br como fonte dos autos", () => {
     expect(roboPeloJusbr("0012345-67.2019.8.19.0001", "Próprio")).toMatchObject({ sistema: "jusbr", tribunal: "TJRJ", disponivel: true, reserva: "dcp:TJRJ" });
     expect(roboPeloJusbr("0001234-56.2020.5.15.0001", "pje")).toMatchObject({ sistema: "jusbr", tribunal: "TRT15", disponivel: true, reserva: null });
     expect(roboPeloJusbr("123", "E-saj")).toMatchObject({ disponivel: false, reserva: null });
+  });
+});
+
+describe("fonteDosAutos", () => {
+  it("Jus.br primeiro por padrão; 'tribunal' volta ao robô de cada tribunal", () => {
+    expect(fonteDosAutos(undefined)).toBe("jusbr");
+    expect(fonteDosAutos("")).toBe("jusbr");
+    expect(fonteDosAutos("jusbr")).toBe("jusbr");
+    expect(fonteDosAutos(" Tribunal ")).toBe("tribunal");
   });
 });

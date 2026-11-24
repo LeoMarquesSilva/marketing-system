@@ -1231,6 +1231,91 @@ export async function sendEvolutionTextMessage(
   return inserted as WhatsappMessage;
 }
 
+/**
+ * Cartão de contato (vCard) na conversa. Fica gravado na hora, com nome e
+ * telefone no texto, para a bolha mostrar quem foi enviado.
+ */
+export async function sendEvolutionContactMessage(
+  conversationId: string,
+  contact: { fullName: string; phone: string }
+): Promise<WhatsappMessage> {
+  const config = getEvolutionConfig();
+  if (!config) throw new Error("Evolution API não configurada.");
+  const digits = contact.phone.replace(/\D/g, "");
+  if (!digits) throw new Error("Contato sem telefone.");
+
+  const supabase = getAdminClient();
+  const { data: conversation, error } = await supabase
+    .from("whatsapp_conversations")
+    .select("id, remote_jid, phone, instance_name")
+    .eq("id", conversationId)
+    .single();
+  if (error || !conversation) throw new Error("Conversa não encontrada.");
+
+  const response = await evolutionFetch<Record<string, unknown>>(
+    `/message/sendContact/${config.instanceName}`,
+    {
+      method: "POST",
+      body: {
+        number: resolveEvolutionRecipient(conversation.remote_jid, conversation.phone),
+        contact: [{ fullName: contact.fullName, wuid: digits, phoneNumber: `+${digits}` }],
+      },
+    }
+  );
+
+  const key = response.key as { remoteJid?: string; id?: string } | undefined;
+  const messageTimestamp = parseMessageTimestamp(response.messageTimestamp).toISOString();
+  const display = `${contact.fullName} · +${digits}`;
+  const body = `[contato] ${display}`;
+  const columns =
+    "id, wa_message_id, from_me, message_type, body, message_timestamp, wa_status, quoted_wa_message_id, quoted_body";
+
+  await supabase
+    .from("whatsapp_conversations")
+    .update({
+      last_message_at: messageTimestamp,
+      last_message_preview: `Contato: ${contact.fullName}`,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", conversationId);
+
+  if (!key?.id) {
+    return {
+      id: `pending-${Date.now()}`,
+      wa_message_id: null,
+      from_me: true,
+      message_type: "contactMessage",
+      body,
+      message_timestamp: messageTimestamp,
+      wa_status: "pending",
+    } as WhatsappMessage;
+  }
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("whatsapp_messages")
+    .upsert(
+      {
+        conversation_id: conversationId,
+        wa_message_id: key.id,
+        remote_jid: key.remoteJid ?? conversation.remote_jid,
+        from_me: true,
+        message_type: "contactMessage",
+        body,
+        message_timestamp: messageTimestamp,
+        instance_name: config.instanceName,
+        wa_status: "sent",
+        raw_payload: response,
+      },
+      { onConflict: "instance_name,wa_message_id", ignoreDuplicates: false }
+    )
+    .select(columns)
+    .single();
+  if (insertError || !inserted) {
+    throw new Error(insertError?.message ?? "Erro ao salvar o cartão enviado.");
+  }
+  return inserted as WhatsappMessage;
+}
+
 export async function sendEvolutionMediaMessage(
   conversationId: string,
   params: {

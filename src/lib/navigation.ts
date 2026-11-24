@@ -15,6 +15,7 @@ import {
   Award,
   BookCheck,
   CalendarClock,
+  CalendarHeart,
   CalendarCheck,
   CalendarRange,
   Camera,
@@ -34,6 +35,7 @@ import {
   Link2,
   Mail,
   Megaphone,
+  MessageCircleHeart,
   MessageSquareHeart,
   Network,
   Newspaper,
@@ -89,6 +91,12 @@ import {
   isAdminRole,
   isPdiPath,
   PDI_ADMIN_ONLY,
+  isOneOnOnePath,
+  canSeeOneOnOne,
+  canManageOneOnOne,
+  isFeedbackPath,
+  canSeeFeedback,
+  canManageFeedback,
   isFacilitiesPath,
   isOpsPlannerPath,
   isVistagemPath,
@@ -311,6 +319,7 @@ export const NAV_FRONTS: NavFront[] = [
         shortLabel: "Métricas",
         icon: TrendingUp,
         pages: [
+          { href: "/metricas", label: "Resumo" },
           { href: "/instagram-insights", label: "Instagram" },
           { href: "/linkedin-insights", label: "LinkedIn" },
           { href: "/ga4-insights", label: "Site (GA4)" },
@@ -405,6 +414,27 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [
           { href: "/pdi", label: "Meu PDI" },
           { href: "/rh/pdi", label: "Gestão" },
+        ],
+      },
+      {
+        // Reuniões 1:1 (substituem as do Feedz): líder e liderado, marcação com sala e Teams no Outlook.
+        id: "1-1",
+        label: "Reuniões 1:1",
+        shortLabel: "1:1",
+        icon: CalendarHeart,
+        pages: [
+          { href: "/1-1", label: "Minhas 1:1" },
+          { href: "/rh/1-1", label: "Gestão" },
+        ],
+      },
+      {
+        // Feedback contínuo (substitui o do Feedz): reconhecimento e desenvolvimento, pedidos e Boas práticas.
+        id: "feedback",
+        label: "Feedback",
+        icon: MessageCircleHeart,
+        pages: [
+          { href: "/feedback", label: "Meu feedback" },
+          { href: "/rh/feedback", label: "Gestão" },
         ],
       },
       {
@@ -529,8 +559,8 @@ export const NAV_FRONTS: NavFront[] = [
         icon: CalendarCheck,
         pages: [
           { href: "/operacoes-legais/pauta", label: "Pauta" },
-          { href: "/operacoes-legais/pauta/distribuicao", label: "Distribuição" },
-          { href: "/operacoes-legais/pauta/tribunal", label: "Tribunal" },
+          { href: "/operacoes-legais/pauta/distribuicao", label: "Distribuição das Pautas" },
+          { href: "/operacoes-legais/pauta/tribunal", label: "Check Conferências" },
         ],
         configuracoes: { href: "/operacoes-legais/pauta/configuracoes", label: "Equipe, leituras e avisos" },
       },
@@ -663,6 +693,10 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
   return (href) => {
     // PDI em teste: só admin enxerga o módulo inteiro (trava em access-control).
     if (PDI_ADMIN_ONLY && isPdiPath(href)) return isAdminRole(profile);
+    // 1:1: Minhas 1:1 segue a trava de lançamento (RH e admin); a Gestão é sempre do RH.
+    if (isOneOnOnePath(href)) return href === "/1-1" ? canSeeOneOnOne(profile) : canManageOneOnOne(profile);
+    // Feedback: "Meu feedback" segue a trava de lançamento (RH e admin); a Gestão é sempre do RH.
+    if (isFeedbackPath(href)) return href === "/feedback" ? canSeeFeedback(profile) : canManageFeedback(profile);
     // Escolhas da equipe: Marketing, admin e líderes (a API recorta pelas áreas da pessoa).
     if (href === CONTENT_CHOICES_PATH) return !isPe27OnlyProfile(profile) && canSeeContentChoices(profile);
     return base(href);

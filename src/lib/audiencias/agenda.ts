@@ -1,4 +1,4 @@
-import { DURACAO_PADRAO, ROTULO_MUDANCA, ROTULO_TIPO, type AlertaAudiencia, type Audiencia, type ModalidadeEquipe, type PessoaPauta, type TipoAudiencia } from "./tipos";
+import { DURACAO_PADRAO, ROTULO_MUDANCA, ROTULO_TIPO, type AlertaAudiencia, type Audiencia, type ConvitePauta, type ModalidadeEquipe, type Papel, type PessoaPauta, type RespostaConvite, type TipoAudiencia } from "./tipos";
 
 /** Regras de agenda: horário de Brasília, choques, deslocamento, dias úteis e alertas de cada audiência. */
 
@@ -107,10 +107,95 @@ export function conflitoDaPessoa(
   return deslocamento;
 }
 
+/* ------------------------------------------------------------------ conferência com o VIOS */
+
+/** Mesmo horário no PJe e no VIOS. Tarefa do VIOS à meia-noite é tarefa sem horário: aí basta o mesmo dia. */
+export function mesmoHorario(pje: string, vios: string): boolean {
+  const v = local(vios);
+  if (v.hora === "00:00") return local(pje).dia === v.dia;
+  return Math.abs(new Date(pje).getTime() - new Date(vios).getTime()) < 60_000;
+}
+
+/**
+ * Como a audiência está no VIOS, pela última conferência:
+ * - confere: tarefa aberta no mesmo horário (ou, cancelada no PJe, nenhuma tarefa aberta);
+ * - horario: a tarefa está em outro dia ou hora;
+ * - falta: nenhuma tarefa de audiência para ela (ou só uma cancelada);
+ * - concluida: a tarefa já foi concluída e a audiência ainda não aconteceu;
+ * - aberta: cancelada no PJe e a tarefa segue aberta no VIOS.
+ * Null: ainda não conferida (o relatório CSV antigo só deixa a data, e aí só "horario" aparece).
+ */
+export type EstadoNoVios = "confere" | "horario" | "falta" | "concluida" | "aberta";
+
+export function estadoNoVios(
+  aud: Pick<Audiencia, "situacao" | "inicio" | "viosConferidoEm" | "viosTarefaCi" | "viosSituacao" | "viosInicio">,
+  agora = Date.now()
+): EstadoNoVios | null {
+  const conferida = Boolean(aud.viosConferidoEm);
+  if (aud.situacao === "cancelada") {
+    if (aud.viosTarefaCi && aud.viosSituacao === "aberta") return "aberta";
+    return conferida ? "confere" : null;
+  }
+  if (aud.situacao !== "designada") return null;
+  if (conferida && (!aud.viosTarefaCi || aud.viosSituacao === "cancelada")) return "falta";
+  if (aud.viosSituacao === "concluida") return new Date(aud.inicio).getTime() > agora ? "concluida" : "confere";
+  if (aud.viosInicio && !mesmoHorario(aud.inicio, aud.viosInicio)) return "horario";
+  return conferida ? "confere" : null;
+}
+
+/**
+ * Alguém marcou "Conferido no VIOS" depois da cópia do VIOS usada na conferência: vale o que a pessoa viu. Quando
+ * chega uma cópia mais nova do VIOS e ainda não bate, o alerta volta.
+ */
+export function conferidaDepoisDaCopia(aud: Pick<Audiencia, "mudancaConferidaEm" | "viosConferidoEm">): boolean {
+  if (!aud.mudancaConferidaEm) return false;
+  if (!aud.viosConferidoEm) return true;
+  return new Date(aud.mudancaConferidaEm).getTime() > new Date(aud.viosConferidoEm).getTime();
+}
+
+/** Alertas que somem com "Conferido no VIOS". */
+export const ALERTAS_DO_VIOS: AlertaAudiencia["tipo"][] = ["mudou", "cancelada", "vios_diverge", "vios_falta", "vios_concluida", "vios_aberta"];
+
+function diaHora(iso: string): string {
+  const v = local(iso);
+  const dia = `${v.dia.slice(8, 10)}/${v.dia.slice(5, 7)}`;
+  return v.hora === "00:00" ? `${dia} (sem horário)` : `${dia} às ${v.hora}`;
+}
+
+function alertaDoVios(aud: Audiencia, estado: EstadoNoVios | null): AlertaAudiencia | null {
+  const ci = aud.viosTarefaCi ? ` (CI ${aud.viosTarefaCi})` : "";
+  if (estado === "falta")
+    return { tipo: "vios_falta", grave: true, texto: aud.viosSituacao === "cancelada" ? `A tarefa${ci} está cancelada no VIOS.` : "Não está agendada no VIOS." };
+  if (estado === "concluida") return { tipo: "vios_concluida", grave: true, texto: `A tarefa${ci} já foi concluída no VIOS.` };
+  if (estado === "horario" && aud.viosInicio) return { tipo: "vios_diverge", grave: true, texto: `No VIOS está ${diaHora(aud.viosInicio)}.` };
+  return null;
+}
+
+/** Resposta de cada papel ao convite do Outlook, por audiência (só convites que saíram de verdade). */
+export type RespostasDosConvites = Map<string, Partial<Record<Papel, RespostaConvite>>>;
+
 export interface Contexto {
   pessoas: Map<string, PessoaPauta>;
   todas: Audiencia[];
   duracoes?: Partial<Record<TipoAudiencia, number>>;
+  respostas?: RespostasDosConvites;
+}
+
+/**
+ * As respostas que valem: só convite enviado de verdade (o simulado não tem resposta) e da pessoa que está hoje no
+ * papel (depois de uma troca, o convite antigo foi cancelado e o novo ainda não tem resposta).
+ */
+export function respostasDosConvites(convites: ConvitePauta[], audiencias: Pick<Audiencia, "id" | "titularId" | "backupId">[]): RespostasDosConvites {
+  const porId = new Map(audiencias.map((a) => [a.id, a]));
+  const saida: RespostasDosConvites = new Map();
+  for (const c of convites) {
+    const aud = porId.get(c.audienciaId);
+    if (!aud || c.status !== "enviado") continue;
+    if (c.pessoaId !== (c.papel === "titular" ? aud.titularId : aud.backupId)) continue;
+    const resposta: RespostaConvite = c.resposta === "aceito" || c.resposta === "recusado" || c.resposta === "provisorio" ? c.resposta : "sem_resposta";
+    saida.set(aud.id, { ...saida.get(aud.id), [c.papel]: resposta });
+  }
+  return saida;
 }
 
 function nome(ctx: Contexto, id: string | null): string {
@@ -121,8 +206,12 @@ function nome(ctx: Contexto, id: string | null): string {
 export function alertasDaAudiencia(aud: Audiencia, ctx: Contexto): AlertaAudiencia[] {
   const alertas: AlertaAudiencia[] = [];
   const conferida = Boolean(aud.mudancaConferidaEm);
+  const vistaDepois = conferidaDepoisDaCopia(aud);
+  const estado = estadoNoVios(aud);
   if (aud.situacao === "cancelada") {
-    if (!conferida) alertas.push({ tipo: "cancelada", grave: true, texto: "Cancelada no PJe: conferir se já saiu do VIOS." });
+    const ci = aud.viosTarefaCi ? ` (CI ${aud.viosTarefaCi})` : "";
+    if (estado === "aberta" && !vistaDepois) alertas.push({ tipo: "vios_aberta", grave: true, texto: `Cancelada no PJe e a tarefa${ci} segue aberta no VIOS.` });
+    else if (!conferida && estado !== "confere" && estado !== "aberta") alertas.push({ tipo: "cancelada", grave: true, texto: "Cancelada no PJe: conferir se já saiu do VIOS." });
     return alertas;
   }
   if (aud.situacao !== "designada") return alertas;
@@ -137,18 +226,27 @@ export function alertasDaAudiencia(aud: Audiencia, ctx: Contexto): AlertaAudienc
     const ocupado = ativas(ctx.todas).find((o) => o.id !== aud.id && o.titularId === aud.backupId && sobrepoe(intervalo(o, ctx.duracoes), intervalo(aud, ctx.duracoes)));
     if (ocupado) alertas.push({ tipo: "backup_ocupado", grave: false, texto: `A backup ${nome(ctx, aud.backupId)} está na ${rotulo(ocupado)}.` });
   }
+  // Recusou o convite do Outlook: a titular vai para o vermelho (precisa de troca); a backup, só aviso.
+  const respostas = ctx.respostas?.get(aud.id);
+  if (aud.titularId && respostas?.titular === "recusado")
+    alertas.push({ tipo: "recusou", grave: true, texto: `${nome(ctx, aud.titularId)} recusou o convite do Outlook: trocar a titular.` });
+  if (aud.backupId && respostas?.backup === "recusado")
+    alertas.push({ tipo: "backup_recusou", grave: false, texto: `A backup ${nome(ctx, aud.backupId)} recusou o convite do Outlook.` });
   if (aud.mudancas.length && !conferida) {
     alertas.push({ tipo: "mudou", grave: true, texto: `${aud.mudancas.map((m) => ROTULO_MUDANCA[m]).join(", ")} no PJe: conferir no VIOS.` });
   }
-  if (aud.viosInicio && Math.abs(new Date(aud.viosInicio).getTime() - new Date(aud.inicio).getTime()) >= 60000 && !conferida) {
-    const v = local(aud.viosInicio);
-    alertas.push({ tipo: "vios_diverge", grave: true, texto: `No VIOS está ${v.dia.slice(8, 10)}/${v.dia.slice(5, 7)} às ${v.hora}.` });
-  }
+  const doVios = vistaDepois ? null : alertaDoVios(aud, estado);
+  if (doVios) alertas.push(doVios);
   if (local(aud.inicio).minutos < HORA_CEDO * 60) alertas.push({ tipo: "cedo", grave: false, texto: `Antes das ${HORA_CEDO}h.` });
   if (aud.modalidadeTribunal === "video" && !aud.linkSala) alertas.push({ tipo: "sem_link", grave: false, texto: "Por vídeo e ainda sem link da sala." });
   if (aud.modalidadeTribunal === "hibrida" && !aud.modalidadeEquipe) alertas.push({ tipo: "a_completar", grave: false, texto: "Híbrida: dizer se a equipe vai presencial ou por vídeo." });
   if (!aud.modalidadeTribunal) alertas.push({ tipo: "a_completar", grave: false, texto: "Modalidade a completar." });
   return alertas;
+}
+
+/** Falta alguém conferir no VIOS: mudança do PJe ainda não conferida ou divergência da última conferência. */
+export function pendenteNoVios(aud: Audiencia): boolean {
+  return alertasDaAudiencia(aud, { pessoas: new Map(), todas: [] }).some((a) => ALERTAS_DO_VIOS.includes(a.tipo));
 }
 
 export interface OpcaoDeTroca {
@@ -173,7 +271,7 @@ export function opcoesDeTroca(aud: Audiencia, papel: "titular" | "backup", ctx: 
       continue;
     }
     const conflito = conflitoDaPessoa(pessoa.id, aud, ctx.todas, ctx.duracoes);
-    if (conflito?.tipo === "choque") opcoes.push({ pessoa, estado: "choque", texto: `Choque · ${rotulo(conflito.com)}` });
+    if (conflito?.tipo === "choque") opcoes.push({ pessoa, estado: "choque", texto: `Conflito de horário · ${rotulo(conflito.com)}` });
     else if (conflito) opcoes.push({ pessoa, estado: "atencao", texto: `Deslocamento · ${rotulo(conflito.com)}` });
     else {
       const dia = compromissosDoDia(pessoa.id, local(aud.inicio).dia, ctx.todas, aud.id);

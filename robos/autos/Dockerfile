@@ -28,7 +28,10 @@ ENV NAVEGADOR_MODO=playwright \
     PASTA_DADOS=/dados \
     TELA=1366x900x24 \
     DISPLAY=:99 \
-    TZ=America/Sao_Paulo
+    TZ=America/Sao_Paulo \
+    NODE_OPTIONS=--openssl-legacy-provider
+# NODE_OPTIONS: o certificado A1 exportado pelo Windows costuma vir com a cifra antiga RC2, que o OpenSSL 3 do Node só
+# abre com o provedor legado. Sem isso, o .pfx enviado pelo painel seria recusado ("Unsupported PKCS12 PFX data").
 
 # Perfil do navegador (sessão dos tribunais), PDFs em trânsito e diagnósticos.
 VOLUME ["/dados"]
@@ -36,4 +39,4 @@ VOLUME ["/dados"]
 EXPOSE 6080
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/iniciar-robo"]
-CMD ["robo"]
+# Sem CMD: o script escolhe o comando pelo argumento ou, sem ele, por ROBO_COMANDO (padrão robo).

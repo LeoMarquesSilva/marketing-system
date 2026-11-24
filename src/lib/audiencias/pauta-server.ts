@@ -3,19 +3,14 @@ import "server-only";
 import { z } from "zod";
 import { hojeEmBrasilia, proximosDiasUteis, somarDias } from "./agenda";
 import { avisarTroca, ehDiaUtil } from "./avisos-server";
+import { ORIGEM_AUTOMATICA, type ResumoConferenciaVios, type TarefaSoNoVios } from "./conferencia-server";
 import { lerConfig, modoOutlook, modoWhatsapp } from "./config-server";
-import { AudienciasError, carregarAudiencias, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico, type Ator } from "./server";
-import type { Audiencia, PessoaPauta } from "./tipos";
+import { AudienciasError, carregarAudiencias, carregarPessoas, carregarPessoasComFotos, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico, type Ator } from "./server";
+import type { Audiencia, ConvitePauta, PessoaPauta } from "./tipos";
 
 /** O que as telas pedem: pauta de um período, distribuição dos próximos dias úteis, troca e conferência. */
 
-export interface Convite {
-  audienciaId: string;
-  papel: "titular" | "backup";
-  pessoaId: string | null;
-  status: string;
-  resposta: string | null;
-}
+export type Convite = ConvitePauta;
 
 export interface Leitura {
   fonte: string;
@@ -26,11 +21,20 @@ export interface Leitura {
   erro: string | null;
 }
 
+/** A última conferência automática com o VIOS: números, erro (se a última falhou) e as tarefas só no VIOS. */
+export interface ConferenciaVios {
+  em: string | null;
+  erro: string | null;
+  resumo: ResumoConferenciaVios | null;
+  soNoVios: TarefaSoNoVios[];
+}
+
 export interface DadosDaPauta {
   audiencias: Audiencia[];
   pessoas: PessoaPauta[];
   convites: Convite[];
   leituras: Leitura[];
+  vios: ConferenciaVios | null;
   duracoes: Record<string, number>;
   modos: { outlook: string; whatsapp: string };
 }
@@ -47,11 +51,21 @@ async function convitesDe(ids: string[]): Promise<Convite[]> {
   return saida;
 }
 
+/** A última leitura de cada fonte (e de cada tribunal no PJe). Uma consulta por fonte: o DJEN grava uma a cada 10 minutos. */
 async function ultimasLeituras(): Promise<Leitura[]> {
-  const { data } = await db().from("aud_leituras").select("fonte, tribunal, iniciada_em, terminada_em, total, erro").order("iniciada_em", { ascending: false }).limit(20);
+  const fontes: [string, number][] = [
+    ["pje", 20],
+    ["djen", 1],
+    ["vios", 1],
+  ];
+  const lidas = await Promise.all(
+    fontes.map(([fonte, quantas]) =>
+      db().from("aud_leituras").select("fonte, tribunal, iniciada_em, terminada_em, total, erro").eq("fonte", fonte).order("iniciada_em", { ascending: false }).limit(quantas)
+    )
+  );
   const vistas = new Set<string>();
   const saida: Leitura[] = [];
-  for (const l of (data ?? []) as Record<string, unknown>[]) {
+  for (const l of lidas.flatMap((r) => (r.data ?? []) as Record<string, unknown>[])) {
     const chave = `${l.fonte}:${l.tribunal ?? ""}`;
     if (vistas.has(chave)) continue;
     vistas.add(chave);
@@ -60,9 +74,36 @@ async function ultimasLeituras(): Promise<Leitura[]> {
   return saida;
 }
 
+async function ultimaConferenciaVios(): Promise<ConferenciaVios | null> {
+  const { data } = await db()
+    .from("aud_leituras")
+    .select("iniciada_em, erro, detalhe")
+    .eq("fonte", "vios")
+    .eq("origem", ORIGEM_AUTOMATICA)
+    .not("terminada_em", "is", null)
+    .order("iniciada_em", { ascending: false })
+    .limit(5);
+  const linhas = (data ?? []) as { iniciada_em: string; erro: string | null; detalhe: (ResumoConferenciaVios & { soNoViosLista?: TarefaSoNoVios[] }) | null }[];
+  if (!linhas.length) return null;
+  const boa = linhas.find((l) => !l.erro && l.detalhe);
+  const { soNoViosLista, ...resumo } = boa?.detalhe ?? { soNoViosLista: [] };
+  return {
+    em: boa?.iniciada_em ?? null,
+    erro: linhas[0]!.erro,
+    resumo: boa ? (resumo as ResumoConferenciaVios) : null,
+    soNoVios: soNoViosLista ?? [],
+  };
+}
+
 async function montar(audiencias: Audiencia[]): Promise<DadosDaPauta> {
-  const [pessoas, convites, leituras, config] = await Promise.all([carregarPessoas(), convitesDe(audiencias.map((a) => a.id)), ultimasLeituras(), lerConfig()]);
-  return { audiencias, pessoas, convites, leituras, duracoes: config.duracoes as Record<string, number>, modos: { outlook: modoOutlook(), whatsapp: modoWhatsapp() } };
+  const [pessoas, convites, leituras, vios, config] = await Promise.all([
+    carregarPessoasComFotos(),
+    convitesDe(audiencias.map((a) => a.id)),
+    ultimasLeituras(),
+    ultimaConferenciaVios(),
+    lerConfig(),
+  ]);
+  return { audiencias, pessoas, convites, leituras, vios, duracoes: config.duracoes as Record<string, number>, modos: { outlook: modoOutlook(), whatsapp: modoWhatsapp() } };
 }
 
 const esquemaPeriodo = z.object({ de: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), ate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
@@ -98,7 +139,7 @@ const esquemaTroca = z.object({
   motivo: z.string().trim().min(2, "Diga o motivo da troca.").max(200),
 });
 
-/** Atribui ou troca titular/backup. Fica no histórico e avisa no grupo; o convite é refeito na próxima rotina. */
+/** Atribui ou troca titular/backup. Fica no histórico e avisa no grupo; a rota refaz o convite logo depois de responder. */
 export async function trocarPessoa(id: string, entrada: unknown, ator: Ator): Promise<Audiencia> {
   const lido = esquemaTroca.safeParse(entrada);
   if (!lido.success) throw new AudienciasError(lido.error.issues[0]?.message ?? "Troca inválida.", 400);

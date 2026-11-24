@@ -110,3 +110,9 @@ export function addMonths(iso: string, months: number): string {
   const date = new Date(Date.UTC(targetYear, targetMonth, Math.min(day, lastDay)));
   return date.toISOString().slice(0, 10);
 }
+
+/** Data ISO (YYYY-MM-DD) + N dias corridos. */
+export function addDays(iso: string, days: number): string {
+  const date = new Date(Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)) + days));
+  return date.toISOString().slice(0, 10);
+}

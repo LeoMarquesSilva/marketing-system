@@ -146,24 +146,35 @@ export function Indicadores({ children, className }: { children: ReactNode; clas
   );
 }
 
+/**
+ * Um número da faixa. Com `onClick`, o cartão vira filtro: clicar mostra só o que ele conta e clicar de novo limpa
+ * (`ativo` marca o escolhido, como a linha selecionada das listas).
+ */
 export function Indicador({
   icone: Icone,
   rotulo,
   valor,
   tom = "neutro",
   children,
+  ativo = false,
+  onClick,
+  dica,
 }: {
   icone: LucideIcon;
   rotulo: string;
   valor: ReactNode;
   tom?: "neutro" | "alerta" | "perigo" | "sucesso";
   children?: ReactNode;
+  ativo?: boolean;
+  onClick?: () => void;
+  /** Dica ao passar o mouse (no cartão clicável, o que ele filtra). */
+  dica?: string;
 }) {
-  return (
-    <div className="min-w-0 bg-white px-5 py-4">
+  const conteudo = (
+    <>
       <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <Icone className="size-3.5 text-[#3e84a8]" aria-hidden />
-        {rotulo}
+        <Icone className={cn("size-3.5", ativo ? "text-[#347796]" : "text-[#3e84a8]")} aria-hidden />
+        <span className={cn(ativo && "text-[#10293a]")}>{rotulo}</span>
       </p>
       <p
         className={cn(
@@ -174,7 +185,25 @@ export function Indicador({
         {valor}
       </p>
       {children ? <div className="mt-1 text-xs text-muted-foreground">{children}</div> : null}
-    </div>
+    </>
+  );
+  if (!onClick) return <div className="min-w-0 bg-white px-5 py-4" title={dica}>{conteudo}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={ativo}
+      title={dica}
+      className={cn(
+        "relative min-w-0 px-5 py-4 text-left transition-colors duration-150",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#47cdd0]",
+        ativo
+          ? "bg-[#e8f8f8] after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-[#347796]"
+          : "bg-white hover:bg-[#f6fafb]"
+      )}
+    >
+      {conteudo}
+    </button>
   );
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CloudUpload, LoaderCircle, Play, Save, UserPlus } from "lucide-react";
+import { CloudUpload, LoaderCircle, Play, Save, Send, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
 import { isAdminRole } from "@/lib/access-control";
@@ -130,7 +130,7 @@ function Configuracoes() {
 
         <div className="space-y-4">
           <Painel>
-            <PainelTopo titulo="Leituras" descricao="O robô lê a Minha Pauta do PJe; a rotina confere o DJEN e manda os avisos." />
+            <PainelTopo titulo="Leituras" descricao="O robô lê a Minha Pauta do PJe; depois de cada leitura a pauta é conferida com o VIOS. A rotina confere o DJEN e manda os avisos." />
             <Secao>
               {leituras.length ? (
                 <ul className="space-y-1.5 text-sm">
@@ -179,7 +179,7 @@ function Configuracoes() {
                       void acao("rotina", async () => {
                         await pautaApi.post("/rotina");
                         await carregar();
-                        return "Rotina rodada: DJEN, convites e avisos do horário.";
+                        return "Rotina rodada: conferência com o VIOS, DJEN, convites e avisos do horário.";
                       })
                     }
                   >
@@ -241,7 +241,58 @@ function LinhaPessoa({ pessoa, admin, aoSalvar }: { pessoa: PessoaPauta; admin: 
   );
 }
 
-function ConfigAvisos({ config, modos, admin, aoSalvar }: { config: Config; modos: { outlook: string; whatsapp: string } | null; admin: boolean; aoSalvar: (c: Partial<Config>) => void }) {
+/**
+ * Antes de ligar os convites para a equipe: manda o convite de uma audiência real só para um e-mail (o de quem testa),
+ * com "[TESTE]" no título, para ver no Outlook como fica. Sai mesmo em modo teste; precisa da caixa organizadora salva.
+ */
+function ConviteDeTeste({ organizadorSalvo }: { organizadorSalvo: boolean }) {
+  const [email, setEmail] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [retorno, setRetorno] = useState<{ tom: "sucesso" | "erro"; texto: string } | null>(null);
+
+  async function mandar() {
+    setEnviando(true);
+    setRetorno(null);
+    try {
+      const r = await pautaApi.post<{ para: string; assunto: string; processo: string; organizador: string }>("/convite-teste", { email });
+      setRetorno({ tom: "sucesso", texto: `Convite "${r.assunto}" (processo ${r.processo}) mandado de ${r.organizador} para ${r.para}. Confira no Outlook e depois recuse ou apague.` });
+    } catch (e) {
+      setRetorno({ tom: "erro", texto: mensagemDeErro(e) });
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-dashed border-[#dce9eb] p-3">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-[#285f7a]">
+        <Send className="size-3.5" aria-hidden />
+        Convite de teste
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Manda o convite da próxima audiência só para o e-mail abaixo, com [TESTE] no título, para ver no Outlook antes de ligar para a equipe.
+        {organizadorSalvo ? null : " Salve antes a caixa organizadora: é ela quem manda o convite."}
+      </p>
+      <div className="flex gap-2">
+        <input
+          className={cn(campoClasse, "h-9 min-w-0 flex-1")}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="seu e-mail do escritório"
+          aria-label="E-mail para o convite de teste"
+        />
+        <Button size="sm" variant="outline" onClick={() => void mandar()} disabled={enviando || !email.trim() || !organizadorSalvo}>
+          {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}
+          Mandar
+        </Button>
+      </div>
+      {retorno ? <Aviso tom={retorno.tom}>{retorno.texto}</Aviso> : null}
+    </div>
+  );
+}
+
+function ConfigAvisos({ config, modos, admin, aoSalvar }:{ config: Config; modos: { outlook: string; whatsapp: string } | null; admin: boolean; aoSalvar: (c: Partial<Config>) => void }) {
   const [rascunho, setRascunho] = useState(config);
   return (
     <Painel>
@@ -280,8 +331,9 @@ function ConfigAvisos({ config, modos, admin, aoSalvar }: { config: Config; modo
           onChange={(e) => setRascunho({ ...rascunho, outlook: { ...rascunho.outlook, organizador: e.target.value || null } })}
         />
         <p className="text-xs text-muted-foreground">Ambiente: {modos?.outlook === "real" ? "envio real" : "modo teste (registra sem enviar)"}</p>
+        {admin ? <ConviteDeTeste organizadorSalvo={Boolean(config.outlook.organizador)} /> : null}
       </Secao>
-      <Secao titulo="Duração padrão (para os choques de horário)">
+      <Secao titulo="Duração padrão (para os conflitos de horário)">
         <div className="grid grid-cols-2 gap-2">
           {TIPOS_DURACAO.map((t) => (
             <label key={t} className="flex items-center justify-between gap-2 text-sm">

@@ -20,22 +20,22 @@ const CIVIL_ORDER: CivilKey[] = ["cliente", "inovacao", "valorizacao", "intelige
 
 function EmptyMine({ me, onCreate }: { me: PdiPerson; onCreate: () => void }) {
   return (
-    <section className="relative overflow-hidden rounded-xl bg-[#03070c] text-[#f9f9f9]">
-      <div aria-hidden className="absolute inset-0 bg-[radial-gradient(120%_140%_at_85%_0%,#0b3a52_0%,#04202f_42%,#03070c_100%)]" />
+<section className="relative overflow-hidden rounded-2xl border border-[#e1ebee] bg-white text-[#0d2a38] shadow-[0_1px_3px_rgba(4,32,47,0.05)]">
+      <div aria-hidden className="pointer-events-none absolute -right-32 -top-40 h-80 w-[44rem] rounded-full bg-[radial-gradient(closest-side,#dcf1f1,rgba(220,241,241,0))]" />
       <div className="relative grid gap-8 px-5 py-8 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] lg:items-center">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-6">
-          <PersonPhoto person={me} size="lg" className="size-20 text-xl ring-2 ring-[#E1B16D] ring-offset-4 ring-offset-[#04202f]" />
+          <PersonPhoto person={me} size="lg" className="size-20 text-xl ring-2 ring-[#E1B16D] ring-offset-[3px] ring-offset-white" />
           <div className="max-w-xl">
-            <p className="text-sm text-white/75">Seu plano de desenvolvimento</p>
+            <p className="text-sm font-medium text-[#3e84a8]">Seu plano de desenvolvimento</p>
             <h2 className="mt-1 text-2xl font-semibold leading-tight sm:text-[28px]">Você ainda não tem um PDI ativo</h2>
-            <p className="mt-3 text-[15px] leading-6 text-white/80">
+            <p className="mt-3 text-[15px] leading-6 text-[#3b5560]">
               O PDI organiza o que você quer desenvolver nos próximos meses: frentes ligadas aos valores CIVIL e ações práticas, combinadas com o
               seu gestor.
             </p>
             <button
               type="button"
               onClick={onCreate}
-              className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#E1B16D] px-5 text-sm font-semibold text-[#0D1E2E] outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-white"
+              className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#0f5f70] px-5 text-sm font-semibold text-white outline-none transition-colors hover:bg-[#0c5262] focus-visible:ring-2 focus-visible:ring-[#47cdd0] focus-visible:ring-offset-2"
             >
               <Plus className="size-4" aria-hidden />
               Montar meu PDI
@@ -46,8 +46,10 @@ function EmptyMine({ me, onCreate }: { me: PdiPerson; onCreate: () => void }) {
           <ul className="flex flex-wrap gap-3" aria-label="Valores CIVIL">
             {CIVIL_ORDER.map((key) => (
               <li key={key}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={civilSealSrc(key) ?? ""} alt="" className="size-14 object-contain" />
+                <span className="grid size-16 place-items-center rounded-xl bg-[#0f1f2e] p-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={civilSealSrc(key) ?? ""} alt="" className="size-full object-contain" />
+                </span>
               </li>
             ))}
           </ul>
@@ -55,12 +57,12 @@ function EmptyMine({ me, onCreate }: { me: PdiPerson; onCreate: () => void }) {
             {PDI_LEARNING_KIND_ORDER.map((kind) => {
               const Icon = kindIconOf(kind);
               return (
-                <li key={kind} className="flex items-center gap-3 text-sm text-white/85">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-white/[0.08] text-[#E1B16D]">
+                <li key={kind} className="flex items-center gap-3 text-sm text-[#3b5560]">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#eaf4f6] text-[#1d7086]">
                     <Icon className="size-4" aria-hidden />
                   </span>
                   <span>
-                    <span className="font-semibold text-white">{PDI_LEARNING_KINDS[kind].share}</span> {PDI_LEARNING_KINDS[kind].label.toLowerCase()} ·{" "}
+                    <span className="font-semibold text-[#0d2a38]">{PDI_LEARNING_KINDS[kind].share}</span> {PDI_LEARNING_KINDS[kind].label.toLowerCase()} ·{" "}
                     {PDI_LEARNING_KINDS[kind].hint}
                   </span>
                 </li>
@@ -89,7 +91,7 @@ function TabSwitch({ tab, onChange, teamCount }: { tab: Tab; onChange: (tab: Tab
           onClick={() => onChange(item.id)}
           className={cn(
             "inline-flex min-h-10 items-center gap-2 rounded-md px-4 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
-            tab === item.id ? "bg-[#04202f] text-white" : cn("hover:bg-[#f4fafb]", BODY)
+            tab === item.id ? "bg-[#e8f8f8] text-[#1d5670] shadow-[inset_0_0_0_1px_#47cdd0]" : cn("hover:bg-[#f4fafb]", BODY)
           )}
         >
           <item.icon className="size-4" aria-hidden />

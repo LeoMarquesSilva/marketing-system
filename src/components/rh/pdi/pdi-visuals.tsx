@@ -17,6 +17,7 @@ import {
   type PdiStatus,
 } from "@/lib/rh/pdi/types";
 import { cn } from "@/lib/utils";
+import { Hint } from "../hint";
 
 /* ------------------------------------------------------------- linguagem */
 
@@ -120,14 +121,15 @@ export function relativeDays(iso: string | null | undefined): string {
   if (days <= 0) return "hoje";
   if (days === 1) return "ontem";
   if (days < 45) return `há ${days} dias`;
-  const months = Math.round(days / 30);
+  // Meses completos: 51 dias é "há 1 mês" (antes arredondava para 2).
+  const months = Math.floor(days / 30);
   return months <= 1 ? "há 1 mês" : `há ${months} meses`;
 }
 
 /* ----------------------------------------------------------------- pessoas */
 
 const AVATAR_SIZE = {
-  xs: "size-6 text-[11px]",
+  xs: "size-6 text-xs tracking-tight",
   sm: "size-8 text-xs",
   md: "size-10 text-sm",
   lg: "size-14 text-base",
@@ -144,23 +146,23 @@ export function PersonPhoto({
 }) {
   const name = person?.name ?? "?";
   return (
-    <Avatar className={cn("shrink-0 ring-1 ring-black/5", AVATAR_SIZE[size], className)} title={name}>
-      {person?.avatar_url && <AvatarImage src={person.avatar_url} alt="" />}
-      <AvatarFallback className="bg-[#e8f1f5] font-semibold text-[#315f73]">{getInitials(name)}</AvatarFallback>
-    </Avatar>
+    <Hint label={person?.name}>
+      <Avatar className={cn("shrink-0 ring-1 ring-black/5", AVATAR_SIZE[size], className)}>
+        {person?.avatar_url && <AvatarImage src={person.avatar_url} alt="" />}
+        <AvatarFallback className="bg-[#e8f1f5] font-semibold text-[#315f73]">{getInitials(name)}</AvatarFallback>
+      </Avatar>
+    </Hint>
   );
 }
 
 export function AreaTile({ area, className }: { area: string | null; className?: string }) {
   if (!area) return null;
   return (
-    <span
-      className={cn("grid size-6 shrink-0 place-items-center rounded-md ring-1 ring-inset", getAreaIconStyle(area), className)}
-      title={area}
-      aria-hidden
-    >
-      {createElement(getAreaIcon(area), { className: "size-3.5", "aria-hidden": true })}
-    </span>
+    <Hint label={area}>
+      <span className={cn("grid size-6 shrink-0 place-items-center rounded-md ring-1 ring-inset", getAreaIconStyle(area), className)} aria-hidden>
+        {createElement(getAreaIcon(area), { className: "size-3.5", "aria-hidden": true })}
+      </span>
+    </Hint>
   );
 }
 
@@ -210,13 +212,11 @@ export const KIND_STYLES: Record<PdiLearningKind | "sem", { tile: string; bar: s
 export function KindIcon({ kind, className }: { kind: PdiLearningKind | null; className?: string }) {
   const style = KIND_STYLES[kind ?? "sem"];
   return (
-    <span
-      className={cn("grid size-8 shrink-0 place-items-center rounded-md", style.tile, className)}
-      title={kind ? `${PDI_LEARNING_KINDS[kind].share} · ${PDI_LEARNING_KINDS[kind].label}` : "Sem tipo 70-20-10"}
-      aria-hidden
-    >
-      {createElement(kind ? KIND_ICONS[kind] : CircleDashed, { className: "size-4", "aria-hidden": true })}
-    </span>
+    <Hint label={kind ? `${PDI_LEARNING_KINDS[kind].share} · ${PDI_LEARNING_KINDS[kind].label}` : "Sem tipo 70-20-10"}>
+      <span className={cn("grid size-8 shrink-0 place-items-center rounded-md", style.tile, className)} aria-hidden>
+        {createElement(kind ? KIND_ICONS[kind] : CircleDashed, { className: "size-4", "aria-hidden": true })}
+      </span>
+    </Hint>
   );
 }
 

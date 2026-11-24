@@ -302,3 +302,142 @@ export function percentDelta(current: number, previous: number): number | null {
   if (previous === 0) return null;
   return ((current - previous) / previous) * 100;
 }
+
+/* ------------------------------------------------------------------
+ * Período das telas de Métricas (datas AAAA-MM-DD, fuso de São Paulo).
+ * Sem nenhum dia importado no período, o número vira null (e não zero):
+ * assim a tela mostra "sem dado" em vez de uma queda de 100%.
+ * ------------------------------------------------------------------ */
+
+export interface LinkedinPeriodTotals {
+  contentDays: number;
+  impressions: number | null;
+  organicImpressions: number | null;
+  sponsoredImpressions: number | null;
+  uniqueImpressions: number | null;
+  clicks: number | null;
+  reactions: number | null;
+  comments: number | null;
+  shares: number | null;
+  /** Em % (0–100). */
+  ctr: number | null;
+  /** (cliques + reações + comentários + compartilhamentos) ÷ impressões, em %. */
+  engagementRate: number | null;
+  followerDays: number;
+  newFollowers: number | null;
+  organicFollowers: number | null;
+  sponsoredFollowers: number | null;
+  autoInvitedFollowers: number | null;
+  visitorDays: number;
+  pageViews: number | null;
+  uniqueVisitors: number | null;
+  mobileViews: number | null;
+  desktopViews: number | null;
+  overviewViews: number | null;
+  lifeViews: number | null;
+  jobsViews: number | null;
+  viewsPerVisitor: number | null;
+}
+
+function inDateRange(date: string, from: string, to: string): boolean {
+  const day = date.slice(0, 10);
+  return day >= from && day <= to;
+}
+
+export function computeLinkedinPeriodTotals(
+  data: {
+    dailyMetrics: LinkedinDailyMetric[];
+    followerDailyMetrics: LinkedinFollowerDailyMetric[];
+    visitorDailyMetrics: LinkedinVisitorDailyMetric[];
+  },
+  from: string,
+  to: string
+): LinkedinPeriodTotals {
+  const content = data.dailyMetrics.filter((row) => inDateRange(row.metric_date, from, to));
+  const followers = data.followerDailyMetrics.filter((row) => inDateRange(row.metric_date, from, to));
+  const visitors = data.visitorDailyMetrics.filter((row) => inDateRange(row.metric_date, from, to));
+  const summary = aggregateLinkedinDailyMetrics(content);
+  const audience = aggregateLinkedinAudienceMetrics(followers, visitors);
+  const hasContent = content.length > 0;
+  const hasFollowers = followers.length > 0;
+  const hasVisitors = visitors.length > 0;
+  const ifContent = (value: number) => (hasContent ? value : null);
+  const ifFollowers = (value: number) => (hasFollowers ? value : null);
+  const ifVisitors = (value: number) => (hasVisitors ? value : null);
+  const visitorSections = visitors.reduce(
+    (total, row) => ({
+      overview: total.overview + row.overview_views_total,
+      life: total.life + row.life_views_total,
+      jobs: total.jobs + row.jobs_views_total,
+    }),
+    { overview: 0, life: 0, jobs: 0 }
+  );
+
+  return {
+    contentDays: content.length,
+    impressions: ifContent(summary.impressions),
+    organicImpressions: ifContent(summary.impressions - summary.sponsoredImpressions),
+    sponsoredImpressions: ifContent(summary.sponsoredImpressions),
+    uniqueImpressions: ifContent(summary.uniqueImpressions),
+    clicks: ifContent(summary.clicks),
+    reactions: ifContent(summary.reactions),
+    comments: ifContent(summary.comments),
+    shares: ifContent(summary.shares),
+    ctr: hasContent && summary.impressions > 0 ? summary.ctr * 100 : null,
+    engagementRate: hasContent && summary.impressions > 0 ? summary.engagementRate * 100 : null,
+    followerDays: followers.length,
+    newFollowers: ifFollowers(audience.newFollowers),
+    organicFollowers: ifFollowers(audience.organicFollowers),
+    sponsoredFollowers: ifFollowers(audience.sponsoredFollowers),
+    autoInvitedFollowers: ifFollowers(audience.autoInvitedFollowers),
+    visitorDays: visitors.length,
+    pageViews: ifVisitors(audience.pageViews),
+    uniqueVisitors: ifVisitors(audience.uniqueVisitors),
+    mobileViews: ifVisitors(audience.mobileViews),
+    desktopViews: ifVisitors(audience.desktopViews),
+    overviewViews: ifVisitors(visitorSections.overview),
+    lifeViews: ifVisitors(visitorSections.life),
+    jobsViews: ifVisitors(visitorSections.jobs),
+    viewsPerVisitor: hasVisitors && audience.uniqueVisitors > 0 ? audience.viewsPerVisitor : null,
+  };
+}
+
+/** Um ponto por dia do período; dia sem importação fica null (buraco no gráfico). */
+export function linkedinDailySeries<T extends { metric_date: string }>(
+  rows: T[],
+  value: (row: T) => number | null,
+  from: string,
+  to: string
+): { date: string; value: number | null }[] {
+  const byDate = new Map(rows.map((row) => [row.metric_date.slice(0, 10), row]));
+  const series: { date: string; value: number | null }[] = [];
+  for (let cursor = Date.parse(`${from}T00:00:00Z`), end = Date.parse(`${to}T00:00:00Z`); cursor <= end; cursor += 86_400_000) {
+    const date = new Date(cursor).toISOString().slice(0, 10);
+    const row = byDate.get(date);
+    series.push({ date, value: row ? value(row) : null });
+  }
+  return series;
+}
+
+/** Primeiro e último dia com dado importado (conteúdo, seguidores ou visitantes). */
+export function linkedinDataRange(data: {
+  dailyMetrics: { metric_date: string }[];
+  followerDailyMetrics: { metric_date: string }[];
+  visitorDailyMetrics: { metric_date: string }[];
+}): { first: string | null; last: string | null } {
+  let first: string | null = null;
+  let last: string | null = null;
+  for (const rows of [data.dailyMetrics, data.followerDailyMetrics, data.visitorDailyMetrics]) {
+    for (const row of rows) {
+      const date = row.metric_date.slice(0, 10);
+      if (!first || date < first) first = date;
+      if (!last || date > last) last = date;
+    }
+  }
+  return { first, last };
+}
+
+/** Taxa de engajamento do post em % (o LinkedIn exporta em fração). */
+export function linkedinPostEngagementPercent(post: Pick<LinkedinPost, "engagement_rate">): number {
+  return (post.engagement_rate ?? 0) * 100;
+}

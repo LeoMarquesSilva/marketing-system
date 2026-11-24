@@ -1,4 +1,5 @@
-# Exemplo de referência do serviço do robô (o guia passo a passo do Easypanel está em docs/easypanel.md).
+# Exemplo de referência de UM serviço do robô (o robo-autos-eproc-tjsp; os outros dois mudam ROBO_NOME,
+# ROBO_CONECTORES, CAPA_DATAJUD e o volume). O guia passo a passo do Easypanel está em docs/easypanel.md.
 # Serve para conferir o que o serviço precisa: no Easypanel, o mesmo vai em App > Environment, Mounts,
 # Domains e Resources. Nenhum valor aqui é real: troque os <...> no próprio Easypanel, nunca neste arquivo.
 services:
@@ -12,28 +13,35 @@ services:
     environment:
       ORQESTRAI_URL: "https://<endereco-do-orqestrai>"
       ROBO_AUTOS_TOKEN: "<mesmo valor da Vercel>"
-      ROBO_NOME: "servidor-easypanel"
-      # Divisão com o robô do Mac: aqui só o eproc; o e-SAJ (Web Signer) fica no Mac.
-      ROBO_CONECTORES: "eproc"
+      ROBO_NOME: "servidor-eproc-tjsp"
+      # Migração por etapas (docs/easypanel.md): começa só com o eproc e ganha pje, dcp e, por fim, todos
+      # (vazio), conforme cada sistema sai do Mac.
+      ROBO_CONECTORES: "eproc:TJSP"
       EPROC_LOGIN: "certificado"
+      EPROC_TJRJ_LOGIN: "certificado"
+      # Sem Web Signer no servidor: a pessoa entra no e-SAJ pela tela remota (CPF, senha e código do e-mail).
       ESAJ_LOGIN: "manual"
       # Certificado A1 enviado pelo painel de robôs (contrato em docs/easypanel.md).
       CERTIFICADO_PASTA: "/certificados"
       CERTIFICADO_CHAVE_PRIVADA_ARQUIVO: "/segredos/robo-certificado.key"
-      # Código de 2 fatores do eproc pelo webhook do n8n (opcional).
+      # Onde o A1 é apresentado: SSO do eproc do TJSP e do TJRJ (e, para testar o DCP, https://www7.tjrj.jus.br).
+      CERTIFICADO_ORIGENS: "https://certificado-sso.tjsp.jus.br,https://certificado-eproc-sso.tjrj.jus.br"
+      # Código de 2 fatores do eproc: o robô gera com o segredo do TOTP que o painel grava em
+      # /certificados/segundo-fator.json (mesma pasta e mesma chave do certificado). O webhook do n8n fica
+      # como alternativa (opcional).
       ROBO_2FA_WEBHOOK_URL: "<url do webhook>"
       ROBO_2FA_WEBHOOK_TOKEN: "<token do webhook>"
       # Tela remota (noVNC) para a pessoa resolver login, código ou CAPTCHA.
       VNC_SENHA: "<senha da tela remota>"
       TELA_REMOTA_URL: "https://<dominio-da-tela>/vnc.html"
-      # Só um robô deve completar capas pelo DataJud: se o do Mac já faz, desligue aqui.
+      # Só um robô deve completar capas pelo DataJud: desligado aqui enquanto o Mac faz; ligue na última etapa.
       CAPA_DATAJUD: "nao"
     volumes:
       - robo-autos-dados:/dados
       # Pasta do servidor compartilhada com o painel de robôs; o robô só lê.
       - /srv/robos/certificados:/certificados:ro
       # Chave privada do robô (par da chave pública que o painel usa para cifrar a senha).
-      - /srv/robos/segredos/robo-certificado.key:/segredos/robo-certificado.key:ro
+      - /srv/robos/segredos:/segredos:ro
     ports:
       - "127.0.0.1:6080:6080"   # no Easypanel: domínio HTTPS com Basic Auth apontando para a porta 6080
     deploy:
