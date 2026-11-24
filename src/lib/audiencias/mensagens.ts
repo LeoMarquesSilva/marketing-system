@@ -53,7 +53,9 @@ function cliente(aud: Audiencia): string {
 
 function linha(aud: Audiencia, m: Marcador): string {
   const { hora } = local(aud.inicio);
-  return `${hora} ${ROTULO_TIPO[aud.tipo]} · ${cliente(aud)} · ${onde(aud)} · ${m.pessoa(aud.titularId)} (backup ${m.pessoa(aud.backupId)})`;
+  // Só no VIOS ou na Vistagem (o tribunal ainda não mostrou): vai com o aviso.
+  const aConfirmar = aud.origem === "vios" ? " · _a confirmar no tribunal_" : "";
+  return `${hora} ${ROTULO_TIPO[aud.tipo]} · ${cliente(aud)} · ${onde(aud)} · ${m.pessoa(aud.titularId)} (backup ${m.pessoa(aud.backupId)})${aConfirmar}`;
 }
 
 /** "📅 Pauta de amanhã · qui 19/11" com titular e backup marcados. */

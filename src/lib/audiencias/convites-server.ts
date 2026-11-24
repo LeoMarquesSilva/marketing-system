@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { tokenGraph } from "@/lib/vistagem/sharepoint";
-import { respostasDosConvites, type RespostasDosConvites } from "./agenda";
+import { geraAvisos, respostasDosConvites, type RespostasDosConvites } from "./agenda";
 import { lerConfig, modoOutlook, type ConfigPauta } from "./config-server";
 import { eventoDoConvite, respostaDoGraph, versaoDoEvento } from "./outlook";
 import { AudienciasError, carregarAudiencias, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
@@ -156,7 +156,7 @@ async function sincronizarUm(
   ctx: { real: boolean; token: string; organizador: string; urlPauta?: string; duracoes: Partial<Record<Audiencia["tipo"], number>> }
 ): Promise<"criados" | "atualizados" | "cancelados" | null> {
   const base = `/users/${encodeURIComponent(ctx.organizador)}/events`;
-  const deveExistir = aud.situacao === "designada" && Boolean(pessoa?.email) && Boolean(pessoa?.ativo);
+  const deveExistir = aud.situacao === "designada" && geraAvisos(aud) && Boolean(pessoa?.email) && Boolean(pessoa?.ativo);
   const trocouPessoa = atual && atual.pessoa_id !== (pessoa?.id ?? null);
 
   if (atual && atual.status !== "cancelado" && (!deveExistir || trocouPessoa)) {

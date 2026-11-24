@@ -82,8 +82,10 @@ export function diaCurto(diaIso: string): string {
   return `${DIAS[d.getUTCDay()]!.slice(0, 3).toLowerCase()} ${diaIso.slice(8, 10)}/${diaIso.slice(5, 7)}`;
 }
 
+/** Hora de Brasília; meia-noite é "sem horário" (tarefa do VIOS só com o dia). */
 export function hora(iso: string): string {
-  return local(iso).hora;
+  const h = local(iso).hora;
+  return h === "00:00" ? "--:--" : h;
 }
 
 export function quando(iso: string | null): string {
@@ -184,8 +186,22 @@ export function SeloTipo({ aud }: { aud: Audiencia }) {
   );
 }
 
-/** Audiência que não veio da Minha Pauta do PJe: o processo não está na pauta do certificado e foi lido no Jus.br. */
+/** De onde veio, quando não foi da Minha Pauta do PJe. */
+export function textoDaOrigem(aud: Pick<Audiencia, "origem" | "chave" | "viosTarefaCi">): string | null {
+  if (aud.origem === "jusbr") return "Veio do Jus.br: o processo não está na Minha Pauta do PJe do certificado. Quando o PJe passar a mostrar a audiência, a do PJe vale.";
+  if (aud.origem !== "vios") return null;
+  const deOnde = aud.chave.startsWith("vistagem:") ? "de um agendamento da Vistagem que ainda não chegou ao VIOS" : `da tarefa${aud.viosTarefaCi ? ` CI ${aud.viosTarefaCi}` : ""} do VIOS`;
+  return `A confirmar no tribunal: veio ${deOnde}, e o robô ainda não a achou no PJe nem no Jus.br (sessão de 2º grau, perícia, outro tribunal ou processo fora da Minha Pauta). Quando o tribunal mostrar, a do tribunal vale e herda a dupla.`;
+}
+
+/** Audiência que não veio da Minha Pauta do PJe: lida no Jus.br, ou só no VIOS ou na Vistagem ("a confirmar"). */
 export function SeloOrigem({ aud }: { aud: Audiencia }) {
+  if (aud.origem === "vios")
+    return (
+      <Selo tom="alerta" titulo={textoDaOrigem(aud) ?? undefined}>
+        {aud.chave.startsWith("vistagem:") ? "Da Vistagem · a confirmar" : "Do VIOS · a confirmar"}
+      </Selo>
+    );
   if (aud.origem !== "jusbr") return null;
   return (
     <Selo tom="etiqueta" titulo="O processo não está na Minha Pauta do PJe do certificado: a audiência foi lida no Jus.br (Portal de Serviços do CNJ).">

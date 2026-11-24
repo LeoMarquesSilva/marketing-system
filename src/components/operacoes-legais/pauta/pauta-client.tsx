@@ -12,7 +12,7 @@ import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import { IconeTribunal } from "../vistagem/marcas";
 import { IconeOpcao, Seletor } from "../vistagem/seletor";
 import { Aviso, BarraAba, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, campoClasse } from "../vistagem/ui";
-import { AcessoPauta, Avatar, Dupla, LinkDaSala, LinkDoVios, Local, Modalidade, ResumoDoFiltro, SeloOrigem, SeloTipo, TextoComCi, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
+import { AcessoPauta, Avatar, Dupla, LinkDaSala, LinkDoVios, Local, Modalidade, ResumoDoFiltro, SeloOrigem, SeloTipo, TextoComCi, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, textoDaOrigem, type DadosDaPauta } from "./comum";
 
 const COLUNAS = "lg:grid lg:grid-cols-[4.5rem_minmax(0,1.5fr)_minmax(0,1.1fr)_7.5rem_minmax(0,1.25fr)_minmax(0,1.15fr)_minmax(0,1fr)] lg:items-center lg:gap-4";
 const PERIODOS = [
@@ -450,9 +450,8 @@ function Detalhe({
             {diaPorExtenso(local(aud.inicio).dia)}, {hora(aud.inicio)} · <span className="font-mono">{aud.cnj}</span>
           </DialogDescription>
           <LinkDoVios aud={aud} className="mt-1 text-sm" />
-          {aud.origem === "jusbr" ? (
-            <p className="mt-1 text-xs text-muted-foreground">Veio do Jus.br: o processo não está na Minha Pauta do PJe do certificado. Quando o PJe passar a mostrar a audiência, a do PJe vale.</p>
-          ) : null}
+          {textoDaOrigem(aud) ? <p className="mt-1 text-xs text-muted-foreground">{textoDaOrigem(aud)}</p> : null}
+          {aud.tipoDescricao && aud.origem === "vios" ? <p className="mt-1 text-xs text-muted-foreground">No VIOS: {aud.tipoDescricao}</p> : null}
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {alertas.filter((a) => a.tipo !== "cedo").map((a) => (

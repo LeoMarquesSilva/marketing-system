@@ -3,7 +3,7 @@ import "server-only";
 import { evolutionFetch, getEvolutionConfig } from "@/lib/evolution-whatsapp";
 import { criarCalendario } from "@/lib/vistagem/dias-uteis";
 import { carregarFeriados } from "@/lib/vistagem/feriados";
-import { alertasDaAudiencia, hojeEmBrasilia, local, proximosDiasUteis, somarDias } from "./agenda";
+import { alertasDaAudiencia, geraAvisos, hojeEmBrasilia, local, proximosDiasUteis, somarDias } from "./agenda";
 import { lerConfig, modoWhatsapp } from "./config-server";
 import { respostasDasAudiencias } from "./convites-server";
 import { mensagemDaPauta, mensagemDeAlertas, mensagemDeMudanca, mensagemDeTroca, type Mensagem } from "./mensagens";
@@ -61,14 +61,14 @@ function proxima(aud: Audiencia, dias = 30): boolean {
 }
 
 export async function avisarMudanca(aud: Audiencia): Promise<void> {
-  if (!proxima(aud) || (!aud.mudancas.length && aud.situacao !== "cancelada")) return;
+  if (!geraAvisos(aud) || !proxima(aud) || (!aud.mudancas.length && aud.situacao !== "cancelada")) return;
   const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
   const chave = `mudanca:${aud.id}:${[...aud.mudancas].sort().join(",")}:${aud.situacao}`;
   await enviarAviso(chave, mensagemDeMudanca(aud, pessoas), aud.id);
 }
 
 export async function avisarTroca(aud: Audiencia, papel: Papel, de: string | null, para: string, motivo: string | null): Promise<void> {
-  if (!proxima(aud, 60)) return;
+  if (!geraAvisos(aud) || !proxima(aud, 60)) return;
   const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
   await enviarAviso(`troca:${aud.id}:${papel}:${para}:${Date.now()}`, mensagemDeTroca(aud, papel, de, para, motivo, pessoas), aud.id);
 }
@@ -79,7 +79,7 @@ export async function avisarPautaDoDia(qual: "hoje" | "proximo", agora = new Dat
   const hoje = hojeEmBrasilia(agora);
   if (!util(hoje)) return "hoje não é dia útil";
   const dia = qual === "hoje" ? hoje : proximosDiasUteis(hoje, 1, util)[0]!;
-  const auds = await carregarAudiencias(`${dia}T00:00:00-03:00`, `${somarDias(dia, 1)}T00:00:00-03:00`);
+  const auds = (await carregarAudiencias(`${dia}T00:00:00-03:00`, `${somarDias(dia, 1)}T00:00:00-03:00`)).filter(geraAvisos);
   const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
   const titulo = qual === "hoje" ? "Pauta de hoje" : dia === somarDias(hoje, 1) ? "Pauta de amanhã" : "Pauta do próximo dia útil";
   const mensagem = mensagemDaPauta(titulo, dia, auds, pessoas);
@@ -107,7 +107,7 @@ export async function avisarAlertasGraves(agora = new Date()): Promise<number> {
   const respostas = await respostasDasAudiencias(auds);
   const itens: { chave: string; aud: Audiencia; texto: string }[] = [];
   for (const aud of auds) {
-    if (aud.situacao !== "designada" || new Date(aud.inicio).getTime() < agora.getTime()) continue;
+    if (aud.situacao !== "designada" || !geraAvisos(aud) || new Date(aud.inicio).getTime() < agora.getTime()) continue;
     for (const alerta of alertasDaAudiencia(aud, { pessoas, todas: auds, respostas })) {
       if (["sem_titular", "choque", "deslocamento", "recusou"].includes(alerta.tipo)) itens.push({ chave: `alerta:${aud.id}:${alerta.tipo}:${hoje}`, aud, texto: alerta.texto });
     }

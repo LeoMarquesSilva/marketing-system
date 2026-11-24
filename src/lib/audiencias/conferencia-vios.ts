@@ -33,6 +33,21 @@ export function tribunalDoCnj(cnj: string): string | null {
   return numero > 0 ? `TRT${numero}` : null;
 }
 
+/**
+ * Até onde o robô leu cada tribunal: a audiência mais distante que ele trouxe do PJe (o robô lê PAUTA_DIAS à frente,
+ * 60 por padrão, e o Audiencias.csv vai a 1 ano). Depois disso o PJe nem foi consultado: não é "só no VIOS".
+ * (Em 23/11/2026, 293 das 300 listadas como "só no VIOS" eram de depois dos 60 dias.)
+ */
+export function lidoAtePorTribunal(audiencias: Pick<Audiencia, "tribunal" | "origem" | "inicio">[]): Map<string, string> {
+  const lidoAte = new Map<string, string>();
+  for (const a of audiencias) {
+    if (!a.tribunal || a.origem !== "pje") continue;
+    const dia = local(a.inicio).dia;
+    if (dia > (lidoAte.get(a.tribunal) ?? "")) lidoAte.set(a.tribunal, dia);
+  }
+  return lidoAte;
+}
+
 export function conferirPautaComVios(audiencias: Audiencia[], tarefas: AudienciaNoVios[], agora: Date): ResultadoDaConferencia {
   const auds = audiencias.filter((a) => a.situacao === "designada" || a.situacao === "cancelada");
   const porCnj = new Map<string, AudienciaNoVios[]>();
@@ -59,15 +74,7 @@ export function conferirPautaComVios(audiencias: Audiencia[], tarefas: Audiencia
     usadas.add(c.t.tarefaCi);
   }
 
-  // Até onde o robô leu cada tribunal: a audiência mais distante que ele trouxe (o robô lê PAUTA_DIAS à frente, 60 por
-  // padrão, e o Audiencias.csv vai a 1 ano). Depois disso o PJe nem foi consultado: não é "só no VIOS".
-  // (Em 23/11/2026, 293 das 300 listadas como "só no VIOS" eram de depois dos 60 dias.)
-  const lidoAte = new Map<string, string>();
-  for (const a of audiencias) {
-    if (!a.tribunal || a.origem !== "pje") continue;
-    const dia = local(a.inicio).dia;
-    if (dia > (lidoAte.get(a.tribunal) ?? "")) lidoAte.set(a.tribunal, dia);
-  }
+  const lidoAte = lidoAtePorTribunal(audiencias);
   // O robô lê a Minha Pauta do 1º grau: sessão de julgamento (2º grau) e perícia nunca aparecem nela.
   const soNoVios = tarefas
     .filter((t) => t.tipo !== "sessao" && t.tipo !== "pericia")

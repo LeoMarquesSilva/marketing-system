@@ -14,6 +14,11 @@ export interface AudienciaNoVios {
   /** "" quando o relatório veio sem o número do processo (a conferência completa pela CI do processo). */
   cnj: string;
   inicio: string;
+  /**
+   * Data para conclusão (com o mesmo horário), quando vem antes da data limite: na sessão virtual é o primeiro dia da
+   * sessão, e a data limite (`inicio`) é o último. Nas audiências as duas são o mesmo dia (null).
+   */
+  conclusao?: string | null;
   tipo: TipoAudiencia;
   tarefa: string;
   status: "aberta" | "concluida" | "cancelada";
@@ -105,6 +110,7 @@ export function lerCsvDoVios(texto: string): AudienciaNoVios[] {
     const cnj = cnjComMascara(l["Nro CNJ"]) ?? "";
     const ciProcesso = semIgual(l["CI do Processo"]) || null;
     const inicio = inicioDoVios(l["Data limite"] || l["Data para conclusão"], l["Horário"]);
+    const conclusao = inicioDoVios(l["Data para conclusão"], l["Horário"]);
     const tarefaCi = semIgual(l["CI"]);
     if ((!cnj && !ciProcesso) || !inicio || !tarefaCi) continue;
     saida.push({
@@ -112,6 +118,7 @@ export function lerCsvDoVios(texto: string): AudienciaNoVios[] {
       ciProcesso,
       cnj,
       inicio,
+      conclusao: conclusao && Date.parse(conclusao) < Date.parse(inicio) ? conclusao : null,
       tipo: tipoDaDescricao(tarefa.replace(/AUD\./i, "audiência")),
       tarefa,
       status: status(l["Status"]),
@@ -144,6 +151,7 @@ export function deTarefaDoSama(l: TarefaDoSama): AudienciaNoVios | null {
   if (!ehTarefaDeAudiencia(tarefa)) return null;
   const cnj = cnjComMascara(l.nro_cnj);
   const inicio = inicioDoVios(l.data_limite || l.data_para_conclusao, l.horario);
+  const conclusao = inicioDoVios(l.data_para_conclusao, l.horario);
   const tarefaCi = l.ci === null || l.ci === undefined ? "" : semIgual(String(l.ci));
   if (!cnj || !inicio || !tarefaCi) return null;
   const ciProcesso = l.ci_do_processo === null || l.ci_do_processo === undefined ? "" : semIgual(String(l.ci_do_processo));
@@ -152,6 +160,7 @@ export function deTarefaDoSama(l: TarefaDoSama): AudienciaNoVios | null {
     ciProcesso: ciProcesso || null,
     cnj,
     inicio,
+    conclusao: conclusao && Date.parse(conclusao) < Date.parse(inicio) ? conclusao : null,
     tipo: tipoDaDescricao(tarefa.replace(/AUD\./i, "audiência")),
     tarefa,
     status: status(l.vios_status),
