@@ -363,8 +363,13 @@ class ConectorEsaj implements Conector {
       await arquivo.delete().catch(() => undefined);
     } catch (erro) {
       if (erro instanceof FalhaDoConector) throw erro;
+      // O HTML da pasta digital traz todos os avisos escondidos; só a causa e o aviso visível dizem o que aconteceu.
+      const causa = erro instanceof Error ? erro.message.split("\n")[0].slice(0, 200) : String(erro);
+      const recusou = await pasta.getByText(/Não foi possível concluir a sua solicitação/i).first().isVisible().catch(() => false);
       const captura = await ambiente.diagnostico(pasta, "baixar o PDF");
-      throw new FalhaDoConector(`O download dos autos não terminou na pasta digital. Diagnóstico guardado em ${captura}.`);
+      throw new FalhaDoConector(
+        `O download dos autos não terminou na pasta digital${recusou ? " (o e-SAJ respondeu que não foi possível concluir a solicitação)" : ""}: ${causa}. Diagnóstico guardado em ${captura}.`
+      );
     }
     await conferirPdf(destino);
     return { pecas };
