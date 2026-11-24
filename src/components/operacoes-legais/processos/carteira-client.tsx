@@ -357,11 +357,12 @@ function Carteira() {
                 {ordenadas.map((linha) => (
                   <tr key={linha.id} className="hover:bg-[#f6fafb]">
                     <td className="min-w-[16rem] px-3 py-2.5">
-                      <Link href={`/operacoes-legais/processos/${linha.id}?de=carteira`} onClick={() => guardarEstado({ rolagem: window.scrollY })} className="flex min-w-0 items-start gap-2.5 hover:underline">
+                      <Link href={`/operacoes-legais/processos/${linha.id}?de=carteira`} onClick={() => guardarEstado({ rolagem: window.scrollY })} className="flex min-w-0 max-w-[24rem] items-start gap-2.5 hover:underline">
                         <LogoGrupo grupo={linha.grupoCliente} tamanho="md" />
                         <span className="min-w-0">
                           <span className="block truncate font-semibold tabular-nums text-[#10293a]">{linha.cnj ?? "Sem número CNJ"}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
+                          {/* Vários devedores numa linha só esticavam a coluna até o fim da tela: quebra em até duas linhas. */}
+                          <span className="line-clamp-2 text-xs text-muted-foreground" title={linha.devedor ?? undefined}>
                             CI {linha.ci ?? "—"} · {linha.devedor ?? "devedor não informado"}
                           </span>
                         </span>
