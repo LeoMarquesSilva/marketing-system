@@ -14,13 +14,13 @@ const origem = {
   confianca: z.enum(["alta", "media", "baixa"]),
 };
 
-export const TIPOS_TITULO_LIDOS = ["nota_promissoria", "duplicata", "ccb", "cheque", "contrato", "outro"] as const;
+export const TIPOS_TITULO_LIDOS = ["nota_promissoria", "duplicata", "ccb", "cheque", "contrato", "nota_fiscal", "boleto", "fatura", "outro"] as const;
 
 export const ESQUEMA_REC_CREDITO = z.object({
   titulos: z.array(
     z.object({
       tipo: z.enum(TIPOS_TITULO_LIDOS),
-      descricao: z.string().describe("Como a peça chama o título (ex.: \"Duplicata mercantil\", \"Cédula de Crédito Bancário\")."),
+      descricao: z.string().describe("A espécie do título, como a peça chama, SEM o número (ex.: \"Duplicata mercantil\", \"Cédula de Crédito Bancário\", \"Nota fiscal de serviços\"). O número vai em `numero`."),
       numero: z.string().nullable(),
       valor: z.number().describe("Valor de face do título, em reais."),
       vencimento: z.string().describe("Vencimento do título, AAAA-MM-DD."),
@@ -29,7 +29,7 @@ export const ESQUEMA_REC_CREDITO = z.object({
   ),
   citacoes: z.array(
     z.object({
-      data: z.string().nullable().describe("Data da tentativa (do AR, da diligência, do edital), AAAA-MM-DD."),
+      data: z.string().nullable().describe("Data da tentativa (do AR, da diligência, da publicação do edital), AAAA-MM-DD. Se a peça não traz essa data, a data da certidão do oficial ou do próprio documento."),
       meio: z.enum(["ar", "oficial", "edital", "eletronica", "outro"]),
       resultado: z.enum(["positiva", "negativa", "pendente"]),
       endereco: z.string().nullable().describe("Endereço onde se tentou citar, como está escrito."),
@@ -40,7 +40,7 @@ export const ESQUEMA_REC_CREDITO = z.object({
   pedidos: z.array(
     z.object({
       tipo: z.string().describe("SISBAJUD, RENAJUD, INFOJUD, CNIB, SERASAJUD, Penhora, Pesquisa de bens, Protesto, Desconsideração da personalidade jurídica, Citação por edital ou outro, com o nome curto."),
-      data_pedido: z.string().nullable().describe("Data da petição que fez o pedido, AAAA-MM-DD."),
+      data_pedido: z.string().nullable().describe("Data da petição do credor que fez o pedido (a do protocolo ou a que consta na petição), AAAA-MM-DD. Pedido feito na petição inicial: a data da inicial. Se o pedaço só traz a decisão e ela não diz a data do pedido, null."),
       situacao: z.enum(["requerido", "deferido", "indeferido", "prejudicado"]),
       data_decisao: z.string().nullable().describe("Data da decisão sobre o pedido, AAAA-MM-DD."),
       resultado: z.string().nullable().describe("O que resultou (ex.: \"bloqueio de R$ 1.234,56 no Banco X\", \"nenhum veículo encontrado\", \"resultado negativo\")."),
@@ -69,9 +69,9 @@ export function leituraRecCreditoVazia(): LeituraRecCredito {
 export function instrucoesRecCredito(): string[] {
   return [
     "rec_credito (saneamento da Recuperação de Crédito; listas vazias quando o pedaço não traz):",
-    "- titulos: cada título executado ou cobrado (nota promissória, duplicata, CCB, cheque, contrato), um item por título, com valor de face e vencimento, como a petição inicial, o demonstrativo do débito ou a cópia do título mostram. Não some títulos; não use o valor atualizado. Sem valor ou sem vencimento, não devolva. `tipo`: nota_promissoria, duplicata, ccb (Cédula de Crédito Bancário), cheque, contrato ou outro.",
+    "- titulos: cada título executado ou cobrado (nota promissória, duplicata, CCB, cheque, contrato, nota fiscal, boleto, fatura), um item por título, com valor de face e vencimento, como a petição inicial, o demonstrativo do débito ou a cópia do título mostram. Não some títulos; não use o valor atualizado. Sem valor ou sem vencimento, não devolva. `tipo`: nota_promissoria, duplicata, ccb (Cédula de Crédito Bancário), cheque, contrato, nota_fiscal (NF, NF-e, nota fiscal de serviços), boleto, fatura ou outro. `descricao` é só a espécie do título; o número do título vai em `numero`, nunca na descrição.",
     "- citacoes: cada tentativa de citar o devedor (aviso de recebimento, certidão do oficial de justiça, edital, citação eletrônica), com o endereço e o resultado: positiva (citado), negativa (não encontrado, mudou-se, desconhecido) ou pendente (expedida, sem retorno no pedaço). Despacho que só manda citar não é tentativa.",
-    "- pedidos: cada providência que o CREDOR pediu para receber (SISBAJUD, RENAJUD, INFOJUD, CNIB, SERASAJUD, penhora, pesquisa de bens, protesto, desconsideração da personalidade jurídica, citação por edital) e o que o juiz decidiu e o que resultou. Pedido e decisão sobre o mesmo pedido são UM item: use a situação final que o pedaço mostra. Pedido do devedor não entra.",
+    "- pedidos: cada providência que o CREDOR pediu para receber (SISBAJUD, RENAJUD, INFOJUD, CNIB, SERASAJUD, penhora, pesquisa de bens, protesto, desconsideração da personalidade jurídica, citação por edital) e o que o juiz decidiu e o que resultou. Pedido e decisão sobre o mesmo pedido são UM item: use a situação final que o pedaço mostra. Quando o pedaço traz a petição, devolva o pedido com `data_pedido` mesmo sem decisão (situação requerido): é dele que sai a data do pedido quando a decisão está em outro pedaço. Pedido do devedor não entra.",
     "- lancamentos: guia_paga = custas, taxas ou diligências pagas pelo credor (com o comprovante ou a guia no pedaço); levantamento = dinheiro que o credor recebeu (alvará ou mandado de levantamento expedido, transferência ao credor). Bloqueio que não foi levantado não é levantamento. Parcela de acordo paga não entra aqui: vai em acordos.pagamentos.",
     "- Datas em AAAA-MM-DD; valores em reais, com ponto decimal (12345.67).",
   ];
@@ -130,23 +130,61 @@ function chaveTexto(valor: string | null | undefined): string {
 
 const centavos = (valor: number) => Math.round(valor * 100);
 
-/** "Nota promissória" ↔ nota_promissoria: casa o tipo lido com a lista de Cadastros pelo texto. */
-export function tipoDaLista(tipo: (typeof TIPOS_TITULO_LIDOS)[number], descricao: string, lista: string[]): string {
-  const alvo: Record<string, RegExp> = {
-    nota_promissoria: /notapromissoria/,
-    duplicata: /duplicata/,
-    ccb: /^ccb|ceduladecreditobancario/,
-    cheque: /cheque/,
-    contrato: /contrato/,
-  };
-  const padrao = alvo[tipo];
-  const achado = padrao ? lista.find((item) => padrao.test(chaveTexto(item))) : undefined;
-  // Fora da lista: o nome padrão do tipo (casa quando a equipe incluir o tipo em Cadastros); só "outro" usa a peça.
-  const PADRAO: Record<string, string> = { nota_promissoria: "Nota promissória", duplicata: "Duplicata", ccb: "CCB (Cédula de Crédito Bancário)", cheque: "Cheque", contrato: "Contrato" };
-  return achado ?? PADRAO[tipo] ?? (texto(descricao, 80) || "Outro");
+type TipoLido = (typeof TIPOS_TITULO_LIDOS)[number];
+
+/** Como reconhecer cada espécie de título num texto sem acento nem espaço (o da lista ou o da peça). */
+const ALVO_DO_TIPO: [Exclude<TipoLido, "outro">, RegExp][] = [
+  ["nota_promissoria", /notapromissoria/],
+  ["duplicata", /duplicata/],
+  ["ccb", /^ccb|ceduladecreditobancario/],
+  ["cheque", /cheque/],
+  ["nota_fiscal", /notafiscal|^nfs?e?(?![a-z])|^danfe/],
+  ["boleto", /boleto/],
+  ["fatura", /^fatura/],
+  ["contrato", /contrato/],
+];
+
+const NOME_PADRAO: Record<Exclude<TipoLido, "outro">, string> = {
+  nota_promissoria: "Nota promissória",
+  duplicata: "Duplicata",
+  ccb: "CCB (Cédula de Crédito Bancário)",
+  cheque: "Cheque",
+  contrato: "Contrato",
+  nota_fiscal: "Nota fiscal",
+  boleto: "Boleto",
+  fatura: "Fatura",
+};
+
+/**
+ * "Nota fiscal nº 111.222" → "Nota fiscal": o tipo é a espécie do título; o número tem campo próprio.
+ * Corta no primeiro número (e no "nº", "n.", "série" que o anuncia) e acerta a caixa de texto todo em maiúsculas.
+ */
+export function especieDoTitulo(descricao: string | null | undefined): string | null {
+  const limpo = (texto(descricao, 200) ?? "")
+    .replace(/\s*[,;:(–—-]?\s*(?:\b(?:n[ºo°.]{1,2}|n[úu]mero|s[ée]rie)\s*)?[#]?\d.*$/i, "")
+    .replace(/\s+(?:n[ºo°.]{1,2}|n[úu]mero|s[ée]rie|de|da|do)$/i, "")
+    .replace(/[\s,;:.(–—-]+$/, "")
+    .trim();
+  if (!limpo) return null;
+  const semGrito = limpo === limpo.toUpperCase() && limpo.length > 5 ? limpo.toLowerCase() : limpo;
+  return (semGrito.charAt(0).toUpperCase() + semGrito.slice(1)).slice(0, 80);
 }
 
-/** Chaves dos itens já lançados: a leitura não propõe de novo o que a ficha já tem. */
+/**
+ * O tipo do título como vai para a ficha: a opção da lista de Cadastros quando existe; senão o nome padrão
+ * da espécie (a aprovação inclui a espécie nova em Cadastros); em último caso, a espécie que a peça usa.
+ */
+export function tipoDaLista(tipo: TipoLido, descricao: string, lista: string[]): string {
+  const especie = especieDoTitulo(descricao);
+  // "outro" com descrição que é de uma espécie conhecida ("NF-e nº 123") vale como essa espécie.
+  const conhecido = tipo !== "outro" ? tipo : ALVO_DO_TIPO.find(([, padrao]) => padrao.test(chaveTexto(especie)))?.[0];
+  if (conhecido) {
+    const padrao = ALVO_DO_TIPO.find(([nome]) => nome === conhecido)?.[1];
+    return (padrao && lista.find((item) => padrao.test(chaveTexto(item)))) ?? NOME_PADRAO[conhecido];
+  }
+  return lista.find((item) => chaveTexto(item) === chaveTexto(especie)) ?? especie ?? "Outro";
+}
+
 export function chavesExistentes(itens: ItensRecCredito): Set<string> {
   const chaves = new Set<string>();
   for (const titulo of itens.titulos) chaves.add(`titulo:${centavos(titulo.valor)}:${titulo.vencimento}`);
@@ -224,6 +262,56 @@ export function mesmoItem(a: ItemSugerido, b: ItemSugerido): boolean {
   }
 }
 
+/** O mínimo de um pedido de execução para casar a petição com a decisão (o lido pela IA ou o de uma sugestão). */
+export interface PedidoParaCasar {
+  tipo: string;
+  pedidoEm: string | null;
+  decididoEm: string | null;
+  situacao: string;
+}
+
+/** A decisão pode demorar, mas pedido com mais de um ano e meio antes dela provavelmente é outro. */
+const FOLGA_PEDIDO_DECISAO = 540;
+
+/**
+ * A petição que pede e a decisão que defere costumam estar em pedaços diferentes dos autos: a IA devolve
+ * um "requerido" com a data do pedido e um "deferido" só com a data da decisão. Aqui os dois viram um:
+ * a decisão recebe a data do pedido mais recente, do mesmo tipo, feito antes dela, e o "requerido" que
+ * ficou todo coberto por decisões sai da lista. "SISBAJUD, RENAJUD e INFOJUD" pedidos juntos casam com
+ * as três decisões, uma de cada sistema. Devolve os pedidos que ficam (na ordem em que vieram).
+ */
+export function casarPedidos<T extends PedidoParaCasar>(pedidos: T[]): T[] {
+  const palavras = pedidos.map((pedido) => new Set(tipoDoPedido(pedido.tipo).split(" ").filter(Boolean)));
+  const contido = (a: Set<string>, b: Set<string>) => a.size > 0 && [...a].every((palavra) => b.has(palavra));
+  const ehRequerimento = (pedido: T) => pedido.situacao === "requerido" && Boolean(pedido.pedidoEm) && !pedido.decididoEm;
+  // Por pedido: a palavra do tipo já respondida e a data da decisão que a respondeu.
+  const cobertas = pedidos.map(() => new Map<string, string>());
+  const saida = pedidos.map((pedido) => ({ ...pedido }));
+  const decisoes = pedidos
+    .map((pedido, indice) => ({ pedido, indice }))
+    .filter(({ pedido }) => pedido.situacao !== "requerido" && !pedido.pedidoEm && Boolean(pedido.decididoEm))
+    .sort((a, b) => (a.pedido.decididoEm as string).localeCompare(b.pedido.decididoEm as string));
+  for (const { pedido: decisao, indice } of decisoes) {
+    const daDecisao = palavras[indice];
+    let melhor = -1;
+    pedidos.forEach((requerimento, outro) => {
+      if (!ehRequerimento(requerimento)) return;
+      const doPedido = palavras[outro];
+      if (!contido(daDecisao, doPedido) && !contido(doPedido, daDecisao)) return;
+      // A mesma parte de um pedido não responde por duas decisões diferentes (deferido em 2022 e de novo em
+      // 2023); a mesma decisão lida duas vezes, em pedaços vizinhos, pega a mesma data.
+      if ([...daDecisao].some((palavra) => cobertas[outro].has(palavra) && cobertas[outro].get(palavra) !== decisao.decididoEm)) return;
+      const dias = (Date.parse(`${decisao.decididoEm}T00:00:00Z`) - Date.parse(`${requerimento.pedidoEm}T00:00:00Z`)) / DIA;
+      if (!(dias >= 0 && dias <= FOLGA_PEDIDO_DECISAO)) return;
+      if (melhor === -1 || (requerimento.pedidoEm as string) > (pedidos[melhor].pedidoEm as string)) melhor = outro;
+    });
+    if (melhor === -1) continue;
+    saida[indice].pedidoEm = pedidos[melhor].pedidoEm;
+    for (const palavra of daDecisao) cobertas[melhor].set(palavra, decisao.decididoEm as string);
+  }
+  return saida.filter((pedido, indice) => !(ehRequerimento(pedidos[indice]) && contido(palavras[indice], new Set(cobertas[indice].keys()))));
+}
+
 /**
  * O que a IA leu da Rec. Crédito vira sugestões: sem repetir o que já está na ficha, sem repetir entre
  * pedaços (fica a proposta mais confiável) e com a página e o trecho conferidos no PDF.
@@ -297,11 +385,13 @@ export function sugestoesDaRecCredito(
     );
   }
 
-  for (const pedido of lido.pedidos) {
-    const tipo = texto(pedido.tipo, 120);
+  // A decisão sem a data do pedido pega a da petição lida em outro pedaço (ver casarPedidos).
+  const pedidosLidos = casarPedidos(
+    lido.pedidos.map((pedido) => ({ ...pedido, tipo: texto(pedido.tipo, 120) ?? "", pedidoEm: data(pedido.data_pedido), decididoEm: data(pedido.data_decisao) }))
+  );
+  for (const pedido of pedidosLidos) {
+    const { tipo, pedidoEm, decididoEm } = pedido;
     if (!tipo) continue;
-    const pedidoEm = data(pedido.data_pedido);
-    const decididoEm = data(pedido.data_decisao);
     const situacao = SITUACOES_PEDIDO.find((item) => item.valor === pedido.situacao)?.rotulo ?? pedido.situacao;
     const valorObtido = pedido.valor_obtido && pedido.valor_obtido > 0 ? Math.round(pedido.valor_obtido * 100) / 100 : null;
     const resultado = texto(pedido.resultado, 1000);

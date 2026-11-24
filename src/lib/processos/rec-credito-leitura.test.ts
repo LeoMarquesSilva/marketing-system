@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ItensRecCredito } from "./rec-credito";
-import { creditoDosTitulos, mesmoItem, leituraRecCreditoVazia, sugestoesDaRecCredito, sugestoesDoCreditoPelosTitulos, tipoDaLista, type ItemSugerido, type LeituraRecCredito } from "./rec-credito-leitura";
+import { casarPedidos, creditoDosTitulos, especieDoTitulo, mesmoItem, leituraRecCreditoVazia, sugestoesDaRecCredito, sugestoesDoCreditoPelosTitulos, tipoDaLista, type ItemSugerido, type LeituraRecCredito } from "./rec-credito-leitura";
 
 const TIPOS = ["Nota promissória", "Duplicata", "CCB (Cédula de Crédito Bancário)"];
 const nada: ItensRecCredito = { titulos: [], citacoes: [], pedidos: [], lancamentos: [] };
@@ -19,6 +19,92 @@ describe("tipo do título", () => {
     expect(tipoDaLista("cheque", "Cheque série AAA", TIPOS)).toBe("Cheque");
     expect(tipoDaLista("cheque", "Cheque", [...TIPOS, "Cheque"])).toBe("Cheque");
     expect(tipoDaLista("outro", "Confissão de dívida", TIPOS)).toBe("Confissão de dívida");
+  });
+
+  it("o tipo é a espécie do título: o número fica de fora", () => {
+    expect(especieDoTitulo("Nota fiscal nº 111.222")).toBe("Nota fiscal");
+    expect(especieDoTitulo("Nota fiscal de serviços nº 5550001")).toBe("Nota fiscal de serviços");
+    expect(especieDoTitulo("NF-e nº 000111222, fatura 111222/01")).toBe("NF-e");
+    expect(especieDoTitulo("Fatura nº 400100 — Detalhamento")).toBe("Fatura");
+    expect(especieDoTitulo("Duplicata mercantil 40123/1")).toBe("Duplicata mercantil");
+    expect(especieDoTitulo("CONFISSÃO DE DÍVIDA")).toBe("Confissão de dívida");
+    expect(especieDoTitulo("Contrato n. 77")).toBe("Contrato");
+    expect(especieDoTitulo("  ")).toBeNull();
+  });
+
+  it("nota fiscal, boleto e fatura são espécies conhecidas, mesmo quando vêm como \"outro\"", () => {
+    expect(tipoDaLista("nota_fiscal", "Nota fiscal nº 111.222", TIPOS)).toBe("Nota fiscal");
+    expect(tipoDaLista("outro", "Nota fiscal nº 111.222", TIPOS)).toBe("Nota fiscal");
+    expect(tipoDaLista("outro", "NF-e nº 000111222, fatura 111222/01", TIPOS)).toBe("Nota fiscal");
+    expect(tipoDaLista("outro", "Nota fiscal de serviços nº 5550001", [...TIPOS, "Nota Fiscal"])).toBe("Nota Fiscal");
+    expect(tipoDaLista("outro", "Boleto bancário", TIPOS)).toBe("Boleto");
+    expect(tipoDaLista("fatura", "Fatura nº 400100", TIPOS)).toBe("Fatura");
+    // Espécie que não é das conhecidas: a da lista, se existir com outra caixa; senão a da peça, sem número.
+    expect(tipoDaLista("outro", "TERMO DE CONFISSÃO nº 9", [...TIPOS, "Termo de confissão"])).toBe("Termo de confissão");
+    expect(tipoDaLista("outro", "Warrant agropecuário 12/2024", TIPOS)).toBe("Warrant agropecuário");
+  });
+});
+
+describe("petição e decisão do mesmo pedido de execução", () => {
+  const pedido = (tipo: string, pedidoEm: string | null, situacao: string, decididoEm: string | null) => ({ tipo, pedidoEm, situacao, decididoEm });
+
+  it("a decisão pega a data do pedido feito antes dela e o requerido some", () => {
+    const casados = casarPedidos([pedido("SISBAJUD", "2022-07-29", "requerido", null), pedido("Sisbajud", null, "deferido", "2022-08-15")]);
+    expect(casados).toEqual([pedido("Sisbajud", "2022-07-29", "deferido", "2022-08-15")]);
+  });
+
+  it("um pedido de três sistemas casa com as três decisões, uma de cada", () => {
+    const casados = casarPedidos([
+      pedido("INFOJUD", null, "deferido", "2022-06-21"),
+      pedido("SISBAJUD, RENAJUD e INFOJUD", "2022-05-10", "requerido", null),
+      pedido("RENAJUD", null, "deferido", "2022-06-21"),
+      pedido("SISBAJUD", null, "indeferido", "2022-06-21"),
+    ]);
+    expect(casados.map((item) => [item.tipo, item.pedidoEm, item.situacao])).toEqual([
+      ["INFOJUD", "2022-05-10", "deferido"],
+      ["RENAJUD", "2022-05-10", "deferido"],
+      ["SISBAJUD", "2022-05-10", "indeferido"],
+    ]);
+  });
+
+  it("pedido só em parte decidido continua na lista", () => {
+    const casados = casarPedidos([pedido("SISBAJUD e RENAJUD", "2022-05-10", "requerido", null), pedido("SISBAJUD", null, "deferido", "2022-06-21")]);
+    expect(casados).toEqual([pedido("SISBAJUD e RENAJUD", "2022-05-10", "requerido", null), pedido("SISBAJUD", "2022-05-10", "deferido", "2022-06-21")]);
+  });
+
+  it("cada decisão fica com o pedido mais recente antes dela; o mesmo pedido não serve a duas decisões", () => {
+    const casados = casarPedidos([
+      pedido("SISBAJUD", "2022-07-01", "requerido", null),
+      pedido("SISBAJUD", "2023-05-02", "requerido", null),
+      pedido("SISBAJUD", null, "deferido", "2022-08-15"),
+      pedido("SISBAJUD", null, "deferido", "2023-06-01"),
+      pedido("SISBAJUD", null, "deferido", "2023-09-01"),
+    ]);
+    expect(casados.map((item) => [item.pedidoEm, item.decididoEm])).toEqual([
+      ["2022-07-01", "2022-08-15"],
+      ["2023-05-02", "2023-06-01"],
+      [null, "2023-09-01"],
+    ]);
+  });
+
+  it("a mesma decisão lida duas vezes pega a mesma data", () => {
+    const casados = casarPedidos([pedido("RENAJUD", "2022-05-10", "requerido", null), pedido("RENAJUD", null, "deferido", "2022-06-21"), pedido("Renajud", null, "deferido", "2022-06-21")]);
+    expect(casados.map((item) => item.pedidoEm)).toEqual(["2022-05-10", "2022-05-10"]);
+  });
+
+  it("não casa com pedido posterior à decisão, de outro tipo ou antigo demais", () => {
+    const itens = [
+      pedido("SISBAJUD", "2022-09-01", "requerido", null),
+      pedido("Penhora de imóvel", "2022-05-01", "requerido", null),
+      pedido("SISBAJUD", "2020-01-10", "requerido", null),
+      pedido("SISBAJUD", null, "deferido", "2022-08-15"),
+    ];
+    expect(casarPedidos(itens)).toEqual(itens);
+  });
+
+  it("quem já tem a data do pedido, ou não tem a da decisão, fica como veio", () => {
+    const itens = [pedido("SISBAJUD", "2022-07-01", "requerido", null), pedido("SISBAJUD", "2022-07-01", "deferido", "2022-08-15"), pedido("RENAJUD", null, "deferido", null)];
+    expect(casarPedidos(itens)).toEqual(itens);
   });
 });
 
