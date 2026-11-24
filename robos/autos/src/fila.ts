@@ -79,6 +79,14 @@ export class Fila {
     await this.chamar(`/pedidos/${pedidoId}`, { acao: "seguir" });
   }
 
+  /**
+   * O Jus.br não trouxe os autos e este robô não tem o conector da reserva: o pedido volta à fila no sistema do
+   * tribunal (`reserva`, ex.: "esaj:TJSP"), para o robô do tribunal.
+   */
+  async repassar(pedidoId: string, reserva: string): Promise<void> {
+    await this.chamar(`/pedidos/${pedidoId}`, { acao: "repassar", reserva });
+  }
+
   async erro(pedidoId: string, mensagem: string): Promise<void> {
     await this.chamar(`/pedidos/${pedidoId}`, { acao: "erro", mensagem: mensagem.slice(0, 900) });
   }

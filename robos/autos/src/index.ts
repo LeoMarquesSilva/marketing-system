@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as dormir } from "node:timers/promises";
 import type { Page } from "playwright";
@@ -16,6 +16,7 @@ import { ConectorJusbr } from "./conectores/jusbr.ts";
 import { EsperaEsgotada, FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./conectores/tipos.ts";
 import { Fila, PedidoEncerrado, type Pedido } from "./fila.ts";
 import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
+import { planoDaReserva } from "./reserva.ts";
 
 /**
  * Robô de autos do ORQESTRAI. Consome a fila proc_autos_pedidos (pelas rotas /api/robos/autos), baixa os
@@ -278,6 +279,9 @@ async function principal(): Promise<void> {
     } catch (erro) {
       registrar(`Não consegui consultar a fila: ${mensagemLimpa(erro)}`);
     }
+    // Decisão do escritório (24/11/2026): processo em segredo de justiça que o robô abre com o login do advogado é
+    // processo do advogado; baixa sem esperar a liberação na ficha. SEGREDO_JUSTICA=esperar volta à regra antiga.
+    if (pedido && config.segredoSempreLiberado && !pedido.segredoLiberado) pedido = { ...pedido, segredoLiberado: true };
     if (!pedido) {
       if (modo === "uma-vez") break;
       if (config.capaDataJud && Date.now() >= proximaCapa) proximaCapa = await completarUmaCapa();
@@ -292,19 +296,29 @@ async function principal(): Promise<void> {
     registrar(`Pedido ${pedido.cnj} (${pedido.tribunal}), tentativa ${pedido.tentativas}.`);
     try {
       if (!conector || !cnj) throw new FalhaDoConector(`Este robô não atende ${pedido.sistema} do ${pedido.tribunal}.`);
-      let resultado: ResultadoDoDownload | void;
+      let resultado: ResultadoDoDownload | void = undefined;
+      let repassado = false;
       try {
         resultado = await conector.baixar(ambientePara(pedido), pedido, destino);
       } catch (erro) {
-        // O Jus.br não trouxe os autos (tribunal ainda não integrado, documentos incompletos, instabilidade):
-        // segue pelo robô do tribunal no mesmo pedido, se este robô o tiver.
-        const reserva = pedido.sistema === "jusbr" && erro instanceof FalhaDoConector && pedido.reserva ? CONECTORES.find((item) => item.chave === pedido.reserva) : undefined;
-        if (!reserva || !pedido.reserva || !(erro instanceof FalhaDoConector)) throw erro;
-        registrar(`${erro.message} Seguindo pelo ${pedido.reserva}.`);
-        const doTribunal = await reserva.baixar(ambientePara(pedido), { ...pedido, sistema: pedido.reserva.split(":")[0] }, destino);
-        resultado = { ...(doTribunal ?? {}), sistema: doTribunal?.sistema ?? pedido.reserva.split(":")[0] };
+        // O Jus.br não trouxe os autos (tribunal ainda não integrado, documentos incompletos, instabilidade): segue
+        // pelo robô do tribunal no mesmo pedido, se este robô o tiver; se não (robô só do Jus.br), repassa o pedido.
+        const plano = planoDaReserva(pedido, erro, CONECTORES);
+        if (!plano) throw erro;
+        const sistemaDaReserva = plano.reserva.split(":")[0];
+        if (plano.tipo === "repassar") {
+          await fila.repassar(pedido.id, plano.reserva);
+          registrar(`${mensagemLimpa(erro)} Repassado ao robô do tribunal (${plano.reserva}).`);
+          repassado = true;
+        } else {
+          registrar(`${mensagemLimpa(erro)} Seguindo pelo ${plano.reserva}.`);
+          const doTribunal = await plano.conector.baixar(ambientePara(pedido), { ...pedido, sistema: sistemaDaReserva }, destino);
+          resultado = { ...(doTribunal ?? {}), sistema: doTribunal?.sistema ?? sistemaDaReserva };
+        }
       }
-      if (resultado?.semNovidades) {
+      if (repassado) {
+        // O pedido voltou à fila no sistema do tribunal: nada a entregar daqui.
+      } else if (resultado?.semNovidades) {
         await fila.semNovidades(pedido.id, resultado.sistema, resultado.capa);
         registrar(`Autos de ${pedido.cnj} conferidos: nenhuma peça nova desde o último download.`);
       } else {
@@ -329,6 +343,10 @@ async function principal(): Promise<void> {
     } finally {
       // O PDF não fica nesta máquina: ou subiu ao bucket privado, ou é descartado.
       await rm(destino, { force: true }).catch(() => undefined);
+      // Partes de um PDF grande ("<pedido>-parteN.pdf") também saem.
+      for (const nome of await readdir(config.pastas.downloads).catch(() => [] as string[])) {
+        if (nome.startsWith(`${pedido.id}-parte`)) await rm(join(config.pastas.downloads, nome), { force: true }).catch(() => undefined);
+      }
     }
     if (!encerrando) await dormir(config.pausaEntrePedidosMs);
   }

@@ -6,6 +6,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import type { CertificadoCliente } from "./certificado.ts";
 import type { Config } from "./config.ts";
 import { instalarPjeOffice } from "./pje-office.ts";
+import { instalarWebSigner } from "./web-signer.ts";
 
 /**
  * O navegador do robô: sempre com janela (a pessoa precisa ver para concluir login, código ou CAPTCHA) e
@@ -149,6 +150,12 @@ async function abrirPeloPlaywright(config: Config, certificado: CertificadoClien
   if (certificado && config.pjeOffice) {
     if (await instalarPjeOffice(contexto, certificado, { registrar: (m) => console.log(`[${new Date().toLocaleTimeString("pt-BR")}] ${m}`) })) {
       console.log(`[${new Date().toLocaleTimeString("pt-BR")}] PJe Office do robô ligado para o login por certificado no jus.br (PDPJ).`);
+    }
+  }
+  // Login por certificado no e-SAJ: o robô faz o papel do Web Signer da Softplan com o mesmo A1 (src/web-signer.ts).
+  if (certificado && config.webSigner) {
+    if (await instalarWebSigner(contexto, certificado, { registrar: (m) => console.log(`[${new Date().toLocaleTimeString("pt-BR")}] ${m}`) })) {
+      console.log(`[${new Date().toLocaleTimeString("pt-BR")}] Web Signer do robô ligado para o login por certificado no e-SAJ.`);
     }
   }
   const pagina = contexto.pages()[0] ?? (await contexto.newPage());

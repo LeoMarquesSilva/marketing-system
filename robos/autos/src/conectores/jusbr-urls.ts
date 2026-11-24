@@ -183,3 +183,22 @@ export function textoParaPdf(texto: string): string {
     .replace(/…/g, "...")
     .replace(/[^\n\t\x20-\x7E -ÿ]/g, "?");
 }
+
+/** Documentos seguidos sem arquivo nem texto que fazem o robô desistir do Jus.br e seguir pelo tribunal. */
+export const JUSBR_FALHAS_SEGUIDAS = 10;
+
+/**
+ * Desiste do Jus.br? Quando a integração de um tribunal está fora (o Jus.br responde 503 a cada peça), insistir
+ * peça por peça leva quase uma hora num processo grande e termina sem nada (24/11, TJRJ): depois de
+ * JUSBR_FALHAS_SEGUIDAS falhas seguidas, o pedido segue pelo robô do tribunal.
+ */
+export function desistirDoJusbr(falhasSeguidas: number): boolean {
+  return falhasSeguidas >= JUSBR_FALHAS_SEGUIDAS;
+}
+
+/** Originais (PDF) recusados em sequência que fazem o robô seguir só pelo texto no resto do processo. */
+export const JUSBR_ORIGINAIS_RECUSADOS = 3;
+
+export function desistirDosOriginais(recusadosSeguidos: number): boolean {
+  return recusadosSeguidos >= JUSBR_ORIGINAIS_RECUSADOS;
+}

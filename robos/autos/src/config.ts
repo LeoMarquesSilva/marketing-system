@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { certificadoConfigurado, type ConfigCertificado } from "./certificado.ts";
 import type { ConfigSegundoFator } from "./segundo-fator.ts";
+import { PERFIL_EPROC_PADRAO } from "./conectores/eproc-urls.ts";
 
 /**
  * Configuração do robô, toda por variável de ambiente (arquivo .env nesta pasta, fora do repositório).
@@ -86,7 +87,7 @@ export interface Config {
   pausaCapaMs: number;
   esaj: { login: ModoDeLogin; certificado: string; usuario: string; senha: string };
   /** eproc (TJSP): login pelo SSO do tribunal. Sem EPROC_LOGIN, vale o modo do e-SAJ. */
-  eproc: { login: ModoDeLogin; usuario: string; senha: string };
+  eproc: { login: ModoDeLogin; usuario: string; senha: string; perfil: string };
   /**
    * eproc do TJRJ: cadastro e senha próprios do tribunal (EPROC_TJRJ_*). Sem EPROC_TJRJ_LOGIN, vale o modo do
    * eproc do TJSP, menos "senha" sem usuário e senha do TJRJ, que vira "manual".
@@ -109,6 +110,16 @@ export interface Config {
    * Só no modo playwright com certificado; PJE_OFFICE=nao desliga (aí o login no jus.br fica com a pessoa).
    */
   pjeOffice: boolean;
+  /**
+   * O robô faz o papel do Web Signer da Softplan no login por certificado do e-SAJ, com o mesmo A1 (src/web-signer.ts).
+   * Só no modo playwright com certificado; WEB_SIGNER=nao desliga (aí o login do e-SAJ fica com a pessoa).
+   */
+  webSigner: boolean;
+  /**
+   * Processo em segredo de justiça: baixa sem esperar a liberação na ficha, porque o robô só abre o que o login do
+   * advogado já alcança (decisão de 24/11/2026). SEGREDO_JUSTICA=esperar volta a parar e esperar a liberação.
+   */
+  segredoSempreLiberado: boolean;
   pastas: { perfil: string; downloads: string; diagnostico: string };
 }
 
@@ -190,9 +201,12 @@ export function lerConfig(): Config {
     capaDataJud: !/^(nao|não|0|false)$/i.test(texto("CAPA_DATAJUD")),
     pausaCapaMs: numero("PAUSA_CAPA_SEGUNDOS", 30) * 1000,
     esaj: { login, certificado: texto("ESAJ_CERTIFICADO"), usuario: texto("ESAJ_USUARIO"), senha: texto("ESAJ_SENHA") },
-    eproc: { login: loginEproc, usuario: texto("EPROC_USUARIO"), senha: texto("EPROC_SENHA") },
+    // Perfil escolhido quando o advogado tem mais de um no eproc (ex.: inscrições SP e ES): o que começa por este prefixo.
+    eproc: { login: loginEproc, usuario: texto("EPROC_USUARIO"), senha: texto("EPROC_SENHA"), perfil: (texto("EPROC_PERFIL") || PERFIL_EPROC_PADRAO).toUpperCase() },
     eprocTjrj: { login: loginEprocTjrj, usuario: texto("EPROC_TJRJ_USUARIO"), senha: texto("EPROC_TJRJ_SENHA") },
     webhook2fa: { url: texto("ROBO_2FA_WEBHOOK_URL"), header: texto("ROBO_2FA_WEBHOOK_HEADER") || "x-robo-token", token: texto("ROBO_2FA_WEBHOOK_TOKEN") },
+    segredoSempreLiberado: !/^esperar$/i.test(texto("SEGREDO_JUSTICA")),
+    webSigner: comCertificado && navegadorModo === "playwright" && !/^(nao|não|0|false)$/i.test(texto("WEB_SIGNER")),
     pjeOffice: comCertificado && navegadorModo === "playwright" && !/^(nao|não|0|false)$/i.test(texto("PJE_OFFICE")),
     segundoFator: { pasta: texto("ROBO_2FA_PASTA") || certificado.pasta, chavePrivadaArquivo: certificado.chavePrivadaArquivo },
     pastas: { perfil: pasta("perfil"), downloads: pasta("downloads"), diagnostico: pasta("diagnostico") },
