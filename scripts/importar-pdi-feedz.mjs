@@ -53,6 +53,10 @@ const normalize = (value) =>
     .replace(/\s+/g, " ")
     .trim();
 const dateOnly = (value) => (value ? String(value).slice(0, 10) : null);
+/** Datas "YYYY-MM-DD HH:MM:SS" do Feedz são horário de Brasília (sem horário de verão desde 2019). */
+const feedzLocal = (value) => (value ? `${String(value).slice(0, 10)}T${String(value).slice(11, 19) || "00:00:00"}-03:00` : null);
+/** `updated_at` das tarefas vem em UTC sem o "Z" (ex.: 2026-10-29T20:12:04). */
+const feedzUtc = (value) => (value ? `${String(value).slice(0, 19).replace(" ", "T")}Z` : null);
 /**
  * Texto vindo do HTML do Feedz: quebra do código-fonte (linha + recuo) vira espaço, marcador
  * colado no item, um item por linha e no máximo uma linha em branco.
@@ -232,7 +236,7 @@ for (const { plan, employee, manager, start, due } of planRows) {
           start_date: start,
           due_date: due,
           status: plan.is_finished ? "concluido" : "ativo",
-          completed_at: plan.is_finished ? plan.finished_at ?? null : null,
+          completed_at: plan.is_finished ? feedzLocal(plan.finished_at) : null,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "feedz_id" }
@@ -270,8 +274,10 @@ for (const { plan, employee, manager, start, due } of planRows) {
         learnings: cleanText(task.learning)?.slice(0, 8000) ?? null,
         due_date: dateOnly(task.dt_to_realize),
         progress,
-        completed_at: progress >= 100 ? task.finish_date ?? null : null,
-        last_update_at: task.finish_date ?? null,
+        completed_at: progress >= 100 ? feedzLocal(task.finish_date) : null,
+        // Última atualização = quando a tarefa foi mexida no Feedz (progresso parcial também conta), não só a conclusão.
+        // O pacote exportado precisa trazer `updated_at` de cada tarefa (GET /trilhas/{perfil}/trilha/{plano}).
+        last_update_at: feedzUtc(task.updated_at) ?? feedzLocal(task.finish_date),
         sort_order: task.step ?? 0,
         updated_at: new Date().toISOString(),
       };

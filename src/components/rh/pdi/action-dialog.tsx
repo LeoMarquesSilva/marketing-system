@@ -181,7 +181,7 @@ export function ActionDialog({
                       className={cn(
                         "h-9 rounded-md border px-3.5 text-sm tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60",
                         progress === step
-                          ? "border-[#04202f] bg-[#04202f] font-semibold text-white"
+                          ? "border-[#47cdd0] bg-[#e8f8f8] font-semibold text-[#1d5670] shadow-[inset_0_0_0_1px_#47cdd0]"
                           : "border-[#dce9eb] bg-white text-[#285f7a] hover:border-[#47cdd0]/70 hover:bg-[#47cdd0]/10"
                       )}
                     >

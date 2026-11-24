@@ -15,6 +15,7 @@ import {
   Award,
   BookCheck,
   CalendarClock,
+  CalendarHeart,
   CalendarCheck,
   CalendarRange,
   Camera,
@@ -34,6 +35,7 @@ import {
   Link2,
   Mail,
   Megaphone,
+  MessageCircleHeart,
   MessageSquareHeart,
   Network,
   Newspaper,
@@ -87,6 +89,12 @@ import {
   isAdminRole,
   isPdiPath,
   PDI_ADMIN_ONLY,
+  isOneOnOnePath,
+  canSeeOneOnOne,
+  canManageOneOnOne,
+  isFeedbackPath,
+  canSeeFeedback,
+  canManageFeedback,
   isFacilitiesPath,
   isVistagemPath,
   isCollaboratorPhotosManager,
@@ -405,6 +413,27 @@ export const NAV_FRONTS: NavFront[] = [
         ],
       },
       {
+        // Reuniões 1:1 (substituem as do Feedz): líder e liderado, marcação com sala e Teams no Outlook.
+        id: "1-1",
+        label: "Reuniões 1:1",
+        shortLabel: "1:1",
+        icon: CalendarHeart,
+        pages: [
+          { href: "/1-1", label: "Minhas 1:1" },
+          { href: "/rh/1-1", label: "Gestão" },
+        ],
+      },
+      {
+        // Feedback contínuo (substitui o do Feedz): reconhecimento e desenvolvimento, pedidos e Boas práticas.
+        id: "feedback",
+        label: "Feedback",
+        icon: MessageCircleHeart,
+        pages: [
+          { href: "/feedback", label: "Meu feedback" },
+          { href: "/rh/feedback", label: "Gestão" },
+        ],
+      },
+      {
         id: "ferias",
         label: "Gestão de férias",
         shortLabel: "Férias",
@@ -647,6 +676,10 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
   return (href) => {
     // PDI em teste: só admin enxerga o módulo inteiro (trava em access-control).
     if (PDI_ADMIN_ONLY && isPdiPath(href)) return isAdminRole(profile);
+    // 1:1: Minhas 1:1 segue a trava de lançamento (RH e admin); a Gestão é sempre do RH.
+    if (isOneOnOnePath(href)) return href === "/1-1" ? canSeeOneOnOne(profile) : canManageOneOnOne(profile);
+    // Feedback: "Meu feedback" segue a trava de lançamento (RH e admin); a Gestão é sempre do RH.
+    if (isFeedbackPath(href)) return href === "/feedback" ? canSeeFeedback(profile) : canManageFeedback(profile);
     // Escolhas da equipe: Marketing, admin e líderes (a API recorta pelas áreas da pessoa).
     if (href === CONTENT_CHOICES_PATH) return !isPe27OnlyProfile(profile) && canSeeContentChoices(profile);
     return base(href);

@@ -1,15 +1,12 @@
 import "server-only";
 
-import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { createClient as createSsrClient } from "@/utils/supabase/server";
 import { PDI_ADMIN_ONLY } from "@/lib/access-control";
-import { employeeMatchesFeriasAccess, resolveFeriasAccess, type FeriasAccessMode } from "@/lib/ferias/access";
 import { resolveEmployeeAvatarUrl } from "@/lib/ferias/filters";
-import { hasHrAccess } from "@/lib/rh/access";
-import { loadPeopleDirectory, type DirectoryPerson } from "@/lib/rh/people-directory";
 import { RhHttpError } from "@/lib/rh/qualifications/server";
-import { collectReports, createsCycle, type EmployeeLink } from "./team";
+import { UNKNOWN_PERSON, resolveTeamContext, type TeamContext } from "@/lib/rh/team-context";
+import { createsCycle } from "./team";
 import {
   averageProgress,
   clampProgress,
@@ -39,16 +36,6 @@ import type {
   PdiType,
 } from "./types";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-
-function createPdiAdminClient(): SupabaseClient {
-  if (!serviceKey) throw new RhHttpError("SUPABASE_SERVICE_ROLE_KEY não configurada.", 503, "SERVICE_UNAVAILABLE");
-  return createSupabaseClient(url, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
-}
-
 function failed(context: string, error: unknown): never {
   console.error(`[pdi] ${context}:`, error);
   throw new RhHttpError("Falha ao consultar o PDI.", 500, "QUERY_FAILED");
@@ -58,114 +45,14 @@ function failed(context: string, error: unknown): never {
 // Quem está usando: colaborador, gestor (equipe) e RH.
 // ---------------------------------------------------------------------------
 
-interface PdiActor {
-  db: SupabaseClient;
-  userId: string;
-  name: string;
-  isHr: boolean;
-  employeeId: string | null;
-  /** Quem a pessoa lidera: liderados diretos e indiretos + liderança da área. Nunca inclui ela mesma. */
-  team: Set<string>;
-  people: Map<string, PdiPerson>;
-  links: Map<string, EmployeeLink>;
-}
+type PdiActor = TeamContext;
 
-function toPerson(person: DirectoryPerson): PdiPerson {
-  return {
-    id: person.id,
-    name: person.short_name,
-    full_name: person.full_name,
-    department: person.department,
-    position: person.position,
-    avatar_url: person.avatar_url,
-    is_active: person.is_active,
-  };
-}
-
-const UNKNOWN_PERSON: PdiPerson = {
-  id: "",
-  name: "Colaborador removido",
-  full_name: "Colaborador removido",
-  department: null,
-  position: null,
-  avatar_url: null,
-  is_active: false,
-};
-
-async function resolveActor(): Promise<PdiActor> {
-  const ssr = await createSsrClient();
-  const {
-    data: { user },
-  } = await ssr.auth.getUser();
-  if (!user) throw new RhHttpError("Não autenticado.", 401, "UNAUTHENTICATED");
-
-  const db = createPdiAdminClient();
-  const { data: profile, error: profileError } = await db
-    .from("users")
-    .select("id, name, role, permissions, ferias_access_mode, ferias_area_scope")
-    .eq("auth_id", user.id)
-    .maybeSingle();
-  if (profileError || !profile) throw new RhHttpError("Não foi possível validar o acesso.", 500, "ACCESS_LOOKUP_FAILED");
-  if (PDI_ADMIN_ONLY && (profile.role as string | null)?.toLowerCase() !== "admin") {
-    throw new RhHttpError("O PDI ainda está em teste e só abre para administradores.", 403, "FORBIDDEN");
-  }
-
-  const [directory, linksResult] = await Promise.all([
-    loadPeopleDirectory(db, "pdi"),
-    db.from("hr_employees").select("id, user_id, manager_employee_id, department, position, is_active, is_automation"),
-  ]);
-  if (linksResult.error) failed("vínculos", linksResult.error);
-
-  const people = new Map(directory.map((person) => [person.id, toPerson(person)]));
-  const links = new Map<string, EmployeeLink>();
-  let self: { id: string; position: string | null; department: string | null } | null = null;
-  for (const row of linksResult.data ?? []) {
-    if (row.is_automation) continue;
-    links.set(row.id as string, {
-      id: row.id as string,
-      manager_employee_id: (row.manager_employee_id as string | null) ?? null,
-      department: (row.department as string | null) ?? null,
-      is_active: Boolean(row.is_active),
-    });
-    if (row.user_id === profile.id) {
-      self = { id: row.id as string, position: row.position as string | null, department: row.department as string | null };
+function resolveActor(): Promise<PdiActor> {
+  return resolveTeamContext("pdi", ({ isAdmin }) => {
+    if (PDI_ADMIN_ONLY && !isAdmin) {
+      throw new RhHttpError("O PDI ainda está em teste e só abre para administradores.", 403, "FORBIDDEN");
     }
-  }
-
-  const role = (profile.role as string | null) ?? null;
-  const permissions = (profile.permissions as string[] | null) ?? [];
-  const isHr = hasHrAccess(role, permissions);
-
-  const team = new Set<string>();
-  if (self) {
-    for (const id of collectReports(self.id, links.values())) team.add(id);
-    // Liderança por área (cargo de gestão ou escopo em Usuários), a mesma de Férias.
-    const area = resolveFeriasAccess({
-      role: null,
-      permissions: [],
-      accessMode: profile.ferias_access_mode as FeriasAccessMode | null,
-      areaScope: profile.ferias_area_scope as string[] | null,
-      position: self.position,
-      department: self.department,
-    });
-    if (area.level === "viewer") {
-      for (const link of links.values()) {
-        if (link.is_active && employeeMatchesFeriasAccess(link.department, area)) team.add(link.id);
-      }
-    }
-    team.delete(self.id);
-  }
-
-  return {
-    db,
-    userId: profile.id as string,
-    name: profile.name as string,
-    isHr,
-    employeeId: self?.id ?? null,
-    team,
-    people,
-    links,
-  };
+  });
 }
 
 async function requireHr(): Promise<PdiActor> {

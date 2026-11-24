@@ -44,7 +44,6 @@ import { PlanEditorDialog } from "./plan-editor-dialog";
 import {
   BODY,
   CivilSeal,
-  GOLD,
   INK,
   KIND_STYLES,
   KindIcon,
@@ -59,16 +58,16 @@ import {
 
 /* ------------------------------------------------------------------- topo */
 
-const HERO_CHIP = "inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.05] px-3 py-1.5 text-white/85";
+const HERO_CHIP = "inline-flex items-center gap-2 rounded-full border border-[#e1ebee] bg-white px-3 py-1.5 text-[#3b5560]";
 const HERO_BUTTON =
-  "inline-flex min-h-10 items-center gap-2 rounded-lg border border-white/15 bg-white/[0.07] px-4 text-sm font-semibold text-white outline-none transition-colors hover:bg-white/[0.14] focus-visible:ring-2 focus-visible:ring-[#47cdd0] disabled:opacity-60";
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#d5e3e7] bg-white px-5 text-sm font-semibold text-[#1d5670] outline-none transition-colors hover:border-[#47cdd0]/70 hover:bg-[#f4fafb] focus-visible:ring-2 focus-visible:ring-[#47cdd0] disabled:opacity-60";
 
-const DUE_ON_DARK: Record<PdiPlanDetail["due_state"], string> = {
-  em_dia: "bg-emerald-400/15 text-emerald-200 ring-emerald-300/25",
-  vence_em_breve: "bg-amber-400/15 text-amber-200 ring-amber-300/30",
-  atrasado: "bg-red-400/15 text-red-200 ring-red-300/30",
-  concluido: "bg-white/10 text-white/85 ring-white/20",
-  cancelado: "bg-white/10 text-white/70 ring-white/20",
+const DUE_TONE: Record<PdiPlanDetail["due_state"], string> = {
+  em_dia: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  vence_em_breve: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  atrasado: "bg-red-50 text-red-700 ring-red-600/20",
+  concluido: "bg-[#eaf4f6] text-[#1d5670] ring-[#1d7086]/15",
+  cancelado: "bg-[#f1f5f6] text-[#5a717b] ring-[#cfdadd]",
 };
 
 function firstName(person: PdiPerson): string {
@@ -94,37 +93,37 @@ function PlanHero({
 }) {
   const mine = plan.viewer_role === "dono";
   return (
-    <section className="relative overflow-hidden rounded-xl bg-[#03070c] text-[#f9f9f9]">
-      <div aria-hidden className="absolute inset-0 bg-[radial-gradient(120%_140%_at_85%_0%,#0b3a52_0%,#04202f_42%,#03070c_100%)]" />
+    <section className="relative overflow-hidden rounded-2xl border border-[#e1ebee] bg-white text-[#0d2a38] shadow-[0_1px_3px_rgba(4,32,47,0.05)]">
+      <div aria-hidden className="pointer-events-none absolute -right-32 -top-40 h-80 w-[44rem] rounded-full bg-[radial-gradient(closest-side,#dcf1f1,rgba(220,241,241,0))]" />
       <div className="relative grid gap-6 px-5 py-7 sm:px-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
-        <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center sm:gap-6">
+        <div className="flex min-w-0 items-start gap-4 sm:items-center sm:gap-6">
           <PersonPhoto
             person={plan.employee}
             size="lg"
-            className="size-20 text-xl ring-2 ring-[#E1B16D] ring-offset-4 ring-offset-[#04202f] sm:size-24"
+            className="size-12 shrink-0 text-base ring-2 ring-[#E1B16D] ring-offset-2 ring-offset-white sm:size-24 sm:text-xl sm:ring-offset-[3px]"
           />
           <div className="min-w-0">
-            <p className="text-sm text-white/75">
+            <p className="text-sm font-medium text-[#3e84a8]">
               {mine ? "Seu plano de desenvolvimento" : `Plano de desenvolvimento de ${firstName(plan.employee)}`}
               {!mine && plan.employee.position ? ` · ${plan.employee.position}` : ""}
             </p>
-            <h2 className="mt-1 text-2xl font-semibold leading-tight sm:text-[28px]">{plan.title}</h2>
+            <h2 className="mt-1 text-2xl font-semibold leading-tight text-[#0d2a38] sm:text-[28px]">{plan.title}</h2>
             <div className="mt-4 flex flex-wrap gap-2 text-[13px]">
               {plan.type_name && (
                 <span className={HERO_CHIP}>
-                  <Sparkles className="size-4" style={{ color: GOLD }} aria-hidden />
+                  <Sparkles className="size-4 text-[#1d7086]" aria-hidden />
                   {plan.type_name}
                 </span>
               )}
               <span className={HERO_CHIP}>
-                <CalendarDays className="size-4" style={{ color: GOLD }} aria-hidden />
+                <CalendarDays className="size-4 text-[#1d7086]" aria-hidden />
                 <span className="tabular-nums">
                   {formatDate(plan.start_date)} a {formatDate(plan.due_date)}
                 </span>
               </span>
               {plan.origin === "feedz" && (
                 <span className={HERO_CHIP}>
-                  <DownloadCloud className="size-4" style={{ color: GOLD }} aria-hidden />
+                  <DownloadCloud className="size-4 text-[#1d7086]" aria-hidden />
                   Trazido do Feedz
                 </span>
               )}
@@ -132,18 +131,16 @@ function PlanHero({
           </div>
         </div>
 
-        <div className="rounded-lg border border-white/12 bg-white/[0.05] p-5">
+        <div className="rounded-xl border border-[#e3ecef] bg-white p-5">
           <div className="flex items-start justify-between gap-3">
             <p className="leading-none">
-              <span className="text-5xl font-semibold tabular-nums" style={{ color: GOLD }}>
-                {plan.progress}
-              </span>
-              <span className="ml-0.5 text-2xl text-white/70">%</span>
+              <span className="text-5xl font-semibold tabular-nums text-[#0f5f70]">{plan.progress}</span>
+              <span className="ml-0.5 text-2xl text-[#5a717b]">%</span>
             </p>
             <span
               className={cn(
                 "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
-                DUE_ON_DARK[plan.due_state]
+                DUE_TONE[plan.due_state]
               )}
             >
               <Flag className="size-3" aria-hidden />
@@ -151,20 +148,20 @@ function PlanHero({
             </span>
           </div>
           <div
-            className="mt-4 h-2 overflow-hidden rounded-full bg-white/10"
+            className="mt-4 h-2 overflow-hidden rounded-full bg-[#e6eef0]"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={plan.progress}
             aria-label="Progresso do plano"
           >
-            <div className="h-full rounded-full transition-[width] duration-700 ease-out" style={{ width: `${plan.progress}%`, background: GOLD }} />
+            <div className="h-full rounded-full bg-[linear-gradient(90deg,#2bb3b1,#0f6f80)] transition-[width] duration-700 ease-out" style={{ width: `${plan.progress}%` }} />
           </div>
-          <p className="mt-3 text-sm text-white/80">
-            <span className="font-semibold text-white">{plan.actions_done}</span> de {plan.actions_total} ações concluídas
+          <p className="mt-3 text-sm text-[#3b5560]">
+            <span className="font-semibold text-[#0d2a38]">{plan.actions_done}</span> de {plan.actions_total} ações concluídas
           </p>
           {(stale || plan.actions_overdue > 0) && (
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-200">
+            <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-amber-700">
               <Hourglass className="size-3.5" aria-hidden />
               {plan.actions_overdue > 0
                 ? `${plan.actions_overdue} ${plan.actions_overdue === 1 ? "ação com prazo vencido" : "ações com prazo vencido"}`
@@ -176,34 +173,34 @@ function PlanHero({
         </div>
       </div>
 
-      <div className="relative flex flex-wrap items-center justify-between gap-4 border-t border-white/10 px-5 py-4 sm:px-8">
+      <div className="relative flex flex-wrap items-center justify-between gap-4 border-t border-[#e6eef0] bg-white/70 px-5 py-4 sm:px-8">
         <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-3">
           {plan.manager ? (
             <div className="flex items-center gap-3">
-              <PersonPhoto person={plan.manager} size="sm" className="ring-1 ring-white/20" />
+              <PersonPhoto person={plan.manager} size="sm" />
               <div className="text-sm leading-tight">
-                <p className="text-xs text-white/65">Acompanhado por</p>
-                <p className="font-medium text-white">{plan.manager.name}</p>
+                <p className="text-xs text-[#5a717b]">Acompanhado por</p>
+                <p className="font-medium text-[#0d2a38]">{plan.manager.name}</p>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-white/65">Sem gestor acompanhando</p>
+            <p className="text-sm text-[#5a717b]">Sem gestor acompanhando</p>
           )}
           {plan.agreed_at ? (
-            <span className="inline-flex items-center gap-1.5 text-sm text-emerald-200">
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700">
               <Handshake className="size-4" aria-hidden />
               De acordo{plan.agreed_by_name ? ` · ${plan.agreed_by_name.split(" ")[0]}` : ""} em {formatDate(plan.agreed_at)}
             </span>
           ) : (
             plan.status === "ativo" &&
             !plan.permissions.canAgree && (
-              <span className="inline-flex items-center gap-1.5 text-sm text-white/65">
+              <span className="inline-flex items-center gap-1.5 text-sm text-[#5a717b]">
                 <Handshake className="size-4" aria-hidden />
                 Aguardando o de acordo do gestor
               </span>
             )
           )}
-          {agreeError && <span className="text-xs text-red-200">{agreeError}</span>}
+          {agreeError && <span className="text-xs font-medium text-red-700">{agreeError}</span>}
         </div>
         <div className="flex flex-wrap gap-2">
           {plan.permissions.canAgree && (
@@ -211,8 +208,7 @@ function PlanHero({
               type="button"
               onClick={onAgree}
               disabled={agreeing}
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-[#0D1E2E] outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-white disabled:opacity-60"
-              style={{ background: GOLD }}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#0f5f70] px-5 text-sm font-semibold text-white outline-none transition-colors hover:bg-[#0c5262] focus-visible:ring-2 focus-visible:ring-[#47cdd0] focus-visible:ring-offset-2 disabled:opacity-60"
             >
               {agreeing ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Handshake className="size-4" aria-hidden />}
               Estou de acordo

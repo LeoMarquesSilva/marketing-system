@@ -127,6 +127,51 @@ export function isPdiPath(pathname: string): boolean {
   return pathname === "/pdi" || pathname.startsWith("/pdi/") || pathname === "/rh/pdi" || pathname.startsWith("/rh/pdi/");
 }
 
+/**
+ * Trava de lançamento das Reuniões 1:1 (telas e API): com true, só RH completo ("/rh") e admin
+ * abrem. Pedido do usuário em 19/11/2026: "não subir na visão dos usuários, apenas do RH e admins".
+ * Para liberar, trocar para false ("/1-1" passa a ser de todos e "/rh/1-1" do RH).
+ */
+export const ONE_ON_ONE_HR_ONLY = true;
+
+export function isOneOnOnePath(pathname: string): boolean {
+  return pathname === "/1-1" || pathname.startsWith("/1-1/") || pathname === "/rh/1-1" || pathname.startsWith("/rh/1-1/");
+}
+
+function hasRhKey(profile: AccessProfile | null | undefined): boolean {
+  return isAdminRole(profile) || Boolean(profile?.permissions?.includes("/rh"));
+}
+
+/** Gestão das 1:1 (/rh/1-1): RH completo e admin. */
+export function canManageOneOnOne(profile: AccessProfile | null | undefined): boolean {
+  return hasRhKey(profile);
+}
+
+/** Quem vê as 1:1 enquanto a trava estiver ligada. */
+export function canSeeOneOnOne(profile: AccessProfile | null | undefined): boolean {
+  return ONE_ON_ONE_HR_ONLY ? hasRhKey(profile) : true;
+}
+
+/**
+ * Trava de lançamento do Feedback contínuo (telas, API e sino): com true, só RH completo e admin.
+ * Decisão de 23/11/2026 (docs/feedz/proposta-feedback.md). Para liberar, trocar para false.
+ */
+export const FEEDBACK_HR_ONLY = true;
+
+export function isFeedbackPath(pathname: string): boolean {
+  return pathname === "/feedback" || pathname.startsWith("/feedback/") || pathname === "/rh/feedback" || pathname.startsWith("/rh/feedback/");
+}
+
+/** Gestão do feedback (/rh/feedback): RH completo e admin. */
+export function canManageFeedback(profile: AccessProfile | null | undefined): boolean {
+  return hasRhKey(profile);
+}
+
+/** Quem usa o feedback (e o sino geral) enquanto a trava estiver ligada. */
+export function canSeeFeedback(profile: AccessProfile | null | undefined): boolean {
+  return FEEDBACK_HR_ONLY ? hasRhKey(profile) : true;
+}
+
 /** Rotas sempre acessíveis para qualquer usuário autenticado. */
 export const ALWAYS_ALLOWED_PATHS = [
   "/perfil",
@@ -486,6 +531,18 @@ export function canAccessPath(
   if (pathname === HOME_PATH) return canSeeHome(profile);
 
   if (PDI_ADMIN_ONLY && isPdiPath(pathname)) return isAdminRole(profile);
+
+  if (isOneOnOnePath(pathname)) {
+    // Gestão (/rh/1-1) é sempre do RH; "Minhas 1:1" segue a trava de lançamento.
+    if (pathname === "/rh/1-1" || pathname.startsWith("/rh/1-1/")) return canManageOneOnOne(profile);
+    return canSeeOneOnOne(profile);
+  }
+
+  if (isFeedbackPath(pathname)) {
+    // Gestão (/rh/feedback) é sempre do RH; "Feedback" segue a trava de lançamento.
+    if (pathname === "/rh/feedback" || pathname.startsWith("/rh/feedback/")) return canManageFeedback(profile);
+    return canSeeFeedback(profile);
+  }
 
   if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return true;

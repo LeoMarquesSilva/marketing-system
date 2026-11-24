@@ -6,10 +6,19 @@ Levantamento de 16/11/2026.
 - Os 33 planos e o gestor direto de 74 pessoas foram importados do Feedz em 16/11/2026, com `scripts/importar-pdi-feedz.mjs`.
 - Em teste, só admin abre (`PDI_ADMIN_ONLY` em `src/lib/access-control.ts`). Objetivo: trazer para o ORQESTRAI tudo o que a Bismarchi | Pires faz hoje no Feedz, a começar pelo **PDI**.
 
+As **Reuniões 1:1** também já estão no ORQESTRAI desde 19/11/2026, conforme [proposta-1-1.md](proposta-1-1.md):
+- **Telas**: `/1-1` (Minhas 1:1), `/1-1/[líder]/[liderado]` (página da dupla) e `/rh/1-1` (Cobertura, Histórico e Configurações).
+- **Importação** com `scripts/importar-1-1-feedz.mjs`. Entraram 404 das 417 reuniões, com 763 tópicos de pauta, 174 anotações privadas e 118 ações. Ficaram de fora:
+  - 12 reuniões de 6 pessoas desligadas que não têm cadastro no ORQESTRAI;
+  - 1 reunião sem horário no Feedz.
+- **Acesso**: em teste, só Pessoas e Cultura (chave `/rh`) e admin abrem (`ONE_ON_ONE_HR_ONLY`).
+
 ## Fontes e arquivos desta pasta
 
 | Arquivo | Fonte | O que tem |
 |---|---|---|
+| [proposta-feedback.md](proposta-feedback.md) | Histórico do Feedz (23/11/2026) + benchmark | **Feedback contínuo**: uso real (496 feedbacks), benchmark, proposta e as 10 decisões de 23/11/2026 |
+| [oportunidades.md](oportunidades.md) | Conta da empresa (19/11/2026) + o que o ORQESTRAI já tem | **O que mais dá para trazer**, com o uso real de cada módulo, esforço e ordem sugerida |
 | [telas-logado.md](telas-logado.md) | Conta da empresa no Feedz, perfil admin | **Uso real**: menu contratado, configurações ligadas, modelo de dados do PDI pela API interna, critérios da avaliação, categorias de 1:1, pontos da gamificação, mapa de 214 endpoints |
 | [pdi-e-1-1.md](pdi-e-1-1.md) | Central de ajuda (PDI e 1:1) | Especificação completa dos dois módulos |
 | [avaliacoes.md](avaliacoes.md) | Central de ajuda (120 artigos) | Avaliação de desempenho, comitê de calibração, 9Box, avaliação de experiência, DISC |
