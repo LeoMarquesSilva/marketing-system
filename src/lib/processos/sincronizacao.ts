@@ -72,7 +72,7 @@ export interface Recorte {
   grupos: string[] | null;
 }
 
-function lerLista(valor: string | undefined, padrao: string[]): string[] | null {
+function lerLista(valor: string | undefined, padrao: string[] | null): string[] | null {
   const texto = valor?.trim();
   if (!texto) return padrao;
   if (texto === "*") return null;
@@ -81,13 +81,13 @@ function lerLista(valor: string | undefined, padrao: string[]): string[] | null 
 }
 
 /**
- * PROCESSOS_AREAS e PROCESSOS_GRUPOS (separados por vírgula; "*" = todos). O padrão é o piloto:
- * Recuperação de Crédito, Grupo PST.
+ * PROCESSOS_AREAS e PROCESSOS_GRUPOS (separados por vírgula; "*" = todos). O padrão é a carteira de
+ * Recuperação de Crédito inteira (todos os grupos), carregada do VIOS em 24/11/2026.
  */
 export function lerRecorte(env: Record<string, string | undefined> = process.env): Recorte {
   return {
     areas: lerLista(env.PROCESSOS_AREAS, ["Recuperação de Crédito"]),
-    grupos: lerLista(env.PROCESSOS_GRUPOS, ["Grupo PST"]),
+    grupos: lerLista(env.PROCESSOS_GRUPOS, null),
   };
 }
 
