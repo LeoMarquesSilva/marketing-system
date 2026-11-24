@@ -195,3 +195,10 @@ export const JUSBR_FALHAS_SEGUIDAS = 10;
 export function desistirDoJusbr(falhasSeguidas: number): boolean {
   return falhasSeguidas >= JUSBR_FALHAS_SEGUIDAS;
 }
+
+/** Originais (PDF) recusados em sequência que fazem o robô seguir só pelo texto no resto do processo. */
+export const JUSBR_ORIGINAIS_RECUSADOS = 3;
+
+export function desistirDosOriginais(recusadosSeguidos: number): boolean {
+  return recusadosSeguidos >= JUSBR_ORIGINAIS_RECUSADOS;
+}

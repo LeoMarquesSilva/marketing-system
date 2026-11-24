@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capaDaFicha, desistirDoJusbr, digitosDoCnj, JUSBR_FALHAS_SEGUIDAS, documentosDaFicha, documentosNovosJusbr, ehAreaLogadaJusbr, ehLoginPdpj, motivoDaResposta, textoParaPdf, urlDaApi } from "./jusbr-urls";
+import { capaDaFicha, desistirDoJusbr, desistirDosOriginais, digitosDoCnj, JUSBR_FALHAS_SEGUIDAS, documentosDaFicha, documentosNovosJusbr, ehAreaLogadaJusbr, ehLoginPdpj, motivoDaResposta, textoParaPdf, urlDaApi } from "./jusbr-urls";
 
 // Números fictícios (dígito verificador inválido de propósito). Nenhum dado real.
 const doc = (sequencia: number, idCodex: number, data: string, extra: Record<string, unknown> = {}) => ({
@@ -90,5 +90,12 @@ describe("Jus.br fora do ar para um tribunal", () => {
     expect(desistirDoJusbr(0)).toBe(false);
     expect(desistirDoJusbr(JUSBR_FALHAS_SEGUIDAS - 1)).toBe(false);
     expect(desistirDoJusbr(JUSBR_FALHAS_SEGUIDAS)).toBe(true);
+  });
+});
+
+describe("Jus.br sem os originais do tribunal", () => {
+  it("segue só pelo texto depois de 3 originais recusados seguidos", () => {
+    expect(desistirDosOriginais(2)).toBe(false);
+    expect(desistirDosOriginais(3)).toBe(true);
   });
 });

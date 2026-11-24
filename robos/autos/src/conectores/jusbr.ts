@@ -12,6 +12,7 @@ import {
   ehAreaLogadaJusbr,
   ehLoginPdpj,
   desistirDoJusbr,
+  desistirDosOriginais,
   motivoDaResposta,
   textoParaPdf,
   urlDaApi,
@@ -42,6 +43,8 @@ export class ConectorJusbr implements Conector {
   readonly chave = "jusbr:BR";
   private autorizacao: string | null = null;
   private diagnosticoFeito = false;
+  /** PDFs originais recusados pelo Jus.br (5xx) em sequência, neste pedido. */
+  private originaisRecusados = 0;
   private fonte: PDFFont | null = null;
 
   private abaDoPortal(ambiente: Ambiente): Page | null {
@@ -175,12 +178,21 @@ export class ConectorJusbr implements Conector {
   /** O arquivo original, se for PDF. Qualquer falha (resposta malformada, link vencido) devolve null: vale o texto. */
   private async arquivoEmPdf(ambiente: Ambiente, digitos: string, documento: DocumentoJusbr): Promise<Buffer | null> {
     if (!documento.hrefBinario) return null;
+    // O tribunal não está servindo os originais (o Jus.br responde 503 a cada um): o resto do processo vai pelo
+    // texto, sem gastar as tentativas do PDF em cada peça.
+    if (desistirDosOriginais(this.originaisRecusados)) return null;
     try {
       // O arquivo pode responder com redirecionamento para um endereço temporário do armazenamento (link assinado):
       // esse segundo pedido vai sem o token da PDPJ, que o armazenamento não aceita junto da assinatura.
       let resposta = await this.get(ambiente, digitos, urlDaApi(documento.hrefBinario), true);
       const destinoDoArquivo = resposta.status() >= 300 && resposta.status() < 400 ? resposta.headers()["location"] : undefined;
       if (destinoDoArquivo) resposta = await ambiente.contexto.request.get(destinoDoArquivo, { timeout: 180_000 });
+      if (resposta.status() >= 500) {
+        this.originaisRecusados += 1;
+        if (desistirDosOriginais(this.originaisRecusados)) {
+          ambiente.registrar(`Jus.br: ${this.originaisRecusados} arquivos originais seguidos recusados (status ${resposta.status()}); o resto deste processo vai pelo texto.`);
+        }
+      } else this.originaisRecusados = 0;
       const corpo = resposta.ok() ? await resposta.body() : null;
       // O cabeçalho "%PDF-" pode vir depois de alguns bytes (o padrão admite até 1 KB antes dele).
       const inicio = corpo ? corpo.subarray(0, 1024).indexOf("%PDF-") : -1;
@@ -253,6 +265,7 @@ export class ConectorJusbr implements Conector {
     let pecasDaParte: string[] = [];
     let bytesDaParte = 0;
     this.fonte = null;
+    this.originaisRecusados = 0;
     const fecharParte = async () => {
       if (!saida.getPageCount()) return;
       const caminho = partes.length ? destino.replace(/\.pdf$/i, `-parte${partes.length + 1}.pdf`) : destino;
