@@ -1,4 +1,4 @@
-import { DURACAO_PADRAO, ROTULO_MUDANCA, ROTULO_TIPO, type AlertaAudiencia, type Audiencia, type ModalidadeEquipe, type PessoaPauta, type TipoAudiencia } from "./tipos";
+import { DURACAO_PADRAO, ROTULO_MUDANCA, ROTULO_TIPO, type AlertaAudiencia, type Audiencia, type ConvitePauta, type ModalidadeEquipe, type Papel, type PessoaPauta, type RespostaConvite, type TipoAudiencia } from "./tipos";
 
 /** Regras de agenda: horário de Brasília, choques, deslocamento, dias úteis e alertas de cada audiência. */
 
@@ -171,10 +171,31 @@ function alertaDoVios(aud: Audiencia, estado: EstadoNoVios | null): AlertaAudien
   return null;
 }
 
+/** Resposta de cada papel ao convite do Outlook, por audiência (só convites que saíram de verdade). */
+export type RespostasDosConvites = Map<string, Partial<Record<Papel, RespostaConvite>>>;
+
 export interface Contexto {
   pessoas: Map<string, PessoaPauta>;
   todas: Audiencia[];
   duracoes?: Partial<Record<TipoAudiencia, number>>;
+  respostas?: RespostasDosConvites;
+}
+
+/**
+ * As respostas que valem: só convite enviado de verdade (o simulado não tem resposta) e da pessoa que está hoje no
+ * papel (depois de uma troca, o convite antigo foi cancelado e o novo ainda não tem resposta).
+ */
+export function respostasDosConvites(convites: ConvitePauta[], audiencias: Pick<Audiencia, "id" | "titularId" | "backupId">[]): RespostasDosConvites {
+  const porId = new Map(audiencias.map((a) => [a.id, a]));
+  const saida: RespostasDosConvites = new Map();
+  for (const c of convites) {
+    const aud = porId.get(c.audienciaId);
+    if (!aud || c.status !== "enviado") continue;
+    if (c.pessoaId !== (c.papel === "titular" ? aud.titularId : aud.backupId)) continue;
+    const resposta: RespostaConvite = c.resposta === "aceito" || c.resposta === "recusado" || c.resposta === "provisorio" ? c.resposta : "sem_resposta";
+    saida.set(aud.id, { ...saida.get(aud.id), [c.papel]: resposta });
+  }
+  return saida;
 }
 
 function nome(ctx: Contexto, id: string | null): string {
@@ -205,6 +226,12 @@ export function alertasDaAudiencia(aud: Audiencia, ctx: Contexto): AlertaAudienc
     const ocupado = ativas(ctx.todas).find((o) => o.id !== aud.id && o.titularId === aud.backupId && sobrepoe(intervalo(o, ctx.duracoes), intervalo(aud, ctx.duracoes)));
     if (ocupado) alertas.push({ tipo: "backup_ocupado", grave: false, texto: `A backup ${nome(ctx, aud.backupId)} está na ${rotulo(ocupado)}.` });
   }
+  // Recusou o convite do Outlook: a titular vai para o vermelho (precisa de troca); a backup, só aviso.
+  const respostas = ctx.respostas?.get(aud.id);
+  if (aud.titularId && respostas?.titular === "recusado")
+    alertas.push({ tipo: "recusou", grave: true, texto: `${nome(ctx, aud.titularId)} recusou o convite do Outlook: trocar a titular.` });
+  if (aud.backupId && respostas?.backup === "recusado")
+    alertas.push({ tipo: "backup_recusou", grave: false, texto: `A backup ${nome(ctx, aud.backupId)} recusou o convite do Outlook.` });
   if (aud.mudancas.length && !conferida) {
     alertas.push({ tipo: "mudou", grave: true, texto: `${aud.mudancas.map((m) => ROTULO_MUDANCA[m]).join(", ")} no PJe: conferir no VIOS.` });
   }

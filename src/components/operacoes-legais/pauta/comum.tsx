@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, ListFilter, LoaderCircle, MapPin, MessageCircle, Mail, Video, X } from "lucide-react";
+import { CircleCheck, CircleHelp, CircleX, Clock, ExternalLink, ListFilter, LoaderCircle, MapPin, MessageCircle, Mail, Video, X } from "lucide-react";
 import { Avatar as AvatarUi, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,7 +10,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { hasPautaAccess } from "@/lib/access-control";
 import { authFetch } from "@/lib/auth-fetch";
 import { cidadeDoOrgao, local, opcoesDeTroca, type Contexto } from "@/lib/audiencias/agenda";
-import { ROTULO_MODALIDADE, ROTULO_TIPO, type Audiencia, type Papel, type PessoaPauta } from "@/lib/audiencias/tipos";
+import { ROTULO_MODALIDADE, ROTULO_TIPO, type Audiencia, type Papel, type PessoaPauta, type RespostaConvite } from "@/lib/audiencias/tipos";
 import type { DadosDaPauta } from "@/lib/audiencias/pauta-server";
 import { cn } from "@/lib/utils";
 import { linkPastaVios, linkTarefaVios } from "@/lib/vistagem/vios-links";
@@ -118,7 +118,37 @@ export function Avatar({ pessoa, className }: { pessoa: PessoaPauta | null | und
   );
 }
 
-export function Dupla({ aud, pessoas, compacto = false }: { aud: Audiencia; pessoas: Map<string, PessoaPauta>; compacto?: boolean }) {
+const RESPOSTA: Record<RespostaConvite, { icone: typeof CircleCheck; classe: string; texto: string }> = {
+  aceito: { icone: CircleCheck, classe: "text-emerald-600", texto: "Aceitou o convite do Outlook" },
+  recusado: { icone: CircleX, classe: "text-red-600", texto: "Recusou o convite do Outlook" },
+  provisorio: { icone: CircleHelp, classe: "text-amber-600", texto: "Aceitou como provisório no Outlook" },
+  sem_resposta: { icone: Clock, classe: "text-slate-400", texto: "Ainda não respondeu ao convite do Outlook" },
+};
+
+/** Ícone da resposta ao convite do Outlook, ao lado do nome (só quando o convite saiu de verdade). */
+export function IconeResposta({ resposta }: { resposta: RespostaConvite | undefined }) {
+  if (!resposta) return null;
+  const { icone: Icone, classe, texto } = RESPOSTA[resposta];
+  return (
+    <span className="inline-flex shrink-0" title={texto}>
+      <Icone className={cn("size-3.5", classe)} aria-hidden />
+      <span className="sr-only">{texto}</span>
+    </span>
+  );
+}
+
+export function Dupla({
+  aud,
+  pessoas,
+  compacto = false,
+  respostas,
+}: {
+  aud: Audiencia;
+  pessoas: Map<string, PessoaPauta>;
+  compacto?: boolean;
+  /** Resposta de cada papel ao convite do Outlook (contexto.respostas da audiência). */
+  respostas?: Partial<Record<Papel, RespostaConvite>>;
+}) {
   const titular = aud.titularId ? pessoas.get(aud.titularId) : null;
   const backup = aud.backupId ? pessoas.get(aud.backupId) : null;
   const nome = (p: PessoaPauta) => (compacto ? p.nomeCurto.split(" ")[0] : p.nomeCurto);
@@ -128,11 +158,13 @@ export function Dupla({ aud, pessoas, compacto = false }: { aud: Audiencia; pess
         <span className="w-3 text-[10px] font-semibold text-muted-foreground">T</span>
         <Avatar pessoa={titular} />
         {titular ? <span className="truncate">{nome(titular)}</span> : <span className="font-semibold text-red-700">Sem titular</span>}
+        {titular ? <IconeResposta resposta={respostas?.titular} /> : null}
       </span>
       <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
         <span className="w-3 text-[10px] font-semibold">B</span>
         <Avatar pessoa={backup} className={backup ? undefined : "border-slate-300 text-slate-400"} />
         <span className="truncate">{backup ? nome(backup) : "—"}</span>
+        {backup ? <IconeResposta resposta={respostas?.backup} /> : null}
       </span>
     </div>
   );

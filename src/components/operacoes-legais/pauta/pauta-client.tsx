@@ -5,7 +5,7 @@ import { CalendarDays, CircleSlash, Clock, Download, History, Landmark, LoaderCi
 import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { alertasDaAudiencia, estadoNoVios, hojeEmBrasilia, local, pendenteNoVios, somarDias, type Contexto } from "@/lib/audiencias/agenda";
+import { alertasDaAudiencia, estadoNoVios, hojeEmBrasilia, local, pendenteNoVios, respostasDosConvites, somarDias, type Contexto } from "@/lib/audiencias/agenda";
 import { ROTULO_MUDANCA, ROTULO_TIPO, type AlertaAudiencia, type Audiencia, type Papel, type TipoAudiencia } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
@@ -107,7 +107,10 @@ function Pauta() {
   }, [carregar]);
 
   const pessoas = useMemo(() => new Map((dados?.pessoas ?? []).map((p) => [p.id, p])), [dados]);
-  const contexto: Contexto = useMemo(() => ({ pessoas, todas: dados?.audiencias ?? [], duracoes: dados?.duracoes }), [pessoas, dados]);
+  const contexto: Contexto = useMemo(
+    () => ({ pessoas, todas: dados?.audiencias ?? [], duracoes: dados?.duracoes, respostas: respostasDosConvites(dados?.convites ?? [], dados?.audiencias ?? []) }),
+    [pessoas, dados]
+  );
 
   // O período: as designadas e as canceladas no PJe que ainda pedem conferência no VIOS.
   const doPeriodo: ComAlertas[] = useMemo(
@@ -340,13 +343,14 @@ function Pauta() {
                     </span>
                     <Local aud={a} />
                     <Modalidade aud={a} />
-                    <Dupla aud={a} pessoas={pessoas} />
+                    <Dupla aud={a} pessoas={pessoas} respostas={contexto.respostas?.get(a.id)} />
                     <LinkDaSala aud={a} />
                     <span className="flex flex-wrap gap-1">
                       <SeloOrigem aud={a} />
                       {cancelada ? <Selo tom="perigo">Cancelada no PJe</Selo> : null}
                       {a.mudancas.length && !a.mudancaConferidaEm && !cancelada ? <Selo tom="perigo" icone={Repeat}>{a.mudancas.map((m) => ROTULO_MUDANCA[m]).join(", ")}</Selo> : null}
                       {alertas.some((x) => x.tipo === "choque" || x.tipo === "deslocamento") ? <Selo tom="alerta">{alertas.find((x) => x.tipo === "choque") ? "Conflito de horário" : "Sem tempo de deslocamento"}</Selo> : null}
+                      {alertas.some((x) => x.tipo === "recusou") ? <Selo tom="perigo">Titular recusou o convite</Selo> : null}
                       {alertas.some((x) => x.tipo === "cedo") ? <Selo tom="alerta" icone={Clock}>Antes das 10h</Selo> : null}
                       {!cancelada && !alertas.some((x) => x.grave) ? <Selo tom="marca">Designada</Selo> : null}
                     </span>
@@ -481,7 +485,7 @@ function Detalhe({
           </dl>
           <div className="space-y-2 rounded-md border border-[#dce9eb] p-3">
             <div className="flex items-center justify-between gap-2">
-              <Dupla aud={aud} pessoas={contexto.pessoas} />
+              <Dupla aud={aud} pessoas={contexto.pessoas} respostas={contexto.respostas?.get(aud.id)} />
               <div className="flex flex-col gap-1.5">
                 <Button size="xs" variant="secondary" onClick={() => aoTrocar(aud, "titular")} disabled={aud.situacao !== "designada"}>
                   {aud.titularId ? "Trocar titular" : "Definir titular"}

@@ -125,7 +125,9 @@ export async function registrarLeituraJusbr(entrada: unknown): Promise<ResumoJus
 
 /**
  * Quando o PJe passa a mostrar uma audiência que veio do Jus.br (mesmo processo, mesmo dia), a do PJe vale: herda
- * titular, backup e o que a equipe completou, e a do Jus.br sai da pauta (cancelada, já conferida). Devolve quantas.
+ * titular, backup e o que a equipe completou, e a do Jus.br sai da pauta (cancelada, já conferida). Os convites do
+ * Outlook passam para a do PJe (a pessoa recebe uma atualização, não um cancelamento seguido de convite novo), salvo
+ * se a do PJe já tiver o seu. Devolve quantas.
  */
 export async function substituirJusbrPeloPje(audiencias: Audiencia[]): Promise<number> {
   const pares = jusbrComPje(audiencias);
@@ -135,6 +137,14 @@ export async function substituirJusbrPeloPje(audiencias: Audiencia[]): Promise<n
     if (Object.keys(campos).length) {
       const { error } = await db().from("aud_audiencias").update(campos).eq("id", pje.id);
       if (error) falhou("passar a audiência do Jus.br para a do PJe", error);
+    }
+    const { data: convitesDoPje, error: erroConvites } = await db().from("aud_convites").select("papel").eq("audiencia_id", pje.id);
+    if (erroConvites) falhou("ler os convites da audiência do PJe", erroConvites);
+    const jaTem = ((convitesDoPje ?? []) as { papel: string }[]).map((c) => c.papel);
+    const mover = ["titular", "backup"].filter((papel) => !jaTem.includes(papel));
+    if (mover.length) {
+      const { error: erroMover } = await db().from("aud_convites").update({ audiencia_id: pje.id }).eq("audiencia_id", jusbr.id).in("papel", mover);
+      if (erroMover) falhou("passar os convites do Jus.br para a audiência do PJe", erroMover);
     }
     const { error } = await db()
       .from("aud_audiencias")

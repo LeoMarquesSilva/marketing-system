@@ -121,7 +121,22 @@ export interface AlertaAudiencia {
     | "vios_diverge"
     | "vios_falta"
     | "vios_concluida"
-    | "vios_aberta";
+    | "vios_aberta"
+    | "recusou"
+    | "backup_recusou";
   grave: boolean;
   texto: string;
+}
+
+/** Resposta ao convite do Outlook, lida no Graph. */
+export type RespostaConvite = "aceito" | "recusado" | "provisorio" | "sem_resposta";
+
+/** Um convite do Outlook como as telas recebem (aud_convites). */
+export interface ConvitePauta {
+  audienciaId: string;
+  papel: Papel;
+  pessoaId: string | null;
+  /** pendente, enviado (saiu de verdade), simulado (modo teste), cancelado ou erro. */
+  status: string;
+  resposta: string | null;
 }

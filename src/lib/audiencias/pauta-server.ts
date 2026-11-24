@@ -6,17 +6,11 @@ import { avisarTroca, ehDiaUtil } from "./avisos-server";
 import { ORIGEM_AUTOMATICA, type ResumoConferenciaVios, type TarefaSoNoVios } from "./conferencia-server";
 import { lerConfig, modoOutlook, modoWhatsapp } from "./config-server";
 import { AudienciasError, carregarAudiencias, carregarPessoas, carregarPessoasComFotos, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico, type Ator } from "./server";
-import type { Audiencia, PessoaPauta } from "./tipos";
+import type { Audiencia, ConvitePauta, PessoaPauta } from "./tipos";
 
 /** O que as telas pedem: pauta de um período, distribuição dos próximos dias úteis, troca e conferência. */
 
-export interface Convite {
-  audienciaId: string;
-  papel: "titular" | "backup";
-  pessoaId: string | null;
-  status: string;
-  resposta: string | null;
-}
+export type Convite = ConvitePauta;
 
 export interface Leitura {
   fonte: string;
@@ -145,7 +139,7 @@ const esquemaTroca = z.object({
   motivo: z.string().trim().min(2, "Diga o motivo da troca.").max(200),
 });
 
-/** Atribui ou troca titular/backup. Fica no histórico e avisa no grupo; o convite é refeito na próxima rotina. */
+/** Atribui ou troca titular/backup. Fica no histórico e avisa no grupo; a rota refaz o convite logo depois de responder. */
 export async function trocarPessoa(id: string, entrada: unknown, ator: Ator): Promise<Audiencia> {
   const lido = esquemaTroca.safeParse(entrada);
   if (!lido.success) throw new AudienciasError(lido.error.issues[0]?.message ?? "Troca inválida.", 400);

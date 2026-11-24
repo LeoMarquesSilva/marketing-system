@@ -1,3 +1,4 @@
+import { linkPastaVios, linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { duracaoMin, local, modalidadeEfetiva } from "./agenda";
 import { ROTULO_MODALIDADE, ROTULO_TIPO, type Audiencia, type Papel, type PessoaPauta, type TipoAudiencia } from "./tipos";
 
@@ -41,6 +42,19 @@ export function tituloDoConvite(aud: Audiencia, papel: Papel): string {
   return papel === "backup" ? `[BACKUP] ${base}` : base;
 }
 
+/**
+ * Local do convite: a vara e, na audiência por vídeo (ou híbrida com a equipe por vídeo), o link da sala, como no
+ * desenho da pauta ("CON1 - Piracicaba · us02web.zoom.us/j/…"); presencial, a vara e a sala.
+ */
+export function localDoConvite(aud: Audiencia): string {
+  const partes = modalidadeEfetiva(aud) === "video" && aud.linkSala ? [aud.orgao, aud.linkSala] : [aud.orgao, aud.sala];
+  return partes.filter(Boolean).join(" · ") || "A confirmar";
+}
+
+function linkHtml(url: string, texto: string): string {
+  return `<a href="${escapar(url)}">${escapar(texto)}</a>`;
+}
+
 export function eventoDoConvite(
   aud: Audiencia,
   papel: Papel,
@@ -52,31 +66,39 @@ export function eventoDoConvite(
   const inicio = new Date(aud.inicio).getTime();
   const fim = inicio + duracaoMin(aud, opcoes.duracoes) * 60000;
   const outra = papel === "titular" ? aud.backupId : aud.titularId;
+  // Cada linha já em HTML (valor escapado); os links do VIOS seguem o padrão do resto do sistema (CI clicável).
   const linhas: [string, string][] = [
-    ["Processo", aud.cnj],
-    ["Vara", aud.orgao ?? "—"],
-    ["Modalidade", aud.modalidadeTribunal ? ROTULO_MODALIDADE[aud.modalidadeTribunal] : "A confirmar"],
+    ["Processo", escapar(aud.cnj)],
+    ["Vara", escapar(aud.orgao ?? "—")],
+    ["Modalidade", escapar(aud.modalidadeTribunal ? ROTULO_MODALIDADE[aud.modalidadeTribunal] : "A confirmar")],
   ];
-  if (aud.reclamanteIniciais) linhas.push(["Reclamante", aud.reclamanteIniciais]);
-  linhas.push([papel === "titular" ? "Backup" : "Titular", (outra && pessoas.get(outra)?.nomeCurto) || "—"]);
-  if (aud.correspondente) linhas.push(["Correspondente", aud.correspondente]);
-  if (aud.observacao) linhas.push(["Observação", aud.observacao]);
-  const tabela = linhas.map(([k, v]) => `<tr><td style="color:#6b7d8c;padding:2px 12px 2px 0">${escapar(k)}</td><td>${escapar(v)}</td></tr>`).join("");
-  const sala = aud.linkSala ? `<p><b>Sala:</b> <a href="${escapar(aud.linkSala)}">${escapar(aud.linkSala)}</a></p>` : "";
+  if (aud.juizoDigital) linhas.push(["Juízo 100% Digital", "Sim"]);
+  if (aud.reclamanteIniciais) linhas.push(["Reclamante", escapar(aud.reclamanteIniciais)]);
+  linhas.push([papel === "titular" ? "Backup" : "Titular", escapar((outra && pessoas.get(outra)?.nomeCurto) || "—")]);
+  if (papel === "backup") linhas.push(["Seu papel", "Assumir se a titular não puder"]);
+  if (aud.correspondente) linhas.push(["Correspondente", escapar(aud.correspondente)]);
+  if (aud.observacao) linhas.push(["Observação", escapar(aud.observacao)]);
+  if (aud.viosTarefaCi) linhas.push(["Tarefa no VIOS", linkHtml(linkTarefaVios(aud.viosTarefaCi), `CI ${aud.viosTarefaCi}`)]);
+  if (aud.ciProcesso) linhas.push(["Pasta no VIOS", linkHtml(linkPastaVios(aud.ciProcesso), `CI ${aud.ciProcesso}`)]);
+  // As linhas do VIOS levam data-vios: a versão não conta com elas (ver versaoDoEvento).
+  const tabela = linhas
+    .map(([k, v]) => `<tr${k.endsWith("no VIOS") ? " data-vios" : ""}><td style="color:#6b7d8c;padding:2px 12px 2px 0">${escapar(k)}</td><td>${v}</td></tr>`)
+    .join("");
+  const sala = aud.linkSala ? `<p><b>Sala:</b> ${linkHtml(aud.linkSala, aud.linkSala)}</p>` : "";
   const papelTexto =
     papel === "backup"
       ? "<p>Você é o backup desta audiência. Se a titular recusar ou for trocada, você é avisado aqui e no grupo.</p>"
       : "<p>Não consegue ir? Recuse este convite com o motivo: a coordenação vê na hora.</p>";
-  const rodape = opcoes.urlPauta ? `<p><a href="${escapar(opcoes.urlPauta)}">Abrir na Pauta de Audiências</a></p>` : "";
+  const rodape = opcoes.urlPauta ? `<p>${linkHtml(opcoes.urlPauta, "Abrir na Pauta de Audiências")}</p>` : "";
   return {
     subject: tituloDoConvite(aud, papel),
     body: {
       contentType: "HTML",
-      content: `${sala}<table style="font-size:13px">${tabela}</table>${papelTexto}<p style="color:#6b7d8c">Mudou no VIOS ou no tribunal? Este convite é atualizado sozinho.</p>${rodape}`,
+      content: `${sala}<table style="font-size:13px">${tabela}</table>${papelTexto}<p style="color:#6b7d8c">Mudou no VIOS ou no tribunal? Este convite é atualizado sozinho. Aceitar vale como ciência.</p>${rodape}`,
     },
     start: { dateTime: horaLocal(inicio), timeZone: "America/Sao_Paulo" },
     end: { dateTime: horaLocal(fim), timeZone: "America/Sao_Paulo" },
-    location: { displayName: [aud.orgao, aud.sala].filter(Boolean).join(" · ") || "A confirmar" },
+    location: { displayName: localDoConvite(aud) },
     attendees: [{ emailAddress: { address: pessoa.email, name: pessoa.nomeVios }, type: "required" }],
     showAs: papel === "titular" ? "busy" : "free",
     isReminderOn: true,
@@ -86,9 +108,13 @@ export function eventoDoConvite(
   };
 }
 
-/** FNV-1a de 32 bits: basta para saber se o convite mudou. */
+/**
+ * FNV-1a de 32 bits: basta para saber se o convite mudou. Os links do VIOS ficam de fora: a tarefa do VIOS costuma
+ * aparecer depois do convite, e cada atualização manda um e-mail à pessoa; o link entra na próxima mudança de verdade.
+ */
 export function versaoDoEvento(evento: EventoGraph): string {
-  const base = JSON.stringify([evento.subject, evento.body.content, evento.start, evento.end, evento.location, evento.attendees, evento.showAs]);
+  const corpo = evento.body.content.replace(/<tr data-vios>.*?<\/tr>/g, "");
+  const base = JSON.stringify([evento.subject, corpo, evento.start, evento.end, evento.location, evento.attendees, evento.showAs]);
   let h = 0x811c9dc5;
   for (let i = 0; i < base.length; i += 1) {
     h ^= base.charCodeAt(i);

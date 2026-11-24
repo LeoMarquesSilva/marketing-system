@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarDays, CircleCheck, Clock, LoaderCircle, Repeat, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ALERTAS_DO_VIOS, alertasDaAudiencia, local, type Contexto } from "@/lib/audiencias/agenda";
+import { ALERTAS_DO_VIOS, alertasDaAudiencia, local, respostasDosConvites, type Contexto } from "@/lib/audiencias/agenda";
 import type { AlertaAudiencia, Audiencia, Papel } from "@/lib/audiencias/tipos";
 import { cn } from "@/lib/utils";
 import { IconeOpcao, Seletor } from "../vistagem/seletor";
@@ -22,7 +22,7 @@ const ROTULO_CARTAO: Record<Exclude<CartaoDistribuicao, "">, string> = {
 };
 
 function noCartao(cartao: Exclude<CartaoDistribuicao, "">, aud: Audiencia, alertas: AlertaAudiencia[]): boolean {
-  if (cartao === "semTitular") return aud.situacao === "designada" && !aud.titularId;
+  if (cartao === "semTitular") return aud.situacao === "designada" && (!aud.titularId || alertas.some((al) => al.tipo === "recusou"));
   if (cartao === "choques") return alertas.some((al) => al.tipo === "choque" || al.tipo === "deslocamento");
   if (cartao === "mudou") return alertas.some((al) => ALERTAS_DO_VIOS.includes(al.tipo));
   return alertas.some((al) => al.tipo === "cedo");
@@ -67,7 +67,10 @@ function Distribuicao() {
   }, [carregar]);
 
   const pessoas = useMemo(() => new Map((dados?.pessoas ?? []).map((p) => [p.id, p])), [dados]);
-  const contexto: Contexto = useMemo(() => ({ pessoas, todas: dados?.audiencias ?? [], duracoes: dados?.duracoes }), [pessoas, dados]);
+  const contexto: Contexto = useMemo(
+    () => ({ pessoas, todas: dados?.audiencias ?? [], duracoes: dados?.duracoes, respostas: respostasDosConvites(dados?.convites ?? [], dados?.audiencias ?? []) }),
+    [pessoas, dados]
+  );
 
   const { atencao, emOrdem, numeros, total, porPessoa } = useMemo(() => {
     const dias = new Set(dados?.dias ?? []);
@@ -178,7 +181,7 @@ function Distribuicao() {
 
       <Indicadores className="lg:grid-cols-5">
         <Indicador icone={CalendarDays} rotulo="Audiências nos 2 dias" valor={numeros.total} ativo={!cartao} onClick={() => setCartao("")} dica="Todas as audiências dos dois dias" />
-        <Indicador icone={Users} rotulo={ROTULO_CARTAO.semTitular} valor={numeros.semTitular} tom={numeros.semTitular ? "perigo" : "neutro"} ativo={cartao === "semTitular"} onClick={alternar("semTitular")} dica="Mostrar só as audiências sem titular" />
+        <Indicador icone={Users} rotulo={ROTULO_CARTAO.semTitular} valor={numeros.semTitular} tom={numeros.semTitular ? "perigo" : "neutro"} ativo={cartao === "semTitular"} onClick={alternar("semTitular")} dica="Mostrar só as audiências sem titular ou com a titular que recusou o convite do Outlook" />
         <Indicador icone={AlertTriangle} rotulo={ROTULO_CARTAO.choques} valor={numeros.choques} tom={numeros.choques ? "perigo" : "neutro"} ativo={cartao === "choques"} onClick={alternar("choques")} dica="Mostrar só os conflitos de horário e a falta de tempo de deslocamento" />
         <Indicador icone={Repeat} rotulo={ROTULO_CARTAO.mudou} valor={numeros.mudou} tom={numeros.mudou ? "perigo" : "neutro"} ativo={cartao === "mudou"} onClick={alternar("mudou")} dica="Mostrar só o que mudou ou cancelou no tribunal ou não bate com o VIOS" />
         <Indicador icone={Clock} rotulo={ROTULO_CARTAO.cedo} valor={numeros.cedo} tom={numeros.cedo ? "alerta" : "neutro"} ativo={cartao === "cedo"} onClick={alternar("cedo")} dica="Mostrar só as que começam antes das 10h" />
@@ -216,7 +219,7 @@ function Distribuicao() {
             <ul>
               {atencao.map(({ aud, alertas }) => {
                 const graves = alertas.filter((a) => a.grave);
-                const precisaPessoa = graves.some((a) => ["sem_titular", "choque", "deslocamento"].includes(a.tipo));
+                const precisaPessoa = graves.some((a) => ["sem_titular", "choque", "deslocamento", "recusou"].includes(a.tipo));
                 const precisaConferir = graves.some((a) => ALERTAS_DO_VIOS.includes(a.tipo));
                 return (
                   <li key={aud.id} className="relative grid grid-cols-[4.25rem_minmax(0,1fr)_auto] gap-3 border-b border-[#e6eef0] px-4 py-3 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-red-600 last:border-b-0">
@@ -240,7 +243,7 @@ function Distribuicao() {
                           <span><TextoComCi texto={a.texto} /></span>
                         </p>
                       ))}
-                      <Dupla aud={aud} pessoas={pessoas} compacto />
+                      <Dupla aud={aud} pessoas={pessoas} compacto respostas={contexto.respostas?.get(aud.id)} />
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       {precisaPessoa && aud.situacao === "designada" ? (
@@ -289,7 +292,7 @@ function Distribuicao() {
                           {alertas.some((a) => a.tipo === "backup_ocupado") ? <Selo tom="alerta">Backup ocupada</Selo> : null}
                         </div>
                         <LinkDoVios aud={aud} />
-                        <Dupla aud={aud} pessoas={pessoas} compacto />
+                        <Dupla aud={aud} pessoas={pessoas} compacto respostas={contexto.respostas?.get(aud.id)} />
                       </div>
                       <div className="flex flex-col gap-1">
                         <Button size="xs" variant="outline" onClick={() => setTroca({ aud, papel: "titular" })}>
