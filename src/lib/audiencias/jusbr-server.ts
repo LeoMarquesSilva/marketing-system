@@ -7,6 +7,7 @@ import { duplaDaPasta } from "./duplas";
 import { heranca, jusbrComPje, linhaDoJusbr, type LinhaDoJusbr } from "./jusbr";
 import { pastasPorCnj } from "./pastas-server";
 import { cnjComMascara } from "./pje";
+import { reservasComTribunal } from "./reserva";
 import { AudienciasError, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
 import type { Audiencia, Mudanca } from "./tipos";
 
@@ -140,6 +141,32 @@ export async function substituirJusbrPeloPje(audiencias: Audiencia[]): Promise<n
   const pares = jusbrComPje(audiencias);
   for (const { jusbr, pje } of pares) await passarParaOTribunal(jusbr, pje, "conferência com o VIOS");
   return pares.length;
+}
+
+/**
+ * Logo depois de uma leitura do PJe: a audiência que estava na pauta pelo Jus.br ou "a confirmar" (VIOS/Vistagem) e
+ * que o PJe passou a mostrar sai na hora, e a do PJe herda a dupla. Antes a troca esperava a conferência com o VIOS, e
+ * nesse meio-tempo a mesma audiência ficava duas vezes na pauta (24/11/2026: alerta de conflito da pessoa com ela mesma).
+ */
+export async function passarParaOPje(cnjs: string[], feitoPor = "leitura do PJe"): Promise<number> {
+  const unicos = [...new Set(cnjs.filter(Boolean))];
+  if (!unicos.length) return 0;
+  const carregar = async () => {
+    const auds: Audiencia[] = [];
+    for (let i = 0; i < unicos.length; i += 200) {
+      const { data, error } = await db().from("aud_audiencias").select(COLUNAS_AUDIENCIA).in("cnj", unicos.slice(i, i + 200)).eq("situacao", "designada");
+      if (error) falhou("ler as audiências dos processos lidos", error);
+      for (const l of (data ?? []) as Linha[]) auds.push(paraAudiencia(l));
+    }
+    return auds;
+  };
+  let auds = await carregar();
+  const doJusbr = jusbrComPje(auds);
+  for (const { jusbr, pje } of doJusbr) await passarParaOTribunal(jusbr, pje, feitoPor);
+  if (doJusbr.length) auds = await carregar();
+  const aConfirmar = reservasComTribunal(auds, new Map());
+  for (const { reserva, tribunal } of aConfirmar) await passarParaOTribunal(reserva, tribunal, feitoPor);
+  return doJusbr.length + aConfirmar.length;
 }
 
 const NOME_DA_ORIGEM: Record<Audiencia["origem"], string> = { pje: "do PJe", jusbr: "do Jus.br", vios: "do VIOS", manual: "manual" };

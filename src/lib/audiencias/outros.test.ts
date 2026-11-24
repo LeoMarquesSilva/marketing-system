@@ -48,14 +48,21 @@ describe("mensagens do WhatsApp", () => {
   it("marca quem tem número e escreve o nome de quem não tem", () => {
     const m = mensagemDaPauta("Pauta de amanhã", "2026-11-19", [aud()], mapa)!;
     expect(m.texto).toContain("qui 19/11");
-    expect(m.texto).toContain("08:40 Inicial · Exemplo · online · @5519999990001 (backup Carla)");
+    expect(m.texto).toContain("*08:40 · Inicial*\nExemplo · online\nTitular: @5519999990001\nBackup: Carla");
     expect(m.mencoes).toEqual(["5519999990001"]);
     expect(soDigitos("123")).toBeNull();
   });
+  it("pauta com espaço: uma linha em branco depois do título e entre as audiências; a confirmar vai avisado", () => {
+    const m = mensagemDaPauta("Pauta de amanhã", "2026-11-19", [aud(), aud({ id: "a2", origem: "vios", inicio: "2026-11-19T13:00:00.000Z", tipo: "instrucao", titularId: "p3", backupId: null })], mapa)!;
+    expect(m.texto).toBe(
+      "📅 *Pauta de amanhã · qui 19/11*\n\n" +
+        "*08:40 · Inicial*\nExemplo · online\nTitular: @5519999990001\nBackup: Carla\n\n" +
+        "*10:00 · Instrução*\nExemplo · online\nTitular: Diana\nBackup: —\n_a confirmar no tribunal_"
+    );
+  });
   it("troca de titular diz quem sai e por quê", () => {
     const m = mensagemDeTroca(aud({ titularId: "p3" }), "titular", "p1", "p3", "Deslocamento", mapa);
-    expect(m.texto).toContain("Troca de titular");
-    expect(m.texto).toContain("Sai: Bruna Teixeira (deslocamento)");
+    expect(m.texto).toBe("🔁 *Troca de titular*\n\nInicial 08:40 · Exemplo · qui 19/11\nTitular: Diana\nBackup: Carla\nSai: Bruna Teixeira (deslocamento)");
   });
   it("alertas: um sai igual ao desenho; vários vão numa mensagem só, em ordem de horário, marcando a coordenação", () => {
     expect(mensagemDeAlertas([{ aud: aud(), texto: "Sem titular." }], ["p1"], mapa)).toEqual(mensagemDeAlerta(aud(), "Sem titular.", ["p1"], mapa));
@@ -68,9 +75,9 @@ describe("mensagens do WhatsApp", () => {
       mapa
     );
     expect(varios.texto).toBe(
-      "⚠️ *Precisa de decisão (2)*\n" +
-        "• Inicial 08:40 · Exemplo · qui 19/11: Diana Souza está na UNA das 08:30 no mesmo horário.\n" +
-        "• Instrução 10:00 · Exemplo · qui 19/11: Sem titular.\n" +
+      "⚠️ *Precisa de decisão (2)*\n\n" +
+        "*Inicial 08:40 · Exemplo · qui 19/11*\nDiana Souza está na UNA das 08:30 no mesmo horário.\n\n" +
+        "*Instrução 10:00 · Exemplo · qui 19/11*\nSem titular.\n\n" +
         "@5519999990001, dá para resolver na distribuição?"
     );
     expect(varios.mencoes).toEqual(["5519999990001"]);
