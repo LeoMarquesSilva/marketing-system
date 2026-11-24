@@ -278,7 +278,25 @@ O que o painel tem (o código está no repositório do painel, fora deste):
 
 Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)). Nenhum valor real vai para o repositório: senhas, token, chave privada, certificado e segredos entram só no Easypanel e no painel.
 
+### Dois serviços de autos: Jus.br e tribunal (24/11/2026)
+
+**É o arranjo em uso.** Até aqui um só serviço (`robo-autos-eproc-tjsp`, `ROBO_NOME=servidor-jusbr`) atendia Jus.br, eproc e e-SAJ, um pedido por vez: um processo grande num sistema segurava a fila dos outros. O trabalhista vai usar muito o Jus.br, então ele ganha um serviço só dele:
+
+| Serviço | `ROBO_NOME` | `ROBO_CONECTORES` | `CAPA_DATAJUD` | Volume `/dados` |
+|---|---|---|---|---|
+| `robo-autos-jusbr` (novo) | `servidor-jusbr` | `jusbr` | `nao` | próprio |
+| `robo-autos-eproc-tjsp` (o atual) | `servidor-tribunal` | `eproc,esaj` | como está (só um serviço completa capas) | o que já tem |
+
+- **Repasse entre os dois:** o pedido de autos vai primeiro ao Jus.br. Quando o Jus.br não traz os autos e o pedido tem reserva (o conector do tribunal, ex. `esaj:TJSP`), o robô que tem o conector da reserva segue por ele no mesmo pedido (como antes, num robô com todos os conectores). O `robo-autos-jusbr` não tem: ele chama a ação `repassar` do ORQESTRAI, o pedido volta à fila em `pendente` já no sistema da reserva, e o `robo-autos-eproc-tjsp` o pega. No log do robô do Jus.br: `Repassado ao robô do tribunal (esaj:TJSP).`
+- **Ordem:** a ação `repassar` precisa estar em produção no ORQESTRAI (Vercel) **antes** de o `robo-autos-jusbr` subir com `ROBO_CONECTORES=jusbr`. Sem ela, o repasse recebe 400 e o pedido vira erro.
+- **Criar o `robo-autos-jusbr`:** mesma fonte, Build Path e Dockerfile do `robo-autos-eproc-tjsp`. Environment: copie as variáveis do serviço atual (inclusive `NAVEGADOR_PROXY`, se houver: o jus.br bloqueia o IP do servidor sem ele) e troque só `ROBO_NOME`, `ROBO_CONECTORES`, `CAPA_DATAJUD` e `TELA_REMOTA_URL`. `ROBO_AUTOS_TOKEN` e `VNC_SENHA` quem cola é o usuário. Mounts: **volume `/dados` próprio** (o perfil do navegador não pode ser dividido), bind de `/srv/robos/certificados` em `/certificados` e de `/srv/robos/segredos` em `/segredos`, os mesmos do serviço atual. Domínio próprio para a tela remota (porta 6080, Basic Auth). Resources, réplicas e zero-downtime como no [passo 3](#3-serviços-do-robô-app-um-por-linha-da-tabela).
+- **No `robo-autos-eproc-tjsp`:** `ROBO_CONECTORES=eproc,esaj` e `ROBO_NOME=servidor-tribunal`; deploy depois que o `robo-autos-jusbr` estiver atendendo. Um sistema nunca fica nos dois (seriam dois logins do mesmo advogado no mesmo tribunal).
+- **Memória:** cada serviço abre o seu Chromium (de 0,5 a 1 GB com janela). Confira a sobra da VPS antes de criar o segundo (`free -h` no servidor, ou a aba Monitor do Easypanel): com menos de ~1,5 GB livres, o segundo navegador pode derrubar os dois.
+- **Teste:** um pedido de processo do TJSP em segredo de justiça que o Jus.br não atenda deve aparecer no log do `robo-autos-jusbr` como repassado e, em seguida, no `robo-autos-eproc-tjsp`, baixado pelo e-SAJ ou pelo eproc.
+
 ### Três serviços no projeto `bibliotecaBP`
+
+Plano anterior (17 a 23/11/2026), mantido para a migração do Mac e para quando o TJRJ entrar no servidor; o que vale hoje para autos é a seção [acima](#dois-serviços-de-autos-jusbr-e-tribunal-24112026).
 
 O servidor roda o robô em três serviços, do mesmo código e da mesma imagem, para os tribunais andarem em paralelo (dentro de cada serviço, um processo por vez, no ritmo que o tribunal aguenta):
 
@@ -493,7 +511,7 @@ O robô lê logo ao subir e de novo em cada horário de `PAUTA_HORARIOS`, sem ma
 
 | Variável | Padrão | O que faz |
 |---|---|---|
-| `ROBO_CONECTORES` | todos | Conectores atendidos: `eproc`, `esaj`, `esaj:TJCE`… |
+| `ROBO_CONECTORES` | todos | Conectores atendidos: `jusbr`, `eproc`, `esaj`, `esaj:TJCE`… Sem o conector da reserva, o robô repassa ao robô do tribunal o pedido que o Jus.br não atende. |
 | `NAVEGADOR_MODO` | `comum` (ou `playwright` com certificado em arquivo) | Quem abre o navegador. |
 | `NAVEGADOR_HEADLESS` | `nao` | Sem janela (só no modo `playwright`). |
 | `NAVEGADOR_ARGS` | — | Argumentos extras do navegador. |
