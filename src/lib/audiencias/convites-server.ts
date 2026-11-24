@@ -13,7 +13,7 @@ import type { Audiencia, ConvitePauta, Papel, PessoaPauta } from "./tipos";
  * Um convite por papel em cada audiência dos próximos 45 dias. Em modo teste (padrão), grava o convite que
  * mandaria e não chama o Graph.
  *
- * Quando sai: na rotina (7h30 e 17h30) e logo depois do que muda a audiência (troca de titular ou backup, o que a
+ * Quando sai: na rotina (7h e 17h) e logo depois do que muda a audiência (troca de titular ou backup, o que a
  * equipe completa, a leitura do robô), só para as audiências mexidas — como no desenho da pauta, o convite sai "ao
  * distribuir", sem esperar a próxima rotina.
  */
@@ -196,9 +196,9 @@ async function sincronizarUm(
  * organizadora (calendarView) traz todos os convites com a resposta de cada convidado, em vez de uma por convite.
  * Recusa fica no histórico da audiência; a Distribuição mostra em vermelho.
  */
-export async function lerRespostas(): Promise<{ lidas: number; mudaram: number }> {
+export async function lerRespostas(): Promise<{ lidas: number; mudaram: number; recusas: number }> {
   const config = await lerConfig();
-  if (!(modoOutlook() === "real" && config.outlook.ligado)) return { lidas: 0, mudaram: 0 };
+  if (!(modoOutlook() === "real" && config.outlook.ligado)) return { lidas: 0, mudaram: 0, recusas: 0 };
   const organizador = organizadorDe(config);
   const { data, error } = await db()
     .from("aud_convites")
@@ -208,7 +208,7 @@ export async function lerRespostas(): Promise<{ lidas: number; mudaram: number }
     .limit(2000);
   if (error) falhou("ler os convites enviados", error);
   const convites = (data ?? []) as { id: string; audiencia_id: string; papel: Papel; pessoa_id: string | null; graph_event_id: string; resposta: string | null }[];
-  if (!convites.length) return { lidas: 0, mudaram: 0 };
+  if (!convites.length) return { lidas: 0, mudaram: 0, recusas: 0 };
 
   const token = await tokenGraph();
   const agora = Date.now();
@@ -225,12 +225,14 @@ export async function lerRespostas(): Promise<{ lidas: number; mudaram: number }
   const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
   let lidas = 0;
   let mudaram = 0;
+  let recusas = 0;
   for (const c of convites) {
     if (!respostas.has(c.graph_event_id)) continue;
     lidas += 1;
     const resposta = respostaDoGraph(respostas.get(c.graph_event_id));
     if (resposta === c.resposta) continue;
     mudaram += 1;
+    if (resposta === "recusado") recusas += 1;
     await db().from("aud_convites").update({ resposta }).eq("id", c.id);
     if (resposta === "recusado" || resposta === "aceito")
       await registrarHistorico(c.audiencia_id, resposta === "recusado" ? "recusou o convite" : "aceitou o convite", {
@@ -238,7 +240,24 @@ export async function lerRespostas(): Promise<{ lidas: number; mudaram: number }
         feitoPor: "Outlook",
       });
   }
-  return { lidas, mudaram };
+  return { lidas, mudaram, recusas };
+}
+
+const RESPOSTAS_LIDAS_EM = "respostas_lidas_em";
+
+/**
+ * Lê as respostas se a última leitura tem mais de `minutos` (a data fica em aud_config). Para ler "na hora" sem pesar:
+ * depois de cada leitura do robô e quando alguém abre a Pauta ou a Distribuição. null = não leu (modo teste ou recente).
+ */
+export async function lerRespostasSeDevido(minutos = 10): Promise<{ lidas: number; mudaram: number; recusas: number } | null> {
+  const config = await lerConfig();
+  if (!(modoOutlook() === "real" && config.outlook.ligado)) return null;
+  const { data } = await db().from("aud_config").select("valor").eq("chave", RESPOSTAS_LIDAS_EM).maybeSingle();
+  const ultima = typeof data?.valor === "string" ? Date.parse(data.valor) : 0;
+  if (Date.now() - ultima < minutos * 60 * 1000) return null;
+  const agora = new Date().toISOString();
+  await db().from("aud_config").upsert({ chave: RESPOSTAS_LIDAS_EM, valor: agora, atualizado_em: agora, atualizado_por: "sistema" }, { onConflict: "chave" });
+  return lerRespostas();
 }
 
 /** As respostas ao convite das audiências (para os alertas do servidor: recusa vira aviso à coordenação). */

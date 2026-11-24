@@ -9,7 +9,7 @@ export const maxDuration = 300;
  * Rotina da Pauta de Audiências: conferência com o VIOS (quando há leitura nova do PJe), DJEN, convites do Outlook,
  * respostas e avisos do horário (7h–9h pauta do dia, 17h–19h pauta do próximo dia útil, alertas das 7h às 19h).
  * Quem chama: a Vercel (plano Hobby) uma vez por dia, às 8h, e o pg_cron do SAMA (job "orquestra-pauta") nos horários
- * dos avisos, 7h30 e 17h30 dos dias úteis, com a mesma chave derivada da rota dos envios. `?ping` só confere a chave.
+ * dos avisos, 7h e 17h dos dias úteis, com a mesma chave derivada da rota dos envios. `?ping` só confere a chave.
  */
 export async function GET(request: Request) {
   if (!autorizadoNosEnvios(request)) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });

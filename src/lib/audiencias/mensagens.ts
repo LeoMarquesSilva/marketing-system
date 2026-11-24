@@ -98,3 +98,20 @@ export function mensagemDeAlerta(aud: Audiencia, alerta: string, coordenacao: st
   const chamada = coordenacao.length ? `\n${coordenacao.map((id) => m.pessoa(id)).join(" ")}, dá para resolver na distribuição?` : "";
   return { texto: `⚠️ *Precisa de decisão*\n${ROTULO_TIPO[aud.tipo]} ${hora} · ${cliente(aud)} · ${diaCurto(dia)}\n${alerta}${chamada}`, mencoes: [...m.mencoes] };
 }
+
+/**
+ * Os alertas novos de uma rodada numa mensagem só (para não encher o grupo: numa manhã chegam a 11). Com um alerta,
+ * a mensagem é a mesma de `mensagemDeAlerta`, como no desenho da pauta.
+ */
+export function mensagemDeAlertas(itens: { aud: Audiencia; texto: string }[], coordenacao: string[], pessoas: Map<string, PessoaPauta>): Mensagem {
+  if (itens.length === 1) return mensagemDeAlerta(itens[0]!.aud, itens[0]!.texto, coordenacao, pessoas);
+  const m = new Marcador(pessoas);
+  const linhas = [...itens]
+    .sort((a, b) => a.aud.inicio.localeCompare(b.aud.inicio))
+    .map(({ aud, texto }) => {
+      const { dia, hora } = local(aud.inicio);
+      return `• ${ROTULO_TIPO[aud.tipo]} ${hora} · ${cliente(aud)} · ${diaCurto(dia)}: ${texto}`;
+    });
+  const chamada = coordenacao.length ? `\n${coordenacao.map((id) => m.pessoa(id)).join(" ")}, dá para resolver na distribuição?` : "";
+  return { texto: `⚠️ *Precisa de decisão (${itens.length})*\n${linhas.join("\n")}${chamada}`, mencoes: [...m.mencoes] };
+}

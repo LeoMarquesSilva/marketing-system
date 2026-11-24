@@ -1,8 +1,8 @@
 import { after, NextResponse } from "next/server";
 import { conferirComVios, ORIGEM_AUTOMATICA } from "@/lib/audiencias/conferencia-server";
-import { sincronizarConvitesDe } from "@/lib/audiencias/convites-server";
 import { exigirRobo, respostaDeErro } from "@/lib/audiencias/http";
 import { registrarLeituraJusbr } from "@/lib/audiencias/jusbr-server";
+import { reagirAMudanca } from "@/lib/audiencias/rotina-server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
         } catch (erro) {
           console.error("[pauta] conferência com o VIOS após o Jus.br:", erro instanceof Error ? erro.message : erro);
         }
-        await sincronizarConvitesDe();
+        await reagirAMudanca({ respostas: true });
       });
     }
     return NextResponse.json(resumo);

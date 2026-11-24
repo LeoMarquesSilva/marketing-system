@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { alertasDaAudiencia, respostasDosConvites } from "./agenda";
 import { duplaDaPasta, nomeCurto, pessoaPorSigla, siglaDoNome } from "./duplas";
-import { mensagemDaPauta, mensagemDeTroca, soDigitos } from "./mensagens";
+import { mensagemDaPauta, mensagemDeAlerta, mensagemDeAlertas, mensagemDeTroca, soDigitos } from "./mensagens";
 import { eventoDoConvite, localDoConvite, respostaDoGraph, versaoDoEvento } from "./outlook";
 import type { Audiencia, ConvitePauta, PessoaPauta } from "./tipos";
 import { inicioDoVios, lerCsvDoVios } from "./vios-csv";
@@ -56,6 +56,24 @@ describe("mensagens do WhatsApp", () => {
     const m = mensagemDeTroca(aud({ titularId: "p3" }), "titular", "p1", "p3", "Deslocamento", mapa);
     expect(m.texto).toContain("Troca de titular");
     expect(m.texto).toContain("Sai: Bruna Teixeira (deslocamento)");
+  });
+  it("alertas: um sai igual ao desenho; vários vão numa mensagem só, em ordem de horário, marcando a coordenação", () => {
+    expect(mensagemDeAlertas([{ aud: aud(), texto: "Sem titular." }], ["p1"], mapa)).toEqual(mensagemDeAlerta(aud(), "Sem titular.", ["p1"], mapa));
+    const varios = mensagemDeAlertas(
+      [
+        { aud: aud({ id: "a2", inicio: "2026-11-19T13:00:00.000Z", tipo: "instrucao" }), texto: "Sem titular." },
+        { aud: aud(), texto: "Diana Souza está na UNA das 08:30 no mesmo horário." },
+      ],
+      ["p1"],
+      mapa
+    );
+    expect(varios.texto).toBe(
+      "⚠️ *Precisa de decisão (2)*\n" +
+        "• Inicial 08:40 · Exemplo · qui 19/11: Diana Souza está na UNA das 08:30 no mesmo horário.\n" +
+        "• Instrução 10:00 · Exemplo · qui 19/11: Sem titular.\n" +
+        "@5519999990001, dá para resolver na distribuição?"
+    );
+    expect(varios.mencoes).toEqual(["5519999990001"]);
   });
 });
 
