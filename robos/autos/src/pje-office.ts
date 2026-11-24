@@ -41,12 +41,19 @@ export interface AssinadorPjeOffice {
 }
 
 /** Abre o .pfx (inclusive com a cifra antiga RC2) e prepara a assinatura. A senha não sai daqui. */
-export function abrirAssinador(pfx: Buffer, senha: string): AssinadorPjeOffice {
+/** Chave, certificado do titular e cadeia (do titular até onde o arquivo tiver), lidos do .pfx (inclusive RC2). */
+export interface PfxAberto {
+  chave: forge.pki.rsa.PrivateKey;
+  titular: forge.pki.Certificate;
+  cadeia: forge.pki.Certificate[];
+}
+
+export function abrirPfxComForge(pfx: Buffer, senha: string): PfxAberto {
   let p12: forge.pkcs12.Pkcs12Pfx;
   try {
     p12 = forge.pkcs12.pkcs12FromAsn1(forge.asn1.fromDer(forge.util.createBuffer(pfx.toString("binary"))), senha);
   } catch {
-    throw new FalhaDoPjeOffice("Não consegui abrir o certificado para o PJe Office (senha ou arquivo inválido).");
+    throw new FalhaDoPjeOffice("Não consegui abrir o certificado (senha ou arquivo inválido).");
   }
   const chaves = [
     ...(p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] ?? []),
@@ -72,14 +79,23 @@ export function abrirAssinador(pfx: Buffer, senha: string): AssinadorPjeOffice {
     cadeia.push(emissor);
     atual = emissor;
   }
+  return { chave, titular, cadeia };
+}
 
+/** DER do certificado. */
+export function derDoCertificado(cert: forge.pki.Certificate): Buffer {
+  return Buffer.from(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes(), "binary");
+}
+
+export function abrirAssinador(pfx: Buffer, senha: string): AssinadorPjeOffice {
+  const { chave, cadeia } = abrirPfxComForge(pfx, senha);
   return {
     assinar(mensagem: string): string {
       const resumo = forge.md.md5.create();
       resumo.update(mensagem, "utf8");
       return forge.util.encode64(chave.sign(resumo));
     },
-    cadeia64: cadeiaPkiPath(cadeia.map((cert) => Buffer.from(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes(), "binary"))),
+    cadeia64: cadeiaPkiPath(cadeia.map(derDoCertificado)),
   };
 }
 

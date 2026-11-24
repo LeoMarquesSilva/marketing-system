@@ -109,6 +109,11 @@ export interface Config {
    * Só no modo playwright com certificado; PJE_OFFICE=nao desliga (aí o login no jus.br fica com a pessoa).
    */
   pjeOffice: boolean;
+  /**
+   * O robô faz o papel do Web Signer da Softplan no login por certificado do e-SAJ, com o mesmo A1 (src/web-signer.ts).
+   * Só no modo playwright com certificado; WEB_SIGNER=nao desliga (aí o login do e-SAJ fica com a pessoa).
+   */
+  webSigner: boolean;
   pastas: { perfil: string; downloads: string; diagnostico: string };
 }
 
@@ -193,6 +198,7 @@ export function lerConfig(): Config {
     eproc: { login: loginEproc, usuario: texto("EPROC_USUARIO"), senha: texto("EPROC_SENHA") },
     eprocTjrj: { login: loginEprocTjrj, usuario: texto("EPROC_TJRJ_USUARIO"), senha: texto("EPROC_TJRJ_SENHA") },
     webhook2fa: { url: texto("ROBO_2FA_WEBHOOK_URL"), header: texto("ROBO_2FA_WEBHOOK_HEADER") || "x-robo-token", token: texto("ROBO_2FA_WEBHOOK_TOKEN") },
+    webSigner: comCertificado && navegadorModo === "playwright" && !/^(nao|não|0|false)$/i.test(texto("WEB_SIGNER")),
     pjeOffice: comCertificado && navegadorModo === "playwright" && !/^(nao|não|0|false)$/i.test(texto("PJE_OFFICE")),
     segundoFator: { pasta: texto("ROBO_2FA_PASTA") || certificado.pasta, chavePrivadaArquivo: certificado.chavePrivadaArquivo },
     pastas: { perfil: pasta("perfil"), downloads: pasta("downloads"), diagnostico: pasta("diagnostico") },
