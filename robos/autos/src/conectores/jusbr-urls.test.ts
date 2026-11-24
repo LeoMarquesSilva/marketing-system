@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capaDaFicha, desistirDoJusbr, desistirDosOriginais, digitosDoCnj, JUSBR_FALHAS_SEGUIDAS, documentosDaFicha, documentosNovosJusbr, ehAreaLogadaJusbr, ehLoginPdpj, motivoDaResposta, textoParaPdf, urlDaApi } from "./jusbr-urls";
+import { capaDaFicha, desistirDoJusbr, desistirDosOriginais, digitosDoCnj, JUSBR_FALHAS_SEGUIDAS, JUSBR_LOTE_PADRAO, documentosDaFicha, loteJusbr, documentosNovosJusbr, ehAreaLogadaJusbr, ehLoginPdpj, motivoDaResposta, textoParaPdf, urlDaApi } from "./jusbr-urls";
 
 // Números fictícios (dígito verificador inválido de propósito). Nenhum dado real.
 const doc = (sequencia: number, idCodex: number, data: string, extra: Record<string, unknown> = {}) => ({
@@ -97,5 +97,21 @@ describe("Jus.br sem os originais do tribunal", () => {
   it("segue só pelo texto depois de 3 originais recusados seguidos", () => {
     expect(desistirDosOriginais(2)).toBe(false);
     expect(desistirDosOriginais(3)).toBe(true);
+  });
+});
+
+describe("Jus.br: processo enorme em lotes", () => {
+  const docs = Array.from({ length: 10 }, (_, i) => i + 1);
+
+  it("leva só o lote, em ordem de juntada, e conta o que fica para o próximo pedido", () => {
+    expect(loteJusbr(docs, 4)).toEqual({ lote: [1, 2, 3, 4], restantes: 6 });
+    expect(loteJusbr(docs, 10)).toEqual({ lote: docs, restantes: 0 });
+    expect(loteJusbr(docs, 50)).toEqual({ lote: docs, restantes: 0 });
+  });
+
+  it("limite inválido cai no padrão", () => {
+    const muitos = Array.from({ length: JUSBR_LOTE_PADRAO + 5 }, (_, i) => i);
+    for (const limite of [0, -3, Number.NaN]) expect(loteJusbr(muitos, limite).restantes).toBe(5);
+    expect(loteJusbr(docs, 2.7).lote).toEqual([1, 2]);
   });
 });

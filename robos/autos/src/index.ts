@@ -171,12 +171,24 @@ async function principal(): Promise<void> {
 
   function ambientePara(pedido: Pedido | null): Ambiente {
     const { contexto, pagina } = navegador;
+    let ultimoSinalDeVida = Date.now();
     return {
       config,
       contexto,
       pagina,
       registrar,
       diagnostico: (alvo: Page, etapa: string) => guardarDiagnostico(config, alvo, etapa),
+      async sinalDeVida() {
+        if (!pedido || Date.now() - ultimoSinalDeVida < 60_000) return;
+        ultimoSinalDeVida = Date.now();
+        try {
+          await fila.seguir(pedido.id);
+        } catch (erro) {
+          // Cancelado na ficha: larga o download. Falha de rede não derruba o download (o próximo sinal tenta de novo).
+          if (erro instanceof PedidoEncerrado) throw erro;
+          registrar(`Sinal de vida ao ORQESTRAI falhou: ${mensagemLimpa(erro)}`);
+        }
+      },
       async aguardarPessoa(motivo, instrucao, resolvido) {
         registrar(`>>> PRECISA DE UMA PESSOA: ${instrucao}`);
         if (config.telaRemotaUrl) registrar(`Tela do robô: ${config.telaRemotaUrl}`);
@@ -323,8 +335,9 @@ async function principal(): Promise<void> {
         registrar(`Autos de ${pedido.cnj} conferidos: nenhuma peça nova desde o último download.`);
       } else {
         registrar(resultado?.arquivos && resultado.arquivos.length > 1 ? `PDF baixado em ${resultado.arquivos.length} partes. Enviando ao ORQESTRAI.` : "PDF baixado. Enviando ao ORQESTRAI.");
-        await fila.entregar(pedido.id, destino, nomeDoPdf(cnj), resultado?.pecas, resultado?.sistema, resultado?.arquivos, resultado?.capa);
+        await fila.entregar(pedido.id, destino, nomeDoPdf(cnj), resultado?.pecas, resultado?.sistema, resultado?.arquivos, resultado?.capa, resultado?.restantes);
         registrar(`Autos de ${pedido.cnj} entregues${resultado?.pecas?.length ? ` (${resultado.pecas.length} peças)` : ""}. A leitura pela IA segue no ORQESTRAI.`);
+        if (resultado?.restantes) registrar(`Faltam ${resultado.restantes} documentos de ${pedido.cnj}: voltaram ao fim da fila num pedido novo.`);
       }
     } catch (erro) {
       if (erro instanceof PedidoEncerrado) {
