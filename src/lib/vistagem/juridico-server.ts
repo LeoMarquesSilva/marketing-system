@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   ETIQUETAS_AGENDAMENTO,
+  comResponsavelFixoDaArea,
   horaEmSaoPaulo,
   nomesDasPessoas,
   pessoasDaArea,
@@ -49,7 +50,7 @@ import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
-import { linhasParaFila, modoDaPublicacao, podeTerGravadoNoVios, responsavelQueOViosPos, type TarefaNoVios } from "./fila-vios";
+import { ehCienciaNf, linhasParaFila, modoDaPublicacao, podeTerGravadoNoVios, responsavelQueOViosPos, type TarefaNoVios } from "./fila-vios";
 import { avisarErrosDoRobo } from "./aviso-erro-robo-server";
 import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria, precisaDeSistema, sistemaDaLista } from "./dados-processo";
 import { cadastroDaPasta, semMateria, semSistema, sinteseECadastroDaPasta, type CadastroDaPasta } from "./sioe";
@@ -204,6 +205,14 @@ function comResponsaveisDaArea(tarefas: OpcaoTarefa[], usuarios: OpcaoVios[]): O
 }
 
 /**
+ * Tarefas da classe na área: os responsáveis fixos do tipo no VIOS e, onde ele não fixa ninguém, os da área
+ * (Trabalhista: Manoela na INSERIR PAUTA), só os que estão na lista de usuários do VIOS da área.
+ */
+function tarefasDaLista(catalogo: CatalogoArea, etiqueta: EtiquetaAgendamento): OpcaoTarefa[] {
+  return comResponsaveisDaArea(comResponsavelFixoDaArea(catalogo.area, tarefasPermitidas(catalogo.etapas, etiqueta)), catalogo.usuarios);
+}
+
+/**
  * Lista de tarefas já montada de cada área. Montar custa de 4 a 9 ms de CPU por área (normaliza o nome de todos os
  * usuários para cada tarefa); listas e o cron pediam isso para cada publicação. A chave é o objeto da área, que o
  * cache do catálogo (sama.ts, 10 min) reaproveita: quando o catálogo é relido, a área é outra e a lista é montada de novo.
@@ -223,9 +232,9 @@ export function catalogoParaPublicacao(
     area: catalogo.area,
     atualizadoEm: catalogo.atualizadoEm,
     tarefas: {
-      PRAZO: comResponsaveisDaArea(tarefasPermitidas(catalogo.etapas, "PRAZO"), catalogo.usuarios),
-      PROVIDENCIA: comResponsaveisDaArea(tarefasPermitidas(catalogo.etapas, "PROVIDENCIA"), catalogo.usuarios),
-      COMPROMISSO: comResponsaveisDaArea(tarefasPermitidas(catalogo.etapas, "COMPROMISSO"), catalogo.usuarios),
+      PRAZO: tarefasDaLista(catalogo, "PRAZO"),
+      PROVIDENCIA: tarefasDaLista(catalogo, "PROVIDENCIA"),
+      COMPROMISSO: tarefasDaLista(catalogo, "COMPROMISSO"),
     },
     usuarios: catalogo.usuarios,
   };
@@ -1505,6 +1514,21 @@ function dataQueFoiAoVios(item: AgendamentoRow, hoje: string): { data?: string }
   return data !== item.data ? { data } : {};
 }
 
+/**
+ * Nome de quem vistou por último (revistado_por ?? vistado_por, como na Central): vai na descrição da CIÊNCIA NF no VIOS.
+ * Sem o nome (sem quem vistou, ou se a consulta falhar), a tarefa segue sem ele: o envio não para por isso.
+ */
+async function nomeDeQuemVistou(publicacao: Pick<PublicacaoComArea, "vistado_por" | "revistado_por">): Promise<string | null> {
+  const autor = publicacao.revistado_por ?? publicacao.vistado_por;
+  if (!autor) return null;
+  try {
+    return (await nomesDosUsuarios([autor])).get(autor)?.trim() || null;
+  } catch (erro) {
+    console.error("[vistagem] nome de quem vistou, para a CIÊNCIA NF", erro instanceof Error ? erro.message : erro);
+    return null;
+  }
+}
+
 /** Põe as tarefas da publicação na fila do robô; devolve o id da linha da fila de cada agendamento. */
 async function enfileirarPublicacao(
   publicacao: PublicacaoComArea,
@@ -1516,12 +1540,13 @@ async function enfileirarPublicacao(
   // direto na pasta (sem marcar a publicação como colada).
   const tipoPasta = tipoDaPastaDaPublicacao(publicacao);
   const modo = modoDaPublicacao(publicacao.arquivo, modoAgendamento());
-  const [equivalentes, datasDoFluxo] = await Promise.all([
+  const [equivalentes, datasDoFluxo, vistadaPor] = await Promise.all([
     modo === "intimacao" && !ehPastaDeAtendimento(tipoPasta) ? comunicacoesEquivalentes(publicacao) : Promise.resolve([] as string[]),
     datasDoFluxoParaOVios(publicacao, itens),
+    itens.some((item) => ehCienciaNf(item.tarefa)) ? nomeDeQuemVistou(publicacao) : Promise.resolve(null),
   ]);
   const grupos = linhasParaFila(
-    { ...publicacao, comunicacoes_equivalentes: equivalentes },
+    { ...publicacao, comunicacoes_equivalentes: equivalentes, vistada_por: vistadaPor },
     itens.map((item) => ({
       ...item,
       // A Ciência dos Agendamentos é para o dia do lançamento: validada noutro dia, não vai com data passada.

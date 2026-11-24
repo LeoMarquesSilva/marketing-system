@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils";
 import {
   ETIQUETAS_AGENDAMENTO,
   HORA_LIMITE_DO_DIA,
+  MAX_AGENDAMENTOS,
   ROTULO_ETIQUETA,
   atalhosDePrazo,
   avisoDepoisDoHorario,
@@ -64,11 +65,13 @@ import {
   pedeDataLimite,
   primeiroDiaDaTarefa,
   renunciaComDataFixa,
+  repeteTodoMes,
   revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
   type OrigemPrazo,
 } from "@/lib/vistagem/agendamento";
+import { fataisDaRepeticao, vezesDaRepeticao } from "@/lib/vistagem/repeticao-mensal";
 import { reabertaParaAlterar } from "@/lib/vistagem/alterar-vistagem";
 import { cienciaDosAgendamentos, repetidasNaVistagem, textoDaRepetida } from "@/lib/vistagem/ciencia-agendamentos";
 import {
@@ -118,6 +121,7 @@ import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import { ReguaDatas, diaDaSemana, relativoAHoje } from "./regua-datas";
+import { RepeticaoMensal } from "./repeticao-mensal";
 import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
 import { Aviso, Busca, Carregando, ICONE_ETIQUETA_DESTAQUE, Painel, Selo, SelosDeEtiqueta, Vazio, campoClasse, linhaLista } from "./ui";
@@ -153,6 +157,8 @@ interface Linha {
   ia: boolean;
   /** Datas e responsáveis do Fluxo do VIOS que a pessoa mudou, pela chave do caminho (chaveDoCaminho). */
   fluxoDatas: Record<string, DataDoFluxo>;
+  /** COMPROVAR PAGAMENTO todo mês: quantas vezes vai ao VIOS, a primeira inclusive (1 = só a da fatal). */
+  repetirMeses: number;
 }
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
@@ -232,6 +238,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     esocial: false,
     ia: false,
     fluxoDatas: {},
+    repetirMeses: 1,
     ...base,
   };
 }
@@ -996,6 +1003,23 @@ export function EditorVistagem({
     return pedeDataLimite(opcao ? opcao.nomeVios ?? opcao.nome : linha.tarefa);
   }
 
+  /** O tipo pode ir ao VIOS todo mês (COMPROVAR PAGAMENTO), pelo nome como está no VIOS; só no Prazo com fatal. */
+  function repetivel(linha: Pick<Linha, "etiqueta" | "tarefa">): boolean {
+    if (linha.etiqueta !== "PRAZO" || semFatal(linha)) return false;
+    const opcao = detalhe?.catalogo?.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
+    return repeteTodoMes(opcao ? opcao.nomeVios ?? opcao.nome : linha.tarefa);
+  }
+
+  /** Quantas tarefas a linha vira no VIOS: as repetições mensais contam no limite de tarefas da publicação. */
+  function tarefasDaLinha(linha: Linha): number {
+    return repetivel(linha) ? vezesDaRepeticao(linha.repetirMeses) : 1;
+  }
+
+  /** Tarefas que a vistagem manda ao VIOS, com as repetições mensais. */
+  function totalDeTarefas(atuais: Linha[]): number {
+    return atuais.reduce((soma, linha) => soma + tarefasDaLinha(linha), 0);
+  }
+
   function linhaPronta(linha: Linha): boolean {
     // Depois das 18h, a data escolhida para hoje não deixa vistar (o Prazo com fatal tem o Enviar calculado).
     const dataEscolhida = linha.etiqueta !== "PRAZO" || semFatal(linha);
@@ -1022,7 +1046,15 @@ export function EditorVistagem({
             : {};
         // A data limite igual à data acompanha a data; a escolhida pela pessoa fica.
         const limiteAcompanha = mudanca.data !== undefined && mudanca.dataLimite === undefined && linha.dataLimite === linha.data ? { dataLimite: "" } : {};
-        return { ...linha, ...mudanca, ...horaFimAcompanha, ...limiteAcompanha, ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}) };
+        return {
+          ...linha,
+          ...mudanca,
+          ...horaFimAcompanha,
+          ...limiteAcompanha,
+          ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}),
+          // A repetição mensal é do COMPROVAR PAGAMENTO: outro tipo volta a ir uma vez só.
+          ...(outroTipo && mudanca.repetirMeses === undefined ? { repetirMeses: 1 } : {}),
+        };
       })
     );
   }
@@ -1034,7 +1066,7 @@ export function EditorVistagem({
   /** Mais uma tarefa, já com o responsável e o revisor sugeridos da pasta (no topo e no fim da lista). */
   function adicionarTarefa() {
     setLinhas((atuais) =>
-      atuais.length >= 10
+      totalDeTarefas(atuais) >= MAX_AGENDAMENTOS
         ? atuais
         : [...atuais, novaLinha({ responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "", contagemPrazo: contagemPadrao })]
     );
@@ -1183,7 +1215,7 @@ export function EditorVistagem({
       const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? contagemPadrao;
       const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo), origemPrazo: "publicacao" as const };
       if (alvo) return atuais.map((linha) => (linha === alvo ? { ...linha, ...mudanca } : linha));
-      if (atuais.length >= 10) return atuais;
+      if (totalDeTarefas(atuais) >= MAX_AGENDAMENTOS) return atuais;
       return [...atuais, novaLinha({ ...mudanca, responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "" })];
     });
   }
@@ -1226,6 +1258,8 @@ export function EditorVistagem({
             revisor: linha.etiqueta === "PROVIDENCIA" ? null : linha.revisor || null,
             observacao: linha.observacao || null,
             fluxoDatas: Object.values(linha.fluxoDatas),
+            // COMPROVAR PAGAMENTO todo mês: o servidor grava uma tarefa por mês, a partir da fatal.
+            repetirMeses: tarefasDaLinha(linha) > 1 ? tarefasDaLinha(linha) : null,
           })),
         }),
       });
@@ -1260,7 +1294,10 @@ export function EditorVistagem({
   const abertura = vaiParaCentral(publicacao);
   // Sem o tipo Inserir E-social no VIOS, Acordo homologado e Homologação de cálculo não podem ser enviados.
   const faltaTarefaEsocial = Boolean(detalhe.esocial && pedeTarefaEsocial(esocial) && !detalhe.esocial.tarefa);
-  const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial;
+  // As repetições mensais do COMPROVAR PAGAMENTO contam no limite de tarefas da publicação.
+  const tarefasNoVios = totalDeTarefas(linhas);
+  const passaDoLimite = tarefasNoVios > MAX_AGENDAMENTOS;
+  const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial && !passaDoLimite;
   const incompletas = linhas.filter((linha) => !linhaPronta(linha)).length;
   const faltaObservacao = linhas.some((linha) => pedeObservacao(linha) && !linha.observacao.trim());
   const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
@@ -1487,10 +1524,12 @@ export function EditorVistagem({
                         Incluir tarefas
                       </h2>
                       <p className="text-xs text-muted-foreground">
-                        {plural(linhas.length, "tarefa", "tarefas")} · vão para a conferência da controladoria e depois para o VIOS
+                        {plural(linhas.length, "tarefa", "tarefas")}
+                        {tarefasNoVios > linhas.length ? ` (${tarefasNoVios} no VIOS, com as repetições mensais)` : ""} · vão para a conferência
+                        da controladoria e depois para o VIOS
                       </p>
                     </div>
-                    <Button type="button" variant="outline" size="sm" onClick={adicionarTarefa} disabled={linhas.length >= 10}>
+                    <Button type="button" variant="outline" size="sm" onClick={adicionarTarefa} disabled={tarefasNoVios >= MAX_AGENDAMENTOS}>
                       <Plus />
                       Adicionar tarefa
                     </Button>
@@ -1790,6 +1829,15 @@ export function EditorVistagem({
                                     VIOS criaria (5 dias antes da fatal); o Protocolar e a fatal não mudam (o robô grava o Protocolar no VIOS).
                                   </p>
                                 ) : null}
+                                {repetivel(linha) ? (
+                                  <RepeticaoMensal
+                                    indice={indice}
+                                    vezes={tarefasDaLinha(linha)}
+                                    maximo={Math.max(1, MAX_AGENDAMENTOS - (tarefasNoVios - tarefasDaLinha(linha)))}
+                                    fatais={linha.dataFatal ? fataisDaRepeticao(linha.dataFatal, tarefasDaLinha(linha), ehDiaUtil) : []}
+                                    onChange={(vezes) => alterar(linha.chave, { repetirMeses: vezes })}
+                                  />
+                                ) : null}
                               </div>
                             ) : (
                               <div className="flex flex-wrap items-end gap-3">
@@ -1992,7 +2040,7 @@ export function EditorVistagem({
                       </li>
                     );
                   })}
-                  {linhas.length < 10 ? (
+                  {tarefasNoVios < MAX_AGENDAMENTOS ? (
                     <li>
                       {/* Mais uma tarefa no fim da lista, onde a pessoa está, sem voltar ao topo. */}
                       <button
@@ -2026,10 +2074,12 @@ export function EditorVistagem({
                 <div data-tour="vj-enviar" className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-b-lg border-t border-[#e6eef0] bg-white px-4 py-3 shadow-[0_-8px_16px_-12px_rgba(16,41,58,0.18)]">
                   <p className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
                     {completo
-                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência.`
+                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência${tarefasNoVios > linhas.length ? ` (${tarefasNoVios} no VIOS, com as repetições mensais)` : ""}.`
                       : faltaTarefaEsocial
                         ? `Falta o tipo ${TAREFA_ESOCIAL} no VIOS.`
-                        : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}${faltaObservacao ? ", observação" : ""} e responsável.`}
+                        : passaDoLimite
+                          ? `São ${tarefasNoVios} tarefas no VIOS, contando as repetições mensais: o máximo é ${MAX_AGENDAMENTOS} por publicação.`
+                          : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}${faltaObservacao ? ", observação" : ""} e responsável.`}
                   </p>
                   <Button onClick={enviar} disabled={enviando || !completo}>
                     {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}

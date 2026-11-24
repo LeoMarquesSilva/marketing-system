@@ -5,6 +5,10 @@ import {
   areaDoCatalogo,
   areasDaPessoa,
   classeDasEtiquetas,
+  comResponsavelFixoDaArea,
+  observacaoDaRepeticao,
+  repeteTodoMes,
+  responsavelFixoDaArea,
   contagemPadraoDaArea,
   contagemPadraoDaPublicacao,
   departamentoNaVistagem,
@@ -802,5 +806,132 @@ describe("responsavelFicaComOVios", () => {
     expect(responsavelFicaComOVios("VERIFICAR RENÚNCIA", "")).toBe(true);
     expect(responsavelFicaComOVios("VERIFICAR RENÚNCIA", "Marina Silva Pinelli")).toBe(false);
     expect(responsavelFicaComOVios("CIÊNCIA NF", "")).toBe(false);
+  });
+});
+
+describe("COMPROVAR PAGAMENTO todo mês (pedido de 24/11/2026)", () => {
+  const tarefas = {
+    PRAZO: [...tarefasPermitidas(ETAPAS, "PRAZO"), { id: "452", nome: "COMPROVAR PAGAMENTO" }],
+    PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA"),
+    COMPROMISSO: tarefasPermitidas(ETAPAS, "COMPROMISSO"),
+  };
+  const pedidas: { tarefaId: string; dataFatal: string | null; diasPrazo: number | null }[] = [];
+  const contexto = {
+    tarefas,
+    usuarios: USUARIOS,
+    ehDiaUtil: criarCalendario([]),
+    cadeiaDaTarefa: (tarefaId: string, prazo: { dataFatal: string | null; diasPrazo: number | null }) => {
+      pedidas.push({ tarefaId, ...prazo });
+      return CADEIA_PADRAO;
+    },
+  };
+  const comprovar = (extra: Record<string, unknown> = {}) => ({
+    etiqueta: "PRAZO" as const,
+    tarefa: "COMPROVAR PAGAMENTO",
+    tarefaId: "452",
+    data: "",
+    dataFatal: "2026-11-30",
+    origemPrazo: "calendario",
+    responsavel: "Advogada Exemplo",
+    revisor: "Revisor Exemplo",
+    observacao: "Parcela do acordo",
+    fluxoDatas: [
+      { caminho: ["COMPROVAR PAGAMENTO", "2. REVISAR"], data: "2026-11-26", responsaveis: ["Revisor Exemplo"] },
+      { caminho: ["COMPROVAR PAGAMENTO", "3. PROTOCOLAR"], data: "2026-11-27" },
+    ],
+    ...extra,
+  });
+
+  it("4x: uma tarefa por mês, com a fatal do mês, o Enviar pela regra do fluxo e a observação numerada", () => {
+    pedidas.length = 0;
+    const resultado = validarAgendamentos([comprovar({ repetirMeses: 4 })], contexto);
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(resultado.itens.map((item) => [item.dataFatal, item.data, item.origemPrazo, item.observacao])).toEqual([
+      ["2026-11-30", "2026-11-25", "calendario", "Parcela do acordo\nRepetição mensal: 1 de 4."],
+      ["2026-12-30", "2026-12-25", "repeticao", "Parcela do acordo\nRepetição mensal: 2 de 4."],
+      ["2027-01-29", "2027-01-26", "repeticao", "Parcela do acordo\nRepetição mensal: 3 de 4."],
+      ["2027-02-26", "2027-02-23", "repeticao", "Parcela do acordo\nRepetição mensal: 4 de 4."],
+    ]);
+    // A cadeia do fluxo (regra da insolvência inclusive) é pedida com a fatal de cada mês, sem os dias do atalho.
+    expect(pedidas.slice(1)).toEqual([
+      { tarefaId: "452", dataFatal: "2026-12-30", diasPrazo: null },
+      { tarefaId: "452", dataFatal: "2027-01-29", diasPrazo: null },
+      { tarefaId: "452", dataFatal: "2027-02-26", diasPrazo: null },
+    ]);
+    // Mesmos responsável e revisor; as datas do fluxo escolhidas valem só na primeira, os responsáveis em todas.
+    expect(new Set(resultado.itens.map((item) => `${item.responsavel}|${item.revisor}|${item.tarefaId}`))).toEqual(
+      new Set(["Advogada Exemplo|Revisor Exemplo|452"])
+    );
+    expect(resultado.itens[0].fluxoDatas).toHaveLength(2);
+    expect(resultado.itens[1].fluxoDatas).toEqual([{ caminho: ["COMPROVAR PAGAMENTO", "2. REVISAR"], responsaveis: ["Revisor Exemplo"] }]);
+  });
+
+  it("1x, sem o campo ou em outro tipo de tarefa: vai uma só, como antes", () => {
+    for (const entrada of [comprovar({ repetirMeses: 1 }), comprovar(), comprovar({ repetirMeses: null })]) {
+      const resultado = validarAgendamentos([entrada], contexto);
+      expect(resultado.ok && resultado.itens.map((item) => item.observacao)).toEqual(["Parcela do acordo"]);
+    }
+    const contestacao = validarAgendamentos([comprovar({ tarefa: "CONTESTAÇÃO", tarefaId: "900", fluxoDatas: [], repetirMeses: 4 })], contexto);
+    expect(contestacao.ok && contestacao.itens).toHaveLength(1);
+  });
+
+  it("as repetições contam no limite de 10 tarefas por publicação", () => {
+    const resultado = validarAgendamentos(
+      [comprovar({ repetirMeses: 8 }), { etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-20", responsavel: "Advogada Exemplo" }],
+      contexto
+    );
+    expect(resultado.ok && resultado.itens).toHaveLength(9);
+    const demais = validarAgendamentos([comprovar({ repetirMeses: 11 })], contexto);
+    expect(demais).toEqual({ ok: false, erros: ["No máximo 10 tarefas por publicação, contando as repetições mensais (são 11)."] });
+  });
+
+  it("a vistagem alterada e repetida de novo troca a numeração, sem repetir a linha", () => {
+    const resultado = validarAgendamentos([comprovar({ repetirMeses: 2, observacao: "Parcela do acordo\nRepetição mensal: 1 de 4." })], contexto);
+    expect(resultado.ok && resultado.itens.map((item) => item.observacao)).toEqual([
+      "Parcela do acordo\nRepetição mensal: 1 de 2.",
+      "Parcela do acordo\nRepetição mensal: 2 de 2.",
+    ]);
+    expect(observacaoDaRepeticao(null, 1, 3)).toBe("Repetição mensal: 1 de 3.");
+  });
+
+  it("repeteTodoMes: só o COMPROVAR PAGAMENTO", () => {
+    expect(repeteTodoMes("Comprovar Pagamento")).toBe(true);
+    expect(repeteTodoMes("CONTESTAÇÃO")).toBe(false);
+    expect(repeteTodoMes(null)).toBe(false);
+  });
+
+  it("origem nova da fatal, gravada como veio", () => {
+    expect(origemDoPrazo("repeticao", null)).toBe("repeticao");
+  });
+});
+
+describe("responsável fixo da área: Manoela na INSERIR PAUTA da Trabalhista (pedido de 24/11/2026)", () => {
+  const PROVIDENCIAS = [
+    { id: "416", nome: "INSERIR PAUTA + ATUALIZAR SISTEMA" },
+    { id: "460", nome: "VERIFICAR ATA", responsaveis: ["Larissa de Oliveira Pereira"] },
+    { id: "321", nome: "1. CIÊNCIA DOS AGENDAMENTOS" },
+  ];
+
+  it("na Trabalhista a INSERIR PAUTA já vem com ela; as outras tarefas não mudam", () => {
+    expect(comResponsavelFixoDaArea("Trabalhista", PROVIDENCIAS)).toEqual([
+      { id: "416", nome: "INSERIR PAUTA + ATUALIZAR SISTEMA", responsaveis: ["Manoela Brisighello Angotti"] },
+      { id: "460", nome: "VERIFICAR ATA", responsaveis: ["Larissa de Oliveira Pereira"] },
+      { id: "321", nome: "1. CIÊNCIA DOS AGENDAMENTOS" },
+    ]);
+  });
+
+  it("nas outras áreas fica o advogado da pasta (sem responsável fixo)", () => {
+    for (const area of ["Cível", "Recuperação de Crédito", "Operações Legais", null]) {
+      expect(comResponsavelFixoDaArea(area, PROVIDENCIAS)[0]).toEqual({ id: "416", nome: "INSERIR PAUTA + ATUALIZAR SISTEMA" });
+    }
+  });
+
+  it("acha pelo nome do VIOS (desempatado ou com outra grafia) e não passa por cima dos fixos do VIOS", () => {
+    expect(responsavelFixoDaArea("TRABALHISTA", "Inserir Pauta + Atualizar Sistema")).toBe("Manoela Brisighello Angotti");
+    expect(
+      comResponsavelFixoDaArea("Trabalhista", [{ id: "1", nome: "INSERIR PAUTA (tipo 1)", nomeVios: "INSERIR PAUTA", responsaveis: ["Outra Pessoa"] }])[0].responsaveis
+    ).toEqual(["Outra Pessoa"]);
+    expect(responsavelFixoDaArea("Trabalhista", "VERIFICAR AUDIÊNCIA - ALTERAR PAUTA")).toBeNull();
   });
 });

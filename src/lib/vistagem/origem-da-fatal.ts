@@ -72,6 +72,11 @@ export function origemDaFatal(item: TarefaComFatal): OrigemDaFatal | null {
       rotulo = contagem ? `Sugestão da IA (${contagem})` : "Sugestão da IA";
       descricao = "Na vistagem, a fatal veio da sugestão da IA, aceita sem mudar pelo botão nem pelo calendário.";
       break;
+    case "repeticao":
+      rotulo = "Repetição mensal";
+      descricao =
+        "Na vistagem, a fatal veio da repetição mensal do COMPROVAR PAGAMENTO: o mesmo dia do mês da primeira fatal (sem esse dia, o último do mês; sem expediente, o dia útil anterior).";
+      break;
     default:
       rotulo = "não registrado se foi botão ou calendário";
       descricao =

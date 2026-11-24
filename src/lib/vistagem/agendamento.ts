@@ -1,6 +1,7 @@
 import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, somarDiasUteis, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
 import { pedeDiasCorridos } from "./etiquetas";
+import { fataisDaRepeticao, textoDaRepeticao, vezesDaRepeticao } from "./repeticao-mensal";
 import type { DataDoFluxo } from "./types";
 
 /**
@@ -72,6 +73,11 @@ export interface AgendamentoEntrada {
   observacao?: string | null;
   /** Datas e responsáveis de tarefas do fluxo que a pessoa mudou (o robô grava no VIOS depois de lançar). */
   fluxoDatas?: DataDoFluxo[] | null;
+  /**
+   * COMPROVAR PAGAMENTO (`repeteTodoMes`): quantas vezes a tarefa vai ao VIOS, uma por mês a partir da fatal, a primeira
+   * inclusive. Ao gravar, vira uma tarefa por mês (`fataisDaRepeticao`). Sem ele, ou 1, só a da fatal.
+   */
+  repetirMeses?: number | null;
 }
 
 export interface AgendamentoValidado {
@@ -105,7 +111,7 @@ export interface AgendamentoValidado {
  * a data no calendário, o prazo legal que a tarefa traz sozinha, o "Usar N dias" do leitor da publicação ou a sugestão
  * da IA.
  */
-export const ORIGENS_PRAZO = ["atalho", "calendario", "tarefa", "publicacao", "sugestao_ia"] as const;
+export const ORIGENS_PRAZO = ["atalho", "calendario", "tarefa", "publicacao", "sugestao_ia", "repeticao"] as const;
 export type OrigemPrazo = (typeof ORIGENS_PRAZO)[number];
 
 export const ROTULO_ORIGEM_PRAZO: Record<OrigemPrazo, string> = {
@@ -114,6 +120,7 @@ export const ROTULO_ORIGEM_PRAZO: Record<OrigemPrazo, string> = {
   tarefa: "Prazo legal da tarefa, preenchido sozinho",
   publicacao: "Dias lidos na publicação",
   sugestao_ia: "Da sugestão da IA",
+  repeticao: "Repetição mensal da primeira fatal",
 };
 
 /** Origens que só existem com os dias marcados: sem eles, a fatal foi mudada no calendário depois. */
@@ -176,6 +183,36 @@ export function tarefasPermitidas(etapasDaArea: EtapaVios[], etiqueta: EtiquetaA
 export function responsaveisNaArea(nomes: string[], usuarios: OpcaoVios[]): string[] {
   const porChave = new Map(usuarios.map((usuario) => [chaveNome(usuario.nome), usuario.nome]));
   return [...new Set(nomes.map((nome) => porChave.get(chaveNome(nome))).filter((nome): nome is string => Boolean(nome)))];
+}
+
+/**
+ * Quem a vistagem já traz em tipos que, numa área, só uma pessoa faz, embora o VIOS não tenha responsável fixo neles.
+ * Trabalhista: só a Manoela insere compromissos em pauta (pedido de 24/11/2026: a INSERIR PAUTA + ATUALIZAR SISTEMA
+ * vinha com o advogado da pasta e era trocada à mão). O nome é o do usuário dela no VIOS (id 266). A tarefa é achada
+ * pelo começo do nome; a área, pela do catálogo da pasta (vios_catalogo_tarefas.area).
+ */
+export const RESPONSAVEL_FIXO_DA_AREA: readonly { area: string; tarefa: string; responsavel: string }[] = [
+  { area: "Trabalhista", tarefa: "INSERIR PAUTA", responsavel: "Manoela Brisighello Angotti" },
+];
+
+/** O responsável fixo da área para o tipo de tarefa (`RESPONSAVEL_FIXO_DA_AREA`); null nos outros. */
+export function responsavelFixoDaArea(areaDoCatalogo: string | null | undefined, nomeDaTarefa: string | null | undefined): string | null {
+  const area = chaveNome(areaDoCatalogo);
+  const tarefa = chaveNome(nomeDaTarefa);
+  if (!area || !tarefa) return null;
+  return RESPONSAVEL_FIXO_DA_AREA.find((regra) => chaveNome(regra.area) === area && tarefa.startsWith(chaveNome(regra.tarefa)))?.responsavel ?? null;
+}
+
+/**
+ * As tarefas da lista com o responsável fixo da área (`responsavelFixoDaArea`) onde o VIOS não fixa ninguém. Os fixos
+ * do VIOS valem mais. Depois, `responsaveisNaArea` tira quem não estiver na lista de usuários do VIOS da área.
+ */
+export function comResponsavelFixoDaArea(areaDoCatalogo: string | null | undefined, tarefas: OpcaoTarefa[]): OpcaoTarefa[] {
+  return tarefas.map((tarefa) => {
+    if (tarefa.responsaveis?.length) return tarefa;
+    const fixo = responsavelFixoDaArea(areaDoCatalogo, tarefa.nomeVios ?? tarefa.nome);
+    return fixo ? { ...tarefa, responsaveis: [fixo] } : tarefa;
+  });
 }
 
 /** Escopo "*" (liderança em Usuários) e sócio patrimonial (departamento "Sócio" no RH): a pessoa vale para todas as áreas. */
@@ -647,8 +684,60 @@ export function validarAgendamentos(
     };
   });
 
+  // COMPROVAR PAGAMENTO todo mês: a tarefa vai ao VIOS uma vez por mês, a partir da fatal escolhida.
+  const comRepeticoes = itens.flatMap((item, indice) => {
+    if (!item) return [null];
+    const vezes = item.etiqueta === "PRAZO" && item.dataFatal && repeteTodoMes(item.tarefa) ? vezesDaRepeticao(entradas[indice].repetirMeses) : 1;
+    return vezes > 1 ? repeticoesDoPrazo(item, vezes, contexto) : [item];
+  });
+  if (comRepeticoes.length > MAX_AGENDAMENTOS && entradas.length <= MAX_AGENDAMENTOS) {
+    erros.push(`No máximo ${MAX_AGENDAMENTOS} tarefas por publicação, contando as repetições mensais (são ${comRepeticoes.length}).`);
+  }
   if (erros.length) return { ok: false, erros };
-  return { ok: true, itens: itens as AgendamentoValidado[] };
+  return { ok: true, itens: comRepeticoes as AgendamentoValidado[] };
+}
+
+/** Tipos de Prazo que podem ir ao VIOS todo mês (`repeticao-mensal.ts`). Recebe o nome como está no VIOS. */
+export function repeteTodoMes(nomeDaTarefa: string | null | undefined): boolean {
+  return chaveNome(nomeDaTarefa) === "COMPROVAR PAGAMENTO";
+}
+
+/** A observação com "Repetição mensal: k de N." no fim, no lugar da que já houver (vistagem alterada e repetida de novo). */
+export function observacaoDaRepeticao(observacao: string | null, vez: number, vezes: number): string {
+  const sem = (observacao ?? "")
+    .split("\n")
+    .filter((linha) => !/^Repetição mensal: \d+ de \d+\.$/.test(linha.trim()))
+    .join("\n")
+    .trim();
+  return [sem, textoDaRepeticao(vez, vezes)].filter(Boolean).join("\n");
+}
+
+/**
+ * As `vezes` tarefas do Prazo repetido, a primeira inclusive: cada uma com a fatal do mês (`fataisDaRepeticao`) e o
+ * Enviar pela regra do fluxo, como numa fatal escolhida no calendário. As datas do fluxo que o jurídico mudou valem só
+ * para a primeira (nas outras, o VIOS conta pela fatal de cada mês); os responsáveis escolhidos no fluxo valem para todas.
+ */
+function repeticoesDoPrazo(
+  primeiro: AgendamentoValidado,
+  vezes: number,
+  contexto: Pick<Parameters<typeof validarAgendamentos>[1], "ehDiaUtil" | "cadeiaDaTarefa" | "hoje">
+): AgendamentoValidado[] {
+  const fluxoSemDatas = primeiro.fluxoDatas.flatMap((item) => (item.responsaveis?.length ? [{ caminho: item.caminho, responsaveis: item.responsaveis }] : []));
+  return fataisDaRepeticao(primeiro.dataFatal as string, vezes, contexto.ehDiaUtil).map((fatal, indice): AgendamentoValidado => {
+    const observacao = observacaoDaRepeticao(primeiro.observacao, indice + 1, vezes);
+    if (indice === 0) return { ...primeiro, observacao };
+    const cadeia = contexto.cadeiaDaTarefa(primeiro.tarefaId, { dataFatal: fatal, diasPrazo: null });
+    return {
+      ...primeiro,
+      data: datasDoPrazo(fatal, contexto.ehDiaUtil, cadeia, contexto.hoje ?? null).enviar,
+      dataFatal: fatal,
+      diasPrazo: null,
+      contagemPrazo: null,
+      origemPrazo: "repeticao",
+      observacao,
+      fluxoDatas: fluxoSemDatas,
+    };
+  });
 }
 
 /** Referência curta da publicação (só para a linha da fila do robô, não vai para a tarefa). */
