@@ -11,6 +11,7 @@ import {
   documentosNovosJusbr,
   ehAreaLogadaJusbr,
   ehLoginPdpj,
+  desistirDoJusbr,
   motivoDaResposta,
   textoParaPdf,
   urlDaApi,
@@ -264,9 +265,14 @@ export class ConectorJusbr implements Conector {
       bytesDaParte = 0;
     };
     const contagem = { pdf: 0, texto: 0, falhou: 0 };
+    let falhasSeguidas = 0;
     for (const documento of novos) {
       const { como, bytes } = await this.acrescentar(ambiente, digitos, saida, documento);
       contagem[como] += 1;
+      falhasSeguidas = como === "falhou" ? falhasSeguidas + 1 : 0;
+      if (desistirDoJusbr(falhasSeguidas)) {
+        throw new FalhaDoConector(`${pedido.cnj}: o Jus.br não entregou ${falhasSeguidas} documentos seguidos (a integração do tribunal parece fora do ar).`);
+      }
       if (como !== "falhou") pecasDaParte.push(documento.chave);
       bytesDaParte += bytes;
       if (bytesDaParte >= LIMITE_PARTE_BYTES) await fecharParte();
