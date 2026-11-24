@@ -3,6 +3,7 @@ import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { COLUNAS_PEDIDO, jaVeioDoEproc, paraPedido, pecasBaixadas, prepararUpload, registrarDocumento } from "./autos-server";
+import { lerRepasse } from "./autos-repasse";
 import { MOTIVOS_ESPERA, TAMANHO_MAXIMO_AUTOS, type DocumentoAutos, type PedidoAutos } from "./autos-types";
 import { completarCapaPeloJusbr } from "./capa-server";
 import { ProcessosError } from "./errors";
@@ -126,6 +127,11 @@ const esquemaAtualizacao = z.discriminatedUnion("acao", [
   /** A pessoa resolveu (ou o robô só está dando sinal de vida): segue em andamento. */
   z.object({ acao: z.literal("seguir") }),
   z.object({ acao: z.literal("erro"), mensagem: z.string().trim().min(1).max(1000) }),
+  /**
+   * O Jus.br não trouxe os autos e este robô não tem o conector do tribunal: o pedido volta à fila no sistema da
+   * reserva ("esaj:TJSP"), para o robô do tribunal.
+   */
+  z.object({ acao: z.literal("repassar"), reserva: z.string().trim().regex(/^[a-z]+:[A-Z0-9]+$/, "Reserva inválida.") }),
   z.object({ acao: z.literal("upload"), nome: z.string().trim().min(1).max(200), tamanho: z.number().int().positive().max(TAMANHO_MAXIMO_AUTOS) }),
   z.object({
     acao: z.literal("concluir"),
@@ -196,6 +202,12 @@ export async function atualizarPedidoDoRobo(pedidoId: string, entrada: unknown):
       return { pedido: await mudar(pedido, { status: "em_andamento", motivo_espera: null }) };
     case "erro":
       return { pedido: await mudar(pedido, { status: "erro", motivo_espera: null, erro: dados.mensagem, concluido_em: new Date().toISOString() }) };
+    case "repassar": {
+      if (pedido.motivoEspera === "segredo_justica") throw new ProcessosError("O pedido espera a liberação de uma pessoa.", 409);
+      const destino = lerRepasse(pedido, dados.reserva);
+      if ("erro" in destino) throw new ProcessosError(destino.erro, 400);
+      return { pedido: await mudar(pedido, { status: "pendente", sistema: destino.sistema, motivo_espera: null, erro: null, robo: null }) };
+    }
     case "upload": {
       const upload = await prepararUpload(pedido.processoId, { nome: dados.nome, tamanho: dados.tamanho });
       return {
