@@ -529,6 +529,7 @@ export const NAV_FRONTS: NavFront[] = [
           { href: "/operacoes-legais/processos", label: "Processos" },
           { href: "/operacoes-legais/processos/saneamento", label: "Saneamento" },
           { href: "/operacoes-legais/processos/carteira", label: "Carteira Rec. Crédito" },
+          { href: "/operacoes-legais/processos/robo", label: "Robô de autos" },
           { href: "/operacoes-legais/processos/cadastros", label: "Cadastros" },
         ],
         configuracoes: { href: "/operacoes-legais/processos/importacao", label: "Importação e VIOS" },
