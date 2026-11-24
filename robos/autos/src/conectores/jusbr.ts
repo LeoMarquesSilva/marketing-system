@@ -10,6 +10,8 @@ import {
   documentosDaFicha,
   documentosNovosJusbr,
   ehAreaLogadaJusbr,
+  JUSBR_LOTE_PADRAO,
+  loteJusbr,
   ehLoginPdpj,
   desistirDoJusbr,
   desistirDosOriginais,
@@ -29,6 +31,8 @@ const INTERVALO_MS = 250;
 const TENTATIVAS = 3;
 /** Conteúdo de origem por parte do PDF (o arquivo final fica abaixo dos 200 MB que o ORQESTRAI aceita). */
 const LIMITE_PARTE_BYTES = (Number(process.env.JUSBR_PARTE_MB) > 0 ? Number(process.env.JUSBR_PARTE_MB) : 80) * 1024 * 1024;
+/** Documentos por pedido: o resto de um processo enorme volta ao fim da fila (jusbr-urls.ts, loteJusbr). */
+const LOTE = Number(process.env.JUSBR_LOTE) > 0 ? Number(process.env.JUSBR_LOTE) : JUSBR_LOTE_PADRAO;
 
 /**
  * PROTÓTIPO (18/11/2026), fora da fila: um conector único pelo Jus.br, para qualquer tribunal integrado à PDPJ.
@@ -250,14 +254,16 @@ export class ConectorJusbr implements Conector {
     if (fichas.some((ficha) => (ficha.nivelSigilo ?? 0) > 0) && !pedido.segredoLiberado) throw new SegredoDeJustica();
     const documentos = documentosDaFicha(fichas);
     if (!documentos.length) throw new FalhaDoConector(`${pedido.cnj}: o Jus.br não trouxe documentos deste processo (integração incompleta do tribunal).`);
-    const novos = documentosNovosJusbr(documentos, pedido.pecasBaixadas);
+    const todosNovos = documentosNovosJusbr(documentos, pedido.pecasBaixadas);
+    const { lote: novos, restantes } = loteJusbr(todosNovos, LOTE);
     // A capa e os movimentos vão junto (o ORQESTRAI grava a capa e a linha do tempo), com ou sem peça nova.
     const capa = capaDaFicha(fichas) ?? undefined;
     if (!novos.length) {
       ambiente.registrar(`${documentos.length} documentos no Jus.br, todos já baixados antes: nada novo.`);
       return { semNovidades: true, capa };
     }
-    ambiente.registrar(`${novos.length} documentos ${novos.length < documentos.length ? `novos de ${documentos.length} ` : ""}no Jus.br (${fichas.map((f) => f.siglaTribunal).join(", ")}). Baixando um a um.`);
+    ambiente.registrar(`${todosNovos.length} documentos ${todosNovos.length < documentos.length ? `novos de ${documentos.length} ` : ""}no Jus.br (${fichas.map((f) => f.siglaTribunal).join(", ")}). Baixando um a um.`);
+    if (restantes) ambiente.registrar(`Processo grande: este pedido leva ${novos.length}; os outros ${restantes} voltam ao fim da fila num pedido novo.`);
     // Processo grande sai em partes (o ORQESTRAI aceita até 200 MB por arquivo): cada parte fecha perto de
     // LIMITE_PARTE_BYTES de conteúdo de origem. A primeira parte é o `destino`; as outras, "<destino>-parte2.pdf"…
     const partes: { caminho: string; pecas: string[]; paginas: number }[] = [];
@@ -280,6 +286,7 @@ export class ConectorJusbr implements Conector {
     const contagem = { pdf: 0, texto: 0, falhou: 0 };
     let falhasSeguidas = 0;
     for (const documento of novos) {
+      await ambiente.sinalDeVida?.();
       const { como, bytes } = await this.acrescentar(ambiente, digitos, saida, documento);
       contagem[como] += 1;
       falhasSeguidas = como === "falhou" ? falhasSeguidas + 1 : 0;
@@ -296,7 +303,8 @@ export class ConectorJusbr implements Conector {
     const paginas = partes.reduce((total, parte) => total + parte.paginas, 0);
     ambiente.registrar(`Jus.br: ${contagem.pdf} em PDF, ${contagem.texto} pelo texto, ${contagem.falhou} sem arquivo; ${paginas} páginas${partes.length > 1 ? ` em ${partes.length} partes` : ""}.`);
     const pecas = partes.flatMap((parte) => parte.pecas);
-    return partes.length > 1 ? { pecas, capa, arquivos: partes.map(({ caminho, pecas: daParte }) => ({ caminho, pecas: daParte })) } : { pecas, capa };
+    const resto = restantes ? { restantes } : {};
+    return partes.length > 1 ? { pecas, capa, ...resto, arquivos: partes.map(({ caminho, pecas: daParte }) => ({ caminho, pecas: daParte })) } : { pecas, capa, ...resto };
   }
 
   async inspecionar(ambiente: Ambiente, cnj: string): Promise<void> {

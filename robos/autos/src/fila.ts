@@ -104,8 +104,9 @@ export class Fila {
   /**
    * Sobe o PDF (ou as partes, num processo grande) e registra os documentos no processo. `sistema`: quem acabou
    * atendendo o pedido, quando não foi o sistema pedido (DCP que seguiu pelo eproc, Jus.br que seguiu pelo tribunal).
+   * `restantes`: documentos que ficaram para outro pedido (processo enorme no Jus.br); o ORQESTRAI o põe no fim da fila.
    */
-  async entregar(pedidoId: string, arquivo: string, nome: string, pecas?: string[], sistema?: string, partes?: { caminho: string; pecas: string[] }[], capa?: unknown): Promise<void> {
+  async entregar(pedidoId: string, arquivo: string, nome: string, pecas?: string[], sistema?: string, partes?: { caminho: string; pecas: string[] }[], capa?: unknown, restantes?: number): Promise<void> {
     if (partes && partes.length > 1) {
       const enviadas: { path: string; nome: string; pecas: string[] }[] = [];
       for (const [i, parte] of partes.entries()) {
@@ -121,11 +122,12 @@ export class Fila {
         outrasPartes: outras.map((parte) => ({ path: parte.path, nome: parte.nome, ...(parte.pecas.length ? { pecas: parte.pecas } : {}) })),
         ...(sistema ? { sistema } : {}),
         ...(capa ? { capa } : {}),
+        ...(restantes ? { restantes } : {}),
       });
       return;
     }
     const path = await this.subir(pedidoId, arquivo, nome);
-    await this.chamar(`/pedidos/${pedidoId}`, { acao: "concluir", path, nome, ...(pecas?.length ? { pecas } : {}), ...(sistema ? { sistema } : {}), ...(capa ? { capa } : {}) });
+    await this.chamar(`/pedidos/${pedidoId}`, { acao: "concluir", path, nome, ...(pecas?.length ? { pecas } : {}), ...(sistema ? { sistema } : {}), ...(capa ? { capa } : {}), ...(restantes ? { restantes } : {}) });
   }
 
   /** Os autos foram conferidos e não há peça nova: o pedido termina sem PDF. */

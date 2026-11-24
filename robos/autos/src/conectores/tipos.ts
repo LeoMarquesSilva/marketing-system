@@ -16,6 +16,11 @@ export interface Ambiente {
   aguardarPessoa: (motivo: Exclude<MotivoEspera, "segredo_justica">, instrucao: string, resolvido: () => Promise<boolean>) => Promise<void>;
   /** Guarda captura de tela e HTML da página em diagnostico/, para ajustar o conector. Devolve o caminho. */
   diagnostico: (pagina: Page, etapa: string) => Promise<string>;
+  /**
+   * Download longo: avisa o ORQESTRAI que o robô segue no pedido (no máximo uma chamada por minuto; pode chamar a
+   * cada documento). Pedido cancelado na ficha lança PedidoEncerrado e o robô larga o download na hora.
+   */
+  sinalDeVida?: () => Promise<void>;
 }
 
 export interface ResultadoDoDownload {
@@ -27,6 +32,8 @@ export interface ResultadoDoDownload {
   capa?: unknown;
   /** Processo grande em partes (Jus.br): cada PDF com as suas peças. O primeiro é o `destino`. */
   arquivos?: { caminho: string; pecas: string[] }[];
+  /** Jus.br: documentos que ficaram para o próximo pedido (processo maior que um lote). */
+  restantes?: number;
 }
 
 export interface Conector {
