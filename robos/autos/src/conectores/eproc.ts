@@ -65,28 +65,66 @@ export const CODIGO_2FA_EPROC = {
 /**
  * Tela "Seleção de perfil" do eproc (advogado com mais de uma inscrição, ex.: SP e ES), depois do 2FA. O título da
  * aba é o sinal firme: o texto também aparece escondido no menu, e o primeiro achado escondido fazia o robô não
- * reconhecer a tela (24/11). A lista de perfis é uma tabela dentro do quadro: só as linhas de dentro contam (a de
- * fora traz o texto todo e era escolhida no lugar da linha do perfil).
+ * reconhecer a tela (24/11). No eproc do TJSP (24/11) cada perfil é um botão da lista #tblPerfis, com a sigla e o
+ * tipo em data-descricao ("SP… / ADVOGADO") e o clique em acaoLogar(…), sem tabela. Reservas, para outra versão da
+ * tela: linhas de tabela (só as de dentro) e, por último, o texto da sigla.
  */
 export const PERFIL_EPROC = {
   titulo: /Sele[çc][ãa]o de perfil/i,
+  perfis: "#tblPerfis [data-descricao], [onclick*='acaoLogar'][data-descricao]",
   linhas: "tr:has(td):not(:has(tr))",
 } as const;
 
-/** Escolhe na tela o perfil cuja sigla começa pelo prefixo (padrão SP). Devolve se escolheu. */
-export async function escolherPerfilNaTela(pagina: Page, prefixo: string): Promise<boolean> {
-  const naTela =
-    PERFIL_EPROC.titulo.test(await pagina.title().catch(() => "")) ||
-    (await pagina.getByText(PERFIL_EPROC.titulo).filter({ visible: true }).count().catch(() => 0)) > 0;
-  if (!naTela) return false;
-  const linhas = pagina.locator(PERFIL_EPROC.linhas).filter({ visible: true });
-  const textos = await linhas.allInnerTexts().catch(() => [] as string[]);
-  const indice = perfilDoEproc(textos, prefixo);
-  if (indice < 0) return false;
-  const linha = linhas.nth(indice);
-  const link = linha.locator("a").first();
-  await ((await link.count()) ? link : linha.locator("td").first()).click().catch(() => undefined);
-  return true;
+export type EscolhaDoPerfil = "escolhido" | "sem_perfil" | "fora";
+
+async function naTelaDePerfil(pagina: Page): Promise<boolean> {
+  if (PERFIL_EPROC.titulo.test(await pagina.title().catch(() => ""))) return true;
+  for (const quadro of pagina.frames()) {
+    if ((await quadro.getByText(PERFIL_EPROC.titulo).filter({ visible: true }).count().catch(() => 0)) > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Escolhe o perfil cuja sigla começa pelo prefixo (padrão SP). Procura a tela na página do robô e nas outras abas do
+ * mesmo navegador, em cada quadro (iframe). "sem_perfil": está na tela, mas nada pôde ser escolhido.
+ */
+export async function escolherPerfilNaTela(pagina: Page, prefixo: string): Promise<EscolhaDoPerfil> {
+  const paginas = [pagina, ...pagina.context().pages().filter((outra) => outra !== pagina)];
+  let viuATela = false;
+  for (const aba of paginas) {
+    if (!(await naTelaDePerfil(aba))) continue;
+    viuATela = true;
+    for (const quadro of aba.frames()) {
+      const perfis = quadro.locator(PERFIL_EPROC.perfis).filter({ visible: true });
+      const descricoes = await perfis.evaluateAll((itens) => itens.map((item) => item.getAttribute("data-descricao") ?? "")).catch(() => [] as string[]);
+      const escolhido = perfilDoEproc(descricoes, prefixo);
+      if (escolhido >= 0) {
+        await perfis.nth(escolhido).click().catch(() => undefined);
+        return "escolhido";
+      }
+    }
+    for (const quadro of aba.frames()) {
+      const linhas = quadro.locator(PERFIL_EPROC.linhas).filter({ visible: true });
+      const indice = perfilDoEproc(await linhas.allInnerTexts().catch(() => [] as string[]), prefixo);
+      if (indice >= 0) {
+        const linha = linhas.nth(indice);
+        const link = linha.locator("a").first();
+        await ((await link.count().catch(() => 0)) ? link : linha.locator("td").first()).click().catch(() => undefined);
+        return "escolhido";
+      }
+    }
+    // Sem linhas de tabela: o texto da sigla (ex.: "SP000001"), visível, em qualquer quadro.
+    const sigla = new RegExp(`^\\s*${prefixo.replace(/[^a-z]/gi, "")}\\d+\\s*$`, "i");
+    for (const quadro of aba.frames()) {
+      const celula = quadro.getByText(sigla).filter({ visible: true }).first();
+      if (await celula.count().catch(() => 0)) {
+        await celula.click().catch(() => undefined);
+        return "escolhido";
+      }
+    }
+  }
+  return viuATela ? "sem_perfil" : "fora";
 }
 
 const TELA = {
@@ -267,15 +305,36 @@ class ConectorEproc implements Conector {
     if (await dentro()) return true;
     // Código recusado: sai do campo, para não aparecer em captura de diagnóstico nem na tela remota.
     await campo.fill("").catch(() => undefined);
+    // Onde a tela ficou (título e endereço sem a consulta, nunca o código): separa "recusado" de "tela que o robô não conhece".
+    const onde = (() => {
+      try {
+        const url = new URL(pagina.url());
+        return `${url.host}${url.pathname}`;
+      } catch {
+        return "endereço desconhecido";
+      }
+    })();
+    ambiente.registrar(`Depois do código, o ${this.sistema} ficou em "${(await pagina.title().catch(() => "")).slice(0, 80)}" (${onde}).`);
     return false;
   }
+
+  /** Já avisou (com diagnóstico) que está na Seleção de perfil sem conseguir escolher: avisa uma vez por login. */
+  private perfilSemEscolhaAvisado = false;
 
   /** Na tela "Seleção de perfil", escolhe o perfil configurado (EPROC_PERFIL, padrão SP). Devolve se escolheu. */
   private async escolherPerfil(ambiente: Ambiente): Promise<boolean> {
     const { pagina, config, registrar } = ambiente;
-    const escolhido = await escolherPerfilNaTela(pagina, config.eproc.perfil);
-    if (escolhido) registrar(`Perfil do ${this.sistema} escolhido: o da inscrição ${config.eproc.perfil}.`);
-    return escolhido;
+    const escolha = await escolherPerfilNaTela(pagina, config.eproc.perfil);
+    if (escolha === "escolhido") {
+      registrar(`Perfil do ${this.sistema} escolhido: o da inscrição ${config.eproc.perfil}.`);
+      this.perfilSemEscolhaAvisado = false;
+      return true;
+    }
+    if (escolha === "sem_perfil" && !this.perfilSemEscolhaAvisado) {
+      this.perfilSemEscolhaAvisado = true;
+      registrar(`O ${this.sistema} está na Seleção de perfil, mas o robô não achou o perfil ${config.eproc.perfil} (diagnóstico em ${await ambiente.diagnostico(pagina, "perfil eproc")}).`);
+    }
+    return false;
   }
 
   async entrar(ambiente: Ambiente, instancia: InstanciaEproc = this.tribunal.instancias[0]): Promise<void> {
