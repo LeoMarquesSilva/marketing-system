@@ -43,7 +43,8 @@ import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type R
  *
  * O que o conector NÃO faz, por decisão do escritório:
  * - não contorna segundo fator nem CAPTCHA: para, avisa e espera a pessoa;
- * - não baixa processo em segredo de justiça sem a liberação registrada no pedido;
+ * - processo em segredo de justiça: desde 24/11/2026 o robô baixa sem esperar a liberação na ficha (o login é do
+ *   advogado; SEGREDO_JUSTICA=esperar volta a exigir a liberação registrada no pedido);
  * - não usa "Acesso à íntegra do processo": é a declaração de interesse do advogado (Res. CNJ 121/2010), com
  *   CAPTCHA. Se o advogado não representa uma das partes, o pedido volta com erro.
  */

@@ -278,6 +278,9 @@ async function principal(): Promise<void> {
     } catch (erro) {
       registrar(`Não consegui consultar a fila: ${mensagemLimpa(erro)}`);
     }
+    // Decisão do escritório (24/11/2026): processo em segredo de justiça que o robô abre com o login do advogado é
+    // processo do advogado; baixa sem esperar a liberação na ficha. SEGREDO_JUSTICA=esperar volta à regra antiga.
+    if (pedido && config.segredoSempreLiberado && !pedido.segredoLiberado) pedido = { ...pedido, segredoLiberado: true };
     if (!pedido) {
       if (modo === "uma-vez") break;
       if (config.capaDataJud && Date.now() >= proximaCapa) proximaCapa = await completarUmaCapa();

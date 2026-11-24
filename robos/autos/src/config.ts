@@ -114,6 +114,11 @@ export interface Config {
    * Só no modo playwright com certificado; WEB_SIGNER=nao desliga (aí o login do e-SAJ fica com a pessoa).
    */
   webSigner: boolean;
+  /**
+   * Processo em segredo de justiça: baixa sem esperar a liberação na ficha, porque o robô só abre o que o login do
+   * advogado já alcança (decisão de 24/11/2026). SEGREDO_JUSTICA=esperar volta a parar e esperar a liberação.
+   */
+  segredoSempreLiberado: boolean;
   pastas: { perfil: string; downloads: string; diagnostico: string };
 }
 
@@ -198,6 +203,7 @@ export function lerConfig(): Config {
     eproc: { login: loginEproc, usuario: texto("EPROC_USUARIO"), senha: texto("EPROC_SENHA") },
     eprocTjrj: { login: loginEprocTjrj, usuario: texto("EPROC_TJRJ_USUARIO"), senha: texto("EPROC_TJRJ_SENHA") },
     webhook2fa: { url: texto("ROBO_2FA_WEBHOOK_URL"), header: texto("ROBO_2FA_WEBHOOK_HEADER") || "x-robo-token", token: texto("ROBO_2FA_WEBHOOK_TOKEN") },
+    segredoSempreLiberado: !/^esperar$/i.test(texto("SEGREDO_JUSTICA")),
     webSigner: comCertificado && navegadorModo === "playwright" && !/^(nao|não|0|false)$/i.test(texto("WEB_SIGNER")),
     pjeOffice: comCertificado && navegadorModo === "playwright" && !/^(nao|não|0|false)$/i.test(texto("PJE_OFFICE")),
     segundoFator: { pasta: texto("ROBO_2FA_PASTA") || certificado.pasta, chavePrivadaArquivo: certificado.chavePrivadaArquivo },
