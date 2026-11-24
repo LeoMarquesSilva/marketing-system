@@ -124,7 +124,7 @@ function hoje(): string {
 }
 
 const SELECAO_PROCESSO =
-  "id, ci, cnj, grupo_cliente, cliente, acao, fase, situacao, area, data_distribuicao, data_cadastro, data_encerramento, valor_acao, credito:proc_credito(valor_original, proximos_passos), partes:proc_partes(polo, papel, devedor, pessoa:proc_pessoas(nome))";
+  "id, ci, cnj, grupo_cliente, cliente, advogado_responsavel, acao, fase, situacao, area, data_distribuicao, data_cadastro, data_encerramento, valor_acao, credito:proc_credito(valor_original, proximos_passos), partes:proc_partes(polo, papel, devedor, pessoa:proc_pessoas(nome))";
 
 function dadosDoProcesso(linha: Linha): DadosDoProcessoNaCarteira {
   const credito = (Array.isArray(linha.credito) ? linha.credito[0] : linha.credito) as Linha | null;
@@ -145,6 +145,7 @@ function dadosDoProcesso(linha: Linha): DadosDoProcessoNaCarteira {
     grupoCliente: texto(linha.grupo_cliente),
     cliente: texto(linha.cliente),
     devedor: lista.map((parte) => parte.nome).join("; ") || null,
+    advogadoResponsavel: texto(linha.advogado_responsavel),
     acao: texto(linha.acao),
     fase: texto(linha.fase),
     situacao: texto(linha.situacao),

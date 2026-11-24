@@ -25,6 +25,7 @@ const COLUNAS: Coluna[] = [
   { rotulo: "Grupo do cliente", largura: 18, valor: (linha) => linha.grupoCliente },
   { rotulo: "Cliente", largura: 28, valor: (linha) => linha.cliente },
   { rotulo: "Devedor", largura: 32, valor: (linha) => linha.devedor },
+  { rotulo: "Advogado responsável", largura: 26, valor: (linha) => linha.advogadoResponsavel },
   { rotulo: "Ação", largura: 24, valor: (linha) => linha.acao },
   { rotulo: "Fase", largura: 16, valor: (linha) => linha.fase },
   { rotulo: "Situação", largura: 18, valor: (linha) => linha.situacao },

@@ -30,8 +30,9 @@ const SEM_HISTORICO = new Set(["vios_editado_em"]);
  * @param atual valores gravados hoje (null na primeira carga)
  * @param importado só os campos que a fonte trouxe; campo ausente não é tocado
  * @param pendentes campo → valor pedido ao VIOS (texto canônico), dos envios em aberto
+ * @param soVazios carga que não substitui nada: no processo que já existe, só preenche o campo vazio
  */
-export function mesclarComVios(atual: Valores | null, importado: Valores, pendentes: Map<string, string>): ResultadoMescla {
+export function mesclarComVios(atual: Valores | null, importado: Valores, pendentes: Map<string, string>, soVazios = false): ResultadoMescla {
   const patch: Valores = {};
   const mudancas: MudancaDoVios[] = [];
   const confirmados: string[] = [];
@@ -49,6 +50,7 @@ export function mesclarComVios(atual: Valores | null, importado: Valores, penden
     }
     const anterior = textoDoValor(item, atual[chave]);
     if (anterior === novo) continue;
+    if (soVazios && anterior !== "" && !SEM_HISTORICO.has(chave)) continue;
     patch[chave] = valor;
     if (!SEM_HISTORICO.has(chave)) mudancas.push({ campo: chave, anterior, novo });
   }

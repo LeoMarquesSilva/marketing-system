@@ -34,13 +34,16 @@ export function limparCi(valor: unknown): string {
   return String(valor ?? "").replace(/[="\s]/g, "");
 }
 
-/** dd/mm/aaaa (com ou sem hora) ou aaaa-mm-dd → aaaa-mm-dd. */
+/** dd/mm/aaaa (com ou sem hora) ou aaaa-mm-dd → aaaa-mm-dd. Data que não existe (o "00/00/0000" do VIOS) é vazia. */
 export function lerData(valor: unknown): string | null {
   const texto = String(valor ?? "").trim();
   const br = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(texto);
-  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(texto);
-  return iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : null;
+  const [ano, mes, dia] = br ? [br[3], br[2], br[1]] : iso ? [iso[1], iso[2], iso[3]] : [];
+  if (!ano) return null;
+  const data = new Date(Date.UTC(Number(ano), Number(mes) - 1, Number(dia)));
+  const existe = Number(ano) > 0 && data.getUTCFullYear() === Number(ano) && data.getUTCMonth() === Number(mes) - 1 && data.getUTCDate() === Number(dia);
+  return existe ? `${ano}-${mes}-${dia}` : null;
 }
 
 const CNJ = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;

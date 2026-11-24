@@ -64,7 +64,10 @@ async function carregarNossas(): Promise<Nossa[]> {
     const { data, error } = await db()
       .from("proc_pessoas")
       .select("id, nome, nome_chave, documento, tipo, nome_fantasia, categoria, grupo_cliente, etiquetas, oab, observacao, vios_ci, enderecos:proc_pessoa_enderecos(count), contatos:proc_pessoa_contatos(count)")
+      // id desempata: a carga de processos cria centenas de pessoas no mesmo instante, e sem ele a mesma pessoa
+      // pode vir em duas páginas e ser "unificada" consigo mesma (apagando as partes dela).
       .order("created_at")
+      .order("id")
       .range(inicio, inicio + 999);
     if (error) falhou("carregar as pessoas", error);
     for (const linha of (data ?? []) as unknown as (Omit<Nossa, "enderecos" | "contatos"> & { enderecos: { count: number }[]; contatos: { count: number }[] })[]) {
@@ -160,6 +163,7 @@ export async function sincronizarPessoasComVios(ator?: Ator): Promise<ResultadoC
       if (escolha.situacao === "homonimos") homonimas += 1;
       if (escolha.situacao !== "achada") continue;
       const dona = donaDoCi.get(escolha.pessoa.ci);
+      if (dona === pessoa.id) continue;
       if (dona) {
         absorver.set(dona, [...(absorver.get(dona) ?? []), pessoa]);
         continue;
