@@ -56,8 +56,9 @@ describe("mesclarComVios", () => {
 });
 
 describe("recorte da carga", () => {
-  it("o padrão é o piloto", () => {
-    expect(lerRecorte({})).toEqual({ areas: ["Recuperação de Crédito"], grupos: ["Grupo PST"] });
+  it("o padrão é a Recuperação de Crédito, todos os grupos", () => {
+    expect(lerRecorte({})).toEqual({ areas: ["Recuperação de Crédito"], grupos: null });
+    expect(lerRecorte({ PROCESSOS_GRUPOS: "Grupo PST" })).toEqual({ areas: ["Recuperação de Crédito"], grupos: ["Grupo PST"] });
   });
 
   it("aceita lista e asterisco", () => {
@@ -65,7 +66,7 @@ describe("recorte da carga", () => {
   });
 
   it("compara sem acento nem caixa", () => {
-    const recorte = lerRecorte({});
+    const recorte = lerRecorte({ PROCESSOS_GRUPOS: "Grupo PST" });
     expect(estaNoRecorte({ area: "RECUPERACAO DE CREDITO", grupo_cliente: "grupo pst" }, recorte)).toBe(true);
     expect(estaNoRecorte({ area: "Recuperação de Crédito", grupo_cliente: "Grupo Outro" }, recorte)).toBe(false);
     expect(estaNoRecorte({ area: null, grupo_cliente: "Grupo PST" }, recorte)).toBe(false);
