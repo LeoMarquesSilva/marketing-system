@@ -18,7 +18,7 @@ export function db(): SupabaseClient {
 
 export function falhou(contexto: string, erro: { message: string } | null): never {
   console.error(`[processos] ${contexto}:`, erro?.message);
-  throw new ProcessosError(`Não foi possível ${contexto}.`, 500);
+  throw new ProcessosError(`Não foi possível ${contexto}.`, 500, erro?.message ?? null);
 }
 
 /** Quem está agindo: id de auth e nome, para o histórico e a fila do VIOS. */
