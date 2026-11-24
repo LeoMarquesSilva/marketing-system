@@ -6,7 +6,8 @@ import { PROCESSOS_LISTA, SITE_CONTROLADORIA } from "@/lib/vistagem/pastas-vios"
 import { baixarArquivoPorCaminho } from "@/lib/vistagem/sharepoint";
 import { COLUNAS_PROCESSO, type ValorCampo, type Valores } from "./campos";
 import { ProcessosError } from "./errors";
-import { juntarFontes, lerCsvProcessos, lerEtiquetasSioe, registroDoSioe } from "./import-vios";
+import { catalogoDeEtiquetas, juntarFontes, lerCsvProcessos, lerEtiquetasSioe, registroDoSioe } from "./import-vios";
+import { opcoesDaLista } from "./opcoes-server";
 import { chaveNome } from "./pessoas";
 import { listarEnvios } from "./processos-server";
 import { db, emLotes, falhou, gravacaoSimulada, type Ator } from "./server";
@@ -213,7 +214,15 @@ export async function sincronizarProcessos(opcoes: { origem: "sharepoint" | "csv
       sioeOk = false;
       avisos.push(`SIOE fora do ar ou não configurado (${erro instanceof Error ? erro.message : "erro"}): fase, matéria e etiquetas podem ficar incompletas.`);
     }
-    const catalogoEtiquetas = [...new Set(linhasSioe.flatMap((linha) => lerEtiquetasSioe(linha.etiquetas)))];
+    // O catálogo que separa a coluna Etiquetas do relatório: o cadastro de etiquetas daqui (não depende
+    // de outra base) mais as que o SIOE trouxer, que podem incluir uma etiqueta recém-criada no VIOS.
+    let etiquetasDoCadastro: string[] = [];
+    try {
+      etiquetasDoCadastro = (await opcoesDaLista("etiquetas")).map((opcao) => opcao.valor);
+    } catch {
+      avisos.push("Não foi possível carregar o cadastro de etiquetas: a separação usou só as etiquetas do SIOE.");
+    }
+    const catalogoEtiquetas = catalogoDeEtiquetas(etiquetasDoCadastro, linhasSioe.flatMap((linha) => lerEtiquetasSioe(linha.etiquetas)));
 
     let bytes = opcoes.csv ?? null;
     if (!bytes && opcoes.origem === "sharepoint") {
@@ -225,13 +234,16 @@ export async function sincronizarProcessos(opcoes: { origem: "sharepoint" | "csv
     }
     if (!bytes && !sioeOk) throw new ProcessosError("Nenhuma fonte disponível: o SIOE e o SharePoint falharam.", 502);
 
-    let leitura: ReturnType<typeof lerCsvProcessos> = { registros: [], colunasIgnoradas: [], linhasSemCi: 0 };
+    let leitura: ReturnType<typeof lerCsvProcessos> = { registros: [], colunasIgnoradas: [], linhasSemCi: 0, etiquetasSemCatalogo: 0 };
     if (bytes) {
       try {
         leitura = lerCsvProcessos(decodificarCsv(bytes), catalogoEtiquetas);
       } catch (erro) {
         throw new ProcessosError(erro instanceof Error ? erro.message : "Arquivo inválido.", 400);
       }
+    }
+    if (leitura.etiquetasSemCatalogo) {
+      avisos.push(`Sem catálogo de etiquetas para separar a coluna Etiquetas: ${leitura.etiquetasSemCatalogo} linha(s) do relatório ficaram com as etiquetas que já tinham.`);
     }
     const doCsv = new Map(leitura.registros.map((registro) => [registro.ci, registro]));
     const doSioe = new Map<string, RegistroImportado>();
@@ -259,7 +271,9 @@ export async function sincronizarProcessos(opcoes: { origem: "sharepoint" | "csv
     });
     return { lidos, noRecorte: registros.length, ...resultado, colunasIgnoradas: leitura.colunasIgnoradas, avisos };
   } catch (erro) {
-    await registrarExecucao({ ...base, status: "erro", erro: erro instanceof Error ? erro.message : "Erro desconhecido" });
+    // Na tela de importação (só admin) fica também o motivo que o banco deu, para a falha não ficar muda.
+    const detalhe = erro instanceof ProcessosError && erro.detalhe ? ` Motivo: ${erro.detalhe}` : "";
+    await registrarExecucao({ ...base, status: "erro", erro: `${erro instanceof Error ? erro.message : "Erro desconhecido"}${detalhe}` });
     throw erro;
   }
 }
