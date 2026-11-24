@@ -1,7 +1,7 @@
 import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, somarDiasUteis, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
 import { pedeDiasCorridos } from "./etiquetas";
-import { fataisDaRepeticao, textoDaRepeticao, vezesDaRepeticao } from "./repeticao-mensal";
+import { textoDaRepeticao } from "./repeticao-mensal";
 import type { DataDoFluxo } from "./types";
 
 /**
@@ -74,10 +74,16 @@ export interface AgendamentoEntrada {
   /** Datas e responsáveis de tarefas do fluxo que a pessoa mudou (o robô grava no VIOS depois de lançar). */
   fluxoDatas?: DataDoFluxo[] | null;
   /**
-   * COMPROVAR PAGAMENTO (`repeteTodoMes`): quantas vezes a tarefa vai ao VIOS, uma por mês a partir da fatal, a primeira
-   * inclusive. Ao gravar, vira uma tarefa por mês (`fataisDaRepeticao`). Sem ele, ou 1, só a da fatal.
+   * COMPROVAR PAGAMENTO recorrente (`repeteTodoMes`): as fatais dos meses seguintes, além da `dataFatal` (sugeridas por
+   * `fatalNoMes` ou mudadas pela pessoa, `editada`). Ao gravar, cada uma vira uma tarefa. Sem elas, só a da fatal.
    */
-  repetirMeses?: number | null;
+  repeticoes?: RepeticaoPedida[] | null;
+}
+
+/** Um mês seguinte do Prazo recorrente: a fatal (AAAA-MM-DD) e se a pessoa mudou a data sugerida. */
+export interface RepeticaoPedida {
+  fatal: string;
+  editada?: boolean | null;
 }
 
 export interface AgendamentoValidado {
@@ -684,11 +690,17 @@ export function validarAgendamentos(
     };
   });
 
-  // COMPROVAR PAGAMENTO todo mês: a tarefa vai ao VIOS uma vez por mês, a partir da fatal escolhida.
+  // COMPROVAR PAGAMENTO recorrente: mais uma tarefa para cada mês seguinte pedido, com a fatal dele.
   const comRepeticoes = itens.flatMap((item, indice) => {
     if (!item) return [null];
-    const vezes = item.etiqueta === "PRAZO" && item.dataFatal && repeteTodoMes(item.tarefa) ? vezesDaRepeticao(entradas[indice].repetirMeses) : 1;
-    return vezes > 1 ? repeticoesDoPrazo(item, vezes, contexto) : [item];
+    const pedidas = Array.isArray(entradas[indice].repeticoes) ? (entradas[indice].repeticoes as RepeticaoPedida[]) : [];
+    if (!pedidas.length || item.etiqueta !== "PRAZO" || !item.dataFatal || !repeteTodoMes(item.tarefa)) return [item];
+    const problema = problemaNaRecorrencia(item.dataFatal, pedidas);
+    if (problema) {
+      erros.push(`Tarefa ${indice + 1}: ${problema}`);
+      return [null];
+    }
+    return repeticoesDoPrazo(item, pedidas, contexto);
   });
   if (comRepeticoes.length > MAX_AGENDAMENTOS && entradas.length <= MAX_AGENDAMENTOS) {
     erros.push(`No máximo ${MAX_AGENDAMENTOS} tarefas por publicação, contando as repetições mensais (são ${comRepeticoes.length}).`);
@@ -713,31 +725,47 @@ export function observacaoDaRepeticao(observacao: string | null, vez: number, ve
 }
 
 /**
- * As `vezes` tarefas do Prazo repetido, a primeira inclusive: cada uma com a fatal do mês (`fataisDaRepeticao`) e o
- * Enviar pela regra do fluxo, como numa fatal escolhida no calendário. As datas do fluxo que o jurídico mudou valem só
- * para a primeira (nas outras, o VIOS conta pela fatal de cada mês); os responsáveis escolhidos no fluxo valem para todas.
+ * O que impede gravar os meses seguintes da recorrência: data que falta ou inválida, antes (ou no dia) da primeira fatal,
+ * ou repetida. Null quando estão certos.
+ */
+export function problemaNaRecorrencia(primeira: string, pedidas: readonly (RepeticaoPedida | null | undefined)[]): string | null {
+  const fatais = pedidas.map((pedida) => (typeof pedida?.fatal === "string" ? pedida.fatal.trim() : ""));
+  if (fatais.some((fatal) => !dataValida(fatal))) return "escolha a data fatal de cada mês da recorrência.";
+  if (fatais.some((fatal) => fatal <= primeira)) return "as datas da recorrência têm de ser depois da primeira fatal.";
+  if (new Set(fatais).size !== fatais.length) return "há datas repetidas na recorrência.";
+  return null;
+}
+
+/**
+ * As tarefas do Prazo recorrente, a primeira inclusive, em ordem de data: cada mês com a fatal pedida e o Enviar pela
+ * regra do fluxo, como numa fatal escolhida no calendário. A origem da fatal é a repetição mensal ou, na data mudada pela
+ * pessoa, o calendário. As datas do fluxo que o jurídico mudou valem só para a primeira (nas outras, o VIOS conta pela
+ * fatal de cada mês); os responsáveis escolhidos no fluxo valem para todas.
  */
 function repeticoesDoPrazo(
   primeiro: AgendamentoValidado,
-  vezes: number,
+  pedidas: readonly RepeticaoPedida[],
   contexto: Pick<Parameters<typeof validarAgendamentos>[1], "ehDiaUtil" | "cadeiaDaTarefa" | "hoje">
 ): AgendamentoValidado[] {
+  const vezes = pedidas.length + 1;
   const fluxoSemDatas = primeiro.fluxoDatas.flatMap((item) => (item.responsaveis?.length ? [{ caminho: item.caminho, responsaveis: item.responsaveis }] : []));
-  return fataisDaRepeticao(primeiro.dataFatal as string, vezes, contexto.ehDiaUtil).map((fatal, indice): AgendamentoValidado => {
-    const observacao = observacaoDaRepeticao(primeiro.observacao, indice + 1, vezes);
-    if (indice === 0) return { ...primeiro, observacao };
-    const cadeia = contexto.cadeiaDaTarefa(primeiro.tarefaId, { dataFatal: fatal, diasPrazo: null });
-    return {
-      ...primeiro,
-      data: datasDoPrazo(fatal, contexto.ehDiaUtil, cadeia, contexto.hoje ?? null).enviar,
-      dataFatal: fatal,
-      diasPrazo: null,
-      contagemPrazo: null,
-      origemPrazo: "repeticao",
-      observacao,
-      fluxoDatas: fluxoSemDatas,
-    };
-  });
+  const seguintes = [...pedidas]
+    .map((pedida) => ({ fatal: pedida.fatal.trim(), editada: pedida.editada === true }))
+    .sort((a, b) => a.fatal.localeCompare(b.fatal))
+    .map(({ fatal, editada }, indice): AgendamentoValidado => {
+      const cadeia = contexto.cadeiaDaTarefa(primeiro.tarefaId, { dataFatal: fatal, diasPrazo: null });
+      return {
+        ...primeiro,
+        data: datasDoPrazo(fatal, contexto.ehDiaUtil, cadeia, contexto.hoje ?? null).enviar,
+        dataFatal: fatal,
+        diasPrazo: null,
+        contagemPrazo: null,
+        origemPrazo: editada ? "calendario" : "repeticao",
+        observacao: observacaoDaRepeticao(primeiro.observacao, indice + 2, vezes),
+        fluxoDatas: fluxoSemDatas,
+      };
+    });
+  return [{ ...primeiro, observacao: observacaoDaRepeticao(primeiro.observacao, 1, vezes) }, ...seguintes];
 }
 
 /** Referência curta da publicação (só para a linha da fila do robô, não vai para a tarefa). */

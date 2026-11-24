@@ -1,33 +1,57 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { RepeticaoMensal } from "./repeticao-mensal";
+import { criarCalendario } from "@/lib/vistagem/dias-uteis";
+import type { MesDaRecorrencia } from "@/lib/vistagem/repeticao-mensal";
+import { RecorrenciaMensal } from "./repeticao-mensal";
 
-const tela = (vezes: number, fatais: string[], maximo = 10) =>
-  renderToStaticMarkup(<RepeticaoMensal indice={0} vezes={vezes} maximo={maximo} fatais={fatais} onChange={() => undefined} />)
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ");
+const ehDiaUtil = criarCalendario([]);
 
-describe("RepeticaoMensal: COMPROVAR PAGAMENTO todo mês (pedido de 24/11/2026)", () => {
-  it("mostra as fatais de cada mês e marca as que não caem no mesmo dia", () => {
-    const texto = tela(4, ["2026-11-30", "2026-12-30", "2027-01-29", "2027-02-26"]);
-    expect(texto).toContain("Repetir todo mês");
-    expect(texto).toContain("vezes ao todo, uma por mês");
-    expect(texto).toContain("30/11/2026 · 30/12/2026 · 29/01/2027* · 26/02/2027*");
-    expect(texto).toContain("sem esse dia no mês, o último; sem expediente, o dia útil anterior");
+const html = (meses: MesDaRecorrencia[] | null, { primeira = "2026-11-30", maximo = 10 } = {}) =>
+  renderToStaticMarkup(<RecorrenciaMensal indice={0} primeira={primeira} meses={meses} maximo={maximo} ehDiaUtil={ehDiaUtil} onChange={() => undefined} />);
+const texto = (marcacao: string) => marcacao.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+describe("RecorrenciaMensal: COMPROVAR PAGAMENTO recorrente (pedido de 24/11/2026)", () => {
+  it("desligada: só o botão, sem a lista de meses", () => {
+    const marcacao = html(null);
+    expect(marcacao).toMatch(/aria-pressed="false"/);
+    expect(texto(marcacao)).toContain("Recorrente todo mês");
+    expect(texto(marcacao)).not.toContain("Adicionar mês");
   });
 
-  it("uma vez só: sem a lista de fatais", () => {
-    const texto = tela(1, ["2026-11-30"]);
-    expect(texto).toContain("vez (só esta fatal)");
-    expect(texto).not.toContain("Fatais no VIOS");
+  it("ligada: cada mês com a data editável, tirar e adicionar mês", () => {
+    const marcacao = html([
+      { meses: 1, fatal: "2026-12-30", editada: false },
+      { meses: 2, fatal: "2027-01-25", editada: true },
+    ]);
+    expect(marcacao).toMatch(/aria-pressed="true"/);
+    const lido = texto(marcacao);
+    expect(lido).toContain("3 vezes ao todo, uma por mês");
+    expect(lido).toContain("1ª 30/11/2026 esta tarefa");
+    expect(marcacao).toContain('aria-label="Data fatal da 2ª vez da tarefa 1"');
+    expect(marcacao).toContain('aria-label="Data fatal da 3ª vez da tarefa 1"');
+    expect(lido).toContain("mudada");
+    expect(marcacao).toContain('aria-label="Tirar a 2ª vez da tarefa 1"');
+    expect(lido).toContain("Adicionar mês");
+    expect(lido).toContain("Dá para mudar ou tirar cada uma.");
   });
 
-  it("sem a fatal escolhida, pede a fatal", () => {
-    expect(tela(3, [])).toContain("Escolha a data fatal para ver as dos meses seguintes.");
+  it("aponta o mês sem data, antes da 1ª fatal ou repetido, e avisa o dia sem expediente", () => {
+    expect(texto(html([{ meses: 1, fatal: "", editada: false }]))).toContain("Falta a data.");
+    expect(texto(html([{ meses: 1, fatal: "2026-11-20", editada: true }]))).toContain("Tem de ser depois da 1ª fatal.");
+    expect(
+      texto(
+        html([
+          { meses: 1, fatal: "2026-12-30", editada: false },
+          { meses: 2, fatal: "2026-12-30", editada: true },
+        ])
+      )
+    ).toContain("Data repetida.");
+    expect(texto(html([{ meses: 1, fatal: "2027-01-30", editada: true }]))).toContain("Não é dia útil.");
   });
 
-  it("o + para no limite de tarefas da publicação", () => {
-    const html = renderToStaticMarkup(<RepeticaoMensal indice={0} vezes={3} maximo={3} fatais={[]} onChange={() => undefined} />);
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Uma vez a mais"|<button[^>]*aria-label="Uma vez a mais"[^>]*disabled=""/);
+  it("no limite de tarefas da publicação, não deixa adicionar nem ligar", () => {
+    const cheia = html([{ meses: 1, fatal: "2026-12-30", editada: false }], { maximo: 2 });
+    expect(cheia).toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>).)*Adicionar mês/);
+    expect(html(null, { maximo: 1 })).toMatch(/<button[^>]*aria-pressed="false"[^>]*disabled=""|<button[^>]*disabled=""[^>]*aria-pressed="false"/);
   });
 });

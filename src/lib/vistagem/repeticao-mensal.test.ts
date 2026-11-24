@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { criarCalendario, feriadosNacionais } from "./dias-uteis";
-import { fatalNoMes, fataisDaRepeticao, textoDaRepeticao, vezesDaRepeticao } from "./repeticao-mensal";
+import { comMaisUmMes, comPrimeiraFatal, fatalNoMes, fataisDaRepeticao, textoDaRepeticao } from "./repeticao-mensal";
 
 // Calendário real: fim de semana e feriados nacionais (25/12/2026, 01/01/2027…). O recesso forense não entra.
 const ehDiaUtil = criarCalendario([...feriadosNacionais(2026), ...feriadosNacionais(2027)]);
@@ -40,12 +40,30 @@ describe("COMPROVAR PAGAMENTO todo mês (pedido de 24/11/2026)", () => {
   it("sem fatal válida, nenhuma data", () => {
     expect(fataisDaRepeticao("", 4, ehDiaUtil)).toEqual([]);
     expect(fataisDaRepeticao("30/11/2026", 4, ehDiaUtil)).toEqual([]);
+    expect(fataisDaRepeticao("2026-11-30", 0, ehDiaUtil)).toEqual([]);
   });
 
-  it("vezes: um número inteiro de 1 em diante; o resto vale 1", () => {
-    expect(vezesDaRepeticao(4)).toBe(4);
-    expect(vezesDaRepeticao("4")).toBe(4);
-    for (const valor of [0, -2, 2.5, null, undefined, "", "x", Number.NaN]) expect(vezesDaRepeticao(valor)).toBe(1);
+  it("no formulário: liga com o mês seguinte e cada \"Adicionar mês\" põe o próximo, com a data sugerida", () => {
+    const um = comMaisUmMes([], "2026-11-30", ehDiaUtil);
+    expect(um).toEqual([{ meses: 1, fatal: "2026-12-30", editada: false }]);
+    const tres = comMaisUmMes(comMaisUmMes(um, "2026-11-30", ehDiaUtil), "2026-11-30", ehDiaUtil);
+    expect(tres.map((mes) => mes.fatal)).toEqual(["2026-12-30", "2027-01-29", "2027-02-26"]);
+    // Tirado um mês do meio, o próximo continua depois do último que ficou.
+    expect(comMaisUmMes([tres[0], tres[2]], "2026-11-30", ehDiaUtil).at(-1)).toEqual({ meses: 4, fatal: "2027-03-30", editada: false });
+    // Sem a 1ª fatal, o mês entra sem data.
+    expect(comMaisUmMes([], "", ehDiaUtil)).toEqual([{ meses: 1, fatal: "", editada: false }]);
+  });
+
+  it("no formulário: mudou a 1ª fatal, as datas sugeridas acompanham e as mudadas pela pessoa ficam", () => {
+    const meses = [
+      { meses: 1, fatal: "2026-12-30", editada: false },
+      { meses: 2, fatal: "2027-01-25", editada: true },
+    ];
+    expect(comPrimeiraFatal(meses, "2026-11-20", ehDiaUtil)).toEqual([
+      { meses: 1, fatal: "2026-12-18", editada: false },
+      { meses: 2, fatal: "2027-01-25", editada: true },
+    ]);
+    expect(comPrimeiraFatal(meses, "", ehDiaUtil)[0].fatal).toBe("");
   });
 
   it("texto da observação", () => {

@@ -56,8 +56,13 @@ export async function POST(request: Request, context: RouteContext) {
         responsavel: texto(valor.responsavel, 200) ?? "",
         revisor: texto(valor.revisor, 200),
         observacao: texto(valor.observacao, 4000),
-        // COMPROVAR PAGAMENTO todo mês: quantas vezes vai ao VIOS (o servidor confere o tipo e o total de tarefas).
-        repetirMeses: typeof valor.repetirMeses === "number" ? valor.repetirMeses : null,
+        // COMPROVAR PAGAMENTO recorrente: as fatais dos meses seguintes (o servidor confere o tipo, as datas e o total).
+        repeticoes: Array.isArray(valor.repeticoes)
+          ? valor.repeticoes.slice(0, 20).map((repeticao) => {
+              const campos = (repeticao ?? {}) as Record<string, unknown>;
+              return { fatal: texto(campos.fatal, 10) ?? "", editada: campos.editada === true };
+            })
+          : null,
         // Datas e responsáveis do fluxo do VIOS que a pessoa mudou; o servidor confere o caminho, a data e as pessoas.
         fluxoDatas: Array.isArray(valor.fluxoDatas)
           ? valor.fluxoDatas.slice(0, 60).flatMap((datada) => {

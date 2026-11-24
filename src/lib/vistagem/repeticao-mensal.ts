@@ -1,21 +1,22 @@
 /**
- * COMPROVAR PAGAMENTO todo mês (pedido de 24/11/2026: "com fatal dia 30/11 e ela poder indicar se quer mais
- * agendamentos para os próximos meses considerando esse fatal"). A pessoa marca a fatal da primeira e quantas vezes a
- * tarefa vai ao VIOS; as outras vão nos meses seguintes, cada uma como um Prazo comum (o Enviar sai da fatal pelo fluxo
- * do VIOS, como na primeira).
+ * COMPROVAR PAGAMENTO recorrente, todo mês (pedido de 24/11/2026: "com fatal dia 30/11 e ela poder indicar se quer mais
+ * agendamentos para os próximos meses considerando esse fatal"; depois: "como se fosse recorrente", com a possibilidade
+ * de adicionar e editar). A pessoa liga "Recorrente todo mês" no Prazo, escolhe quantas vezes, e cada mês seguinte
+ * aparece com a data sugerida, que ela pode mudar ou tirar. Ao gravar, cada mês vai como um Prazo comum (o Enviar sai da
+ * fatal pelo fluxo do VIOS, como na primeira).
  *
- * A data de cada mês segue o que a Trabalhista já fazia à mão nas parcelas de acordo (0011096-59 e 0011072-34, 11/2026):
+ * A data sugerida segue o que a Trabalhista já fazia à mão nas parcelas de acordo (0011096-59 e 0011072-34, 11/2026):
  * o mesmo dia do mês da primeira fatal; em mês sem esse dia, o último dia do mês; em dia sem expediente (fim de semana
  * ou feriado), o dia útil anterior. O recesso forense não conta: a parcela vence nele do mesmo jeito.
  */
 
-/**
- * Quantas vezes a tarefa vai ao VIOS, a primeira inclusive: "4x" = a da fatal escolhida e mais 3, nos meses seguintes.
- * Fora de um número inteiro de 1 em diante, 1 (só a da fatal escolhida).
- */
-export function vezesDaRepeticao(valor: unknown): number {
-  const numero = typeof valor === "string" && valor.trim() ? Number(valor.trim()) : valor;
-  return typeof numero === "number" && Number.isInteger(numero) && numero >= 1 ? numero : 1;
+/** Um mês da recorrência no formulário: quantos meses depois da primeira fatal, a data e se a pessoa mudou a data. */
+export interface MesDaRecorrencia {
+  meses: number;
+  /** AAAA-MM-DD; vazia enquanto a primeira fatal não foi escolhida. */
+  fatal: string;
+  /** A pessoa escolheu a data: ela fica quando a primeira fatal muda. */
+  editada: boolean;
 }
 
 function partes(iso: string): { ano: number; mes: number; dia: number } | null {
@@ -38,8 +39,8 @@ function diaAnterior(iso: string): string {
 }
 
 /**
- * A fatal `meses` meses depois da primeira: o mesmo dia do mês (sem ele, o último dia do mês) e, se não for dia útil,
- * o dia útil anterior. Conta sempre a partir da primeira, não da anterior: 31/01 → 28/02 → 31/03.
+ * A fatal sugerida `meses` meses depois da primeira: o mesmo dia do mês (sem ele, o último dia do mês) e, se não for dia
+ * útil, o dia útil anterior. Conta sempre a partir da primeira, não da anterior: 31/01 → 26/02 → 31/03.
  */
 export function fatalNoMes(primeira: string, meses: number, ehDiaUtil: (iso: string) => boolean): string {
   const data = partes(primeira);
@@ -53,10 +54,21 @@ export function fatalNoMes(primeira: string, meses: number, ehDiaUtil: (iso: str
   return iso;
 }
 
-/** As fatais de todas as vezes, a primeira inclusive: 30/11 em 4x → 30/11, 30/12, 29/01 (30/01 é sábado), 26/02. */
+/** As fatais sugeridas de `vezes` meses, a primeira inclusive: 30/11 em 4 → 30/11, 30/12, 29/01 (30/01 é sábado), 26/02. */
 export function fataisDaRepeticao(primeira: string, vezes: number, ehDiaUtil: (iso: string) => boolean): string[] {
-  if (!partes(primeira)) return [];
-  return Array.from({ length: vezesDaRepeticao(vezes) }, (_, meses) => fatalNoMes(primeira, meses, ehDiaUtil));
+  if (!partes(primeira) || !Number.isInteger(vezes) || vezes < 1) return [];
+  return Array.from({ length: vezes }, (_, meses) => fatalNoMes(primeira, meses, ehDiaUtil));
+}
+
+/** Mais um mês no fim da recorrência, com a data sugerida (vazia sem a primeira fatal). */
+export function comMaisUmMes(meses: MesDaRecorrencia[], primeira: string, ehDiaUtil: (iso: string) => boolean): MesDaRecorrencia[] {
+  const proximo = meses.reduce((maior, mes) => Math.max(maior, mes.meses), 0) + 1;
+  return [...meses, { meses: proximo, fatal: partes(primeira) ? fatalNoMes(primeira, proximo, ehDiaUtil) : "", editada: false }];
+}
+
+/** A primeira fatal mudou: os meses com a data sugerida acompanham; os que a pessoa mudou ficam. */
+export function comPrimeiraFatal(meses: MesDaRecorrencia[], primeira: string, ehDiaUtil: (iso: string) => boolean): MesDaRecorrencia[] {
+  return meses.map((mes) => (mes.editada ? mes : { ...mes, fatal: partes(primeira) ? fatalNoMes(primeira, mes.meses, ehDiaUtil) : "" }));
 }
 
 /** O que vai na observação de cada vez, abaixo da do jurídico: "Repetição mensal: 2 de 4." */

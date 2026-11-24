@@ -64,6 +64,7 @@ import {
   observacaoObrigatoria,
   pedeDataLimite,
   primeiroDiaDaTarefa,
+  problemaNaRecorrencia,
   renunciaComDataFixa,
   repeteTodoMes,
   revisorFicaNaTarefa,
@@ -71,7 +72,7 @@ import {
   type EtiquetaAgendamento,
   type OrigemPrazo,
 } from "@/lib/vistagem/agendamento";
-import { fataisDaRepeticao, vezesDaRepeticao } from "@/lib/vistagem/repeticao-mensal";
+import { comPrimeiraFatal, type MesDaRecorrencia } from "@/lib/vistagem/repeticao-mensal";
 import { reabertaParaAlterar } from "@/lib/vistagem/alterar-vistagem";
 import { cienciaDosAgendamentos, repetidasNaVistagem, textoDaRepetida } from "@/lib/vistagem/ciencia-agendamentos";
 import {
@@ -121,7 +122,7 @@ import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import { ReguaDatas, diaDaSemana, relativoAHoje } from "./regua-datas";
-import { RepeticaoMensal } from "./repeticao-mensal";
+import { RecorrenciaMensal } from "./repeticao-mensal";
 import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
 import { Aviso, Busca, Carregando, ICONE_ETIQUETA_DESTAQUE, Painel, Selo, SelosDeEtiqueta, Vazio, campoClasse, linhaLista } from "./ui";
@@ -157,8 +158,8 @@ interface Linha {
   ia: boolean;
   /** Datas e responsáveis do Fluxo do VIOS que a pessoa mudou, pela chave do caminho (chaveDoCaminho). */
   fluxoDatas: Record<string, DataDoFluxo>;
-  /** COMPROVAR PAGAMENTO todo mês: quantas vezes vai ao VIOS, a primeira inclusive (1 = só a da fatal). */
-  repetirMeses: number;
+  /** COMPROVAR PAGAMENTO recorrente: os meses seguintes, com a data de cada um; null = vai só a da fatal. */
+  recorrencia: MesDaRecorrencia[] | null;
 }
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
@@ -238,7 +239,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     esocial: false,
     ia: false,
     fluxoDatas: {},
-    repetirMeses: 1,
+    recorrencia: null,
     ...base,
   };
 }
@@ -1010,9 +1011,14 @@ export function EditorVistagem({
     return repeteTodoMes(opcao ? opcao.nomeVios ?? opcao.nome : linha.tarefa);
   }
 
-  /** Quantas tarefas a linha vira no VIOS: as repetições mensais contam no limite de tarefas da publicação. */
+  /** Os meses seguintes que vão ao VIOS: só no COMPROVAR PAGAMENTO recorrente. */
+  function mesesSeguintes(linha: Linha): MesDaRecorrencia[] {
+    return repetivel(linha) ? linha.recorrencia ?? [] : [];
+  }
+
+  /** Quantas tarefas a linha vira no VIOS: os meses da recorrência contam no limite de tarefas da publicação. */
   function tarefasDaLinha(linha: Linha): number {
-    return repetivel(linha) ? vezesDaRepeticao(linha.repetirMeses) : 1;
+    return 1 + mesesSeguintes(linha).length;
   }
 
   /** Tarefas que a vistagem manda ao VIOS, com as repetições mensais. */
@@ -1026,6 +1032,9 @@ export function EditorVistagem({
     if (depoisDoHorario && dataEscolhida && linha.data && linha.data < primeiroDia) return false;
     // VERIFICAR RENÚNCIA da Operações Legais: o responsável não é escolhido (o VIOS divide entre as estagiárias).
     const conferida = dataFixa(linha.etiqueta, linha.tarefa) ? { ...linha, responsavel: "VIOS" } : linha;
+    // COMPROVAR PAGAMENTO recorrente: cada mês com data, depois da primeira fatal e sem repetir (como o servidor confere).
+    const meses = mesesSeguintes(linha);
+    if (meses.length && (!linha.dataFatal || problemaNaRecorrencia(linha.dataFatal, meses))) return false;
     return linhaCompleta(conferida, semFatal(linha), pedeObservacao(linha), pedeLimite(linha));
   }
 
@@ -1052,8 +1061,12 @@ export function EditorVistagem({
           ...horaFimAcompanha,
           ...limiteAcompanha,
           ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}),
-          // A repetição mensal é do COMPROVAR PAGAMENTO: outro tipo volta a ir uma vez só.
-          ...(outroTipo && mudanca.repetirMeses === undefined ? { repetirMeses: 1 } : {}),
+          // A recorrência é do COMPROVAR PAGAMENTO: outro tipo volta a ir uma vez só. Com outra primeira fatal, os meses
+          // com a data sugerida acompanham; os que a pessoa mudou ficam.
+          ...(outroTipo && mudanca.recorrencia === undefined ? { recorrencia: null } : {}),
+          ...(!outroTipo && mudanca.dataFatal !== undefined && mudanca.recorrencia === undefined && linha.recorrencia
+            ? { recorrencia: comPrimeiraFatal(linha.recorrencia, mudanca.dataFatal, ehDiaUtil) }
+            : {}),
         };
       })
     );
@@ -1258,8 +1271,8 @@ export function EditorVistagem({
             revisor: linha.etiqueta === "PROVIDENCIA" ? null : linha.revisor || null,
             observacao: linha.observacao || null,
             fluxoDatas: Object.values(linha.fluxoDatas),
-            // COMPROVAR PAGAMENTO todo mês: o servidor grava uma tarefa por mês, a partir da fatal.
-            repetirMeses: tarefasDaLinha(linha) > 1 ? tarefasDaLinha(linha) : null,
+            // COMPROVAR PAGAMENTO recorrente: o servidor grava mais uma tarefa para cada mês, com a fatal dele.
+            repeticoes: mesesSeguintes(linha).length ? mesesSeguintes(linha).map(({ fatal, editada }) => ({ fatal, editada })) : null,
           })),
         }),
       });
@@ -1830,12 +1843,13 @@ export function EditorVistagem({
                                   </p>
                                 ) : null}
                                 {repetivel(linha) ? (
-                                  <RepeticaoMensal
+                                  <RecorrenciaMensal
                                     indice={indice}
-                                    vezes={tarefasDaLinha(linha)}
+                                    primeira={linha.dataFatal}
+                                    meses={linha.recorrencia}
                                     maximo={Math.max(1, MAX_AGENDAMENTOS - (tarefasNoVios - tarefasDaLinha(linha)))}
-                                    fatais={linha.dataFatal ? fataisDaRepeticao(linha.dataFatal, tarefasDaLinha(linha), ehDiaUtil) : []}
-                                    onChange={(vezes) => alterar(linha.chave, { repetirMeses: vezes })}
+                                    ehDiaUtil={ehDiaUtil}
+                                    onChange={(recorrencia) => alterar(linha.chave, { recorrencia })}
                                   />
                                 ) : null}
                               </div>

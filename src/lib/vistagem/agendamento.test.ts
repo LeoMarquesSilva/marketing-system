@@ -7,6 +7,7 @@ import {
   classeDasEtiquetas,
   comResponsavelFixoDaArea,
   observacaoDaRepeticao,
+  problemaNaRecorrencia,
   repeteTodoMes,
   responsavelFixoDaArea,
   contagemPadraoDaArea,
@@ -809,7 +810,7 @@ describe("responsavelFicaComOVios", () => {
   });
 });
 
-describe("COMPROVAR PAGAMENTO todo mês (pedido de 24/11/2026)", () => {
+describe("COMPROVAR PAGAMENTO recorrente, todo mês (pedido de 24/11/2026)", () => {
   const tarefas = {
     PRAZO: [...tarefasPermitidas(ETAPAS, "PRAZO"), { id: "452", nome: "COMPROVAR PAGAMENTO" }],
     PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA"),
@@ -841,10 +842,11 @@ describe("COMPROVAR PAGAMENTO todo mês (pedido de 24/11/2026)", () => {
     ],
     ...extra,
   });
+  const meses = (...fatais: string[]) => fatais.map((fatal) => ({ fatal }));
 
-  it("4x: uma tarefa por mês, com a fatal do mês, o Enviar pela regra do fluxo e a observação numerada", () => {
+  it("uma tarefa por mês pedido, com a fatal dele, o Enviar pela regra do fluxo e a observação numerada", () => {
     pedidas.length = 0;
-    const resultado = validarAgendamentos([comprovar({ repetirMeses: 4 })], contexto);
+    const resultado = validarAgendamentos([comprovar({ repeticoes: meses("2026-12-30", "2027-01-29", "2027-02-26") })], contexto);
     expect(resultado.ok).toBe(true);
     if (!resultado.ok) return;
     expect(resultado.itens.map((item) => [item.dataFatal, item.data, item.origemPrazo, item.observacao])).toEqual([
@@ -867,27 +869,51 @@ describe("COMPROVAR PAGAMENTO todo mês (pedido de 24/11/2026)", () => {
     expect(resultado.itens[1].fluxoDatas).toEqual([{ caminho: ["COMPROVAR PAGAMENTO", "2. REVISAR"], responsaveis: ["Revisor Exemplo"] }]);
   });
 
-  it("1x, sem o campo ou em outro tipo de tarefa: vai uma só, como antes", () => {
-    for (const entrada of [comprovar({ repetirMeses: 1 }), comprovar(), comprovar({ repetirMeses: null })]) {
+  it("a data mudada pela pessoa vale como está, com a origem do calendário; os meses vão em ordem de data", () => {
+    const resultado = validarAgendamentos(
+      [comprovar({ repeticoes: [{ fatal: "2027-01-20", editada: true }, { fatal: "2026-12-30" }] })],
+      contexto
+    );
+    expect(resultado.ok && resultado.itens.map((item) => [item.dataFatal, item.origemPrazo, item.observacao?.split("\n")[1]])).toEqual([
+      ["2026-11-30", "calendario", "Repetição mensal: 1 de 3."],
+      ["2026-12-30", "repeticao", "Repetição mensal: 2 de 3."],
+      ["2027-01-20", "calendario", "Repetição mensal: 3 de 3."],
+    ]);
+  });
+
+  it("sem recorrência, ou em outro tipo de tarefa: vai uma só, como antes", () => {
+    for (const entrada of [comprovar({ repeticoes: [] }), comprovar(), comprovar({ repeticoes: null })]) {
       const resultado = validarAgendamentos([entrada], contexto);
       expect(resultado.ok && resultado.itens.map((item) => item.observacao)).toEqual(["Parcela do acordo"]);
     }
-    const contestacao = validarAgendamentos([comprovar({ tarefa: "CONTESTAÇÃO", tarefaId: "900", fluxoDatas: [], repetirMeses: 4 })], contexto);
+    const contestacao = validarAgendamentos([comprovar({ tarefa: "CONTESTAÇÃO", tarefaId: "900", fluxoDatas: [], repeticoes: meses("2026-12-30") })], contexto);
     expect(contestacao.ok && contestacao.itens).toHaveLength(1);
   });
 
-  it("as repetições contam no limite de 10 tarefas por publicação", () => {
+  it("recusa mês sem data, antes da primeira fatal ou repetido", () => {
+    const erro = (repeticoes: unknown) => validarAgendamentos([comprovar({ repeticoes })], contexto);
+    expect(erro(meses("2026-12-30", ""))).toEqual({ ok: false, erros: ["Tarefa 1: escolha a data fatal de cada mês da recorrência."] });
+    expect(erro(meses("2026-11-30"))).toEqual({ ok: false, erros: ["Tarefa 1: as datas da recorrência têm de ser depois da primeira fatal."] });
+    expect(erro(meses("2026-12-30", "2026-12-30"))).toEqual({ ok: false, erros: ["Tarefa 1: há datas repetidas na recorrência."] });
+    expect(problemaNaRecorrencia("2026-11-30", meses("2026-12-30", "2027-01-29"))).toBeNull();
+  });
+
+  it("os meses contam no limite de 10 tarefas por publicação", () => {
+    const oito = meses("2026-12-30", "2027-01-29", "2027-02-26", "2027-03-30", "2027-04-30", "2027-05-28", "2027-06-30");
     const resultado = validarAgendamentos(
-      [comprovar({ repetirMeses: 8 }), { etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-20", responsavel: "Advogada Exemplo" }],
+      [comprovar({ repeticoes: oito }), { etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-20", responsavel: "Advogada Exemplo" }],
       contexto
     );
     expect(resultado.ok && resultado.itens).toHaveLength(9);
-    const demais = validarAgendamentos([comprovar({ repetirMeses: 11 })], contexto);
-    expect(demais).toEqual({ ok: false, erros: ["No máximo 10 tarefas por publicação, contando as repetições mensais (são 11)."] });
+    const onze = [...oito, ...meses("2027-07-30", "2027-08-30", "2027-09-30")];
+    expect(validarAgendamentos([comprovar({ repeticoes: onze })], contexto)).toEqual({
+      ok: false,
+      erros: ["No máximo 10 tarefas por publicação, contando as repetições mensais (são 11)."],
+    });
   });
 
-  it("a vistagem alterada e repetida de novo troca a numeração, sem repetir a linha", () => {
-    const resultado = validarAgendamentos([comprovar({ repetirMeses: 2, observacao: "Parcela do acordo\nRepetição mensal: 1 de 4." })], contexto);
+  it("a vistagem alterada e feita recorrente de novo troca a numeração, sem repetir a linha", () => {
+    const resultado = validarAgendamentos([comprovar({ repeticoes: meses("2026-12-30"), observacao: "Parcela do acordo\nRepetição mensal: 1 de 4." })], contexto);
     expect(resultado.ok && resultado.itens.map((item) => item.observacao)).toEqual([
       "Parcela do acordo\nRepetição mensal: 1 de 2.",
       "Parcela do acordo\nRepetição mensal: 2 de 2.",

@@ -241,10 +241,10 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
       ),
       {
         id: "repeticao-mensal",
-        titulo: "COMPROVAR PAGAMENTO todo mês",
-        quando: "a pessoa marcar, no COMPROVAR PAGAMENTO, quantas vezes ele se repete",
+        titulo: "COMPROVAR PAGAMENTO recorrente",
+        quando: "a pessoa ligar \"Recorrente todo mês\" no COMPROVAR PAGAMENTO",
         entao:
-          "vai uma tarefa por mês a partir da fatal escolhida (4 vezes = esta e as dos 3 meses seguintes), no mesmo dia do mês; sem esse dia no mês, no último; sem expediente, no dia útil anterior. Cada uma é um Prazo próprio, com o Enviar, o Revisar e o Protocolar contados da fatal dela.",
+          "ela acrescenta quantos meses quiser (até o limite de tarefas), e cada mês vem com a data sugerida: o mesmo dia do mês da 1ª fatal; sem esse dia, o último do mês; sem expediente, o dia útil anterior. Dá para mudar ou tirar cada data. Cada mês vai como um Prazo próprio, com o Enviar, o Revisar e o Protocolar contados da fatal dele.",
         origem: "codigo",
       },
       {
