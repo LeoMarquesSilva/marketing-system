@@ -502,6 +502,7 @@ O robô lê logo ao subir e de novo em cada horário de `PAUTA_HORARIOS`, sem ma
 | `CERTIFICADO_PFX`, `CERTIFICADO_SENHA`, `CERTIFICADO_SENHA_ARQUIVO` | — | Certificado em arquivo, fonte simples. |
 | `CERTIFICADO_PASTA`, `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO` | — | Certificado enviado pelo painel. |
 | `SEGREDO_JUSTICA` | baixa | Processo em segredo de justiça que o robô abre com o login do advogado é baixado sem esperar a liberação na ficha (decisão de 24/11/2026). `esperar` volta a parar e esperar a liberação. |
+| `EPROC_PERFIL` | `SP` | Na tela "Seleção de perfil" do eproc (advogado com inscrições em mais de um estado), o robô escolhe o perfil de advogado cuja sigla começa por este prefixo; sem ele, o primeiro de advogado. Vale para o TJSP e o TJRJ. |
 | `WEB_SIGNER` | ligado com certificado no modo playwright | `nao` desliga o Web Signer do robô (o login por certificado no e-SAJ volta para a pessoa). |
 | `PJE_OFFICE` | ligado com certificado no modo playwright | `nao` desliga o PJe Office do robô (o login por certificado no jus.br volta para a pessoa). |
 | `ROBO_2FA_PASTA` | `CERTIFICADO_PASTA` | Onde está o `segundo-fator.json` gravado pelo painel (segredo do TOTP, decifrado com `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO`). |

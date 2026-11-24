@@ -17,6 +17,7 @@ import {
   mensagemDaPesquisa,
   ordenarDocumentos,
   pecasNovas,
+  perfilDoEproc,
   tipoDoArquivo,
   type DocumentoEproc,
   type InstanciaEproc,
@@ -137,7 +138,7 @@ function certificadoEmArquivo(config: Ambiente["config"]): boolean {
 }
 
 /** Login do advogado no eproc daquele tribunal: cada tribunal tem cadastro e senha próprios. */
-function credenciais(config: Ambiente["config"], sigla: string): Ambiente["config"]["eproc"] {
+function credenciais(config: Ambiente["config"], sigla: string): Ambiente["config"]["eprocTjrj"] {
   return sigla === "TJRJ" ? config.eprocTjrj : config.eproc;
 }
 
@@ -233,11 +234,27 @@ class ConectorEproc implements Conector {
     const validar = pagina.locator(TELA.login.validar).first();
     if (await validar.isVisible().catch(() => false)) await validar.click().catch(() => undefined);
     else await campo.press("Enter").catch(() => undefined);
-    await pagina.waitForURL((url) => ehAreaLogada(url.toString()), { timeout: 20_000 }).catch(() => undefined);
+    await pagina
+      .waitForURL((url) => ehAreaLogada(url.toString()) || /externo_controlador\.php\?acao=entrar_sso/i.test(url.toString()), { timeout: 20_000 })
+      .catch(() => undefined);
     if (await dentro()) return true;
     // Código recusado: sai do campo, para não aparecer em captura de diagnóstico nem na tela remota.
     await campo.fill("").catch(() => undefined);
     return false;
+  }
+
+  /** Na tela "Seleção de perfil", escolhe o perfil configurado (EPROC_PERFIL, padrão SP). Devolve se escolheu. */
+  private async escolherPerfil(ambiente: Ambiente): Promise<boolean> {
+    const { pagina, config, registrar } = ambiente;
+    if (!(await pagina.getByText(/Sele[çc][ãa]o de perfil/i).first().isVisible().catch(() => false))) return false;
+    const linhas = pagina.locator("tr:has(td)");
+    const indice = perfilDoEproc(await linhas.allInnerTexts().catch(() => []), config.eproc.perfil);
+    if (indice < 0) return false;
+    const linha = linhas.nth(indice);
+    const link = linha.locator("a").first();
+    await ((await link.count()) ? link : linha.locator("td").first()).click().catch(() => undefined);
+    registrar(`Perfil do ${this.sistema} escolhido: o da inscrição ${config.eproc.perfil}.`);
+    return true;
   }
 
   async entrar(ambiente: Ambiente, instancia: InstanciaEproc = this.tribunal.instancias[0]): Promise<void> {
@@ -245,7 +262,11 @@ class ConectorEproc implements Conector {
     const login = credenciais(config, this.tribunal.sigla);
     if (!ehAreaLogada(pagina.url()) || !pagina.url().startsWith(instancia.base)) await this.irPara(pagina, instancia);
     // Área logada do eproc deste tribunal (com dois tribunais no mesmo navegador, a do outro não conta).
-    const dentro = async () => ehAreaLogada(pagina.url()) && this.tribunal.instancias.some((item) => pagina.url().startsWith(item.base));
+    const dentro = async () => {
+      // Com mais de um perfil (ex.: inscrições SP e ES), o eproc para na "Seleção de perfil" depois do 2FA.
+      if (await this.escolherPerfil(ambiente)) await pagina.waitForURL((url) => ehAreaLogada(url.toString()), { timeout: 20_000 }).catch(() => undefined);
+      return ehAreaLogada(pagina.url()) && this.tribunal.instancias.some((item) => pagina.url().startsWith(item.base));
+    };
     if (await dentro()) return;
     // O certificado já passou e o eproc pede o código do aplicativo de autenticação (2FA): quem informa é a pessoa.
     if (await visivel(pagina, TELA.login.codigo)) {
@@ -315,6 +336,9 @@ class ConectorEproc implements Conector {
     if (!(await campo.isVisible().catch(() => false))) {
       // Depois do login o eproc pode pedir o perfil (advogado, procurador…): quem escolhe é a pessoa.
       await campo.waitFor({ state: "visible", timeout: 20_000 }).catch(() => undefined);
+      if (!(await campo.isVisible().catch(() => false)) && (await this.escolherPerfil(ambiente))) {
+        await campo.waitFor({ state: "visible", timeout: 20_000 }).catch(() => undefined);
+      }
       if (!(await campo.isVisible().catch(() => false))) {
         await ambiente.aguardarPessoa("login", `O ${this.sistema} (${instancia.rotulo}) não mostrou a pesquisa de processo: se pediu para escolher o perfil, escolha o de advogado na janela do robô.`, () => campo.isVisible());
       }

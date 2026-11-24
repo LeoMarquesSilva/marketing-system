@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { lerCnj } from "./esaj-urls";
 import {
+  perfilDoEproc,
   arquivoEmbutido,
   chaveDaPeca,
   ehAreaLogada,
@@ -134,5 +135,21 @@ describe("aviso da pesquisa", () => {
   it("ignora a faixa de usuário logado", () => {
     expect(mensagemDaPesquisa(["Usuário logado como FULANO/ . Utilize o botão \"Sair do Sistema\" caso queira efetuar novo login.", "Processo não encontrado."])).toBe("Processo não encontrado.");
     expect(mensagemDaPesquisa(["Usuário logado como FULANO. Sair do Sistema"])).toBeNull();
+  });
+});
+
+describe("seleção de perfil do eproc", () => {
+  // Siglas e descrições fictícias, no formato da tela.
+  it("escolhe o perfil SP de advogado, mesmo fora da primeira linha", () => {
+    expect(perfilDoEproc(["ES000001\tADVOGADO", "SP000002\tADVOGADO"])).toBe(1);
+    expect(perfilDoEproc(["SP000002\tADVOGADO", "ES000001\tADVOGADO"])).toBe(0);
+  });
+  it("sem SP, o primeiro perfil de advogado; sem linhas, nenhum", () => {
+    expect(perfilDoEproc(["ES000001\tADVOGADO", "MG000003\tADVOGADO"])).toBe(0);
+    expect(perfilDoEproc(["ES000001\tADVOGADO"], "RJ")).toBe(0);
+    expect(perfilDoEproc([])).toBe(-1);
+  });
+  it("respeita outro prefixo configurado", () => {
+    expect(perfilDoEproc(["SP000002\tADVOGADO", "ES000001\tADVOGADO"], "ES")).toBe(1);
   });
 });
