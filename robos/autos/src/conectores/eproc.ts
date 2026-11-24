@@ -49,16 +49,28 @@ import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type R
  *   CAPTCHA. Se o advogado não representa uma das partes, o pedido volta com erro.
  */
 
+/**
+ * Tela do código de 2 fatores. O formulário do SSO conta para reconhecer a tela, mas não é onde se digita:
+ * ele vem antes do campo no HTML, e um seletor único com os dois fazia o robô "preencher" o formulário (24/11).
+ */
+export const CODIGO_2FA_EPROC = {
+  tela: "#txtAcessoCodigo, #otp, input[name=otp], input[name=totp], #kc-otp-login-form",
+  campo:
+    "#txtAcessoCodigo, #otp, input[name=otp], input[name=totp], #kc-otp-login-form input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button])",
+  // Tela do eproc: #btnValidar; SSO: o envio do formulário do código. Sem eles, Enter no campo.
+  validar: "#btnValidar, #kc-otp-login-form [type=submit]",
+} as const;
+
 const TELA = {
   login: {
     usuario: "#username",
     senha: "#password",
     entrar: "#kc-login",
     certificado: "#kc-login-certificate",
-    // Código do aplicativo de autenticação: no SSO (Keycloak) ou na tela do próprio eproc, depois do certificado.
-    codigo: "#txtAcessoCodigo, #otp, input[name=otp], input[name=totp], #kc-otp-login-form",
-    // Botão que confirma o código de 2 fatores (tela do eproc: #btnValidar; SSO: submit do formulário do código).
-    validar: "#btnValidar, #kc-otp-login-form button[type=submit], button[type=submit]",
+    // Tela do código do aplicativo de autenticação: no SSO (Keycloak) ou na tela do próprio eproc, depois do certificado.
+    codigo: CODIGO_2FA_EPROC.tela,
+    campoCodigo: CODIGO_2FA_EPROC.campo,
+    validar: CODIGO_2FA_EPROC.validar,
   },
   pesquisa: "#txtNumProcessoPesquisaRapida",
   /** Área da capa: o sigilo é lido só aqui, não no menu nem na tabela de eventos. */
@@ -214,7 +226,7 @@ class ConectorEproc implements Conector {
   /** Digita o código na tela do 2FA e confirma. Devolve se o login entrou. */
   private async digitarCodigo(ambiente: Ambiente, codigo: string, dentro: () => Promise<boolean>): Promise<boolean> {
     const { pagina } = ambiente;
-    const campo = pagina.locator(TELA.login.codigo).first();
+    const campo = pagina.locator(TELA.login.campoCodigo).first();
     if (!(await campo.isVisible().catch(() => false))) return dentro();
     await campo.fill("").catch(() => undefined);
     await campo.fill(codigo).catch(() => undefined);
