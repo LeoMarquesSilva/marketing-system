@@ -114,7 +114,7 @@ export async function escolherPerfilNaTela(pagina: Page, prefixo: string): Promi
         return "escolhido";
       }
     }
-    // Sem linhas de tabela: o texto da sigla ("SP275477"), visível, em qualquer quadro.
+    // Sem linhas de tabela: o texto da sigla (ex.: "SP000001"), visível, em qualquer quadro.
     const sigla = new RegExp(`^\\s*${prefixo.replace(/[^a-z]/gi, "")}\\d+\\s*$`, "i");
     for (const quadro of aba.frames()) {
       const celula = quadro.getByText(sigla).filter({ visible: true }).first();
