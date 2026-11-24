@@ -9,6 +9,7 @@ import { ProcessosError } from "./errors";
 import { registrarNoHistorico } from "./processos-server";
 import { db, falhou } from "./server";
 import { ROTULO_SISTEMA, roboPeloJusbr, type SistemaTribunal } from "./tribunais";
+import { resumirFila, type LinhaDaFila, type ResumoDaFila } from "./fila-resumo";
 
 /**
  * O lado do servidor da fila do robô de autos (robos/autos). O robô roda fora da Vercel e fala só com
@@ -233,4 +234,20 @@ export async function atualizarPedidoDoRobo(pedidoId: string, entrada: unknown):
       return { pedido: concluido };
     }
   }
+}
+
+/* ------------------------------------------- resumo para o painel de robôs */
+
+const COLUNAS_RESUMO = "status, motivo_espera, sistema, tribunal, cnj, robo, erro, criado_em, atualizado_em, concluido_em";
+
+/** Fila do robô de autos para o painel de robôs: o que está aberto e o que terminou nas últimas 24 h. */
+export async function resumoDaFila(agoraMs = Date.now()): Promise<ResumoDaFila> {
+  const desde = new Date(agoraMs - 24 * 3600_000).toISOString();
+  const [abertos, finais] = await Promise.all([
+    db().from("proc_autos_pedidos").select(COLUNAS_RESUMO).in("status", ["pendente", "em_andamento", "aguardando_pessoa"]).order("criado_em").limit(2000),
+    db().from("proc_autos_pedidos").select(COLUNAS_RESUMO).in("status", ["concluido", "erro"]).gte("atualizado_em", desde).order("atualizado_em", { ascending: false }).limit(2000),
+  ]);
+  if (abertos.error) falhou("ler a fila do robô", abertos.error);
+  if (finais.error) falhou("ler os pedidos concluídos", finais.error);
+  return resumirFila((abertos.data ?? []) as LinhaDaFila[], (finais.data ?? []) as LinhaDaFila[], agoraMs);
 }
