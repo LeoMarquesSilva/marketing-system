@@ -64,6 +64,18 @@ export class ConectorJusbr implements Conector {
     await entrarComAPessoa({ ...ambiente, pagina: nova }, this.opcoesDeLogin(ambiente));
   }
 
+  /**
+   * A sessão venceu (a API responde 401 mesmo com a aba do portal aberta, ex.: de um dia para o outro): fecha as abas
+   * do portal e esquece o token; a próxima busca abre o portal de novo, e o login (certificado e código do painel)
+   * acontece sozinho.
+   */
+  private async reiniciarSessao(ambiente: Ambiente): Promise<void> {
+    this.autorizacao = null;
+    for (const aba of ambiente.contexto.pages()) {
+      if (!aba.isClosed() && ehAreaLogadaJusbr(aba.url()) && aba !== ambiente.pagina) await aba.close().catch(() => undefined);
+    }
+  }
+
   private async portal(ambiente: Ambiente): Promise<Page> {
     await this.entrar(ambiente);
     const aba = this.abaDoPortal(ambiente);
@@ -120,7 +132,9 @@ export class ConectorJusbr implements Conector {
         throw new FalhaDoConector(`A conexão com o ${SISTEMA} caiu (${erro instanceof Error ? erro.message.split("\n")[0].slice(0, 80) : "erro de rede"}). O pedido volta para a fila.`);
       }
       if (resposta.status() === 401) {
-        this.autorizacao = null;
+        // Primeiro só renova o token pela tela; se continuar 401, a sessão do portal venceu: entra de novo.
+        if (tentativa >= 2) await this.reiniciarSessao(ambiente);
+        else this.autorizacao = null;
         continue;
       }
       if (resposta.status() >= 500 && tentativa < TENTATIVAS) {
@@ -136,8 +150,15 @@ export class ConectorJusbr implements Conector {
     const digitos = digitosDoCnj(cnj);
     if (!digitos) throw new FalhaDoConector(`Número de processo inválido: ${cnj}.`);
     let busca = 0;
+    let entrouDeNovo = false;
     for (let tentativa = 1; tentativa <= TENTATIVAS; tentativa += 1) {
       busca = await this.buscarPelaTela(ambiente, digitos);
+      if (busca === 401 && !entrouDeNovo) {
+        entrouDeNovo = true;
+        ambiente.registrar(`${SISTEMA}: a sessão venceu; entrando de novo.`);
+        await this.reiniciarSessao(ambiente);
+        continue;
+      }
       if (busca < 500) break;
       await new Promise((r) => setTimeout(r, 3_000 * tentativa));
     }
