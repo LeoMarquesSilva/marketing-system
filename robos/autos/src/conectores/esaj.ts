@@ -355,7 +355,12 @@ class ConectorEsaj implements Conector {
       await baixar.waitFor({ state: "visible", timeout: config.geracaoPdfMs });
       await pasta.waitForTimeout(500);
       // O e-SAJ devolve o PDF como anexo na própria pasta digital.
-      const [arquivo] = await Promise.all([pasta.waitForEvent("download", { timeout: 120_000 }), baixar.click()]);
+      const download = pasta.waitForEvent("download", { timeout: 120_000 });
+      download.catch(() => undefined); // se o clique falhar antes, a espera não vira rejeição solta
+      // Às vezes a caixa "Gerando o documento" fica duplicada e a camada de cima segura o clique (24/11): sem o clique
+      // normal em 10 s, aciona o botão pela própria página.
+      await baixar.click({ timeout: 10_000 }).catch(() => baixar.evaluate((botao) => (botao as HTMLElement).click()));
+      const arquivo = await download;
       const falha = await arquivo.failure();
       if (falha) throw new FalhaDoConector(`O download do PDF foi interrompido (${falha}).`);
       await arquivo.saveAs(destino);
