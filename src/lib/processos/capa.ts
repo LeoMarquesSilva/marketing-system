@@ -332,5 +332,15 @@ export function registrosDoJusbr(capa: CapaDoJusbr): { registros: RegistroDataJu
   const indice = atual ? registros.indexOf(atual) : -1;
   const cidade = (indice >= 0 ? capa.tramitacoes[indice].cidade : capa.tramitacoes[0]?.cidade) ?? null;
   // A jurisdição do Jus.br vem como "Comarca de Cidade Exemplo" / "Foro de …": o cadastro quer só o nome da cidade.
-  return { registros, municipio: cidade?.replace(/^\s*(comarca|foro|foro regional)\s+(de|da|do|das|dos)\s+/i, "").trim() || null };
+  return { registros, municipio: cidadeDaJurisdicao(cidade) };
+}
+
+/**
+ * Nome da cidade pela jurisdição do Jus.br. No TJSP o Jus.br manda um código interno no lugar do nome
+ * ("JurisdicaoLocal#8"): isso não é cidade e não vira sugestão (a cidade sai do órgão julgador, ou fica em branco).
+ */
+export function cidadeDaJurisdicao(jurisdicao: string | null | undefined): string | null {
+  const texto = (jurisdicao ?? "").replace(/\s+/g, " ").trim();
+  if (!texto || /#\s*\d+\s*$/.test(texto) || /^jurisdi[cç][aã]o\s*local\b/i.test(texto) || !/\p{L}{3}/u.test(texto)) return null;
+  return texto.replace(/^(comarca|foro regional|foro distrital|foro)\s+(de|da|do|das|dos)\s+/i, "").trim() || null;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ValorDeCampo } from "./autos-types";
-import { andamentosDoDataJud, cidadeDoOrgao, dataDoDataJud, indiceDoDataJud, lerCnjDaCapa, orgaoSemComarca, registroAtual, registrosDoJusbr, separarVara, sugestoesDaCapa, ultimoMovimento, type RegistroDataJud } from "./capa";
+import { andamentosDoDataJud, cidadeDaJurisdicao, cidadeDoOrgao, dataDoDataJud, indiceDoDataJud, lerCnjDaCapa, orgaoSemComarca, registroAtual, registrosDoJusbr, separarVara, sugestoesDaCapa, ultimoMovimento, type RegistroDataJud } from "./capa";
 
 // Números e órgãos inventados.
 const PRIMEIRO_GRAU = "1012345-67.2024.8.26.0114";
@@ -151,8 +151,21 @@ describe("capa pelo Jus.br", () => {
     const { registros, municipio } = registrosDoJusbr(capa);
     expect(municipio).toBe("Vila Modelo");
     expect(registrosDoJusbr({ ...capa, tramitacoes: [{ ...capa.tramitacoes[0], cidade: "Comarca de Vila Modelo" }] }).municipio).toBe("Vila Modelo");
+    expect(registrosDoJusbr({ ...capa, tramitacoes: [{ ...capa.tramitacoes[0], cidade: "Foro Regional de Vila Modelo" }] }).municipio).toBe("Vila Modelo");
     expect(registros[0]).toMatchObject({ grau: "G1", dataAjuizamento: "2024-03-15T10:30:00", classe: { nome: "Monitória" }, nivelSigilo: 0 });
     expect(registros[0].movimentos?.[0]).toEqual({ codigo: null, nome: "Conclusos para despacho", dataHora: "2026-09-01T10:00:00", complementosTabelados: [{ nome: "urgente" }] });
+  });
+
+  it("código interno do Jus.br no lugar da cidade (TJSP: \"JurisdicaoLocal#8\") não vira sugestão de cidade", () => {
+    expect(cidadeDaJurisdicao("JurisdicaoLocal#8")).toBeNull();
+    expect(cidadeDaJurisdicao("Jurisdição Local #12")).toBeNull();
+    expect(cidadeDaJurisdicao("123")).toBeNull();
+    expect(cidadeDaJurisdicao("Foro de Vila Modelo")).toBe("Vila Modelo");
+    // 1º grau sem cidade no nome do órgão: sem sugestão de cidade (antes vinha o código).
+    const semCidade = { ...capa, tramitacoes: [{ ...capa.tramitacoes[0], orgaoJulgador: "4ª Vara Cível", cidade: "JurisdicaoLocal#8" }] };
+    const { registros, municipio } = registrosDoJusbr(semCidade);
+    expect(municipio).toBeNull();
+    expect(sugestoesDaCapa({ valores: vazio(), datajud: registros, municipio, consultadoEm: "24/11/2026", fonteOficial: "jusbr" }).find((item) => item.campo === "cidade")).toBeUndefined();
   });
 
   it("sugestões e andamentos com a origem Jus.br", () => {
