@@ -276,7 +276,7 @@ export async function respostasDasAudiencias(auds: Audiencia[]): Promise<Respost
 /**
  * Convite de teste: o convite de titular da próxima audiência designada, com "[TESTE]" no título, mandado só para
  * um e-mail (o de quem está testando), para ver no Outlook como fica antes de ligar para a equipe. Sai mesmo em modo
- * teste e não fica registrado em aud_convites. Só para o domínio da caixa organizadora ou para quem está na equipe.
+ * teste e não fica registrado em aud_convites. Só para e-mails do escritório (domínio da organizadora ou da equipe).
  */
 export async function mandarConviteDeTeste(entrada: unknown): Promise<{ para: string; assunto: string; processo: string; organizador: string }> {
   const lido = z.object({ email: z.string().trim().toLowerCase().email("Digite um e-mail válido.") }).safeParse(entrada);
@@ -287,8 +287,9 @@ export async function mandarConviteDeTeste(entrada: unknown): Promise<{ para: st
   if (!organizador) throw new AudienciasError("Preencha e salve a caixa organizadora antes do teste: é ela quem manda o convite.", 400);
   if (para === organizador) throw new AudienciasError("Use um e-mail diferente da caixa organizadora: ela é quem manda o convite e não recebe convite dela mesma.", 400);
   const lista = await carregarPessoas();
-  const daEquipe = lista.some((p) => p.email?.toLowerCase() === para);
-  if (!daEquipe && para.split("@")[1] !== organizador.split("@")[1]) throw new AudienciasError("O teste vai só para e-mails do escritório (o mesmo domínio da caixa organizadora) ou da equipe da pauta.", 400);
+  // Domínios do escritório: o da caixa organizadora e os dos e-mails da equipe (o escritório usa mais de um).
+  const dominios = new Set([organizador, ...lista.map((p) => p.email?.toLowerCase() ?? "")].map((e) => e.split("@")[1]).filter(Boolean));
+  if (!dominios.has(para.split("@")[1] ?? "")) throw new AudienciasError(`O teste vai só para e-mails do escritório (${[...dominios].map((d) => `@${d}`).join(" ou ")}).`, 400);
 
   const agora = new Date();
   const auds = await carregarAudiencias(agora.toISOString(), new Date(agora.getTime() + JANELA_DIAS * 24 * 60 * 60 * 1000).toISOString());

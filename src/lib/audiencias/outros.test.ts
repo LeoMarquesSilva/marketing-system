@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { alertasDaAudiencia, respostasDosConvites } from "./agenda";
 import { duplaDaPasta, nomeCurto, pessoaPorSigla, siglaDoNome } from "./duplas";
 import { mensagemDaPauta, mensagemDeAlerta, mensagemDeAlertas, mensagemDeTroca, soDigitos } from "./mensagens";
-import { eventoDoConvite, localDoConvite, respostaDoGraph, versaoDoEvento } from "./outlook";
+import { eventoDoConvite, localDoConvite, partesDoLink, respostaDoGraph, versaoDoEvento } from "./outlook";
 import type { Audiencia, ConvitePauta, PessoaPauta } from "./tipos";
 import { inicioDoVios, lerCsvDoVios } from "./vios-csv";
 
@@ -113,6 +113,14 @@ describe("convite do Outlook", () => {
     expect(localDoConvite(aud({ modalidadeTribunal: "presencial", sala: "Sala 2" }))).toBe("CON1 - Piracicaba · Sala 2");
     expect(localDoConvite(aud({ modalidadeTribunal: "hibrida", modalidadeEquipe: "presencial", sala: "Sala 2" }))).toBe("CON1 - Piracicaba · Sala 2");
     expect(localDoConvite(aud({ orgao: null, linkSala: null }))).toBe("A confirmar");
+  });
+  it("link com ID e senha da reunião no mesmo campo: o link fica só com o endereço, o resto vai ao lado", () => {
+    const linkSala = "https://trt15-jus-br.zoom.us/j/88307820364?pwd=abc ID da reunião: 883 07820 364            Senha de acesso: 277454";
+    expect(partesDoLink(linkSala)).toEqual({ url: "https://trt15-jus-br.zoom.us/j/88307820364?pwd=abc", resto: "ID da reunião: 883 07820 364 Senha de acesso: 277454" });
+    expect(localDoConvite(aud({ linkSala }))).toBe("CON1 - Piracicaba · https://trt15-jus-br.zoom.us/j/88307820364?pwd=abc");
+    const corpo = eventoDoConvite(aud({ linkSala }), "titular", equipe[0]!, mapa).body.content;
+    expect(corpo).toContain('<b>Sala:</b> <a href="https://trt15-jus-br.zoom.us/j/88307820364?pwd=abc">https://trt15-jus-br.zoom.us/j/88307820364?pwd=abc</a> · ID da reunião: 883 07820 364 Senha de acesso: 277454</p>');
+    expect(partesDoLink("Sala 3, 2º andar")).toEqual({ url: null, resto: "Sala 3, 2º andar" });
   });
   it("a tarefa do VIOS aparecer depois não atualiza o convite sozinha (cada atualização manda e-mail)", () => {
     const v1 = versaoDoEvento(eventoDoConvite(aud(), "titular", equipe[0]!, mapa));
