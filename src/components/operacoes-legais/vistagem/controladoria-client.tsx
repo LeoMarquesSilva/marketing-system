@@ -38,7 +38,16 @@ import { cn } from "@/lib/utils";
 import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { clienteNoTexto, pastaSugerida, verificacoesSemPasta, type SituacaoVerificacao } from "@/lib/vistagem/controladoria";
 import { criarCalendarioDePrazo, feriadosNacionais, somarDiasUteis } from "@/lib/vistagem/dias-uteis";
-import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, pastaAtiva, type PastaSioe, type Pendencia } from "@/lib/vistagem/triagem";
+import {
+  ESCRITORIOS,
+  ESCRITORIO_EX_CLIENTE,
+  GRUPO_EX_CLIENTE,
+  grupoDaPastaNaPublicacao,
+  grupoPropostoNaTriagem,
+  pastaAtiva,
+  type PastaSioe,
+  type Pendencia,
+} from "@/lib/vistagem/triagem";
 import type { SugestaoTriagem } from "@/lib/vistagem/sugestao-triagem";
 import type { PendenciasControladoria, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TriagemResumo } from "@/lib/vistagem/types";
 import { linkPastaVios } from "@/lib/vistagem/vios-links";
@@ -502,7 +511,13 @@ function Resolucao({
   // Sem pasta: os campos já vêm com a sugestão (processo citado, parte cliente ou IA); a controladoria confere.
   const sugestao = publicacao.pendencia === "sem_pasta" ? publicacao.sugestaoTriagem : null;
   const [escritorio, setEscritorio] = useState(sugestao?.escritorio ?? publicacao.escritorioResponsavel ?? "");
-  const [grupo, setGrupo] = useState(publicacao.grupoCliente ?? sugestao?.grupo ?? "");
+  const [escritorioEscolhido, setEscritorioEscolhido] = useState(false);
+  // O grupo segue a proposta (o da pasta; na Operações Legais, "Grupo Ex-Cliente"; o da sugestão) até a controladoria
+  // escolher outro no combo. Antes, a CI 51762 só preenchia o grupo vazio, e com o "Grupo Operações Legais".
+  const [grupoEscolhido, setGrupoEscolhido] = useState<string | null>(null);
+  const grupo =
+    grupoEscolhido ??
+    grupoPropostoNaTriagem({ escritorio, grupoDaPasta: publicacao.grupoCliente || previa?.pasta.grupoCliente, grupoDaSugestao: sugestao?.grupo });
   const [demandaRisco, setDemandaRisco] = useState(Boolean(publicacao.demandaRisco ?? sugestao?.demandaRisco));
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState("");
@@ -528,11 +543,9 @@ function Resolucao({
       const corpo = (await resposta.json()) as { pasta: PastaSioe; escritorioSugerido: string | null; error?: string };
       if (!resposta.ok) throw new Error(corpo.error ?? "CI não encontrada.");
       setPrevia(corpo);
-      // Pasta informada fora da cópia do SIOE (atendimento): o que se sabe dela preenche o "Para onde vai" vazio.
-      if (corpo.pasta.tipoPasta) {
-        if (!escritorio && corpo.escritorioSugerido) setEscritorio(corpo.escritorioSugerido);
-        if (!grupo && corpo.pasta.grupoCliente) setGrupo(corpo.pasta.grupoCliente);
-      }
+      // A pasta encontrada vale mais que a sugestão: o escritório dela entra no "Para onde vai" se a controladoria
+      // ainda não escolheu um, e o grupo dela entra pela proposta.
+      if (!escritorioEscolhido && corpo.escritorioSugerido) setEscritorio(corpo.escritorioSugerido);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "CI não encontrada.");
     } finally {
@@ -554,7 +567,11 @@ function Resolucao({
             <Campo rotulo="CI da pasta" className="min-w-0 flex-1">
               <Input
                 value={ci}
-                onChange={(evento) => setCi(evento.target.value)}
+                onChange={(evento) => {
+                  // Outra CI (ou o campo vazio): a pasta buscada antes deixa de valer, inclusive no "Liberar".
+                  setCi(evento.target.value);
+                  setPrevia(null);
+                }}
                 placeholder="Número da CI"
                 inputMode="numeric"
                 aria-label="CI da pasta"
@@ -602,7 +619,7 @@ function Resolucao({
                         onAgendar({
                           ci: previa.pasta.ci,
                           escritorio: (previa.pasta.tipoPasta ? escritorio : "") || previa.escritorioSugerido || "",
-                          grupo: (previa.pasta.tipoPasta ? grupo : "") || previa.pasta.grupoCliente || "",
+                          grupo: (previa.pasta.tipoPasta ? grupo : "") || grupoDaPastaNaPublicacao(previa.pasta.grupoCliente) || "",
                           demandaRisco: demandaRisco,
                         })
                       }
@@ -619,20 +636,40 @@ function Resolucao({
         </Secao>
       ) : null}
 
-      <Secao titulo={variasPastas ? "Nenhuma serve? Informe os dados" : publicacao.pastaCi ? "Para onde vai" : "Sem pasta: para onde vai"} id={`${base}-destino`}>
+      <Secao
+        titulo={
+          variasPastas
+            ? "Nenhuma serve? Informe os dados"
+            : publicacao.pastaCi
+              ? "Para onde vai"
+              : previa
+                ? `Para onde vai · CI ${previa.pasta.ci}`
+                : "Sem pasta: para onde vai"
+        }
+        id={`${base}-destino`}
+      >
         {sugestao ? <NotaSugestao sugestao={sugestao} /> : null}
         <div className="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-1" data-tour="tm-para-onde-vai">
-          <CampoEscritorio valor={escritorio} onChange={setEscritorio} />
-          <CampoGrupo valor={grupo} onChange={setGrupo} obrigatorio={grupoObrigatorio} />
+          <CampoEscritorio
+            valor={escritorio}
+            onChange={(novo) => {
+              setEscritorio(novo);
+              setEscritorioEscolhido(true);
+            }}
+          />
+          <CampoGrupo valor={grupo} onChange={setGrupoEscolhido} obrigatorio={grupoObrigatorio} />
         </div>
         <ChaveRisco ligado={demandaRisco} onChange={setDemandaRisco} />
+        {/* Com a pasta buscada, este botão também a usa (no 4011091-05 a CI buscada ficou de fora: só o "Usar e liberar" a levava). */}
         <Button
           className="w-full"
-          onClick={() => liberar({ escritorio, grupo: grupo.trim() || undefined, demandaRisco, ci: publicacao.pastaCi ?? undefined })}
+          onClick={() =>
+            liberar({ escritorio, grupo: grupo.trim() || undefined, demandaRisco, ci: publicacao.pastaCi ?? previa?.pasta.ci ?? undefined })
+          }
           disabled={ocupado || !pronto}
         >
           {ocupado ? <LoaderCircle className="animate-spin" /> : <Send />}
-          Liberar para o jurídico
+          {previa && !publicacao.pastaCi ? `Liberar para o jurídico na CI ${previa.pasta.ci}` : "Liberar para o jurídico"}
         </Button>
         {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
       </Secao>
@@ -820,7 +857,13 @@ function AgendarDireto({
         </Button>
       </div>
       <div className="grid items-end gap-3 px-4 py-3 @xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_auto]">
-        <CampoEscritorio valor={previa.escritorio} onChange={(escritorio) => onMudar({ escritorio })} />
+        <CampoEscritorio
+          valor={previa.escritorio}
+          onChange={(escritorio) =>
+            // Na Operações Legais sem grupo, entra o "Grupo Ex-Cliente", como na resolução da pendência.
+            onMudar(escritorio === ESCRITORIO_EX_CLIENTE && !previa.grupo ? { escritorio, grupo: GRUPO_EX_CLIENTE } : { escritorio })
+          }
+        />
         <CampoGrupo valor={previa.grupo} onChange={(grupo) => onMudar({ grupo })} obrigatorio={previa.escritorio !== ESCRITORIO_EX_CLIENTE} />
         <ChaveRisco ligado={previa.demandaRisco} onChange={(demandaRisco) => onMudar({ demandaRisco })} />
       </div>

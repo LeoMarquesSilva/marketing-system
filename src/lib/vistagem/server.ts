@@ -14,9 +14,11 @@ import { pastaNoSama } from "./sama";
 import {
   ESCRITORIOS,
   ESCRITORIO_EX_CLIENTE,
+  GRUPO_EX_CLIENTE,
   MOTIVO_EX_CLIENTE_SEM_ESCRITORIO,
   PREFIXO_DESCARTE_CONTROLADORIA,
   citaAdvogadoDoEscritorio,
+  grupoDaPastaNaPublicacao,
   pastaInformada,
   temDemandaDeRisco,
   triar,
@@ -882,7 +884,11 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
   const { etiquetasDeRisco } = await lerConfiguracoes();
   const automatico = pasta && !informada ? triar([pasta], await carregarAreasDasPessoas(), { etiquetasDeRisco }) : null;
   const escritorio = entrada.escritorio?.trim() || automatico?.escritorio || (informada ? escritorioDaPastaInformada(informada) : null) || null;
-  const grupo = entrada.grupo?.trim() || pasta?.grupoCliente?.trim() || null;
+  // O grupo do atendimento da controladoria (CI 51762) vira "Grupo Ex-Cliente"; sem grupo, a Operações Legais fica com ele.
+  const grupo =
+    grupoDaPastaNaPublicacao(entrada.grupo) ??
+    grupoDaPastaNaPublicacao(pasta?.grupoCliente) ??
+    (escritorio === ESCRITORIO_EX_CLIENTE ? GRUPO_EX_CLIENTE : null);
   if (!escritorio) throw new VistagemError("Informe o escritório responsável.");
   if (entrada.escritorio && !(ESCRITORIOS as readonly string[]).includes(escritorio)) {
     throw new VistagemError("Escritório inválido.");
