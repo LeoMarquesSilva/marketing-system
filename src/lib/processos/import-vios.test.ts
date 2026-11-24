@@ -14,6 +14,9 @@ describe("células do relatório do VIOS", () => {
     expect(lerData("05/03/2024 14:10")).toBe("2024-03-05");
     expect(lerData("2024-03-05T10:00:00")).toBe("2024-03-05");
     expect(lerData("")).toBeNull();
+    expect(lerData("00/00/0000")).toBeNull();
+    expect(lerData("0000-00-00")).toBeNull();
+    expect(lerData("31/02/2024")).toBeNull();
   });
 
   it("separa o CNJ dos outros números, que vêm colados", () => {

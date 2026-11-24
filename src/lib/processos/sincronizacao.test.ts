@@ -29,6 +29,13 @@ describe("mesclarComVios", () => {
     expect(resultado.confirmados).toEqual([]);
   });
 
+  it("na carga que só preenche vazios, não substitui o que já existe", () => {
+    const atual = { fase: "Execução", cidade: "", etiquetas: ["Carteira X"], sintese: "Resumo da leitura" };
+    const resultado = mesclarComVios(atual, { fase: "Conhecimento", cidade: "Campinas", etiquetas: ["Carteira Y"], sintese: null, vios_editado_em: "24/11/2026" }, new Map(), true);
+    expect(resultado.patch).toEqual({ cidade: "Campinas", vios_editado_em: "24/11/2026" });
+    expect(resultado.mudancas).toEqual([{ campo: "cidade", anterior: "", novo: "Campinas" }]);
+  });
+
   it("confirma o envio quando o VIOS passa a trazer o valor pedido", () => {
     const resultado = mesclarComVios({ fase: "Execução" }, { fase: "Execução" }, new Map([["fase", "Execução"]]));
     expect(resultado.confirmados).toEqual(["fase"]);
