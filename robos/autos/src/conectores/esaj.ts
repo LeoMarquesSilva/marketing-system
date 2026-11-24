@@ -1,8 +1,8 @@
-import { writeFile } from "node:fs/promises";
+import { stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import type { Pedido } from "../fila.ts";
-import { clicar, conferirPdf, temCaptcha, visivel } from "./comum.ts";
+import { clicar, conferirPdf, dividirPdfGrande, temCaptcha, visivel } from "./comum.ts";
 import {
   TRIBUNAIS_ESAJ,
   chaveDoDocumentoEsaj,
@@ -370,6 +370,13 @@ class ConectorEsaj implements Conector {
       throw new FalhaDoConector(
         `O download dos autos não terminou na pasta digital${recusou ? " (o e-SAJ respondeu que não foi possível concluir a solicitação)" : ""}: ${causa}. Diagnóstico guardado em ${captura}.`
       );
+    }
+    // Acima de 200 MB (o limite do ORQESTRAI), vai em partes: as peças ficam na primeira (o download seguinte traz só as novas).
+    const tamanho = (await stat(destino)).size;
+    const partes = await dividirPdfGrande(destino);
+    if (partes) {
+      ambiente.registrar(`PDF de ${Math.round(tamanho / (1024 * 1024))} MB dividido em ${partes.length} partes.`);
+      return { pecas, arquivos: partes.map((caminho, i) => ({ caminho, pecas: i === 0 ? (pecas ?? []) : [] })) };
     }
     await conferirPdf(destino);
     return { pecas };

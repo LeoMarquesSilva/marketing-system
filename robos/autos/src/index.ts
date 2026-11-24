@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as dormir } from "node:timers/promises";
 import type { Page } from "playwright";
@@ -332,6 +332,10 @@ async function principal(): Promise<void> {
     } finally {
       // O PDF não fica nesta máquina: ou subiu ao bucket privado, ou é descartado.
       await rm(destino, { force: true }).catch(() => undefined);
+      // Partes de um PDF grande ("<pedido>-parteN.pdf") também saem.
+      for (const nome of await readdir(config.pastas.downloads).catch(() => [] as string[])) {
+        if (nome.startsWith(`${pedido.id}-parte`)) await rm(join(config.pastas.downloads, nome), { force: true }).catch(() => undefined);
+      }
     }
     if (!encerrando) await dormir(config.pausaEntrePedidosMs);
   }
