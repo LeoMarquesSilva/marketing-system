@@ -491,6 +491,7 @@ export function FluxoNoVios({
   hoje,
   primeiroDia,
   ehDiaUtil,
+  ehDiaDoVios = ehDiaUtil,
   onMudarData,
   onMudarResponsaveis,
   pessoas,
@@ -511,6 +512,8 @@ export function FluxoNoVios({
   /** Primeira data que se pode escolher para as tarefas do fluxo: hoje; depois das 18h, o dia útil seguinte. */
   primeiroDia?: string;
   ehDiaUtil: (iso: string) => boolean;
+  /** Dia em que o VIOS deixa uma tarefa deste processo (com os feriados do VIOS que valem para ele). Trava as datas. */
+  ehDiaDoVios?: (iso: string) => boolean;
   onMudarData: (caminho: string[], data: string | null) => void;
   /** null volta à regra do robô. */
   onMudarResponsaveis: (caminho: string[], nomes: string[] | null) => void;
@@ -574,14 +577,14 @@ export function FluxoNoVios({
 
   // Data escolhida que o VIOS não guardaria assim (dia não útil) ou 2. REVISAR / 3. PROTOCOLAR depois da fatal.
   const problemasDe = (tarefa: TarefaPrevista) =>
-    tarefa.editada && tarefa.data && !tarefa.repetida ? problemasDasDatasDoFluxo([{ caminho: tarefa.caminho, data: tarefa.data }], { ehDiaUtil, dataFatal }) : [];
+    tarefa.editada && tarefa.data && !tarefa.repetida ? problemasDasDatasDoFluxo([{ caminho: tarefa.caminho, data: tarefa.data }], { ehDiaUtil: ehDiaDoVios, dataFatal }) : [];
   const campoDoFluxo = (tarefa: TarefaPrevista) => (
     <CampoData
       compacto
       rotulo={`Data de ${tarefa.caminho.join(" › ")}`}
       valor={tarefa.data ?? ""}
       min={primeiroDia ?? hoje}
-      ehDiaUtil={ehDiaUtil}
+      ehDiaUtil={ehDiaDoVios}
       destacado={tarefa.editada}
       invalido={problemasDe(tarefa).length > 0}
       permitirVazio
@@ -968,6 +971,11 @@ export function EditorVistagem({
   }, [id, recarga, consultaPrevia]);
 
   const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
+  // Com os feriados do VIOS que valem para o processo: o dia que o VIOS passaria para o dia útil seguinte fica barrado.
+  const ehDiaDoVios = useMemo(
+    () => criarCalendario([...(detalhe?.feriados ?? []), ...(detalhe?.feriadosVios ?? [])]),
+    [detalhe?.feriados, detalhe?.feriadosVios]
+  );
   // Depois das 18h nada fica para hoje: as datas vão a partir do dia útil seguinte (pedido de 13/11/2026). A hora é
   // relida a cada minuto, para a trava valer mesmo com a tela aberta desde antes das 18h.
   const [hora, setHora] = useState(() => horaEmSaoPaulo());
@@ -1331,7 +1339,7 @@ export function EditorVistagem({
   // Data do fluxo em dia não útil (o VIOS passaria para o dia útil seguinte) ou Revisar/Protocolar depois da fatal.
   const dataDoFluxoErrada = linhas.some(
     (linha) =>
-      problemasDasDatasDoFluxo(Object.values(linha.fluxoDatas), { ehDiaUtil, dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal || null : null })
+      problemasDasDatasDoFluxo(Object.values(linha.fluxoDatas), { ehDiaUtil: ehDiaDoVios, dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal || null : null })
         .length > 0
   );
   const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial && !passaDoLimite && !dataDoFluxoErrada;
@@ -1659,7 +1667,7 @@ export function EditorVistagem({
                       : linha.data
                         ? depoisDoHorario && linha.data < primeiroDia
                           ? [avisoDepoisDoHorario(primeiroDia)]
-                          : avisosDaData(linha.data, detalhe.hoje, ehDiaUtil)
+                          : avisosDaData(linha.data, detalhe.hoje, ehDiaDoVios)
                         : [];
                     const dataAntesDoPermitido = Boolean(!comFatal && depoisDoHorario && linha.data && linha.data < primeiroDia);
                     const IconeClasse = ICONE_CLASSE[linha.etiqueta];
@@ -2070,6 +2078,7 @@ export function EditorVistagem({
                               hoje={detalhe.hoje}
                               primeiroDia={primeiroDia}
                               ehDiaUtil={ehDiaUtil}
+                              ehDiaDoVios={ehDiaDoVios}
                               onMudarData={(caminho, data) => mudarNoFluxo(linha, caminho, { data })}
                               onMudarResponsaveis={(caminho, nomes) => mudarNoFluxo(linha, caminho, { responsaveis: nomes })}
                               classeDe={classeDaTarefa}

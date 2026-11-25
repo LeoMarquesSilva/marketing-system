@@ -44,6 +44,8 @@ import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial 
 import { registrarDecisaoDaIa } from "./ia-registro-server";
 import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaAtual, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
+import { diasSemTarefaNoVios, ondeEstaOProcesso } from "./feriados-vios";
+import { carregarFeriadosVios } from "./feriados-vios-server";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import {
@@ -160,12 +162,23 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
 
 export type PublicacaoComArea = PublicacaoRow & {
   area_processo: string | null;
+  /** UF do tribunal ("SP", "AC/RO", "BR" nos superiores): onde valem os feriados do VIOS. */
+  estado?: string | null;
   devolucoes: number;
   sugestao_ia: SugestaoIa | null;
   djen_partes: DjenParte[] | null;
 };
 
-export const COLUNAS_PUBLICACAO_COM_AREA = `${COLUNAS_PUBLICACAO}, area_processo, devolucoes, sugestao_ia, djen_partes`;
+export const COLUNAS_PUBLICACAO_COM_AREA = `${COLUNAS_PUBLICACAO}, area_processo, devolucoes, sugestao_ia, djen_partes, estado`;
+
+/**
+ * Dias em que o VIOS não deixa uma tarefa deste processo (feriados do VIOS que valem para ele, pela UF e pelo tribunal
+ * da publicação), além dos do SIOE. É o calendário da trava das datas: o VIOS passaria esses dias para o dia útil
+ * seguinte (0056354-65, 25/11/2026).
+ */
+async function diasSemTarefaDaPublicacao(publicacao: { estado?: string | null; tribunal?: string | null }): Promise<string[]> {
+  return diasSemTarefaNoVios(await carregarFeriadosVios(), ondeEstaOProcesso(publicacao));
+}
 
 export async function carregarPublicacao(id: string): Promise<PublicacaoComArea> {
   const { data, error } = await admin()
@@ -421,6 +434,7 @@ export async function obterVistagem(
       : Promise.resolve([] as MateriaVios[]),
   ]);
   const sintese = daPasta?.sintese ?? null;
+  const feriadosVios = await diasSemTarefaDaPublicacao(publicacao);
   const cadastro: CadastroDaPasta | null = previa ? null : daPasta?.cadastro ?? null;
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
@@ -456,6 +470,7 @@ export async function obterVistagem(
       : null,
     areaDasPessoas: pessoas.rotulos,
     feriados,
+    feriadosVios,
     fluxos: catalogo && arvore ? fluxosDoCatalogo(catalogo, arvoreDaPublicacao(arvore, areas, publicacao)) : {},
     fluxosErro,
     estagiarios: catalogo ? catalogo.usuarios.filter((usuario) => estagiarios.has(String(usuario.id))).map((usuario) => usuario.nome) : [],
@@ -576,7 +591,7 @@ export async function salvarVistagem(
   if (!catalogo) throw new VistagemError("Não há lista de tarefas do VIOS para a área desta pasta. Avise a controladoria.", 422);
 
   // A data do Prazo depende do fluxo do VIOS (dias do 3. PROTOCOLAR): sem ele, não grava.
-  const [feriados, arvoreInteira] = await Promise.all([carregarFeriados(), carregarArvoreVios()]);
+  const [feriados, arvoreInteira, diasVios] = await Promise.all([carregarFeriados(), carregarArvoreVios(), diasSemTarefaDaPublicacao(publicacao)]);
   const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
   const daPublicacao = prazoDaPublicacao(publicacao, catalogos, feriados);
   // Depois das 18h nada fica para hoje: as datas vão a partir do dia útil seguinte (pedido de 13/11/2026).
@@ -589,6 +604,7 @@ export async function salvarVistagem(
     tarefas: catalogo.tarefas,
     usuarios: catalogo.usuarios,
     ehDiaUtil: criarCalendario(feriados),
+    ehDiaDoVios: criarCalendario([...feriados, ...diasVios]),
     cadeiaDaTarefa: (tarefaId, prazo) => cadeiaDoFluxo(fluxoDoPrazo(montarFluxo(tarefaId, arvore), prazo, daPublicacao)),
     caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
     semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
@@ -1263,9 +1279,10 @@ async function fotosDosItens(itens: ConferenciaItem[], tela: string): Promise<Re
  * 3. PROTOCOLAR depois da fatal. A tela já barra ao gravar; esta pega as vistagens gravadas antes da trava (25/11/2026),
  * que se ajustam no lápis. Sem os feriados do SIOE, confere ao menos o fim de semana.
  */
-async function conferirDatasDoFluxo(agendamentos: AgendamentoRow[]): Promise<void> {
+async function conferirDatasDoFluxo(publicacao: PublicacaoComArea, agendamentos: AgendamentoRow[]): Promise<void> {
   if (!agendamentos.some((item) => item.fluxo_datas?.length)) return;
-  const ehDiaUtil = criarCalendario(await carregarFeriados().catch(() => [] as string[]));
+  const [feriados, diasVios] = await Promise.all([carregarFeriados().catch(() => [] as string[]), diasSemTarefaDaPublicacao(publicacao)]);
+  const ehDiaUtil = criarCalendario([...feriados, ...diasVios]);
   const problemas = agendamentos.flatMap((item) =>
     problemasDasDatasDoFluxo(item.fluxo_datas ?? [], { ehDiaUtil, dataFatal: item.data_fatal }).map((problema) => `${item.tarefa}, ${problema.texto}`)
   );
@@ -1287,7 +1304,7 @@ export async function validarVistagem(id: string, authUserId: string | null): Pr
   if (error) falhou("carregar as tarefas para envio", error);
   const agendamentos = (data ?? []) as AgendamentoRow[];
   if (!agendamentos.length) throw new VistagemError("Nenhuma tarefa para enviar.", 422);
-  await conferirDatasDoFluxo(agendamentos);
+  await conferirDatasDoFluxo(publicacao, agendamentos);
 
   // Sem pasta no VIOS o robô não tem onde agendar: validada, vira pedido de abertura de pasta na Central do SharePoint.
   if (vaiParaCentral({ pastaCi: publicacao.pasta_ci, pendencia: publicacao.pendencia })) {
@@ -1368,7 +1385,13 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
     throw new VistagemError("Esta tarefa não está mais na conferência: a alteração não chegaria ao VIOS. Recarregue a página.", 409);
   }
 
-  const [catalogos, feriados, arvoreInteira] = await Promise.all([catalogosDaPasta(publicacao), carregarFeriados(), carregarArvoreVios()]);
+  const [catalogos, feriados, arvoreInteira, diasVios] = await Promise.all([
+    catalogosDaPasta(publicacao),
+    carregarFeriados(),
+    carregarArvoreVios(),
+    diasSemTarefaDaPublicacao(publicacao),
+  ]);
+  const ehDiaDoVios = criarCalendario([...feriados, ...diasVios]);
   const catalogo = catalogoParaPublicacao(catalogos, publicacao);
   if (!catalogo) throw new VistagemError("Não há lista de usuários do VIOS para a área desta pasta.", 422);
   const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
@@ -1395,6 +1418,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       tarefas: { ...catalogo.tarefas, [row.etiqueta]: [{ id: row.tarefa_id ?? "", nome: row.tarefa }] },
       usuarios: catalogo.usuarios,
       ehDiaUtil: criarCalendario(feriados),
+      ehDiaDoVios,
       // A Conferência não manda os dias do prazo: valem os da vistagem enquanto a fatal for a mesma (como ao gravar).
       cadeiaDaTarefa: (tarefaId, prazo) =>
         cadeiaDoFluxo(
@@ -1416,7 +1440,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
   const item = validacao.itens[0];
   // Com fatal, `validarAgendamentos` devolve o Enviar da conta; a pessoa pode ter escolhido outro.
   const enviar = item.dataFatal
-    ? enviarDoPrazo(edicao.data, { calculado: item.data, anterior: row.data, fatal: item.dataFatal, hoje, ehDiaUtil: criarCalendario(feriados) })
+    ? enviarDoPrazo(edicao.data, { calculado: item.data, anterior: row.data, fatal: item.dataFatal, hoje, ehDiaUtil: ehDiaDoVios })
     : { ok: true as const, data: item.data };
   if (!enviar.ok) throw new VistagemError(enviar.erro);
 
@@ -1658,7 +1682,7 @@ export async function rodarNovamente(
   if (error) falhou("carregar as tarefas com erro", error);
   const comErro = (data ?? []) as AgendamentoRow[];
   if (!comErro.length) throw new VistagemError("Não há tarefas com erro para rodar de novo.", 422);
-  await conferirDatasDoFluxo(comErro);
+  await conferirDatasDoFluxo(publicacao, comErro);
   if (!forcar && comErro.some((item) => podeTerGravadoNoVios(item.envio_erro))) {
     return {
       precisaConfirmar:

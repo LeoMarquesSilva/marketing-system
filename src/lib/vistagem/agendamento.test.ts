@@ -454,6 +454,25 @@ describe("validarAgendamentos", () => {
     expect(soPessoa.ok).toBe(true);
   });
 
+  it("com o calendário do VIOS do processo, a trava usa os feriados dele (Dia da Justiça de SP)", () => {
+    const entrada = [
+      {
+        etiqueta: "PRAZO" as const,
+        tarefa: "CONTESTAÇÃO",
+        data: "",
+        dataFatal: "2027-12-10",
+        responsavel: "Advogada Exemplo",
+        revisor: "Revisor Exemplo",
+        fluxoDatas: [{ caminho: ["2. REVISAR"], data: "2027-12-08" }],
+      },
+    ];
+    // Sem o VIOS, 08/12/2027 é dia útil; com o feriado do VIOS de SP, não.
+    expect(validarAgendamentos(entrada, contexto).ok).toBe(true);
+    const comVios = validarAgendamentos(entrada, { ...contexto, ehDiaDoVios: criarCalendario(["2027-12-08"]) });
+    expect(comVios.ok).toBe(false);
+    if (!comVios.ok) expect(comVios.erros[0]).toMatch(/^Tarefa 1: 2\. REVISAR em 08\/12\/2027: não é dia útil .* passaria para 09\/12\/2027/);
+  });
+
   it("tarefa de Prazo sem prazo próprio vai com a data dela, sem fatal; o revisor continua obrigatório", () => {
     const semPrazo = { ...contexto, cadeiaDaTarefa: () => null, semPrazoProprio: () => true };
     const base = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" };

@@ -135,6 +135,8 @@ function FormularioDaTarefa({
   const { hoje } = dados;
   const fluxoDoTipo = tarefa.tarefaId ? dados.fluxos[tarefa.tarefaId] ?? null : null;
   const ehDiaUtil = useMemo(() => criarCalendario(dados.feriados), [dados.feriados]);
+  // Com os feriados do VIOS que valem para o processo: trava as datas que o VIOS passaria para o dia útil seguinte.
+  const ehDiaDoVios = useMemo(() => criarCalendario([...dados.feriados, ...(dados.feriadosVios ?? [])]), [dados.feriados, dados.feriadosVios]);
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(dados.feriados), [dados.feriados]);
   const pessoas = useMemo(() => pessoasDoDetalhe(dados), [dados]);
   const classeDe = useMemo(() => classeNoCatalogo(dados.catalogo), [dados.catalogo]);
@@ -211,8 +213,8 @@ function FormularioDaTarefa({
   const limiteOk = !comLimite || !form.dataLimite || !form.data || form.dataLimite >= form.data;
   // O que o servidor recusa (o VIOS passaria a data para o dia útil seguinte): data do fluxo em dia não útil,
   // Revisar/Protocolar depois da fatal e Enviar em dia não útil.
-  const problemasDoFluxo = problemasDasDatasDoFluxo(campos(form).fluxoDatas, { ehDiaUtil, dataFatal: comFatal ? form.dataFatal || null : null });
-  const enviarNaoUtil = comFatal && Boolean(form.data) && !ehDiaUtil(form.data);
+  const problemasDoFluxo = problemasDasDatasDoFluxo(campos(form).fluxoDatas, { ehDiaUtil: ehDiaDoVios, dataFatal: comFatal ? form.dataFatal || null : null });
+  const enviarNaoUtil = comFatal && Boolean(form.data) && !ehDiaDoVios(form.data);
   const completo =
     limiteOk &&
     Boolean(form.responsavel.trim()) &&
@@ -234,7 +236,7 @@ function FormularioDaTarefa({
           ...(contaPrazo(form.dataFatal) ? [] : [noRecessoForense(form.dataFatal) ? "A data fatal cai no recesso forense (20/12 a 20/01)." : "A data fatal não é dia útil."]),
         ]
       : []),
-    ...(form.data ? avisosDaData(form.data, hoje, ehDiaUtil).map((texto) => `${comFatal ? "Enviar" : "Data"}: ${texto.toLowerCase()}`) : []),
+    ...(form.data ? avisosDaData(form.data, hoje, ehDiaDoVios).map((texto) => `${comFatal ? "Enviar" : "Data"}: ${texto.toLowerCase()}`) : []),
     ...(comFatal && form.dataFatal && form.data > form.dataFatal ? ["O Enviar não pode ficar depois da data fatal."] : []),
     ...(comFatal && form.dataFatal && previstas.some((item) => item.quando === "criacao" && !item.repetida && item.data && item.data > form.dataFatal)
       ? ["Há tarefa do fluxo depois da data fatal: confira as datas abaixo."]
@@ -438,6 +440,7 @@ function FormularioDaTarefa({
           pessoas={pessoas}
           hoje={hoje}
           ehDiaUtil={ehDiaUtil}
+          ehDiaDoVios={ehDiaDoVios}
           classeDe={classeDe}
           onMudarData={(caminho, data) => alterar({ fluxoDatas: comMudancaNoFluxo(form.fluxoDatas, caminho, { data }) })}
           onMudarResponsaveis={(caminho, nomes) => alterar({ fluxoDatas: comMudancaNoFluxo(form.fluxoDatas, caminho, { responsaveis: nomes }) })}

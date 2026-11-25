@@ -427,6 +427,11 @@ export interface VistagemDetalhe {
   sistemasVios: MateriaVios[];
   /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
   feriados: string[];
+  /**
+   * Feriados do VIOS (AAAA-MM-DD) que valem para este processo (UF e tribunal): o VIOS passa uma tarefa nesses dias
+   * para o dia útil seguinte. Com `feriados`, travam as datas do fluxo e o Enviar escolhido à mão.
+   */
+  feriadosVios?: string[];
   /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */
   fluxos: Record<string, FluxoDaTarefa>;
   /** Por que o fluxo do VIOS não pôde ser carregado. */

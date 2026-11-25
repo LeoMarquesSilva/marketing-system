@@ -550,6 +550,11 @@ export function validarAgendamentos(
     usuarios: OpcaoVios[];
     ehDiaUtil: (iso: string) => boolean;
     /**
+     * Dia em que o VIOS deixa uma tarefa deste processo: o calendário acima mais os feriados do VIOS que valem para o
+     * processo (UF e tribunal). Trava as datas do fluxo; sem ele, vale `ehDiaUtil`.
+     */
+    ehDiaDoVios?: (iso: string) => boolean;
+    /**
      * Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). Recebe o prazo marcado: a regra
      * da insolvência antecipa o Enviar com 10 dias ou mais e o adia no prazo curto, com menos de 10 (`fluxoDoPrazo`).
      */
@@ -687,7 +692,7 @@ export function validarAgendamentos(
         ];
       });
     if (pessoaForaDoVios) erros.push(`${n}: escolha os responsáveis das tarefas do fluxo na lista de usuários do VIOS.`);
-    for (const problema of problemasDasDatasDoFluxo(fluxoDatas, { ehDiaUtil: contexto.ehDiaUtil, dataFatal: fatal })) {
+    for (const problema of problemasDasDatasDoFluxo(fluxoDatas, { ehDiaUtil: contexto.ehDiaDoVios ?? contexto.ehDiaUtil, dataFatal: fatal })) {
       erros.push(`${n}: ${problema.texto}`);
     }
     if (depois && fluxoDatas.some((item) => item.data && item.data < depois)) {
