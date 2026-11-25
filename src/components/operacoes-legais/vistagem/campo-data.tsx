@@ -82,7 +82,9 @@ function DiaComNome(props: ComponentProps<typeof CalendarDayButton>) {
  * `bloquearNaoUtil` (datas de tarefa que vão ao VIOS): o dia que não é útil fica riscado e não se escolhe, nem
  * clicando nem digitando. Digitado, o calendário abre nele com o motivo. O VIOS passaria a tarefa para o dia útil
  * seguinte (0056354-65, 25/11/2026: 3. PROTOCOLAR em 08/02/2027, segunda de Carnaval, virou 10/02).
- * `nomeDoDia` dá o informativo ao passar o mouse num dia do calendário (o nome do feriado).
+ * `nomeDoDia` dá o informativo ao passar o mouse num dia do calendário (o nome do feriado), na dica do próprio dia.
+ * O rodapé não muda com o mouse: trocar o texto mudava o tamanho do calendário e, aberto para cima, os dias saíam de
+ * baixo do mouse e o texto voltava, num vai e volta sem fim (25/11/2026).
  */
 export function CampoData({
   valor,
@@ -124,8 +126,6 @@ export function CampoData({
 }) {
   const [aberto, setAberto] = useState(false);
   const [texto, setTexto] = useState(() => paraTela(valor));
-  // Dia sob o mouse no calendário: o rodapé mostra o que ele é.
-  const [sobMouse, setSobMouse] = useState<string | null>(null);
   // Data digitada ou clicada que não se pode escolher: o calendário abre nela, com o motivo no rodapé.
   const [recusada, setRecusada] = useState<string | null>(null);
   // A data muda de fora (dias do prazo, sugestão da IA): o texto acompanha.
@@ -170,17 +170,13 @@ export function CampoData({
   const motivoDaRecusa = recusada
     ? `${paraTela(recusada)} é ${dias.nome(recusada) ?? "dia sem expediente"}: o VIOS não deixa tarefa nesse dia (passaria para o dia útil seguinte). Escolha outro dia.`
     : null;
-  const nomeSobMouse = sobMouse ? dias.nome(sobMouse) : null;
 
   return (
     <Popover
       open={aberto}
       onOpenChange={(abrir) => {
         setAberto(abrir);
-        if (!abrir) {
-          setRecusada(null);
-          setSobMouse(null);
-        }
+        if (!abrir) setRecusada(null);
       }}
     >
       <PopoverAnchor asChild>
@@ -269,8 +265,6 @@ export function CampoData({
               onChange(iso);
               setAberto(false);
             }}
-            onDayMouseEnter={(data) => setSobMouse(format(data, "yyyy-MM-dd"))}
-            onDayMouseLeave={() => setSobMouse(null)}
             modifiers={
               ehDiaUtil
                 ? {
@@ -286,22 +280,11 @@ export function CampoData({
             components={{ DayButton: DiaComNome }}
           />
         </DiasDoCampo.Provider>
-        {ehDiaUtil || (permitirVazio && valor) ? (
+        {motivoDaRecusa || (permitirVazio && valor) ? (
           <div className="flex items-center justify-between gap-3 border-t border-[#e6eef0] bg-[#fafcfc] px-3 py-2 text-[11px] text-muted-foreground">
             {motivoDaRecusa ? (
               <span role="alert" className="max-w-[16rem] font-medium text-red-700">
                 {motivoDaRecusa}
-              </span>
-            ) : sobMouse && nomeSobMouse ? (
-              <span className="max-w-[16rem] font-medium text-[#285f7a]">
-                {paraTela(sobMouse)} · {nomeSobMouse}
-                {dias.barrado(sobMouse) ? ": o VIOS não deixa tarefa nesse dia." : ""}
-              </span>
-            ) : ehDiaUtil ? (
-              <span className="max-w-[16rem]">
-                {bloquearNaoUtil
-                  ? "Riscado: fim de semana e feriado, que o VIOS não aceita. Passe o mouse no dia para ver qual é."
-                  : "Em cinza: fim de semana, feriado e recesso. Passe o mouse no dia para ver qual é."}
               </span>
             ) : (
               <span />
