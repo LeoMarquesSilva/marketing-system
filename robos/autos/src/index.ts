@@ -15,7 +15,8 @@ import { ConectorPjeTjrj, mapearPje } from "./conectores/pje.ts";
 import { ConectorJusbr } from "./conectores/jusbr.ts";
 import { EsperaEsgotada, FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./conectores/tipos.ts";
 import { Fila, PedidoEncerrado, type Pedido } from "./fila.ts";
-import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
+import { abrirNavegador, guardarDiagnostico, type Navegador } from "./navegador.ts";
+import { navegadorParadoDemais } from "./navegador-parado.ts";
 import { planoDaReserva } from "./reserva.ts";
 
 /**
@@ -137,15 +138,29 @@ async function principal(): Promise<void> {
     return null;
   });
   let assinaturaDoCertificado = certificado?.assinatura ?? (await assinaturaDaFonte(config.certificado));
-  let navegador = await abrirNavegador(config, certificado);
+  // Null quando o robô fechou o navegador com a fila parada (navegador-parado.ts): reabre no próximo pedido.
+  let navegador: Navegador | null = await abrirNavegador(config, certificado);
   let encerrando = false;
   const encerrar = async () => {
     if (encerrando) return;
     encerrando = true;
     registrar("Encerrando o robô.");
-    await navegador.fechar();
+    await navegador?.fechar();
     process.exit(0);
   };
+
+  /** O navegador aberto (os modos de linha de comando e o pedido em curso sempre têm um). */
+  function navegadorAtual(): Navegador {
+    if (!navegador) throw new FalhaDoConector("O navegador do robô está fechado.");
+    return navegador;
+  }
+
+  /** Reabre o navegador que o robô fechou com a fila parada. */
+  async function reabrirSeFechado(): Promise<void> {
+    if (navegador) return;
+    registrar("Pedido na fila: reabrindo o navegador.");
+    navegador = await abrirNavegador(config, certificado);
+  }
 
   /**
    * O painel trocou o certificado? Confere entre um pedido e outro (é só ler um arquivo pequeno). Com um
@@ -158,6 +173,12 @@ async function principal(): Promise<void> {
     assinaturaDoCertificado = assinatura;
     try {
       const novo = await carregarCertificado(config);
+      if (!navegador) {
+        // Fechado com a fila parada: o certificado novo vale quando ele reabrir.
+        certificado = novo;
+        registrar("Certificado novo: vale quando o navegador reabrir.");
+        return;
+      }
       registrar("Certificado novo: reabrindo o navegador com ele.");
       await navegador.fechar();
       certificado = novo;
@@ -170,7 +191,7 @@ async function principal(): Promise<void> {
   process.on("SIGTERM", () => void encerrar());
 
   function ambientePara(pedido: Pedido | null): Ambiente {
-    const { contexto, pagina } = navegador;
+    const { contexto, pagina } = navegadorAtual();
     let ultimoSinalDeVida = Date.now();
     return {
       config,
@@ -218,7 +239,7 @@ async function principal(): Promise<void> {
   if (modo === "login") {
     await conectorDaLinhaDeComando().entrar(ambientePara(null));
     registrar("Sessão do tribunal aberta e guardada no perfil do robô.");
-    await navegador.fechar();
+    await navegadorAtual().fechar();
     return;
   }
 
@@ -243,7 +264,7 @@ async function principal(): Promise<void> {
     try {
       await conectorDaLinhaDeComando(cnj).inspecionar?.(ambientePara(null), cnj);
     } finally {
-      await navegador.fechar();
+      await navegadorAtual().fechar();
     }
     return;
   }
@@ -254,12 +275,19 @@ async function principal(): Promise<void> {
       if (pedidoDeMapa.sistema === "dcp") await mapearDcp(ambiente, pedidoDeMapa.cnj);
       else await mapearPje(ambiente, pedidoDeMapa.cnj, pedidoDeMapa.grau);
     } finally {
-      await navegador.fechar();
+      await navegadorAtual().fechar();
     }
     return;
   }
 
   registrar(`Robô "${config.nome}" atendendo ${CONECTORES.map((conector) => conector.chave).join(", ")} em ${config.orqestraiUrl}.`);
+  registrar(
+    config.navegadorParadoMs > 0
+      ? `Com a fila parada por ${Math.round(config.navegadorParadoMs / 60_000)} min, o navegador fecha e reabre no próximo pedido (NAVEGADOR_FECHAR_PARADO_MINUTOS).`
+      : "O navegador fica aberto com a fila parada (NAVEGADOR_FECHAR_PARADO_MINUTOS)."
+  );
+  // Desde quando a fila está vazia (null com pedido em curso): conta para fechar o navegador parado.
+  let paradoDesde: number | null = null;
   // Com a fila de autos vazia, o robô completa a capa dos processos pelo DataJud, um por vez.
   let proximaCapa = 0;
   let capasFeitas = 0;
@@ -296,10 +324,18 @@ async function principal(): Promise<void> {
     if (pedido && config.segredoSempreLiberado && !pedido.segredoLiberado) pedido = { ...pedido, segredoLiberado: true };
     if (!pedido) {
       if (modo === "uma-vez") break;
+      paradoDesde ??= Date.now();
+      if (navegadorParadoDemais({ aberto: Boolean(navegador), paradoDesdeMs: paradoDesde, agoraMs: Date.now(), limiteMs: config.navegadorParadoMs })) {
+        registrar(`Fila parada há ${Math.round((Date.now() - paradoDesde) / 60_000)} min: fechando o navegador para liberar memória. Ele reabre no próximo pedido.`);
+        const aberto = navegador;
+        navegador = null;
+        await aberto?.fechar().catch((erro) => registrar(`O navegador não fechou direito: ${mensagemLimpa(erro)}`));
+      }
       if (config.capaDataJud && Date.now() >= proximaCapa) proximaCapa = await completarUmaCapa();
       await dormir(config.intervaloMs);
       continue;
     }
+    paradoDesde = null;
 
     const chave = pedido.sistema === "jusbr" ? JUSBR.chave : `${pedido.sistema}:${pedido.tribunal}`;
     const conector = CONECTORES.find((item) => item.chave === chave);
@@ -308,6 +344,8 @@ async function principal(): Promise<void> {
     registrar(`Pedido ${pedido.cnj} (${pedido.tribunal}), tentativa ${pedido.tentativas}.`);
     try {
       if (!conector || !cnj) throw new FalhaDoConector(`Este robô não atende ${pedido.sistema} do ${pedido.tribunal}.`);
+      // Fechado com a fila parada: reabre aqui, dentro do pedido (se não abrir, o pedido volta como erro).
+      await reabrirSeFechado();
       let resultado: ResultadoDoDownload | void = undefined;
       let repassado = false;
       try {
@@ -363,7 +401,7 @@ async function principal(): Promise<void> {
     }
     if (!encerrando) await dormir(config.pausaEntrePedidosMs);
   }
-  await navegador.fechar();
+  await navegador?.fechar();
 }
 
 principal().catch((erro) => {

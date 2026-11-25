@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { certificadoConfigurado, type ConfigCertificado } from "./certificado.ts";
 import type { ConfigSegundoFator } from "./segundo-fator.ts";
+import { limiteParadoDoNavegador } from "./navegador-parado.ts";
 import { PERFIL_EPROC_PADRAO } from "./conectores/eproc-urls.ts";
 
 /**
@@ -73,6 +74,11 @@ export interface Config {
    * data center: no servidor, o navegador sai por um proxy aceito (ex.: socks5://warp:1080). Null = conexão direta.
    */
   navegadorProxy: ProxyDoNavegador | null;
+  /**
+   * Com a fila vazia por este tempo, o robô fecha o navegador e reabre no próximo pedido (NAVEGADOR_FECHAR_PARADO_MINUTOS;
+   * padrão 10 min no modo playwright, nunca no modo comum; 0 = nunca). Ver navegador-parado.ts.
+   */
+  navegadorParadoMs: number;
   /** Conectores que este robô atende (ROBO_CONECTORES); vazio = todos. Ex.: "eproc" ou "esaj:TJSP,esaj:TJCE". */
   conectores: string[];
   /** Certificado A1 em arquivo (só no modo playwright). */
@@ -192,6 +198,7 @@ export function lerConfig(): Config {
     navegadorArgs: texto("NAVEGADOR_ARGS").split(/\s+/).filter(Boolean),
     telaRemotaUrl: texto("TELA_REMOTA_URL"),
     navegadorProxy,
+    navegadorParadoMs: limiteParadoDoNavegador(texto("NAVEGADOR_FECHAR_PARADO_MINUTOS"), navegadorModo),
     conectores: lista("ROBO_CONECTORES").map((item) => item.toLowerCase()),
     certificado,
     intervaloMs: numero("INTERVALO_SEGUNDOS", 30) * 1000,
