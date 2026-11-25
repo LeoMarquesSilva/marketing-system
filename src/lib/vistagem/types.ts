@@ -432,6 +432,8 @@ export interface VistagemDetalhe {
    * para o dia útil seguinte. Com `feriados`, travam as datas do fluxo e o Enviar escolhido à mão.
    */
   feriadosVios?: string[];
+  /** Nome de cada feriado de `feriados` e `feriadosVios` (AAAA-MM-DD → nome): o informativo do calendário. */
+  nomesDosFeriados?: Record<string, string>;
   /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */
   fluxos: Record<string, FluxoDaTarefa>;
   /** Por que o fluxo do VIOS não pôde ser carregado. */

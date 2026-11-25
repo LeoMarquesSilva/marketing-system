@@ -15,7 +15,7 @@ import {
   revisorFicaNaTarefa,
 } from "@/lib/vistagem/agendamento";
 import { mudancasNaTarefa, type CamposDaTarefa } from "@/lib/vistagem/ajuste-conferencia";
-import { ROTULO_CONTAGEM, criarCalendario, criarCalendarioDePrazo, datasDoPrazo, noRecessoForense } from "@/lib/vistagem/dias-uteis";
+import { ROTULO_CONTAGEM, criarCalendario, criarCalendarioDePrazo, criarNomeDoDia, datasDoPrazo, noRecessoForense } from "@/lib/vistagem/dias-uteis";
 import { caminhosDoFluxo, fluxoDoPrazo, fluxoPrevisto, prazoApertado } from "@/lib/vistagem/fluxo-previsto";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
 import { fataisDoFluxo } from "@/lib/vistagem/prazo-legal";
@@ -137,6 +137,9 @@ function FormularioDaTarefa({
   const ehDiaUtil = useMemo(() => criarCalendario(dados.feriados), [dados.feriados]);
   // Com os feriados do VIOS que valem para o processo: trava as datas que o VIOS passaria para o dia útil seguinte.
   const ehDiaDoVios = useMemo(() => criarCalendario([...dados.feriados, ...(dados.feriadosVios ?? [])]), [dados.feriados, dados.feriadosVios]);
+  // O informativo do calendário: o nome do feriado (do VIOS ou da Controladoria) e, na data fatal, o recesso.
+  const nomeDoDia = useMemo(() => criarNomeDoDia(dados.nomesDosFeriados), [dados.nomesDosFeriados]);
+  const nomeDoDiaDoPrazo = useMemo(() => criarNomeDoDia(dados.nomesDosFeriados, { recesso: true }), [dados.nomesDosFeriados]);
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(dados.feriados), [dados.feriados]);
   const pessoas = useMemo(() => pessoasDoDetalhe(dados), [dados]);
   const classeDe = useMemo(() => classeNoCatalogo(dados.catalogo), [dados.catalogo]);
@@ -214,7 +217,7 @@ function FormularioDaTarefa({
   // O que o servidor recusa (o VIOS passaria a data para o dia útil seguinte): data do fluxo em dia não útil,
   // Revisar/Protocolar depois da fatal e Enviar em dia não útil.
   const problemasDoFluxo = problemasDasDatasDoFluxo(campos(form).fluxoDatas, { ehDiaUtil: ehDiaDoVios, dataFatal: comFatal ? form.dataFatal || null : null });
-  const enviarNaoUtil = comFatal && Boolean(form.data) && !ehDiaDoVios(form.data);
+  const enviarNaoUtil = enviarAMao && Boolean(form.data) && !ehDiaDoVios(form.data);
   const completo =
     limiteOk &&
     Boolean(form.responsavel.trim()) &&
@@ -318,6 +321,7 @@ function FormularioDaTarefa({
                 rotulo="Data fatal"
                 valor={form.dataFatal}
                 ehDiaUtil={contaPrazo}
+                nomeDoDia={nomeDoDiaDoPrazo}
                 invalido={!form.dataFatal}
                 // O Enviar segue a conta do fluxo da tarefa, como na vistagem.
                 onChange={(dataFatal) => alterar({ dataFatal, ...(dataFatal ? { data: enviarPelaFatal(dataFatal) } : {}) })}
@@ -329,7 +333,10 @@ function FormularioDaTarefa({
             <CampoData
               rotulo={comFatal ? "Enviar: data no VIOS" : "Data no VIOS"}
               valor={form.data}
-              ehDiaUtil={ehDiaUtil}
+              ehDiaUtil={ehDiaDoVios}
+              // A audiência é na data do tribunal: o feriado só aparece, não se barra.
+              bloquearNaoUtil={!compromisso}
+              nomeDoDia={nomeDoDia}
               invalido={!form.data || enviarNaoUtil}
               destacado={enviarAMao}
               // A data limite igual à data acompanha a data; a escolhida fica.
@@ -370,6 +377,7 @@ function FormularioDaTarefa({
                 valor={form.dataLimite || form.data}
                 min={form.data || undefined}
                 ehDiaUtil={ehDiaUtil}
+                nomeDoDia={nomeDoDia}
                 destacado={Boolean(form.dataLimite && form.dataLimite !== form.data)}
                 invalido={!limiteOk}
                 onChange={(dataLimite) => alterar({ dataLimite })}
@@ -441,6 +449,7 @@ function FormularioDaTarefa({
           hoje={hoje}
           ehDiaUtil={ehDiaUtil}
           ehDiaDoVios={ehDiaDoVios}
+          nomeDoDia={nomeDoDia}
           classeDe={classeDe}
           onMudarData={(caminho, data) => alterar({ fluxoDatas: comMudancaNoFluxo(form.fluxoDatas, caminho, { data }) })}
           onMudarResponsaveis={(caminho, nomes) => alterar({ fluxoDatas: comMudancaNoFluxo(form.fluxoDatas, caminho, { responsaveis: nomes }) })}

@@ -81,6 +81,7 @@ import {
   ROTULO_CONTAGEM,
   criarCalendario,
   criarCalendarioDePrazo,
+  criarNomeDoDia,
   dataDaTarefaSemPrazo,
   datasDoPrazo,
   fatalPorContagem,
@@ -276,6 +277,7 @@ function ModalHorario({
   hoje,
   primeiroDia,
   ehDiaUtil,
+  nomeDoDia,
   onConfirmar,
   onFechar,
 }: {
@@ -284,6 +286,7 @@ function ModalHorario({
   /** Primeira data que se pode escolher: hoje; depois das 18h, o dia útil seguinte. */
   primeiroDia: string;
   ehDiaUtil: (iso: string) => boolean;
+  nomeDoDia?: (iso: string) => string | null;
   onConfirmar: (data: string, hora: string) => void;
   onFechar: () => void;
 }) {
@@ -316,6 +319,7 @@ function ModalHorario({
                 valor={data}
                 onChange={setData}
                 ehDiaUtil={ehDiaUtil}
+                nomeDoDia={nomeDoDia}
                 min={depoisDoHorario ? primeiroDia : undefined}
                 invalido={!data || antesDoPermitido}
               />
@@ -492,6 +496,7 @@ export function FluxoNoVios({
   primeiroDia,
   ehDiaUtil,
   ehDiaDoVios = ehDiaUtil,
+  nomeDoDia,
   onMudarData,
   onMudarResponsaveis,
   pessoas,
@@ -514,6 +519,8 @@ export function FluxoNoVios({
   ehDiaUtil: (iso: string) => boolean;
   /** Dia em que o VIOS deixa uma tarefa deste processo (com os feriados do VIOS que valem para ele). Trava as datas. */
   ehDiaDoVios?: (iso: string) => boolean;
+  /** Nome do feriado ou do fim de semana, para o informativo do calendário. */
+  nomeDoDia?: (iso: string) => string | null;
   onMudarData: (caminho: string[], data: string | null) => void;
   /** null volta à regra do robô. */
   onMudarResponsaveis: (caminho: string[], nomes: string[] | null) => void;
@@ -585,6 +592,8 @@ export function FluxoNoVios({
       valor={tarefa.data ?? ""}
       min={primeiroDia ?? hoje}
       ehDiaUtil={ehDiaDoVios}
+      bloquearNaoUtil
+      nomeDoDia={nomeDoDia}
       destacado={tarefa.editada}
       invalido={problemasDe(tarefa).length > 0}
       permitirVazio
@@ -976,6 +985,9 @@ export function EditorVistagem({
     () => criarCalendario([...(detalhe?.feriados ?? []), ...(detalhe?.feriadosVios ?? [])]),
     [detalhe?.feriados, detalhe?.feriadosVios]
   );
+  // O informativo do calendário: o nome do feriado (do VIOS ou da Controladoria) e, na data fatal, o recesso.
+  const nomeDoDiaDaTarefa = useMemo(() => criarNomeDoDia(detalhe?.nomesDosFeriados), [detalhe?.nomesDosFeriados]);
+  const nomeDoDiaDoPrazo = useMemo(() => criarNomeDoDia(detalhe?.nomesDosFeriados, { recesso: true }), [detalhe?.nomesDosFeriados]);
   // Depois das 18h nada fica para hoje: as datas vão a partir do dia útil seguinte (pedido de 13/11/2026). A hora é
   // relida a cada minuto, para a trava valer mesmo com a tela aberta desde antes das 18h.
   const [hora, setHora] = useState(() => horaEmSaoPaulo());
@@ -1832,6 +1844,7 @@ export function EditorVistagem({
                                         rotulo={`Data fatal da tarefa ${indice + 1}`}
                                         valor={linha.dataFatal}
                                         ehDiaUtil={contaPrazo}
+                                        nomeDoDia={nomeDoDiaDoPrazo}
                                         onChange={(data) => alterar(linha.chave, { dataFatal: data, diasPrazo: null, origemPrazo: data ? "calendario" : null })}
                                       />
                                     </div>
@@ -1897,7 +1910,10 @@ export function EditorVistagem({
                                     <CampoData
                                       rotulo={`Data da tarefa ${indice + 1} no VIOS`}
                                       valor={linha.data}
-                                      ehDiaUtil={ehDiaUtil}
+                                      ehDiaUtil={ehDiaDoVios}
+                                      // A audiência é na data do tribunal: o feriado só aparece, não se barra.
+                                      bloquearNaoUtil={linha.etiqueta !== "COMPROMISSO"}
+                                      nomeDoDia={nomeDoDiaDaTarefa}
                                       // Depois das 18h, hoje (e antes) fica bloqueado no calendário.
                                       min={depoisDoHorario ? primeiroDia : undefined}
                                       invalido={dataAntesDoPermitido}
@@ -1948,6 +1964,7 @@ export function EditorVistagem({
                                       valor={linha.dataLimite || linha.data}
                                       min={linha.data || undefined}
                                       ehDiaUtil={ehDiaUtil}
+                                      nomeDoDia={nomeDoDiaDaTarefa}
                                       destacado={Boolean(linha.dataLimite && linha.dataLimite !== linha.data)}
                                       invalido={!dataLimiteValida(linha)}
                                       onChange={(dataLimite) => alterar(linha.chave, { dataLimite })}
@@ -2079,6 +2096,7 @@ export function EditorVistagem({
                               primeiroDia={primeiroDia}
                               ehDiaUtil={ehDiaUtil}
                               ehDiaDoVios={ehDiaDoVios}
+                              nomeDoDia={nomeDoDiaDaTarefa}
                               onMudarData={(caminho, data) => mudarNoFluxo(linha, caminho, { data })}
                               onMudarResponsaveis={(caminho, nomes) => mudarNoFluxo(linha, caminho, { responsaveis: nomes })}
                               classeDe={classeDaTarefa}
@@ -2148,6 +2166,7 @@ export function EditorVistagem({
         hoje={detalhe.hoje}
         primeiroDia={primeiroDia}
         ehDiaUtil={ehDiaUtil}
+        nomeDoDia={nomeDoDiaDaTarefa}
         onConfirmar={(data, hora) => {
           if (horarioDe !== null) alterar(horarioDe, { data, hora });
           setHorarioDe(null);

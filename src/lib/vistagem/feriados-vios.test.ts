@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diasSemTarefaNoVios, ondeEstaOProcesso, type FeriadoDoVios } from "./feriados-vios";
+import { diasSemTarefaNoVios, nomesDosDiasSemTarefaNoVios, ondeEstaOProcesso, type FeriadoDoVios } from "./feriados-vios";
 
 // Como estão na tabela de feriados do VIOS em 25/11/2026.
 const feriado = (f: Partial<FeriadoDoVios> & Pick<FeriadoDoVios, "id" | "dataInicio">): FeriadoDoVios => ({
@@ -60,5 +60,15 @@ describe("diasSemTarefaNoVios", () => {
 
   it("Roraima casa com o 'Rorâima' do VIOS", () => {
     expect(diasSemTarefaNoVios([CORPUS_MENOS_MG], ondeEstaOProcesso({ estado: "RR", tribunal: "TJRR" }))).toEqual(["2025-06-19"]);
+  });
+});
+
+describe("nomesDosDiasSemTarefaNoVios", () => {
+  it("dá o nome do feriado por dia; o mesmo nome repetido aparece uma vez", () => {
+    const repetido = feriado({ id: 445, dataInicio: "2027-12-07", dataFim: "2027-12-08", nome: "Dia da Justiça", jurisdicoes: ["PRIMEIRO GRAU"], estados: ["São Paulo"] });
+    const nomes = nomesDosDiasSemTarefaNoVios([CARNAVAL, DIA_DA_JUSTICA, repetido], ondeEstaOProcesso({ estado: "SP", tribunal: "TJSP" }));
+    expect(nomes).toEqual({ "2027-02-08": "Carnaval", "2027-02-09": "Carnaval", "2027-12-07": "Dia da Justiça", "2027-12-08": "Dia da Justiça" });
+    // Em MG, o Dia da Justiça de SP não aparece.
+    expect(nomesDosDiasSemTarefaNoVios([DIA_DA_JUSTICA], ondeEstaOProcesso({ estado: "MG", tribunal: "TJMG" }))).toEqual({});
   });
 });

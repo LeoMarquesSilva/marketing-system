@@ -109,6 +109,8 @@ describe("enviarDoPrazo", () => {
     expect(enviarDoPrazo("2026-11-19", comFeriado)).toEqual({ ok: true, data: "2026-11-19" });
     // A conta pela fatal não passa por aqui.
     expect(enviarDoPrazo("", comFeriado)).toEqual({ ok: true, data: "2026-11-17" });
+    // O Enviar que é a própria conta não trava (pode cair num feriado só do VIOS): só o escolhido à mão.
+    expect(enviarDoPrazo("2026-11-20", { ...comFeriado, calculado: "2026-11-20", anterior: "2026-11-20" })).toEqual({ ok: true, data: "2026-11-20" });
   });
 
   it("não vai para o passado, a não ser que já fosse a da tarefa", () => {

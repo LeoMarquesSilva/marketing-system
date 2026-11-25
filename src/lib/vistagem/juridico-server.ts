@@ -43,8 +43,8 @@ import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./d
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
 import { registrarDecisaoDaIa } from "./ia-registro-server";
 import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaAtual, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
-import { carregarFeriados } from "./feriados";
-import { diasSemTarefaNoVios, ondeEstaOProcesso } from "./feriados-vios";
+import { carregarFeriados, carregarNomesDosFeriados } from "./feriados";
+import { nomesDosDiasSemTarefaNoVios, ondeEstaOProcesso } from "./feriados-vios";
 import { carregarFeriadosVios } from "./feriados-vios-server";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
@@ -177,7 +177,12 @@ export const COLUNAS_PUBLICACAO_COM_AREA = `${COLUNAS_PUBLICACAO}, area_processo
  * seguinte (0056354-65, 25/11/2026).
  */
 async function diasSemTarefaDaPublicacao(publicacao: { estado?: string | null; tribunal?: string | null }): Promise<string[]> {
-  return diasSemTarefaNoVios(await carregarFeriadosVios(), ondeEstaOProcesso(publicacao));
+  return Object.keys(await feriadosViosDaPublicacao(publicacao)).sort();
+}
+
+/** Os mesmos dias de `diasSemTarefaDaPublicacao`, com o nome do feriado no VIOS. */
+async function feriadosViosDaPublicacao(publicacao: { estado?: string | null; tribunal?: string | null }): Promise<Record<string, string>> {
+  return nomesDosDiasSemTarefaNoVios(await carregarFeriadosVios(), ondeEstaOProcesso(publicacao));
 }
 
 export async function carregarPublicacao(id: string): Promise<PublicacaoComArea> {
@@ -434,7 +439,12 @@ export async function obterVistagem(
       : Promise.resolve([] as MateriaVios[]),
   ]);
   const sintese = daPasta?.sintese ?? null;
-  const feriadosVios = await diasSemTarefaDaPublicacao(publicacao);
+  // Feriados do VIOS do processo e o nome de cada feriado, para o calendário barrar o dia e mostrar qual é.
+  const [nomesVios, nomesSioe] = await Promise.all([
+    feriadosViosDaPublicacao(publicacao),
+    carregarNomesDosFeriados().catch(() => ({}) as Record<string, string>),
+  ]);
+  const feriadosVios = Object.keys(nomesVios).sort();
   const cadastro: CadastroDaPasta | null = previa ? null : daPasta?.cadastro ?? null;
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
@@ -471,6 +481,7 @@ export async function obterVistagem(
     areaDasPessoas: pessoas.rotulos,
     feriados,
     feriadosVios,
+    nomesDosFeriados: { ...nomesSioe, ...nomesVios },
     fluxos: catalogo && arvore ? fluxosDoCatalogo(catalogo, arvoreDaPublicacao(arvore, areas, publicacao)) : {},
     fluxosErro,
     estagiarios: catalogo ? catalogo.usuarios.filter((usuario) => estagiarios.has(String(usuario.id))).map((usuario) => usuario.nome) : [],

@@ -104,17 +104,28 @@ function proximoDia(iso: string): string {
 }
 
 /**
- * Dias (AAAA-MM-DD) em que o VIOS não deixa uma tarefa processual deste processo: passa para o dia útil seguinte.
- * Feriado que não posterga tarefa processual ("Posterga prazos? Não." no VIOS) não entra.
+ * Dias (AAAA-MM-DD) em que o VIOS não deixa uma tarefa processual deste processo, com o nome do feriado (para o
+ * informativo do calendário): o VIOS passa a tarefa para o dia útil seguinte. Feriado que não posterga tarefa
+ * processual ("Posterga prazos? Não." no VIOS) não entra.
  */
-export function diasSemTarefaNoVios(feriados: readonly FeriadoDoVios[], onde: OndeEstaOProcesso): string[] {
-  const dias = new Set<string>();
+export function nomesDosDiasSemTarefaNoVios(feriados: readonly FeriadoDoVios[], onde: OndeEstaOProcesso): Record<string, string> {
+  const nomes: Record<string, string> = {};
   for (const feriado of feriados) {
     if (!feriado.postergaProcessuais) continue;
     if (!alcanca(feriado.jurisdicoes, onde.jurisdicoes) || !alcanca(feriado.estados, onde.estados)) continue;
+    const nome = feriado.nome?.trim() || "Feriado no VIOS";
     const fim = feriado.dataFim >= feriado.dataInicio ? feriado.dataFim : feriado.dataInicio;
     let dia = feriado.dataInicio;
-    for (let i = 0; dia <= fim && i < 60; i += 1, dia = proximoDia(dia)) dias.add(dia);
+    for (let i = 0; dia <= fim && i < 60; i += 1, dia = proximoDia(dia)) {
+      // Dois cadastros no mesmo dia (o Dia da Justiça de 2027 tem dois): o nome aparece uma vez.
+      if (!nomes[dia]) nomes[dia] = nome;
+      else if (!nomes[dia].split(" / ").includes(nome)) nomes[dia] = `${nomes[dia]} / ${nome}`;
+    }
   }
-  return [...dias].sort();
+  return nomes;
+}
+
+/** Os dias de `nomesDosDiasSemTarefaNoVios`, em ordem. */
+export function diasSemTarefaNoVios(feriados: readonly FeriadoDoVios[], onde: OndeEstaOProcesso): string[] {
+  return Object.keys(nomesDosDiasSemTarefaNoVios(feriados, onde)).sort();
 }
