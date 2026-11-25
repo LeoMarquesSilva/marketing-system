@@ -21,6 +21,7 @@ import {
   Tags,
   ShieldAlert,
   TriangleAlert,
+  Undo2,
   UserRound,
   Workflow,
   X,
@@ -154,7 +155,9 @@ function ItemCheck({
   onVoltar: () => void;
   onConcluido: (id: string, mensagem: string) => void;
 }) {
-  const [modo, setModo] = useState<"nenhum" | "ok" | "erro">("nenhum");
+  const [modo, setModo] = useState<"nenhum" | "ok" | "erro" | "devolver">("nenhum");
+  // A pergunta "Devolver para a Vistagem?" abriu logo depois de registrar o erro (Não = fica em revisão, como antes).
+  const [aposRegistrar, setAposRegistrar] = useState(false);
   const [nota, setNota] = useState("");
   const [tipo, setTipo] = useState("");
   const [subtipo, setSubtipo] = useState("");
@@ -182,8 +185,14 @@ function ItemCheck({
       });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao salvar.");
+      if (acao === "erro") {
+        // Pedido de 25/11/2026: registrado o erro, pergunta se a publicação volta para a Vistagem.
+        setAposRegistrar(true);
+        setModo("devolver");
+        return;
+      }
       setModo("nenhum");
-      onConcluido(publicacao.id, acao === "ok" ? "Check registrado." : "Inconsistência registrada; a publicação ficou em revisão.");
+      onConcluido(publicacao.id, "Check registrado.");
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao salvar.");
     } finally {
@@ -208,6 +217,52 @@ function ItemCheck({
     setModo("nenhum");
     setErro("");
   }
+
+  /** Não devolve: logo depois de registrar o erro, segue como antes (fica em revisão); pelo botão, só fecha. */
+  function naoDevolver() {
+    if (aposRegistrar) {
+      setModo("nenhum");
+      setAposRegistrar(false);
+      onConcluido(publicacao.id, "Inconsistência registrada; a publicação ficou em revisão.");
+      return;
+    }
+    fechar();
+  }
+
+  /** Devolve para a Vistagem: o robô cancela no VIOS o que agendou e as tarefas voltam para o jurídico corrigir. */
+  async function devolver() {
+    setOcupado(true);
+    setErro("");
+    try {
+      const resposta = await authFetch(`/api/operacoes-legais/vistagem/check/${publicacao.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao: "devolver" }),
+      });
+      const corpo = await resposta.json();
+      if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao devolver.");
+      setModo("nenhum");
+      setAposRegistrar(false);
+      onConcluido(
+        publicacao.id,
+        corpo.tarefas
+          ? "Devolvida para a Vistagem. O robô vai cancelar no VIOS as tarefas que tinha agendado."
+          : "Devolvida para a Vistagem."
+      );
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao devolver.");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  // As tarefas no VIOS (a pedida e as do fluxo), para a pergunta da devolução.
+  const noVios = item.agendamentos
+    .map((agendamento) => ({
+      tarefa: agendamento.tarefa,
+      cis: [...new Set([agendamento.viosTarefaId, ...(agendamento.viosTarefas ?? []).map((tarefa) => tarefa.ci)].filter((ci): ci is string => Boolean(ci)))],
+    }))
+    .filter((tarefa) => tarefa.cis.length);
 
   const spinner = <LoaderCircle className="animate-spin" />;
   const contexto = (
@@ -261,6 +316,22 @@ function ItemCheck({
               <TriangleAlert />
               Encontrei erro
             </Button>
+            {aba === "revisar" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className={BOTAO_FAIXA}
+                onClick={() => {
+                  setAposRegistrar(false);
+                  setErro("");
+                  setModo("devolver");
+                }}
+                disabled={ocupado}
+              >
+                <Undo2 />
+                Devolver para a Vistagem
+              </Button>
+            ) : null}
             <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} onClick={() => setModo("ok")} disabled={ocupado}>
               <CircleCheck />
               {aba === "revisar" ? "Corrigido: dar check" : "Check OK"}
@@ -425,6 +496,63 @@ function ItemCheck({
         <Campo rotulo="O que está errado" dica={divergencias.length ? "Começa com as divergências encontradas: revise antes de registrar." : undefined}>
           <Textarea value={descricao} onChange={(evento) => setDescricao(evento.target.value)} rows={4} maxLength={2000} />
         </Campo>
+        {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
+      </DialogoAcao>
+
+      <DialogoAcao
+        aberto={modo === "devolver"}
+        onFechar={naoDevolver}
+        ocupado={ocupado}
+        icone={Undo2}
+        tom="alerta"
+        titulo="Devolver a publicação para a Vistagem?"
+        descricao={
+          aposRegistrar
+            ? "O erro foi registrado. Se a tarefa está errada ou faltou tarefa, devolva para o jurídico analisar de novo."
+            : "O erro já está registrado. Devolva para o jurídico analisar de novo."
+        }
+        aviso="Cancelar no VIOS não tem volta: confira antes."
+        rodape={
+          <>
+            <Button variant="outline" onClick={naoDevolver} disabled={ocupado}>
+              {aposRegistrar ? "Não, deixar em revisão" : "Cancelar"}
+            </Button>
+            <Button onClick={() => devolver()} disabled={ocupado}>
+              {ocupado ? spinner : <Undo2 />}
+              Devolver para a Vistagem
+            </Button>
+          </>
+        }
+      >
+        {contexto}
+        <div className="space-y-2 text-sm">
+          <p>Ao devolver:</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>
+              O robô cancela no VIOS as tarefas que agendou, com o tipo <span className="font-medium">INCONSISTÊNCIA NA VISTAGEM</span> e o erro
+              no motivo. Tarefa já concluída no VIOS fica como está e aparece como aviso.
+            </li>
+            <li>
+              A publicação volta para &ldquo;A vistar&rdquo;{publicacao.escritorioResponsavel ? ` de ${publicacao.escritorioResponsavel}` : ""}, com a
+              faixa amarela{item.vistadoPor ? ` e marcada para ${item.vistadoPor}, que vistou` : ""}. As tarefas voltam preenchidas para corrigir.
+            </li>
+            <li>Depois de vistada de novo, segue o caminho de sempre: Conferência, robô e Check.</li>
+          </ul>
+          {noVios.length ? (
+            <div className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-2">
+              <p className="text-xs font-medium text-muted-foreground">Tarefas que o robô vai cancelar</p>
+              <ul className="mt-1 space-y-0.5">
+                {noVios.map((tarefa) => (
+                  <li key={tarefa.tarefa + tarefa.cis.join(",")}>
+                    {tarefa.tarefa} · CI {tarefa.cis.join(", ")}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">Não há tarefa no VIOS com CI conhecida para cancelar.</p>
+          )}
+        </div>
         {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
       </DialogoAcao>
     </Painel>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CalendarClock, Check, ChevronLeft, ChevronRight, Copy, Scale, Search, ShieldAlert } from "lucide-react";
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Copy, Scale, Search, ShieldAlert, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
@@ -149,6 +149,8 @@ function NumeroDoProcesso({ numero, tribunal, tituloId }: { numero: string; trib
  * do processo (pesquisa no tribunal e copiar), o tribunal, outros selos e, à direita, o que a tela pedir.
  * `antes` fica à esquerda do número (ex.: o botão da fila, com o próprio divisor). Demanda de risco pinta a faixa de vermelho-escuro,
  * com o selo, para a pessoa ler com mais cautela; `seloDeRisco={false}` tira o selo quando a tela já o mostra logo abaixo.
+ * `devolvida` (publicação devolvida para a Vistagem, pela Conferência ou pelo Check) pinta a faixa de amarelo, com o selo
+ * dizendo de onde veio (pedido de 25/11/2026); a demanda de risco, sem o vermelho, fica no selo.
  */
 export function FaixaDoProcesso({
   numero,
@@ -158,6 +160,7 @@ export function FaixaDoProcesso({
   antes,
   risco = false,
   seloDeRisco = true,
+  devolvida = null,
   children,
 }: {
   numero: string;
@@ -167,14 +170,21 @@ export function FaixaDoProcesso({
   antes?: ReactNode;
   risco?: boolean;
   seloDeRisco?: boolean;
+  /** Texto do selo da devolução ("Devolvida pelo check da Operações Legais"); null: faixa normal. */
+  devolvida?: string | null;
   children?: ReactNode;
 }) {
   return (
-    <div className={cn("px-4 py-2.5 transition-colors", risco ? "bg-[#8f1d26]" : "bg-[#10293a]")}>
+    <div className={cn("px-4 py-2.5 transition-colors", devolvida ? "bg-[#a16207]" : risco ? "bg-[#8f1d26]" : "bg-[#10293a]")}>
       <div className="flex flex-wrap items-center gap-2">
         {antes}
         <NumeroDoProcesso numero={numero} tribunal={tribunal} tituloId={tituloId} />
-        {risco && seloDeRisco ? (
+        {devolvida ? (
+          <Selo tom="escuro" icone={Undo2} className="bg-white font-semibold text-[#854d0e] ring-white">
+            {devolvida}
+          </Selo>
+        ) : null}
+        {risco && (seloDeRisco || devolvida) ? (
           <Selo tom="escuro" icone={ShieldAlert} className="bg-white text-[#8f1d26] ring-white">
             Demanda de risco
           </Selo>

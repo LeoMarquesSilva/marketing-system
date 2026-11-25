@@ -103,7 +103,7 @@ import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import { ehAberturaDePasta, vaiParaCentral } from "@/lib/vistagem/central";
-import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
+import type { DataDoFluxo, DevolucaoNaVistagem, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { SeloAberturaDePasta } from "./abertura-pasta";
 import { CampoData, CampoHora } from "./campo-data";
@@ -726,6 +726,50 @@ export function FluxoNoVios({
         ) : null}
       </div>
     </details>
+  );
+}
+
+/** "Henrique Souza Lima" → "Henrique" (selo da devolvida na fila). */
+function primeiroNome(nome: string): string {
+  return nome.trim().split(/\s+/)[0] ?? nome;
+}
+
+/**
+ * Devolvida pelo check da Operações Legais (pedido de 25/11/2026): o erro apontado, quem vistou antes, o que estava no
+ * VIOS e como está o cancelamento pelo robô. As tarefas abaixo são as mesmas, para corrigir e vistar de novo.
+ */
+function DevolucaoDoCheck({ devolucao }: { devolucao: DevolucaoNaVistagem }) {
+  const atencao = (devolucao.cancelamentos ?? []).some((item) => item.atencao);
+  return (
+    <Aviso
+      tom="alerta"
+      titulo={`Devolvida pelo check da Operações Legais em ${formatarDataHora(devolucao.em)}${devolucao.por ? ` por ${devolucao.por}` : ""}`}
+    >
+      <div className="space-y-1.5">
+        {devolucao.motivo ? <p className="font-medium">{devolucao.motivo.replace(/^Check da Operações Legais: /, "")}</p> : null}
+        {devolucao.vistouNome ? <p>Vistada antes por {devolucao.vistouNome}. Corrija as tarefas abaixo e vista de novo: ela volta para a Conferência.</p> : null}
+        {devolucao.tarefasCanceladas?.length ? (
+          <div>
+            <p>Estavam no VIOS e o robô cancela (tipo INCONSISTÊNCIA NA VISTAGEM):</p>
+            <ul className="mt-0.5 list-disc pl-5">
+              {devolucao.tarefasCanceladas.map((tarefa) => (
+                <li key={`${tarefa.tarefa}-${tarefa.cis.join(",")}`}>
+                  {tarefa.tarefa}
+                  {tarefa.data ? ` · ${formatarData(tarefa.data)}` : ""}
+                  {tarefa.cis.length ? ` · CI ${tarefa.cis.join(", ")}` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {(devolucao.cancelamentos ?? []).map((item) => (
+          <p key={item.cis.join(",")} className={cn(item.atencao ? "font-medium text-red-700" : item.pronto ? "text-[#285f7a]" : undefined)}>
+            {item.texto}
+          </p>
+        ))}
+        {atencao ? <p className="text-red-700">Confira no VIOS antes de vistar de novo, para não ficar tarefa repetida.</p> : null}
+      </div>
+    </Aviso>
   );
 }
 
@@ -1392,15 +1436,19 @@ export function EditorVistagem({
             </Aviso>
           ) : null}
 
-          {devolucoes.length ? (
+          {detalhe.devolucao?.origem === "check" ? (
+            <DevolucaoDoCheck devolucao={detalhe.devolucao} />
+          ) : devolucoes.length ? (
             <div className="space-y-2">
-              <Aviso tom="alerta" titulo={`Devolvida pela controladoria em ${formatarDataHora(publicacao.devolvidoEm)}`} />
+              <Aviso tom="alerta" titulo={`Devolvida pela Conferência (controladoria) em ${formatarDataHora(publicacao.devolvidoEm)}`}>
+                {detalhe.devolucao?.vistouNome ? <>Vistada antes por {detalhe.devolucao.vistouNome}.</> : null}
+              </Aviso>
               {devolucoes.map((item) => (
                 <CartaoInconsistencia key={item.id} inconsistencia={item} acao="contestar" onAlterada={() => setRecarga((valor) => valor + 1)} />
               ))}
             </div>
           ) : publicacao.devolucaoMotivo ? (
-            <Aviso tom="alerta" titulo={`Devolvida pela controladoria em ${formatarDataHora(publicacao.devolvidoEm)}`}>
+            <Aviso tom="alerta" titulo={`Devolvida pela Conferência (controladoria) em ${formatarDataHora(publicacao.devolvidoEm)}`}>
               {publicacao.devolucaoMotivo}
             </Aviso>
           ) : null}
@@ -1425,6 +1473,14 @@ export function EditorVistagem({
               risco={Boolean(publicacao.demandaRisco)}
               // O selo "Demanda de risco" já está na ficha da pasta, logo abaixo; a faixa fica só vermelha.
               seloDeRisco={false}
+              // Devolvida e ainda não vistada de novo: faixa amarela, dizendo de onde veio (pedido de 25/11/2026).
+              devolvida={
+                detalhe.devolucao
+                  ? detalhe.devolucao.origem === "check"
+                    ? "Devolvida pelo check da Operações Legais"
+                    : "Devolvida pela Conferência"
+                  : null
+              }
               antes={
                 fila ? (
                   // Só no desktop: no celular a lista abre por "Voltar à lista".
@@ -2855,7 +2911,14 @@ function Juridico() {
                               ) : null}
                               <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
                               <SeloAberturaDePasta publicacao={publicacao} />
-                              {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? <Selo tom="alerta">Devolvida</Selo> : null}
+                              {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? (
+                                <span title={publicacao.vistadoPorNome ? `Vistada antes por ${publicacao.vistadoPorNome}` : undefined}>
+                                  <Selo tom="alerta">
+                                    {publicacao.devolucaoOrigem === "check" ? "Devolvida pelo check" : "Devolvida"}
+                                    {publicacao.vistadoPorNome ? ` · ${primeiroNome(publicacao.vistadoPorNome)}` : ""}
+                                  </Selo>
+                                </span>
+                              ) : null}
                               {reabertaParaAlterar({ reabertaEm: publicacao.reabertaEm ?? null, devolvidoEm: publicacao.devolvidoEm }) ? <Selo tom="marca">Reaberta</Selo> : null}
                               {publicacao.transferidoDe ? <Selo tom="marca">Transferida</Selo> : null}
                             </span>

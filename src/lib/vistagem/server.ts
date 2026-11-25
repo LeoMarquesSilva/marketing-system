@@ -121,6 +121,8 @@ export type PublicacaoRow = {
   pendencia: Pendencia | null; pastas_candidatas: PastaSioe[] | null; triada_em: string | null;
   observacao_vistagem: string | null; vistado_por: string | null; vistado_em: string | null; conferido_por: string | null;
   conferido_em: string | null; devolucao_motivo: string | null; devolvido_em: string | null;
+  /** Só nas consultas que pedem a coluna (migração 20261125180000). */
+  devolucao_origem?: "conferencia" | "check" | null;
   devolvido_por: string | null; revistado_por: string | null; revistado_em: string | null; reaberta_em?: string | null;
   checado_em: string | null; check_nota: string | null;
   transferido_de: string | null; transferido_em: string | null; transferencia_motivo: string | null;
@@ -173,6 +175,7 @@ export function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null =
     conferidoEm: row.conferido_em,
     devolucaoMotivo: row.devolucao_motivo,
     devolvidoEm: row.devolvido_em,
+    devolucaoOrigem: row.devolucao_origem ?? null,
     revistadoEm: row.revistado_em ?? null,
     reabertaEm: row.reaberta_em ?? null,
     checadoEm: row.checado_em,

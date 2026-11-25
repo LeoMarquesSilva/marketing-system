@@ -80,9 +80,23 @@ import {
   envioSimulado,
   modoAgendamento,
   sinteseSimulada,
+  sama,
   sintesesDaPasta,
   type CatalogoArea,
 } from "./sama";
+import {
+  ORIGEM_DEVOLUCAO_VISTAGEM,
+  devolucaoPendente,
+  motivoDaDevolucao,
+  planoDaDevolucao,
+  situacaoDoCancelamento,
+  textoDaSituacao,
+  type LinhaDoCancelamento,
+  type AgendamentoParaDevolver,
+  type DevolucaoRegistrada,
+  type PedidoDeCancelamento,
+} from "./devolucao-check";
+import type { DevolucaoNaVistagem } from "./types";
 import {
   COLUNAS_PUBLICACAO,
   admin,
@@ -328,7 +342,104 @@ export async function listarFilaJuridico(
     const chave = (row.escritorio_responsavel as string | null) ?? "Sem área";
     porEscritorio[chave] = (porEscritorio[chave] ?? 0) + 1;
   }
-  return { publicacoes: ((data ?? []) as PublicacaoRow[]).map((row) => publicacaoResumo(row, 600)), porEscritorio };
+  const linhas = (data ?? []) as PublicacaoRow[];
+  const devolvidas = linhas.filter((row) => row.devolvido_em);
+  const [devolucoes, nomes] = devolvidas.length
+    ? await Promise.all([
+        devolucoesDasPublicacoes(devolvidas.map((row) => row.id)),
+        nomesDosUsuarios(devolvidas.map((row) => row.vistado_por)).catch(() => new Map<string, string>()),
+      ])
+    : [new Map<string, DevolucaoDaPublicacao>(), new Map<string, string>()];
+  const publicacoes = linhas.map((row) => {
+    const resumo = publicacaoResumo(row, 600);
+    if (!row.devolvido_em) return resumo;
+    return {
+      ...resumo,
+      devolucaoOrigem: devolucoes.get(row.id)?.origem ?? null,
+      vistadoPorNome: row.vistado_por ? nomes.get(row.vistado_por) || null : null,
+    };
+  });
+  return { publicacoes, porEscritorio };
+}
+
+interface DevolucaoDaPublicacao {
+  origem: "conferencia" | "check" | null;
+  registradas: DevolucaoRegistrada[];
+}
+
+/**
+ * Colunas da devolução (migração 20261125180000): de onde veio e o que o Check cancelou. Sem a migração, volta vazio e
+ * a tela segue como antes (a devolução da Conferência continua; a do Check pede a migração).
+ */
+async function devolucoesDasPublicacoes(ids: string[]): Promise<Map<string, DevolucaoDaPublicacao>> {
+  const mapa = new Map<string, DevolucaoDaPublicacao>();
+  if (!ids.length) return mapa;
+  const { data, error } = await admin().from("vistagem_publicacoes").select("id, devolucao_origem, agendamentos_cancelados").in("id", ids);
+  if (error) {
+    console.error("[vistagem] devolução (rodou a migração 20261125180000?)", error.message);
+    return mapa;
+  }
+  for (const row of (data ?? []) as { id: string; devolucao_origem: DevolucaoDaPublicacao["origem"]; agendamentos_cancelados: unknown }[]) {
+    mapa.set(row.id, {
+      origem: row.devolucao_origem ?? null,
+      registradas: Array.isArray(row.agendamentos_cancelados) ? (row.agendamentos_cancelados as DevolucaoRegistrada[]) : [],
+    });
+  }
+  return mapa;
+}
+
+/** Como está, na fila do SAMA, cada pedido de cancelamento de uma devolução do Check. */
+async function cancelamentosNaFila(registro: DevolucaoRegistrada): Promise<NonNullable<DevolucaoNaVistagem["cancelamentos"]>> {
+  const ids = registro.cancelamentos.map((pedido) => pedido.samaId).filter((id): id is string => Boolean(id));
+  let linhas = new Map<string, LinhaDoCancelamento>();
+  if (ids.length) {
+    const { data, error } = await sama().from("vios_agendamentos").select("id, status, erro, resultado").in("id", ids);
+    if (error) console.error("[vistagem] cancelamentos da devolução na fila do SAMA", error.message);
+    linhas = new Map(((data ?? []) as (LinhaDoCancelamento & { id: string })[]).map((linha) => [linha.id, linha]));
+  }
+  return registro.cancelamentos.map((pedido) => {
+    const situacao = situacaoDoCancelamento(pedido, pedido.samaId ? linhas.get(pedido.samaId) : null);
+    return {
+      cis: pedido.cis,
+      texto: textoDaSituacao(situacao, pedido.cis),
+      atencao: situacao.estado === "erro" || situacao.estado === "nao_pedido" || (situacao.estado === "feito" && (situacao.falhas.length > 0 || situacao.jaConcluidas.length > 0)),
+      pronto: situacao.estado === "feito",
+    };
+  });
+}
+
+/** A devolução que o jurídico vê ao abrir a publicação (só enquanto não vistou de novo). */
+async function devolucaoNaVistagem(publicacao: PublicacaoComArea): Promise<DevolucaoNaVistagem | null> {
+  const pendente = devolucaoPendente({
+    status: publicacao.status,
+    devolvidoEm: publicacao.devolvido_em,
+    revistadoEm: publicacao.revistado_em,
+    reabertaEm: publicacao.reaberta_em ?? null,
+  });
+  if (!pendente) return null;
+  const [devolucoes, nomes] = await Promise.all([
+    devolucoesDasPublicacoes([publicacao.id]),
+    nomesDosUsuarios([publicacao.devolvido_por, publicacao.vistado_por]).catch(() => new Map<string, string>()),
+  ]);
+  const dados = devolucoes.get(publicacao.id);
+  const origem = dados?.origem === "check" ? "check" : "conferencia";
+  const base: DevolucaoNaVistagem = {
+    origem,
+    em: publicacao.devolvido_em,
+    por: publicacao.devolvido_por ? nomes.get(publicacao.devolvido_por) || null : null,
+    motivo: publicacao.devolucao_motivo,
+    vistouNome: publicacao.vistado_por ? nomes.get(publicacao.vistado_por) || null : null,
+  };
+  const ultima = origem === "check" ? dados?.registradas.at(-1) : undefined;
+  if (!ultima) return base;
+  return {
+    ...base,
+    tarefasCanceladas: ultima.tarefas.map((tarefa) => ({ tarefa: tarefa.tarefa, data: tarefa.data, responsavel: tarefa.responsavel, cis: tarefa.cis })),
+    cancelamentos: await cancelamentosNaFila(ultima).catch((erro: unknown) => {
+      console.error("[vistagem] situação do cancelamento", erro instanceof Error ? erro.message : erro);
+      return [];
+    }),
+  };
 }
 
 /**
@@ -482,6 +593,10 @@ export async function obterVistagem(
     feriados,
     feriadosVios,
     nomesDosFeriados: { ...nomesSioe, ...nomesVios },
+    devolucao: previa ? null : await devolucaoNaVistagem(publicacao).catch((erro: unknown) => {
+      console.error("[vistagem] devolução da publicação", erro instanceof Error ? erro.message : erro);
+      return null;
+    }),
     fluxos: catalogo && arvore ? fluxosDoCatalogo(catalogo, arvoreDaPublicacao(arvore, areas, publicacao)) : {},
     fluxosErro,
     estagiarios: catalogo ? catalogo.usuarios.filter((usuario) => estagiarios.has(String(usuario.id))).map((usuario) => usuario.nome) : [],
@@ -896,6 +1011,17 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
   const duplicidade = marca(row.duplicidade_revisada_por, row.duplicidade_revisada_em);
   const check = marca(row.checado_por, row.checado_em);
   const temCentral = Boolean(row.central_item_id || row.central_enviada_em || row.central_erro);
+  const doCheck = (await devolucoesDasPublicacoes([id])).get(id);
+  const nomesDoCheck = doCheck?.registradas.length ? await nomesDosUsuarios(doCheck.registradas.map((registro) => registro.por)).catch(() => new Map<string, string>()) : new Map<string, string>();
+  const devolucoesDoCheck = await Promise.all(
+    (doCheck?.registradas ?? []).map(async (registro) => ({
+      em: registro.em,
+      por: registro.por ? nomesDoCheck.get(registro.por) || null : null,
+      motivo: registro.motivo,
+      tarefas: registro.tarefas,
+      cancelamentos: await cancelamentosNaFila(registro).catch(() => []),
+    }))
+  );
   const eventos = montarHistorico({
     status: row.status,
     capturadaEm: row.created_at,
@@ -914,7 +1040,8 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
         ? { de: row.transferido_de, por: nome(row.transferido_por), em: row.transferido_em, motivo: row.transferencia_motivo }
         : null,
     vistagem: vistagem ? { ...vistagem, observacao: row.observacao_vistagem } : null,
-    devolucao: devolucao ? { ...devolucao, motivo: row.devolucao_motivo, total: row.devolucoes ?? 1 } : null,
+    devolucao: devolucao ? { ...devolucao, motivo: row.devolucao_motivo, total: row.devolucoes ?? 1, origem: doCheck?.origem ?? null } : null,
+    devolucoesDoCheck,
     revistagem: marca(row.revistado_por, row.revistado_em),
     reabertura: marca(row.reaberta_por ?? null, row.reaberta_em ?? null),
     conferencia: row.conferido_em
@@ -1740,19 +1867,24 @@ export async function devolverVistagem(id: string, entrada: InconsistenciaEntrad
     criado_por: authUserId,
   });
   if (erroInconsistencia) falhou("registrar a inconsistência", erroInconsistencia);
-  const { data: atualizada, error } = await db
-    .from("vistagem_publicacoes")
-    .update({
-      status: "juridico_vistar",
-      devolucao_motivo: `${validacao.valor.tipo}: ${validacao.valor.descricao}`.slice(0, 2000),
-      devolvido_por: authUserId,
-      devolvido_em: new Date().toISOString(),
-      devolucoes: (publicacao.devolucoes ?? 0) + 1,
-    })
-    .eq("id", id)
-    .eq("status", "controladoria_vistar")
-    .select("id")
-    .maybeSingle();
+  const devolver = (comOrigem: boolean) =>
+    db
+      .from("vistagem_publicacoes")
+      .update({
+        status: "juridico_vistar",
+        devolucao_motivo: `${validacao.valor.tipo}: ${validacao.valor.descricao}`.slice(0, 2000),
+        devolvido_por: authUserId,
+        devolvido_em: new Date().toISOString(),
+        devolucoes: (publicacao.devolucoes ?? 0) + 1,
+        ...(comOrigem ? { devolucao_origem: "conferencia" } : {}),
+      })
+      .eq("id", id)
+      .eq("status", "controladoria_vistar")
+      .select("id")
+      .maybeSingle();
+  // Sem a coluna devolucao_origem (migração 20261125180000 ainda não rodou), devolve como antes.
+  let { data: atualizada, error } = await devolver(true);
+  if (error && /devolucao_origem/.test(error.message)) ({ data: atualizada, error } = await devolver(false));
   if (error) falhou("devolver a vistagem", error);
   if (!atualizada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
 }
@@ -2194,6 +2326,142 @@ export async function checarPublicacao(id: string, nota: string | null, authUser
   if (!data) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
   // Fim da esteira: vai para o BKP do SIOE (desligado até a troca do SharePoint; VISTAGEM_BKP_SIOE=on liga).
   await registrarNoBkpSemFalhar([id]);
+}
+
+/**
+ * Devolve para a Vistagem uma publicação em revisão no Check (pedido de 25/11/2026, 2041725-27.2026.8.26.0000).
+ * O erro já foi registrado ("Encontrei erro"). Na ordem:
+ * 1. a publicação volta para "A vistar" da área, com a devolução do check e o retrato do que estava no VIOS
+ *    (`agendamentos_cancelados`). O status muda só se ainda estiver em revisão: trava contra dois cliques;
+ * 2. as tarefas voltam preenchidas para o jurídico corrigir (sem o envio de antes);
+ * 3. o robô recebe na fila do SAMA uma linha de cancelamento por lançamento e cancela todas as CIs dele, com o tipo
+ *    INCONSISTÊNCIA NA VISTAGEM. Tarefa já concluída fica e vira aviso.
+ * Se o pedido ao robô falhar, a devolução vale assim mesmo: a Vistagem avisa o que cancelar à mão.
+ */
+export async function devolverPeloCheck(id: string, authUserId: string): Promise<{ cancelamentos: number; tarefas: number }> {
+  const publicacao = await carregarPublicacao(id);
+  if (publicacao.status !== "revisar") {
+    throw new VistagemError("Só volta para a Vistagem a publicação em revisão no Check (registre o erro antes). Recarregue a página.", 409);
+  }
+  const db = admin();
+  const [agendamentos, inconsistencias, anteriores] = await Promise.all([
+    db.from("vistagem_agendamentos").select(COLUNAS_AGENDAMENTO).eq("publicacao_id", id).order("ordem", { ascending: true }),
+    db
+      .from("vistagem_inconsistencias")
+      .select("id, tipo, subtipo, descricao")
+      .eq("publicacao_id", id)
+      .eq("origem", "agendamento")
+      .is("excluida_em", null)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    db.from("vistagem_publicacoes").select("agendamentos_cancelados").eq("id", id).maybeSingle(),
+  ]);
+  if (agendamentos.error) falhou("carregar as tarefas", agendamentos.error);
+  if (inconsistencias.error) falhou("carregar o erro do check", inconsistencias.error);
+  if (anteriores.error) falhou("carregar as devoluções anteriores", anteriores.error);
+  const inconsistencia = (inconsistencias.data ?? [])[0] as { id: string; tipo: string; subtipo: string | null; descricao: string } | undefined;
+  if (!inconsistencia) throw new VistagemError("Registre o erro (Encontrei erro) antes de devolver para a Vistagem.", 422);
+  const linhas = (agendamentos.data ?? []) as AgendamentoRow[];
+  const plano = planoDaDevolucao(linhas as unknown as AgendamentoParaDevolver[]);
+  if (!plano.ok) throw new VistagemError(plano.erro, 409);
+
+  const motivo = motivoDaDevolucao(inconsistencia);
+  const agora = new Date().toISOString();
+  const registro: DevolucaoRegistrada = {
+    em: agora,
+    por: authUserId,
+    motivo,
+    inconsistenciaId: inconsistencia.id,
+    tarefas: plano.tarefas,
+    cancelamentos: plano.lancamentos.map((lancamento) => ({ origemId: lancamento.origemId, samaId: null, cis: lancamento.cis })),
+  };
+  const historicoAntes = Array.isArray(anteriores.data?.agendamentos_cancelados) ? (anteriores.data.agendamentos_cancelados as DevolucaoRegistrada[]) : [];
+
+  // 1. A publicação volta para a Vistagem (só se ainda estiver em revisão).
+  const { data: devolvida, error: erroDevolver } = await db
+    .from("vistagem_publicacoes")
+    .update({
+      status: "juridico_vistar",
+      devolucao_motivo: `Check da Operações Legais: ${motivo}`.slice(0, 2000),
+      devolvido_por: authUserId,
+      devolvido_em: agora,
+      devolucoes: (publicacao.devolucoes ?? 0) + 1,
+      devolucao_origem: "check",
+      agendamentos_cancelados: [...historicoAntes, registro],
+    })
+    .eq("id", id)
+    .eq("status", "revisar")
+    .select("id")
+    .maybeSingle();
+  if (erroDevolver) falhou("devolver para a Vistagem", erroDevolver);
+  if (!devolvida) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
+
+  // 2. As tarefas voltam preenchidas, sem o envio de antes (o que estava no VIOS ficou no registro acima).
+  const { error: erroTarefas } = await db
+    .from("vistagem_agendamentos")
+    .update({
+      envio_status: "nao_enviado",
+      envio_simulado: false,
+      sama_agendamento_id: null,
+      vios_tarefa_id: null,
+      vios_tarefas: null,
+      envio_erro: null,
+      enviado_em: null,
+      envio_atualizado_em: null,
+    })
+    .eq("publicacao_id", id);
+  if (erroTarefas) falhou("devolver as tarefas para o jurídico corrigir", erroTarefas);
+
+  // 3. O robô cancela no VIOS (uma linha por lançamento; ele lê as CIs do lançamento).
+  const pedidos: PedidoDeCancelamento[] = [];
+  if (registro.cancelamentos.length) {
+    const ids = registro.cancelamentos.map((pedido) => pedido.origemId);
+    const origens = await sama()
+      .from("vios_agendamentos")
+      .select("id, tipo, tarefa, pasta, pasta_tipo, responsavel, responsavel_email, passo_texto, ci_pasta, data")
+      .in("id", ids);
+    const porId = new Map(((origens.data ?? []) as { id: string }[]).map((linha) => [linha.id, linha as Record<string, unknown>]));
+    for (const [indice, pedido] of registro.cancelamentos.entries()) {
+      const origem = porId.get(pedido.origemId);
+      if (origens.error || !origem) {
+        pedidos.push({ ...pedido, erro: origens.error ? `fila do robô: ${origens.error.message}` : "o lançamento não está mais na fila do robô" });
+        continue;
+      }
+      const { data: linha, error } = await sama()
+        .from("vios_agendamentos")
+        .insert({
+          operacao: "cancelar",
+          origem_id: pedido.origemId,
+          origem_sistema: ORIGEM_DEVOLUCAO_VISTAGEM,
+          chave_idempotencia: `orquestra:devolucao:${id}:${historicoAntes.length + 1}:${indice + 1}`,
+          tipo: origem.tipo,
+          tarefa: origem.tarefa,
+          observacao: motivo,
+          pasta: origem.pasta,
+          pasta_tipo: origem.pasta_tipo,
+          responsavel: origem.responsavel,
+          responsavel_email: origem.responsavel_email,
+          passo_texto: origem.passo_texto,
+          ci_pasta: origem.ci_pasta,
+          data: origem.data,
+          status: "pendente",
+        })
+        .select("id")
+        .maybeSingle();
+      if (error) {
+        // 23505: já há um cancelamento ativo desse lançamento na fila (outro pedido ao mesmo tempo).
+        pedidos.push({ ...pedido, erro: error.code === "23505" ? "já havia um cancelamento desse lançamento na fila" : `fila do robô: ${error.message}` });
+        continue;
+      }
+      pedidos.push({ ...pedido, samaId: (linha as { id: string } | null)?.id ?? null });
+    }
+    const { error: erroRegistro } = await db
+      .from("vistagem_publicacoes")
+      .update({ agendamentos_cancelados: [...historicoAntes, { ...registro, cancelamentos: pedidos }] })
+      .eq("id", id);
+    if (erroRegistro) console.error("[vistagem] devolução do check: registrar os pedidos ao robô", id, erroRegistro.message);
+  }
+  return { cancelamentos: pedidos.filter((pedido) => pedido.samaId).length, tarefas: plano.tarefas.length };
 }
 
 /** Erro encontrado no check: registra a inconsistência de agendamento e deixa a publicação em revisão. */
