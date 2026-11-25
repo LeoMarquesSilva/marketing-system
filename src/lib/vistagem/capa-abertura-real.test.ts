@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ciDaPastaAberta, pastaDaCapaAberta, situacaoDaAberturaReal, type CapaDoVios, type PedidoDeAbertura } from "./capa-abertura";
+import { ciDaPastaAberta, ciDaPastaQueJaExistia, pastaDaCapaAberta, situacaoDaAberturaReal, type CapaDoVios, type PedidoDeAbertura } from "./capa-abertura";
 
 // A capa do Embargos de Declaração 0155097-64.2026.8.16.0000 (TJPR, Mix Etiquetas), simulada pela Giovanna em 16/11/2026.
 const CAPA = {
@@ -65,9 +65,27 @@ describe("abertura de verdade (Fase 3, 16/11/2026)", () => {
       motivo: "O último pedido parou depois do Gravar: confira no VIOS se a pasta foi criada. Se não foi, peça de novo.",
     });
     expect(situacaoDaAberturaReal([parou], { conferidoNoVios: true })).toEqual({ pode: true });
-    // Recusa antes do Gravar (ex.: o número já tinha pasta, a pesquisa por cima do botão): pode pedir de novo.
-    const recusada = pedido({ simulado: false, status: "erro", erro: "O processo já tem pasta no VIOS (CI 61128): nada foi gravado." });
+    // Recusa antes do Gravar (ex.: a pesquisa por cima do botão, a capa fora das listas): pode pedir de novo.
+    const recusada = pedido({ simulado: false, status: "erro", erro: "Não gravou a pasta: o VIOS recusaria: Departamento." });
     expect(situacaoDaAberturaReal([recusada])).toEqual({ pode: true });
+  });
+
+  it("o número já tinha pasta no VIOS: fica a CI dela, e não se pede de novo (2272666-73, 18/11/2026)", () => {
+    const jaTinha = pedido({
+      simulado: false,
+      status: "erro",
+      erro: "O processo 2272666-73.2026.8.26.0000 já tem pasta no VIOS (CI 61597): nada foi gravado.",
+    });
+    expect(ciDaPastaQueJaExistia(jaTinha)).toBe("61597");
+    expect(situacaoDaAberturaReal([jaTinha])).toEqual({ pode: false, motivo: "O processo já tem pasta no VIOS: CI 61597." });
+    // Mais de uma pasta com o número: a pessoa escolhe; pode pedir de novo depois de resolver no VIOS.
+    const duas = pedido({ simulado: false, status: "erro", erro: "O processo X já tem pasta no VIOS (CI 61597, 61600): nada foi gravado." });
+    expect(ciDaPastaQueJaExistia(duas)).toBeNull();
+    expect(situacaoDaAberturaReal([duas])).toEqual({ pode: true });
+    // Só de um pedido de verdade com erro.
+    expect(ciDaPastaQueJaExistia({ ...jaTinha, simulado: true })).toBeNull();
+    expect(ciDaPastaQueJaExistia({ ...jaTinha, status: "concluido" })).toBeNull();
+    expect(ciDaPastaQueJaExistia(undefined)).toBeNull();
   });
 
   it("a CI da pasta só vale de um pedido de verdade concluído", () => {

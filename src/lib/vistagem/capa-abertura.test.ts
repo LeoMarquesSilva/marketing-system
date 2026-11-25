@@ -115,11 +115,24 @@ describe("regras", () => {
 
   it("vara, tipo e cidade pelo nome do órgão", () => {
     expect(separarVara("2ª Câmara Reservada de Direito Empresarial")).toEqual({ vara: "2ª", tipo: "Câmara Reservada de Direito Empresarial" });
-    expect(separarVara("EXE3 - Jundiaí")).toEqual({ vara: null, tipo: "EXE3 - Jundiaí" });
+    // Juízos do PJe do TRT15 por sigla e número: no VIOS, vara pelo número e tipo pela sigla (CON, EXE e LIQ na lista).
+    expect(separarVara("EXE3 - Jundiaí")).toEqual({ vara: "3ª", tipo: "EXE" });
+    expect(separarVara("CON1 - Jundiaí", "Jundiaí")).toEqual({ vara: "1ª", tipo: "CON" });
     // Órgão do DJEN no eproc do TJSP (agravos de 18/11/2026): o gabinete sai.
     expect(separarVara("Gab. 06 - 23ª Câmara de Direito Privado")).toEqual({ vara: "23ª", tipo: "Câmara de Direito Privado" });
     expect(separarVara("Gab. 03 - 1ª Câmara Reservada de Direito Empresarial")).toEqual({ vara: "1ª", tipo: "Câmara Reservada de Direito Empresarial" });
     expect(separarVara("Gabinete 12 - Câmara Especial")).toEqual({ vara: null, tipo: "Câmara Especial" });
+    // 25/11/2026: a lista de tipos do VIOS não tem a cidade (vai no campo Cidade) nem o nome abreviado do eproc.
+    expect(separarVara("1ª Vara do Trabalho de Hortolândia", "Hortolândia")).toEqual({ vara: "1ª", tipo: "Vara do Trabalho" });
+    expect(separarVara("1ª Vara do Trabalho de Mogi das Cruzes", "Mogi das Cruzes")).toEqual({ vara: "1ª", tipo: "Vara do Trabalho" });
+    expect(separarVara("2ª Vara Cível da Comarca de Campinas", "Campinas")).toEqual({ vara: "2ª", tipo: "Vara Cível" });
+    expect(separarVara("1ª Vara do Trabalho de Sumaré", "Hortolândia")).toEqual({ vara: "1ª", tipo: "Vara do Trabalho de Sumaré" });
+    expect(separarVara("1ª Vara do Trabalho de Hortolândia")).toEqual({ vara: "1ª", tipo: "Vara do Trabalho de Hortolândia" });
+    expect(separarVara("1ªVara Reg. Comp. Empresarial e Conflitos à Arbitragem Foro Espec. 4ªe10ª RAJs", "Campinas")).toEqual({
+      vara: "1ª",
+      tipo: "Vara Regional de Competência Empresarial e de Conflitos Relacionados à Arbitragem",
+    });
+    expect(separarVara("17ª Câmara Cível em Composição Isolada", "Curitiba")).toEqual({ vara: "17ª", tipo: "Câmara Cível em Composição Isolada" });
     expect(cidadeDoOrgao("1ª Vara do Trabalho de Carapicuíba")).toBe("Carapicuíba");
     expect(cidadeDoOrgao("UPJ da 5ª a 8ª Varas Cíveis da Comarca de Campinas")).toBe("Campinas");
     expect(cidadeDoOrgao("EXE3 - Jundiaí")).toBe("Jundiaí");

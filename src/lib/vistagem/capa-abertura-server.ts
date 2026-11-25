@@ -7,6 +7,7 @@ import {
   capaDoDjen,
   capaParaOVios,
   ciDaPastaAberta,
+  ciDaPastaQueJaExistia,
   ehChaveDaCapa,
   lerCapaDoEsaj,
   lerCnj,
@@ -387,9 +388,10 @@ export interface AberturaDaPublicacao {
   aberturaReal: boolean;
   /**
    * Depois da abertura de verdade: a CI nova. `naTriagem`: a publicação está na Triagem Manual, com a CI, esperando a
-   * responsável conferir e liberar; `liberada`: já saiu da triagem com essa CI.
+   * responsável conferir e liberar; `liberada`: já saiu da triagem com essa CI. `jaExistia`: o robô não abriu nada,
+   * porque o processo já tinha essa pasta no VIOS.
    */
-  pastaAberta: { ci: string; naTriagem: boolean; liberada: boolean } | null;
+  pastaAberta: { ci: string; naTriagem: boolean; liberada: boolean; jaExistia?: boolean } | null;
 }
 
 /** Grupo do cliente pelas pastas que ele já tem no VIOS (o mais frequente), ou o que a triagem sugeriu. */
@@ -407,10 +409,16 @@ async function grupoDoCliente(cliente: string | null, sugerido: string | null): 
  * (pedido do usuário, 16/11/2026: a responsável confere a pasta no VIOS e libera, em vez de ir direto para a
  * vistagem). A pasta vai montada da capa entre as candidatas, porque o SIOE só a copia de madrugada; o "Liberar para o
  * jurídico" da triagem acha a CI ali. Repetir não faz mal: só grava com a publicação ainda pendente.
+ *
+ * O mesmo vale quando o robô recusou porque o processo já tinha pasta no VIOS (`ciDaPastaQueJaExistia`, 25/11/2026):
+ * a publicação fica com essa CI na triagem, com os dados da cópia do SIOE quando ela já tem a pasta.
  */
 async function registrarPastaAberta(id: string, pedido: PedidoDeAbertura): Promise<AberturaDaPublicacao["pastaAberta"]> {
-  const ci = ciDaPastaAberta(pedido);
+  const aberta = ciDaPastaAberta(pedido);
+  const ci = aberta ?? ciDaPastaQueJaExistia(pedido);
   if (!ci || !pedido.capa) return null;
+  const jaExistia = !aberta;
+  const marcar = (estado: { ci: string; naTriagem: boolean; liberada: boolean }) => (jaExistia ? { ...estado, jaExistia } : estado);
   const { data: publicacao, error } = await admin()
     .from("vistagem_publicacoes")
     .select("status, pasta_ci, sugestao_triagem")
@@ -418,10 +426,12 @@ async function registrarPastaAberta(id: string, pedido: PedidoDeAbertura): Promi
     .maybeSingle();
   if (error) falhou("carregar a publicação", error);
   if (!publicacao) return null;
-  if (publicacao.status !== "triagem_pendente") return { ci, naTriagem: false, liberada: publicacao.pasta_ci === ci };
+  if (publicacao.status !== "triagem_pendente") return marcar({ ci, naTriagem: false, liberada: publicacao.pasta_ci === ci });
   if (publicacao.pasta_ci !== ci) {
     const sugestao = publicacao.sugestao_triagem as SugestaoTriagem | null;
-    const pasta = pastaDaCapaAberta(ci, pedido.capa, await grupoDoCliente(pedido.capa.cliente, sugestao?.grupo ?? null));
+    const cnj = jaExistia ? lerCnj(pedido.capa.cnj ?? "") : null;
+    const noSioe = cnj ? ((await buscarPastasPorCnj([cnj.digitos]).catch(() => null))?.get(cnj.digitos) ?? []).find((item) => item.ci === ci) : undefined;
+    const pasta = noSioe ?? pastaDaCapaAberta(ci, pedido.capa, await grupoDoCliente(pedido.capa.cliente, sugestao?.grupo ?? null));
     const { error: erroPasta } = await admin()
       .from("vistagem_publicacoes")
       .update({ pasta_ci: ci, pastas_candidatas: [pasta] })
@@ -429,7 +439,7 @@ async function registrarPastaAberta(id: string, pedido: PedidoDeAbertura): Promi
       .eq("status", "triagem_pendente");
     if (erroPasta) falhou("gravar a pasta aberta na publicação", erroPasta);
   }
-  return { ci, naTriagem: true, liberada: false };
+  return marcar({ ci, naTriagem: true, liberada: false });
 }
 
 /**

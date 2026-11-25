@@ -286,6 +286,16 @@ describe("BlocoDoRobo", () => {
       );
       expect(html).toContain("Não foi criada: sem tempo. Crie à mão no VIOS.");
     });
+
+    it("o processo já tinha pasta: mostra a CI dela para liberar, sem dizer que o robô abriu (2272666-73, 18/11/2026)", () => {
+      const jaTinha = pedido({ simulado: false, status: "erro", erro: "O processo 2272666-73.2026.8.26.0000 já tem pasta no VIOS (CI 61597): nada foi gravado." });
+      const html = comReal([jaTinha], { pastaAberta: { ci: "61597", naTriagem: true, liberada: false, jaExistia: true } });
+      expect(html).toContain("O processo já tinha pasta no VIOS: CI 61597");
+      expect(html).not.toContain("Pasta aberta no VIOS");
+      expect(html).toContain("O robô não abriu outra");
+      expect(html).toContain("processos_id=61597");
+      expect(botaoAbrir(html)).toBe("");
+    });
   });
 
   it("a simulação diz o que a abertura de verdade agendaria", () => {

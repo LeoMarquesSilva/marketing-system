@@ -312,12 +312,45 @@ export function faseDoVios(cnj: Cnj | null, classe: string | null | undefined, a
  * "2ª Câmara Reservada de Direito Empresarial" → { vara: "2ª", tipo: "Câmara Reservada de Direito Empresarial" }. O
  * DJEN do eproc (TJSP, 2º grau) põe o gabinete na frente, "Gab. 06 - 23ª Câmara de Direito Privado": o gabinete não é
  * vara nem tipo no VIOS e sai (18/11/2026, três agravos pararam em "não achou nas listas do VIOS: vara, tipoVara").
+ *
+ * 25/11/2026, mais três paradas em "tipoVara": a lista de tipos do VIOS tem o nome genérico, sem a cidade (que vai no
+ * campo Cidade) e sem o número (que vai no campo Vara).
+ *  - "1ª Vara do Trabalho de Hortolândia" → 1ª / "Vara do Trabalho" (a cidade da capa sai do fim);
+ *  - "CON1 - Jundiaí" (juízo de conhecimento do PJe do TRT15; também EXE e LIQ) → 1ª / "CON";
+ *  - "1ªVara Reg. Comp. Empresarial e Conflitos à Arbitragem Foro Espec. 4ªe10ª RAJs" (número grudado e abreviado) →
+ *    1ª / "Vara Regional de Competência Empresarial e de Conflitos Relacionados à Arbitragem".
  */
-export function separarVara(orgao: string | null | undefined): { vara: string | null; tipo: string | null } {
+export function separarVara(orgao: string | null | undefined, cidade?: string | null): { vara: string | null; tipo: string | null } {
   const texto = orgao?.trim().replace(/^Gab(?:inete)?\.?\s*\d+\s*-\s*/i, "");
   if (!texto) return { vara: null, tipo: null };
-  const achado = texto.match(/^0*(\d{1,3})\s*[ªºa°]\s+(.+)$/i);
-  return achado ? { vara: `${achado[1]}ª`, tipo: achado[2].trim() } : { vara: null, tipo: texto };
+  const juizo = texto.match(/^([A-Z]{2,5})(\d{1,2})\s*-\s*\S/);
+  if (juizo) return { vara: `${Number(juizo[2])}ª`, tipo: juizo[1] };
+  const achado = texto.match(/^0*(\d{1,3})\s*(?:[ªº°]\s*|a\s+)(\S.*)$/i);
+  const tipo = (achado ? achado[2] : texto).trim();
+  return { vara: achado ? `${achado[1]}ª` : null, tipo: tipoDeVaraDoVios(tipo, cidade) };
+}
+
+/** Nomes do DJEN que a lista de tipos de vara do VIOS escreve de outro jeito (comparados sem acento e pontuação). */
+const TIPO_DE_VARA_DO_VIOS: { orgao: RegExp; tipo: string }[] = [
+  {
+    orgao: /^VARA REG(?:IONAL)? (?:DE )?COMP(?:ETENCIA)? EMPRESARIAL/,
+    tipo: "Vara Regional de Competência Empresarial e de Conflitos Relacionados à Arbitragem",
+  },
+];
+
+/** O tipo como o VIOS escreve: pelo de-para, ou sem a cidade da capa no fim ("… de Hortolândia", "… da Comarca de X"). */
+function tipoDeVaraDoVios(tipo: string, cidade: string | null | undefined): string {
+  const doVios = TIPO_DE_VARA_DO_VIOS.find((item) => item.orgao.test(sem(tipo)));
+  if (doVios) return doVios.tipo;
+  const alvo = sem(cidade);
+  if (!alvo) return tipo;
+  const palavras = tipo.split(/\s+/);
+  const tamanho = alvo.split(" ").length;
+  if (palavras.length <= tamanho || sem(palavras.slice(-tamanho).join(" ")) !== alvo) return tipo;
+  const resto = palavras.slice(0, -tamanho);
+  if (/^(de|do|da|dos|das|-)$/i.test(resto[resto.length - 1] ?? "")) resto.pop();
+  if (resto.length > 2 && /^comarca$/i.test(resto[resto.length - 1]) && /^da$/i.test(resto[resto.length - 2])) resto.splice(-2);
+  return resto.length ? resto.join(" ") : tipo;
 }
 
 /** Cidade pelo nome do órgão ("… da Comarca de Campinas", "Vara do Trabalho de Carapicuíba", "EXE3 - Jundiaí"). */
@@ -676,7 +709,7 @@ export function montarCapa(dados: DadosDaCapa, extras: { ajustes?: AjustesDaCapa
   const fonteOrgao: FonteDaCapa = esaj?.orgaoJulgador || esaj?.vara ? "esaj" : "djen";
   const cidade = segundoGrau && cnj?.uf ? CAPITAL[cnj.uf] ?? null : cidadeDoOrgao(esaj?.foro ?? djen?.orgao) ?? cidadeDoOrgao(orgao);
   por("cidade", cidade, segundoGrau ? "regra" : fonteOrgao, !segundoGrau, segundoGrau ? "2º grau: a capital do estado" : undefined);
-  const { vara, tipo } = separarVara(orgao);
+  const { vara, tipo } = separarVara(orgao, cidade);
   por("vara", vara, fonteOrgao, true);
   por("tipoVara", tipo, fonteOrgao, true);
 
@@ -920,6 +953,18 @@ export function ciDaPastaAberta(pedido: PedidoDeAbertura | undefined): string | 
   return pedido.resultado?.ci_pasta?.replace(/\D/g, "") || null;
 }
 
+/**
+ * O CI da pasta que já existia: o robô confere no VIOS, antes de gravar, se o número já tem pasta e recusa com "O
+ * processo … já tem pasta no VIOS (CI 61597): nada foi gravado." (18/11/2026: a 2ª publicação do 2272666-73 pediu a
+ * abertura logo depois da 1ª, ficou sem a CI e foi à Central como abertura). Uma pasta só: é a do processo. Mais de
+ * uma, a pessoa escolhe.
+ */
+export function ciDaPastaQueJaExistia(pedido: PedidoDeAbertura | undefined): string | null {
+  if (!pedido || pedido.simulado || pedido.status !== "erro") return null;
+  const achado = (pedido.erro ?? "").match(/j[aá] tem pasta no VIOS \(CI (\d+)\)/i);
+  return achado ? achado[1] : null;
+}
+
 export type SituacaoDaAberturaReal = { pode: true } | { pode: false; motivo: string; conferirNoVios?: true };
 
 /**
@@ -934,6 +979,8 @@ export function situacaoDaAberturaReal(pedidos: PedidoDeAbertura[], { conferidoN
   const real = pedidos.find((pedido) => !pedido.simulado);
   const ci = ciDaPastaAberta(real);
   if (ci) return { pode: false, motivo: `A pasta já foi aberta no VIOS: CI ${ci}.` };
+  const existente = ciDaPastaQueJaExistia(real);
+  if (existente) return { pode: false, motivo: `O processo já tem pasta no VIOS: CI ${existente}.` };
   if (real?.status === "erro" && /^ATEN[ÇC][ÃA]O/i.test(real.erro ?? "") && !conferidoNoVios) {
     return {
       pode: false,
