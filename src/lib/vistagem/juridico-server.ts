@@ -8,6 +8,7 @@ import {
   nomesDasPessoas,
   pessoasDaArea,
   primeiroDiaDaTarefa,
+  problemasDasDatasDoFluxo,
   dataPadraoDaTarefa,
   renunciaComDataFixa,
   responsavelSugerido,
@@ -1257,6 +1258,20 @@ async function fotosDosItens(itens: ConferenciaItem[], tela: string): Promise<Re
  * Validação da controladoria: as tarefas vão para a fila do robô do SAMA (na intimação, todas juntas), ou à Central,
  * sem pasta. `authUserId` null: foi direto, sem a Conferência (`vaiDiretoAoRobo`), e conferido_por fica vazio.
  */
+/**
+ * Trava do Validar e do Rodar novamente: data do fluxo que o VIOS não guardaria assim (dia não útil) ou 2. REVISAR /
+ * 3. PROTOCOLAR depois da fatal. A tela já barra ao gravar; esta pega as vistagens gravadas antes da trava (25/11/2026),
+ * que se ajustam no lápis. Sem os feriados do SIOE, confere ao menos o fim de semana.
+ */
+async function conferirDatasDoFluxo(agendamentos: AgendamentoRow[]): Promise<void> {
+  if (!agendamentos.some((item) => item.fluxo_datas?.length)) return;
+  const ehDiaUtil = criarCalendario(await carregarFeriados().catch(() => [] as string[]));
+  const problemas = agendamentos.flatMap((item) =>
+    problemasDasDatasDoFluxo(item.fluxo_datas ?? [], { ehDiaUtil, dataFatal: item.data_fatal }).map((problema) => `${item.tarefa}, ${problema.texto}`)
+  );
+  if (problemas.length) throw new VistagemError(`Ajuste no lápis antes de mandar ao robô. ${problemas.join(" ")}`, 422);
+}
+
 export async function validarVistagem(id: string, authUserId: string | null): Promise<{ enviadas: number; simulado: boolean; central?: ResultadoCentral }> {
   const publicacao = await carregarPublicacao(id);
   if (publicacao.status !== "controladoria_vistar") throw new VistagemError("Esta publicação não está aguardando conferência.", 409);
@@ -1272,6 +1287,7 @@ export async function validarVistagem(id: string, authUserId: string | null): Pr
   if (error) falhou("carregar as tarefas para envio", error);
   const agendamentos = (data ?? []) as AgendamentoRow[];
   if (!agendamentos.length) throw new VistagemError("Nenhuma tarefa para enviar.", 422);
+  await conferirDatasDoFluxo(agendamentos);
 
   // Sem pasta no VIOS o robô não tem onde agendar: validada, vira pedido de abertura de pasta na Central do SharePoint.
   if (vaiParaCentral({ pastaCi: publicacao.pasta_ci, pendencia: publicacao.pendencia })) {
@@ -1399,7 +1415,9 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
   if (!validacao.ok) throw new VistagemError(validacao.erros.map((erro) => erro.replace(/^Tarefa 1: /, "")).join(" "));
   const item = validacao.itens[0];
   // Com fatal, `validarAgendamentos` devolve o Enviar da conta; a pessoa pode ter escolhido outro.
-  const enviar = item.dataFatal ? enviarDoPrazo(edicao.data, { calculado: item.data, anterior: row.data, fatal: item.dataFatal, hoje }) : { ok: true as const, data: item.data };
+  const enviar = item.dataFatal
+    ? enviarDoPrazo(edicao.data, { calculado: item.data, anterior: row.data, fatal: item.dataFatal, hoje, ehDiaUtil: criarCalendario(feriados) })
+    : { ok: true as const, data: item.data };
   if (!enviar.ok) throw new VistagemError(enviar.erro);
 
   const mudancas = mudancasNaTarefa(
@@ -1640,6 +1658,7 @@ export async function rodarNovamente(
   if (error) falhou("carregar as tarefas com erro", error);
   const comErro = (data ?? []) as AgendamentoRow[];
   if (!comErro.length) throw new VistagemError("Não há tarefas com erro para rodar de novo.", 422);
+  await conferirDatasDoFluxo(comErro);
   if (!forcar && comErro.some((item) => podeTerGravadoNoVios(item.envio_erro))) {
     return {
       precisaConfirmar:

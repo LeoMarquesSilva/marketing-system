@@ -1,5 +1,5 @@
 import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, somarDiasUteis, type ContagemPrazo } from "./dias-uteis";
-import type { CadeiaDoPrazo } from "./fluxo-vios";
+import { papelNoFluxo, type CadeiaDoPrazo } from "./fluxo-vios";
 import { pedeDiasCorridos } from "./etiquetas";
 import { textoDaRepeticao } from "./repeticao-mensal";
 import type { DataDoFluxo } from "./types";
@@ -430,14 +430,44 @@ export function avisoDepoisDoHorario(primeiroDia: string): string {
   return `Já passou das ${HORA_LIMITE_DO_DIA}h: a data tem de ser a partir de ${paraDataVios(primeiroDia)} (próximo dia útil).`;
 }
 
-/** Avisos (não bloqueiam) sobre a data escolhida. */
-export function avisosDaData(iso: string, hoje: string): string[] {
+/**
+ * Avisos (não bloqueiam) sobre a data escolhida. Com o calendário (`ehDiaUtil`), avisa também o feriado: até
+ * 25/11/2026 só o fim de semana aparecia, e uma data na segunda de Carnaval passava sem aviso.
+ */
+export function avisosDaData(iso: string, hoje: string, ehDiaUtil?: (iso: string) => boolean): string[] {
   if (!dataValida(iso)) return [];
   const avisos: string[] = [];
   if (iso < hoje) avisos.push("Data no passado.");
   const diaSemana = new Date(`${iso}T12:00:00Z`).getUTCDay();
   if (diaSemana === 0 || diaSemana === 6) avisos.push("Data cai em fim de semana.");
+  else if (ehDiaUtil && !ehDiaUtil(iso)) avisos.push("Data cai em feriado.");
   return avisos;
+}
+
+/**
+ * Datas do fluxo que não podem ir ao VIOS como estão (bloqueiam a vistagem e a Conferência):
+ * - um dia que não é útil (fim de semana ou feriado). O VIOS não guarda tarefa nesse dia e passa para o dia útil
+ *   seguinte;
+ * - 2. REVISAR ou 3. PROTOCOLAR depois da data fatal.
+ * Exemplo: 0056354-65, 25/11/2026, o 3. PROTOCOLAR pedido para 08/02/2027 (segunda de Carnaval) ficou em 10/02 no VIOS,
+ * depois da fatal de 09/02. `curto` vai ao lado do campo; `texto`, com o caminho da tarefa, nas mensagens de erro.
+ */
+export function problemasDasDatasDoFluxo(
+  fluxoDatas: readonly { caminho: readonly string[]; data?: string | null }[],
+  contexto: { ehDiaUtil: (iso: string) => boolean; dataFatal?: string | null }
+): { caminho: readonly string[]; curto: string; texto: string }[] {
+  const fatal = contexto.dataFatal && dataValida(contexto.dataFatal) ? contexto.dataFatal : null;
+  return fluxoDatas.flatMap((item) => {
+    const data = item.data;
+    if (!data || !dataValida(data)) return [];
+    const curtos: string[] = [];
+    if (!contexto.ehDiaUtil(data)) {
+      curtos.push(`não é dia útil (fim de semana ou feriado), e o VIOS passaria para ${paraDataVios(somarDiasUteis(data, 1, contexto.ehDiaUtil))}. Escolha um dia útil.`);
+    }
+    const papel = papelNoFluxo(item.caminho[item.caminho.length - 1] ?? "");
+    if (fatal && data > fatal && papel !== "responsavel") curtos.push(`fica depois da data fatal (${paraDataVios(fatal)}).`);
+    return curtos.map((curto) => ({ caminho: item.caminho, curto, texto: `${item.caminho.join(" › ")} em ${paraDataVios(data)}: ${curto}` }));
+  });
 }
 
 /**
@@ -657,6 +687,9 @@ export function validarAgendamentos(
         ];
       });
     if (pessoaForaDoVios) erros.push(`${n}: escolha os responsáveis das tarefas do fluxo na lista de usuários do VIOS.`);
+    for (const problema of problemasDasDatasDoFluxo(fluxoDatas, { ehDiaUtil: contexto.ehDiaUtil, dataFatal: fatal })) {
+      erros.push(`${n}: ${problema.texto}`);
+    }
     if (depois && fluxoDatas.some((item) => item.data && item.data < depois)) {
       erros.push(`${n}, Fluxo das tarefas: ${avisoDepoisDoHorario(depois)}`);
     }

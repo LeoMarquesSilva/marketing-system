@@ -425,6 +425,35 @@ describe("validarAgendamentos", () => {
     expect(naoCria.ok).toBe(false);
   });
 
+  it("data do fluxo em feriado ou Protocolar depois da fatal não vai (0056354-65, 25/11/2026)", () => {
+    // Carnaval de 2027: segunda 08/02 e terça 09/02.
+    const comCarnaval = { ...contexto, ehDiaUtil: criarCalendario(["2027-02-08", "2027-02-09"]) };
+    const entrada = (fatal: string, fluxoDatas: { caminho: string[]; data?: string; responsaveis?: string[] }[]) => [
+      { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: fatal, responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", fluxoDatas },
+    ];
+    const carnaval = validarAgendamentos(entrada("2027-02-12", [{ caminho: ["3. PROTOCOLAR"], data: "2027-02-08" }]), comCarnaval);
+    expect(carnaval.ok).toBe(false);
+    if (!carnaval.ok) {
+      expect(carnaval.erros).toEqual([
+        "Tarefa 1: 3. PROTOCOLAR em 08/02/2027: não é dia útil (fim de semana ou feriado), e o VIOS passaria para 10/02/2027. Escolha um dia útil.",
+      ]);
+    }
+    const depoisDaFatal = validarAgendamentos(entrada("2027-02-05", [{ caminho: ["3. PROTOCOLAR"], data: "2027-02-10" }]), comCarnaval);
+    expect(depoisDaFatal.ok).toBe(false);
+    if (!depoisDaFatal.ok) expect(depoisDaFatal.erros).toEqual(["Tarefa 1: 3. PROTOCOLAR em 10/02/2027: fica depois da data fatal (05/02/2027)."]);
+    // O Revisar do Embargos criado pelo fluxo também conta; outras tarefas do fluxo podem ir além da fatal.
+    const embargos = validarAgendamentos(entrada("2027-02-05", [{ caminho: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"], data: "2027-02-10" }]), comCarnaval);
+    expect(embargos.ok).toBe(false);
+    const informar = validarAgendamentos(entrada("2027-02-05", [{ caminho: ["INFORMAR CLIENTE"], data: "2027-02-10" }]), comCarnaval);
+    expect(informar.ok).toBe(true);
+    // Dia útil antes da fatal: passa.
+    const certo = validarAgendamentos(entrada("2027-02-05", [{ caminho: ["3. PROTOCOLAR"], data: "2027-02-04" }]), comCarnaval);
+    expect(certo.ok).toBe(true);
+    // Só o responsável mudou (sem data): nada a conferir.
+    const soPessoa = validarAgendamentos(entrada("2027-02-05", [{ caminho: ["3. PROTOCOLAR"], responsaveis: ["Advogada Exemplo"] }]), comCarnaval);
+    expect(soPessoa.ok).toBe(true);
+  });
+
   it("tarefa de Prazo sem prazo próprio vai com a data dela, sem fatal; o revisor continua obrigatório", () => {
     const semPrazo = { ...contexto, cadeiaDaTarefa: () => null, semPrazoProprio: () => true };
     const base = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" };
@@ -465,6 +494,14 @@ describe("auxiliares", () => {
     expect(avisosDaData("2026-10-17", "2026-10-14")).toEqual(["Data cai em fim de semana."]);
     expect(avisosDaData("2026-10-13", "2026-10-14")).toEqual(["Data no passado."]);
     expect(avisosDaData("2026-10-15", "2026-10-14")).toEqual([]);
+  });
+
+  it("com o calendário, avisa o feriado (segunda de Carnaval de 2027)", () => {
+    const ehDiaUtil = criarCalendario(["2027-02-08"]);
+    expect(avisosDaData("2027-02-08", "2026-11-25", ehDiaUtil)).toEqual(["Data cai em feriado."]);
+    expect(avisosDaData("2027-02-08", "2026-11-25")).toEqual([]);
+    expect(avisosDaData("2027-02-06", "2026-11-25", ehDiaUtil)).toEqual(["Data cai em fim de semana."]);
+    expect(avisosDaData("2027-02-10", "2026-11-25", ehDiaUtil)).toEqual([]);
   });
 
   it("sugere o responsável da pasta quando ele é usuário do VIOS", () => {

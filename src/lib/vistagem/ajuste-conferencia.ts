@@ -87,15 +87,19 @@ export function mudancasNaTarefa(antes: CamposDaTarefa, depois: CamposDaTarefa):
 
 /**
  * O Enviar de uma tarefa de Prazo editada na Conferência. Vazio segue a conta pela fatal. Escolhido à mão, vale como
- * está (o VIOS cria o Revisar e o Protocolar a partir dele), desde que não passe da fatal; data no passado só se já
- * era a da tarefa (fatal vencida: não há o que apertar).
+ * está (o VIOS cria o Revisar e o Protocolar a partir dele), desde que não passe da fatal e caia em dia útil (o VIOS
+ * passa fim de semana e feriado para o dia útil seguinte); data no passado só se já era a da tarefa (fatal vencida:
+ * não há o que apertar).
  */
 export function enviarDoPrazo(
   pedido: string | null | undefined,
-  contexto: { calculado: string; anterior: string; fatal: string; hoje: string }
+  contexto: { calculado: string; anterior: string; fatal: string; hoje: string; ehDiaUtil?: (iso: string) => boolean }
 ): { ok: true; data: string } | { ok: false; erro: string } {
   if (!pedido || !dataValida(pedido)) return { ok: true, data: contexto.calculado };
   if (pedido > contexto.fatal) return { ok: false, erro: "A data do Enviar não pode ficar depois da data fatal." };
   if (pedido < contexto.hoje && pedido !== contexto.anterior) return { ok: false, erro: "A data do Enviar não pode ficar no passado." };
+  if (contexto.ehDiaUtil && !contexto.ehDiaUtil(pedido)) {
+    return { ok: false, erro: `O Enviar (${paraDataVios(pedido)}) não é dia útil (fim de semana ou feriado). Escolha um dia útil.` };
+  }
   return { ok: true, data: pedido };
 }

@@ -65,6 +65,7 @@ import {
   pedeDataLimite,
   primeiroDiaDaTarefa,
   problemaNaRecorrencia,
+  problemasDasDatasDoFluxo,
   renunciaComDataFixa,
   repeteTodoMes,
   revisorFicaNaTarefa,
@@ -290,7 +291,7 @@ function ModalHorario({
   const [hora, setHora] = useState(linha?.hora ?? "");
   const depoisDoHorario = primeiroDia > hoje;
   const antesDoPermitido = Boolean(depoisDoHorario && data && data < primeiroDia);
-  const avisos = antesDoPermitido ? [avisoDepoisDoHorario(primeiroDia)] : data ? avisosDaData(data, hoje) : [];
+  const avisos = antesDoPermitido ? [avisoDepoisDoHorario(primeiroDia)] : data ? avisosDaData(data, hoje, ehDiaUtil) : [];
   const pronto = Boolean(data) && horaValida(hora) && !antesDoPermitido;
 
   return (
@@ -486,6 +487,7 @@ export function FluxoNoVios({
   previstas,
   principal,
   fatais,
+  dataFatal = null,
   hoje,
   primeiroDia,
   ehDiaUtil,
@@ -495,6 +497,8 @@ export function FluxoNoVios({
   classeDe,
 }: {
   previstas: TarefaPrevista[];
+  /** Fatal do Prazo: 2. REVISAR e 3. PROTOCOLAR escolhidos depois dela ficam marcados (e o envio, travado). */
+  dataFatal?: string | null;
   /** Classe da tarefa do fluxo na lista do VIOS da área (Prazo, Providência…), pelo nome; null quando não está lá. */
   classeDe: (nome: string) => Etiqueta | null;
   /** A tarefa pedida, com a data que vai para o VIOS (no Prazo, o Enviar), a classe e quem fica. */
@@ -568,6 +572,9 @@ export function FluxoNoVios({
   const tons = [...new Set(marcos.map((marco) => marco.tom))];
   const algumaEditada = marcos.some((marco) => marco.editada);
 
+  // Data escolhida que o VIOS não guardaria assim (dia não útil) ou 2. REVISAR / 3. PROTOCOLAR depois da fatal.
+  const problemasDe = (tarefa: TarefaPrevista) =>
+    tarefa.editada && tarefa.data && !tarefa.repetida ? problemasDasDatasDoFluxo([{ caminho: tarefa.caminho, data: tarefa.data }], { ehDiaUtil, dataFatal }) : [];
   const campoDoFluxo = (tarefa: TarefaPrevista) => (
     <CampoData
       compacto
@@ -576,13 +583,24 @@ export function FluxoNoVios({
       min={primeiroDia ?? hoje}
       ehDiaUtil={ehDiaUtil}
       destacado={tarefa.editada}
+      invalido={problemasDe(tarefa).length > 0}
       permitirVazio
       dica={tarefa.data ? undefined : "O VIOS data esta tarefa sozinho; escolha uma data só se precisar."}
       onChange={(data) => onMudarData(tarefa.caminho, data || null)}
       className="w-[8.5rem]"
     />
   );
-  const extrasDoFluxo = (tarefa: TarefaPrevista) =>
+  const extrasDoFluxo = (tarefa: TarefaPrevista) => (
+    <>
+      {outrosExtras(tarefa)}
+      {problemasDe(tarefa).map((problema) => (
+        <span key={problema.curto} role="alert" className="basis-full pl-7 font-medium text-red-700">
+          {problema.curto.charAt(0).toUpperCase() + problema.curto.slice(1)}
+        </span>
+      ))}
+    </>
+  );
+  const outrosExtras = (tarefa: TarefaPrevista) =>
     tarefa.editada ? (
       <span className="inline-flex flex-wrap items-center gap-1.5">
         {tarefa.dataVios ? <span className="text-muted-foreground">VIOS: {formatarData(tarefa.dataVios)}</span> : null}
@@ -1310,7 +1328,13 @@ export function EditorVistagem({
   // As repetições mensais do COMPROVAR PAGAMENTO contam no limite de tarefas da publicação.
   const tarefasNoVios = totalDeTarefas(linhas);
   const passaDoLimite = tarefasNoVios > MAX_AGENDAMENTOS;
-  const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial && !passaDoLimite;
+  // Data do fluxo em dia não útil (o VIOS passaria para o dia útil seguinte) ou Revisar/Protocolar depois da fatal.
+  const dataDoFluxoErrada = linhas.some(
+    (linha) =>
+      problemasDasDatasDoFluxo(Object.values(linha.fluxoDatas), { ehDiaUtil, dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal || null : null })
+        .length > 0
+  );
+  const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial && !passaDoLimite && !dataDoFluxoErrada;
   const incompletas = linhas.filter((linha) => !linhaPronta(linha)).length;
   const faltaObservacao = linhas.some((linha) => pedeObservacao(linha) && !linha.observacao.trim());
   const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
@@ -1635,7 +1659,7 @@ export function EditorVistagem({
                       : linha.data
                         ? depoisDoHorario && linha.data < primeiroDia
                           ? [avisoDepoisDoHorario(primeiroDia)]
-                          : avisosDaData(linha.data, detalhe.hoje)
+                          : avisosDaData(linha.data, detalhe.hoje, ehDiaUtil)
                         : [];
                     const dataAntesDoPermitido = Boolean(!comFatal && depoisDoHorario && linha.data && linha.data < primeiroDia);
                     const IconeClasse = ICONE_CLASSE[linha.etiqueta];
@@ -2041,6 +2065,7 @@ export function EditorVistagem({
                                       }))
                                     : []
                               }
+                              dataFatal={comFatal ? linha.dataFatal || null : null}
                               pessoas={pessoasDoCampo}
                               hoje={detalhe.hoje}
                               primeiroDia={primeiroDia}
@@ -2093,7 +2118,9 @@ export function EditorVistagem({
                         ? `Falta o tipo ${TAREFA_ESOCIAL} no VIOS.`
                         : passaDoLimite
                           ? `São ${tarefasNoVios} tarefas no VIOS, contando as repetições mensais: o máximo é ${MAX_AGENDAMENTOS} por publicação.`
-                          : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}${faltaObservacao ? ", observação" : ""} e responsável.`}
+                          : dataDoFluxoErrada && linhas.every(linhaPronta)
+                            ? "Há data no Fluxo das tarefas em dia que não é útil ou depois da data fatal: veja a marcada em vermelho."
+                            : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}${faltaObservacao ? ", observação" : ""} e responsável.`}
                   </p>
                   <Button onClick={enviar} disabled={enviando || !completo}>
                     {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}
