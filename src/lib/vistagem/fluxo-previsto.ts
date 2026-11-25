@@ -1,4 +1,4 @@
-import { chaveDoCaminho, separarNomes } from "./agendamento";
+import { chaveDoCaminho, responsavelFixoDaArea, separarNomes, temResponsavelFixoNaArea } from "./agendamento";
 import { datasDoPrazo, fatalPorContagem, somarDiasCorridos, somarDiasUteis, type ContagemPrazo } from "./dias-uteis";
 import {
   ANTECIPACAO_INSOLVENCIA,
@@ -10,6 +10,7 @@ import {
   type PapelNoFluxo,
   type ResponsabilidadeDoTipo,
   type TarefaDoFluxo,
+  type TipoNaArvore,
 } from "./fluxo-vios";
 import type { AgendamentoResumo, DataDoFluxo, TarefaPrevista } from "./types";
 
@@ -78,6 +79,7 @@ export const ESTAGIARIO_DA_PASTA = "Estagiário da pasta";
  * - Tipo que o VIOS dá a pessoas fixas ou ao estagiário da pasta, sem a regra do advogado: fica como o VIOS cria
  *   (Larissa no Verificar Ata, o estagiário no Inserir Pauta e na Habilitação). Pasta sem estagiário: o VIOS cria sem
  *   ninguém e o robô põe o responsável da vistagem (senão a tarefa caía no usuário do robô, o Fênix; 12/11/2026).
+ *   Na Trabalhista, a INSERIR PAUTA vem como fixa da Manoela (`arvoreComResponsavelDaArea`, 25/11/2026).
  * - Regra do advogado com outra: o responsável da vistagem e quem o VIOS põe.
  * - Só a regra do auxiliar: o revisor da vistagem. Só a do advogado, nenhuma, ou cadastro não lido: o responsável.
  * Com só os fixos lidos (catálogo antigo), ficam os fixos: é o que o VIOS cria quando o tipo não tem a regra do advogado.
@@ -311,6 +313,56 @@ export function fluxoParaOVios(previstas: TarefaPrevista[]): DataDoFluxo[] {
     if (!data && !responsaveis) return [];
     return [{ caminho: tarefa.caminho, ...(data ? { data } : {}), ...(responsaveis ? { responsaveis } : {}) }];
   });
+}
+
+/**
+ * A árvore da área com o responsável fixo da área (`responsavelFixoDaArea`) nos tipos em que o VIOS não fixa ninguém,
+ * marcado `daArea`. Na Trabalhista, a INSERIR PAUTA que o fluxo cria junto com audiências, sessões e perícias aparece
+ * com a Manoela, e não com o advogado do processo (pedido de 25/11/2026: o jurídico trocava à mão em quase toda
+ * audiência). Vale para a vistagem, a Conferência, o Check e o envio ao robô (`arvoreDaPublicacao`).
+ */
+export function arvoreComResponsavelDaArea(arvore: Map<number, TipoNaArvore>, area: string | null): Map<number, TipoNaArvore> {
+  if (!temResponsavelFixoNaArea(area)) return arvore;
+  let mudou = false;
+  const comFixo = new Map(
+    [...arvore].map(([id, tipo]): [number, TipoNaArvore] => {
+      const fixo = tipo.responsabilidade?.fixos.length ? null : responsavelFixoDaArea(area, tipo.nome);
+      if (!fixo) return [id, tipo];
+      mudou = true;
+      return [id, { ...tipo, responsabilidade: { fixos: [fixo], regras: null, daArea: true } }];
+    })
+  );
+  return mudou ? comFixo : arvore;
+}
+
+/**
+ * As tarefas do fluxo com o responsável fixo da área (`daArea`), como se o jurídico as tivesse escolhido: o VIOS não
+ * conhece a regra (põe o estagiário da pasta ou ninguém), então o robô recebe a pessoa. As escolhidas pelo jurídico
+ * valem mais (`comResponsaveisFixosNoFluxo`).
+ */
+export function responsaveisFixosDoFluxo(fluxo: Pick<FluxoDaTarefa, "criacao"> | null): DataDoFluxo[] {
+  const fixos: DataDoFluxo[] = [];
+  const visitar = (tarefas: TarefaDoFluxo[], acima: string[]) => {
+    for (const tarefa of tarefas) {
+      const caminho = [...acima, tarefa.nome];
+      if (tarefa.responsabilidade?.daArea && tarefa.responsabilidade.fixos.length) fixos.push({ caminho, responsaveis: tarefa.responsabilidade.fixos });
+      visitar(tarefa.filhas, caminho);
+    }
+  };
+  visitar(fluxo?.criacao ?? [], []);
+  return fixos;
+}
+
+/** As datas e os responsáveis do fluxo para o robô, com os fixos da área onde o jurídico não escolheu ninguém. */
+export function comResponsaveisFixosNoFluxo(datas: DataDoFluxo[], fixos: DataDoFluxo[]): DataDoFluxo[] {
+  if (!fixos.length) return datas;
+  const resultado = datas.map((item) => ({ ...item }));
+  for (const fixo of fixos) {
+    const existente = resultado.find((item) => chaveDoCaminho(item.caminho) === chaveDoCaminho(fixo.caminho));
+    if (!existente) resultado.push(fixo);
+    else if (!existente.responsaveis?.length) existente.responsaveis = fixo.responsaveis;
+  }
+  return resultado;
 }
 
 /** Caminhos das tarefas que o fluxo cria junto (para aceitar só datas de tarefas que existem). */

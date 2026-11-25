@@ -234,8 +234,8 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         (regra): RegraDocumentada => ({
           id: `responsavel-fixo-${chaveNome(regra.area).toLowerCase()}`,
           titulo: `Responsável da ${regra.tarefa} (${regra.area})`,
-          quando: `a tarefa escolhida for ${regra.tarefa} numa pasta da área ${regra.area}`,
-          entao: `ela já vem com ${regra.responsavel} no responsável, em vez do advogado da pasta (dá para trocar).`,
+          quando: `a tarefa for ${regra.tarefa} numa pasta da área ${regra.area}, escolhida ou criada pelo fluxo de outra (audiência, sessão, perícia)`,
+          entao: `ela já vem com ${regra.responsavel} no responsável, em vez do advogado da pasta, e o robô a grava assim no VIOS (dá para trocar).`,
           origem: "codigo",
         })
       ),

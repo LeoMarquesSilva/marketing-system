@@ -4,6 +4,7 @@ import {
   ETIQUETAS_AGENDAMENTO,
   comResponsavelFixoDaArea,
   horaEmSaoPaulo,
+  temResponsavelFixoNaArea,
   nomesDasPessoas,
   pessoasDaArea,
   primeiroDiaDaTarefa,
@@ -44,7 +45,15 @@ import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaA
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
-import { caminhosDoFluxo, fluxoDoPrazo, fluxoParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
+import {
+  caminhosDoFluxo,
+  comResponsaveisFixosNoFluxo,
+  fluxoDoPrazo,
+  fluxoParaOVios,
+  fluxoPrevisto,
+  prazoApertado,
+  responsaveisFixosDoFluxo,
+} from "./fluxo-previsto";
 import { arvoreDaPublicacao, carregarBaseDoFluxo, catalogoDaPublicacao, comFluxoPrevisto, prazoDaPublicacao, type AreaDaPublicacao } from "./fluxo-previsto-server";
 import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
@@ -1478,7 +1487,9 @@ async function comunicacoesEquivalentes(publicacao: PublicacaoComArea): Promise<
  */
 async function datasDoFluxoParaOVios(publicacao: PublicacaoComArea, itens: AgendamentoRow[]): Promise<Map<string, { datas: DataDoFluxo[]; enviar: string | null }>> {
   const mapa = new Map(itens.map((item) => [item.id, { datas: item.fluxo_datas ?? [], enviar: null as string | null }]));
-  const aConferir = itens.filter((item) => item.fluxo_datas?.length || (item.etiqueta === "PRAZO" && item.data_fatal));
+  // Na área com responsável fixo (Trabalhista: Manoela na INSERIR PAUTA), toda tarefa com fluxo pode levar um.
+  const comFixo = temResponsavelFixoNaArea(publicacao.escritorio_responsavel ?? publicacao.area_processo);
+  const aConferir = itens.filter((item) => item.fluxo_datas?.length || (item.etiqueta === "PRAZO" && item.data_fatal) || (comFixo && item.tarefa_id));
   if (!aConferir.length) return mapa;
   try {
     const [arvoreInteira, feriados, catalogos] = await Promise.all([carregarArvoreVios(), carregarFeriados(), catalogosDaPasta(publicacao)]);
@@ -1491,13 +1502,18 @@ async function datasDoFluxoParaOVios(publicacao: PublicacaoComArea, itens: Agend
         ? fluxoDoPrazo(montarFluxo(item.tarefa_id, arvore), { dataFatal: item.data_fatal, diasPrazo: item.dias_prazo }, daPublicacao)
         : null;
       const apertada = prazoApertado({ etiqueta: item.etiqueta, dataFatal: item.data_fatal, data: item.data }, fluxoDaTarefa, ehDiaUtil, hoje);
-      if (!apertada && !item.fluxo_datas?.length) continue;
+      // O VIOS não conhece o fixo da área: vai como escolhido, sem mexer nas datas de quem não tinha o que mudar.
+      const fixos = responsaveisFixosDoFluxo(fluxoDaTarefa);
+      if (!apertada && !item.fluxo_datas?.length) {
+        if (fixos.length) mapa.set(item.id, { datas: fixos, enviar: null });
+        continue;
+      }
       const previstas = fluxoPrevisto(apertada ? { ...item, data: apertada.enviar } : item, fluxoDaTarefa, ehDiaUtil, {
         hoje,
         datas: item.fluxo_datas,
         apertada,
       });
-      mapa.set(item.id, { datas: fluxoParaOVios(previstas), enviar: apertada?.enviar ?? null });
+      mapa.set(item.id, { datas: comResponsaveisFixosNoFluxo(fluxoParaOVios(previstas), fixos), enviar: apertada?.enviar ?? null });
     }
   } catch (erro) {
     console.error("[vistagem] datas do fluxo para o robô", erro instanceof Error ? erro.message : erro);

@@ -54,6 +54,11 @@ export interface ResponsabilidadeDoTipo {
   fixos: string[];
   /** Marcações do cadastro; null enquanto o catálogo só leu os fixos (SAMA sem a 0060 ou sem a nova leitura). */
   regras: { advogado: boolean; auxiliar: boolean; estagiario: boolean; coordenador: boolean; grupo: boolean } | null;
+  /**
+   * O fixo veio da regra da área do Orquestra (`RESPONSAVEL_FIXO_DA_AREA`, posta por `arvoreComResponsavelDaArea`), e não do cadastro
+   * do VIOS: o VIOS não sabe dele, então o robô recebe a pessoa como escolhida (`responsaveisFixosDoFluxo`).
+   */
+  daArea?: boolean;
 }
 
 export interface TarefaDoFluxo {

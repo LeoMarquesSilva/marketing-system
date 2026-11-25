@@ -201,6 +201,12 @@ export const RESPONSAVEL_FIXO_DA_AREA: readonly { area: string; tarefa: string; 
   { area: "Trabalhista", tarefa: "INSERIR PAUTA", responsavel: "Manoela Brisighello Angotti" },
 ];
 
+/** A área tem algum responsável fixo (`RESPONSAVEL_FIXO_DA_AREA`). */
+export function temResponsavelFixoNaArea(area: string | null | undefined): boolean {
+  const chave = chaveNome(area);
+  return Boolean(chave) && RESPONSAVEL_FIXO_DA_AREA.some((regra) => chaveNome(regra.area) === chave);
+}
+
 /** O responsável fixo da área para o tipo de tarefa (`RESPONSAVEL_FIXO_DA_AREA`); null nos outros. */
 export function responsavelFixoDaArea(areaDoCatalogo: string | null | undefined, nomeDaTarefa: string | null | undefined): string | null {
   const area = chaveNome(areaDoCatalogo);
