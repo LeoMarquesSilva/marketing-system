@@ -339,6 +339,7 @@ export const NAV_FRONTS: NavFront[] = [
           { href: `${EMAIL_MARKETING_KEY}/empresas`, label: "Empresas" },
           { href: `${EMAIL_MARKETING_KEY}/listas`, label: "Listas" },
           { href: `${EMAIL_MARKETING_KEY}/progresso`, label: "Progresso" },
+          { href: `${EMAIL_MARKETING_KEY}/materiais`, label: "Materiais" },
         ],
         // Domínio de envio (DNS), rastreio, plano do Resend e integrações (RD, SIOE).
         configuracoes: { href: `${EMAIL_MARKETING_KEY}/configuracoes`, label: "Configurações" },
