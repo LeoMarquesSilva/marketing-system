@@ -35,6 +35,7 @@ import {
   Tag,
   Trash2,
   TriangleAlert,
+  Undo2,
   X,
 } from "lucide-react";
 import { Segmented } from "@/components/facilities/form-parts";
@@ -103,7 +104,17 @@ import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import { ehAberturaDePasta, vaiParaCentral } from "@/lib/vistagem/central";
-import type { DataDoFluxo, DevolucaoNaVistagem, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
+import type {
+  DataDoFluxo,
+  DevolucaoNaVistagem,
+  InconsistenciaResumo,
+  PublicacaoResumo,
+  ResolucaoPendencia,
+  ResultadoCentral,
+  TarefaPrevista,
+  VistagemDetalhe,
+} from "@/lib/vistagem/types";
+import { DialogoAcao } from "./dialogo-acao";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { SeloAberturaDePasta } from "./abertura-pasta";
 import { CampoData, CampoHora } from "./campo-data";
@@ -735,41 +746,143 @@ function primeiroNome(nome: string): string {
 }
 
 /**
- * Devolvida pelo check da Operações Legais (pedido de 25/11/2026): o erro apontado, quem vistou antes, o que estava no
- * VIOS e como está o cancelamento pelo robô. As tarefas abaixo são as mesmas, para corrigir e vistar de novo.
+ * Publicação devolvida para a Vistagem (pela Conferência ou pelo Check). No topo fica só uma linha: de onde veio,
+ * quando e por quem, o tipo do erro e, no Check, como está o cancelamento no VIOS. O clique abre o detalhe num modal
+ * (pedido de 26/11/2026: o histórico inteiro no topo ocupava a tela).
  */
-function DevolucaoDoCheck({ devolucao }: { devolucao: DevolucaoNaVistagem }) {
+export function DevolucaoNoTopo({
+  devolucao,
+  inconsistencias,
+  motivo,
+  devolvidoEm,
+  onAlterada,
+}: {
+  devolucao: DevolucaoNaVistagem | null;
+  /** Inconsistências da Conferência (com contestar). */
+  inconsistencias: InconsistenciaResumo[];
+  motivo: string | null;
+  devolvidoEm: string | null;
+  onAlterada: () => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const doCheck = devolucao?.origem === "check";
+  const origem = doCheck ? "Devolvida pelo check da Operações Legais" : "Devolvida pela Conferência (controladoria)";
+  const titulo = `${origem} em ${formatarDataHora(devolucao?.em ?? devolvidoEm)}${devolucao?.por ? ` por ${devolucao.por}` : ""}`;
+  const motivoLimpo = (devolucao?.motivo ?? motivo ?? "").replace(/^Check da Operações Legais: /, "").trim();
+  // O tipo do erro (o que vem antes dos dois-pontos) ou, sem ele, o começo do motivo.
+  const tipoDoErro = motivoLimpo.includes(":") ? motivoLimpo.slice(0, motivoLimpo.indexOf(":")).trim() : motivoLimpo;
+  const cancelamentos = devolucao?.cancelamentos ?? [];
+  const atencao = cancelamentos.some((item) => item.atencao);
+  const situacao = !doCheck
+    ? inconsistencias.length > 1
+      ? `${inconsistencias.length} inconsistências`
+      : null
+    : !cancelamentos.length
+      ? null
+      : atencao
+        ? "Cancelamento no VIOS: precisa de atenção"
+        : cancelamentos.every((item) => item.pronto)
+          ? "Cancelamento no VIOS: feito"
+          : "Cancelamento no VIOS: com o robô";
+  const resumo = [tipoDoErro || null, situacao].filter(Boolean).join(" · ");
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className="group block w-full rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
+        aria-label={`${titulo}. Ver detalhes da devolução`}
+      >
+        <Aviso
+          tom="alerta"
+          titulo={titulo}
+          className="transition-shadow group-hover:shadow-[0_2px_10px_-4px_rgba(146,64,14,0.35)]"
+          acao={
+            <span className="inline-flex shrink-0 items-center gap-0.5 self-center text-xs font-medium text-amber-900 underline-offset-4 group-hover:underline">
+              Ver detalhes
+              <ChevronRight className="size-3.5" aria-hidden />
+            </span>
+          }
+        >
+          {resumo ? <span className={cn("block truncate", atencao && "font-medium text-red-700")}>{resumo}</span> : null}
+        </Aviso>
+      </button>
+      <DialogoAcao
+        aberto={aberto}
+        onFechar={() => setAberto(false)}
+        ocupado={false}
+        icone={Undo2}
+        tom="alerta"
+        titulo={origem}
+        descricao={[
+          formatarDataHora(devolucao?.em ?? devolvidoEm),
+          devolucao?.por ? `por ${devolucao.por}` : null,
+          devolucao?.vistouNome ? `vistada antes por ${devolucao.vistouNome}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        className="sm:max-w-2xl"
+        rodape={<Button onClick={() => setAberto(false)}>Fechar</Button>}
+      >
+        {doCheck && devolucao ? (
+          <DetalheDaDevolucaoDoCheck devolucao={devolucao} />
+        ) : inconsistencias.length ? (
+          <div className="space-y-2">
+            {inconsistencias.map((item) => (
+              <CartaoInconsistencia key={item.id} inconsistencia={item} acao="contestar" onAlterada={onAlterada} />
+            ))}
+          </div>
+        ) : (
+          <p className="whitespace-pre-wrap text-sm">{motivoLimpo || "Sem motivo registrado."}</p>
+        )}
+        <p className="mt-3 text-sm text-muted-foreground">Corrija as tarefas e vista de novo: a publicação volta para a Conferência.</p>
+      </DialogoAcao>
+    </>
+  );
+}
+
+/**
+ * Devolvida pelo check da Operações Legais (pedido de 25/11/2026): o erro apontado, o que estava no VIOS e como está o
+ * cancelamento pelo robô. Fica no modal da devolução; as tarefas da vistagem são as mesmas, para corrigir.
+ */
+function DetalheDaDevolucaoDoCheck({ devolucao }: { devolucao: DevolucaoNaVistagem }) {
   const atencao = (devolucao.cancelamentos ?? []).some((item) => item.atencao);
   return (
-    <Aviso
-      tom="alerta"
-      titulo={`Devolvida pelo check da Operações Legais em ${formatarDataHora(devolucao.em)}${devolucao.por ? ` por ${devolucao.por}` : ""}`}
-    >
-      <div className="space-y-1.5">
-        {devolucao.motivo ? <p className="font-medium">{devolucao.motivo.replace(/^Check da Operações Legais: /, "")}</p> : null}
-        {devolucao.vistouNome ? <p>Vistada antes por {devolucao.vistouNome}. Corrija as tarefas abaixo e vista de novo: ela volta para a Conferência.</p> : null}
-        {devolucao.tarefasCanceladas?.length ? (
-          <div>
-            <p>Estavam no VIOS e o robô cancela (tipo INCONSISTÊNCIA NA VISTAGEM):</p>
-            <ul className="mt-0.5 list-disc pl-5">
-              {devolucao.tarefasCanceladas.map((tarefa) => (
-                <li key={`${tarefa.tarefa}-${tarefa.cis.join(",")}`}>
-                  {tarefa.tarefa}
-                  {tarefa.data ? ` · ${formatarData(tarefa.data)}` : ""}
-                  {tarefa.cis.length ? ` · CI ${tarefa.cis.join(", ")}` : ""}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {(devolucao.cancelamentos ?? []).map((item) => (
-          <p key={item.cis.join(",")} className={cn(item.atencao ? "font-medium text-red-700" : item.pronto ? "text-[#285f7a]" : undefined)}>
-            {item.texto}
+    <div className="space-y-3 text-sm">
+      {devolucao.motivo ? (
+        <section className="space-y-1">
+          <h3 className="text-xs font-medium text-muted-foreground">Erro apontado no check</h3>
+          <p className="whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
+            {devolucao.motivo.replace(/^Check da Operações Legais: /, "")}
           </p>
-        ))}
-        {atencao ? <p className="text-red-700">Confira no VIOS antes de vistar de novo, para não ficar tarefa repetida.</p> : null}
-      </div>
-    </Aviso>
+        </section>
+      ) : null}
+      {devolucao.tarefasCanceladas?.length ? (
+        <section className="space-y-1">
+          <h3 className="text-xs font-medium text-muted-foreground">Estavam no VIOS e o robô cancela (tipo INCONSISTÊNCIA NA VISTAGEM)</h3>
+          <ul className="list-disc pl-5">
+            {devolucao.tarefasCanceladas.map((tarefa) => (
+              <li key={`${tarefa.tarefa}-${tarefa.cis.join(",")}`}>
+                {tarefa.tarefa}
+                {tarefa.data ? ` · ${formatarData(tarefa.data)}` : ""}
+                {tarefa.cis.length ? ` · CI ${tarefa.cis.join(", ")}` : ""}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {(devolucao.cancelamentos ?? []).length ? (
+        <section className="space-y-1">
+          <h3 className="text-xs font-medium text-muted-foreground">Cancelamento no VIOS</h3>
+          {(devolucao.cancelamentos ?? []).map((item) => (
+            <p key={item.cis.join(",")} className={cn(item.atencao ? "font-medium text-red-700" : item.pronto ? "text-[#285f7a]" : undefined)}>
+              {item.texto.replace(/^Cancelamento no VIOS: /, "")}
+            </p>
+          ))}
+          {atencao ? <p className="text-red-700">Confira no VIOS antes de vistar de novo, para não ficar tarefa repetida.</p> : null}
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -1436,21 +1549,14 @@ export function EditorVistagem({
             </Aviso>
           ) : null}
 
-          {detalhe.devolucao?.origem === "check" ? (
-            <DevolucaoDoCheck devolucao={detalhe.devolucao} />
-          ) : devolucoes.length ? (
-            <div className="space-y-2">
-              <Aviso tom="alerta" titulo={`Devolvida pela Conferência (controladoria) em ${formatarDataHora(publicacao.devolvidoEm)}`}>
-                {detalhe.devolucao?.vistouNome ? <>Vistada antes por {detalhe.devolucao.vistouNome}.</> : null}
-              </Aviso>
-              {devolucoes.map((item) => (
-                <CartaoInconsistencia key={item.id} inconsistencia={item} acao="contestar" onAlterada={() => setRecarga((valor) => valor + 1)} />
-              ))}
-            </div>
-          ) : publicacao.devolucaoMotivo ? (
-            <Aviso tom="alerta" titulo={`Devolvida pela Conferência (controladoria) em ${formatarDataHora(publicacao.devolvidoEm)}`}>
-              {publicacao.devolucaoMotivo}
-            </Aviso>
+          {detalhe.devolucao || devolucoes.length || publicacao.devolucaoMotivo ? (
+            <DevolucaoNoTopo
+              devolucao={detalhe.devolucao ?? null}
+              inconsistencias={devolucoes}
+              motivo={publicacao.devolucaoMotivo}
+              devolvidoEm={publicacao.devolvidoEm}
+              onAlterada={() => setRecarga((valor) => valor + 1)}
+            />
           ) : null}
 
           {publicacao.transferidoDe ? (
