@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   criarCalendario,
   criarCalendarioDePrazo,
+  criarNomeDoDia,
   datasDoPrazo,
   fatalPorContagem,
   fatalPorDias,
   fatalPorDiasCorridos,
   feriadosNacionais,
   noRecessoForense,
+  nomesDosFeriadosNacionais,
   pascoa,
   somarDiasUteis,
 } from "./dias-uteis";
@@ -143,5 +145,26 @@ describe("dias corridos", () => {
   it("fatalPorContagem escolhe a contagem", () => {
     expect(fatalPorContagem("2026-10-19", 15, "corridos", contaPrazo)).toBe("2026-11-03");
     expect(fatalPorContagem("2026-10-19", 15, "uteis", contaPrazo)).toBe(fatalPorDias("2026-10-19", 15, contaPrazo));
+  });
+});
+
+describe("nome do dia no calendário", () => {
+  it("os feriados nacionais calculados têm nome (Carnaval de 2027: 08 e 09/02)", () => {
+    const nomes = nomesDosFeriadosNacionais(2027);
+    expect(nomes["2027-02-08"]).toBe("Carnaval");
+    expect(nomes["2027-02-09"]).toBe("Carnaval");
+    expect(nomes["2027-03-26"]).toBe("Sexta-feira Santa");
+    expect(nomes["2027-05-27"]).toBe("Corpus Christi");
+    expect(Object.keys(nomes).sort()).toEqual(feriadosNacionais(2027));
+  });
+
+  it("feriado pelo nome; fim de semana; recesso só no calendário da fatal", () => {
+    const nome = criarNomeDoDia({ "2027-02-08": "Carnaval" });
+    expect(nome("2027-02-08")).toBe("Carnaval");
+    expect(nome("2027-02-06")).toBe("Sábado");
+    expect(nome("2027-02-07")).toBe("Domingo");
+    expect(nome("2027-02-10")).toBeNull();
+    expect(nome("2027-01-12")).toBeNull();
+    expect(criarNomeDoDia(null, { recesso: true })("2027-01-12")).toBe("Recesso forense (prazos suspensos)");
   });
 });

@@ -12,7 +12,7 @@ import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import { IconeTribunal } from "../vistagem/marcas";
 import { IconeOpcao, Seletor } from "../vistagem/seletor";
 import { Aviso, BarraAba, Busca, Carregando, Indicador, Indicadores, Painel, Selo, Vazio, campoClasse } from "../vistagem/ui";
-import { AcessoPauta, Avatar, Dupla, LinkDaSala, LinkDoVios, Local, Modalidade, ResumoDoFiltro, SeloOrigem, SeloTipo, TextoComCi, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, type DadosDaPauta } from "./comum";
+import { AcessoPauta, Avatar, Dupla, LinkDaSala, LinkDoVios, Local, Modalidade, ResumoDoFiltro, SeloOrigem, SeloTipo, TextoComCi, TrocaDialog, cliente, diaPorExtenso, hora, mensagemDeErro, pautaApi, quando, textoDaOrigem, type DadosDaPauta } from "./comum";
 
 const COLUNAS = "lg:grid lg:grid-cols-[4.5rem_minmax(0,1.5fr)_minmax(0,1.1fr)_7.5rem_minmax(0,1.25fr)_minmax(0,1.15fr)_minmax(0,1fr)] lg:items-center lg:gap-4";
 const PERIODOS = [
@@ -26,7 +26,7 @@ type CartaoPauta = "" | "mudaram" | "canceladas" | "semLink" | "cedo";
 const ROTULO_CARTAO: Record<Exclude<CartaoPauta, "">, string> = {
   mudaram: "Mudaram no tribunal",
   canceladas: "Canceladas no PJe",
-  semLink: "Vídeo sem link",
+  semLink: "Online sem link",
   cedo: "Antes das 10h",
 };
 
@@ -197,7 +197,7 @@ function Pauta() {
           hora(a.inicio),
           a.tipoDescricao ?? ROTULO_TIPO[a.tipo],
           a.orgao,
-          a.modalidadeTribunal === "presencial" ? "Presencial" : a.modalidadeTribunal === "hibrida" ? "Híbrida" : "Virtual",
+          a.modalidadeTribunal === "presencial" ? "Presencial" : a.modalidadeTribunal === "hibrida" ? "Híbrida" : "Online",
           a.cnj,
           a.reclamanteIniciais,
           dupla,
@@ -236,7 +236,7 @@ function Pauta() {
         <Indicador icone={CalendarDays} rotulo={`Próximos ${dias} dias`} valor={dados ? numeros.total : "—"} ativo={!cartao} onClick={() => setCartao("")} dica="Todas as audiências do período" />
         <Indicador icone={Repeat} rotulo={ROTULO_CARTAO.mudaram} valor={dados ? numeros.mudaram : "—"} tom={numeros.mudaram ? "perigo" : "neutro"} ativo={cartao === "mudaram"} onClick={alternar("mudaram")} dica="Mostrar só as que mudaram no PJe e ainda não foram conferidas" />
         <Indicador icone={CircleSlash} rotulo={ROTULO_CARTAO.canceladas} valor={dados ? numeros.canceladas : "—"} tom={numeros.canceladas ? "perigo" : "neutro"} ativo={cartao === "canceladas"} onClick={alternar("canceladas")} dica="Mostrar só as canceladas no PJe que ainda pedem conferência no VIOS" />
-        <Indicador icone={Video} rotulo={ROTULO_CARTAO.semLink} valor={dados ? numeros.semLink : "—"} tom={numeros.semLink ? "alerta" : "neutro"} ativo={cartao === "semLink"} onClick={alternar("semLink")} dica="Mostrar só as por vídeo ainda sem link da sala" />
+        <Indicador icone={Video} rotulo={ROTULO_CARTAO.semLink} valor={dados ? numeros.semLink : "—"} tom={numeros.semLink ? "alerta" : "neutro"} ativo={cartao === "semLink"} onClick={alternar("semLink")} dica="Mostrar só as online ainda sem link da sala" />
         <Indicador icone={Clock} rotulo={ROTULO_CARTAO.cedo} valor={dados ? numeros.cedo : "—"} tom={numeros.cedo ? "alerta" : "neutro"} ativo={cartao === "cedo"} onClick={alternar("cedo")} dica="Mostrar só as que começam antes das 10h" />
       </Indicadores>
 
@@ -450,9 +450,8 @@ function Detalhe({
             {diaPorExtenso(local(aud.inicio).dia)}, {hora(aud.inicio)} · <span className="font-mono">{aud.cnj}</span>
           </DialogDescription>
           <LinkDoVios aud={aud} className="mt-1 text-sm" />
-          {aud.origem === "jusbr" ? (
-            <p className="mt-1 text-xs text-muted-foreground">Veio do Jus.br: o processo não está na Minha Pauta do PJe do certificado. Quando o PJe passar a mostrar a audiência, a do PJe vale.</p>
-          ) : null}
+          {textoDaOrigem(aud) ? <p className="mt-1 text-xs text-muted-foreground">{textoDaOrigem(aud)}</p> : null}
+          {aud.tipoDescricao && aud.origem === "vios" ? <p className="mt-1 text-xs text-muted-foreground">No VIOS: {aud.tipoDescricao}</p> : null}
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {alertas.filter((a) => a.tipo !== "cedo").map((a) => (
@@ -502,7 +501,7 @@ function Detalhe({
                 <span className="text-xs font-semibold">Como a equipe vai</span>
                 <select className={cn(campoClasse, "h-9 w-full")} value={campos.modalidadeEquipe} onChange={(e) => setCampos({ ...campos, modalidadeEquipe: e.target.value })}>
                   <option value="">Escolher</option>
-                  <option value="video">Por vídeo</option>
+                  <option value="video">Online</option>
                   <option value="presencial">Presencial</option>
                 </select>
               </label>

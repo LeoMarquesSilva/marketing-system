@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cienciaDosAgendamentos,
   cienciaQueFica,
+  criadaPeloFluxoDeOutra,
   dataDaCienciaNaVistagem,
   dataDaCienciaNoEnvio,
   ehCienciaDosAgendamentos,
@@ -310,5 +311,73 @@ describe("vaiDiretoAoRobo: Operações Legais só com a VERIFICAR RENÚNCIA (ped
     expect(vaiDiretoAoRobo(null, [renuncia])).toBe(false);
     expect(vaiDiretoAoRobo("Operações Legais", [{ tarefa: "CIÊNCIA NF" }])).toBe(false);
     expect(vaiDiretoAoRobo("Operações Legais", [])).toBe(false);
+  });
+});
+
+describe("criadaPeloFluxoDeOutra: tarefa que o fluxo de outra já cria (pedido de 26/11/2026)", () => {
+  const doTipo = (id: string, nome: string, filhas: TarefaDoFluxo[] = []): TarefaDoFluxo => ({ ...noFluxo(nome, filhas), id });
+  // Como no VIOS: a AUDIÊNCIA UNA/INICIAL (202) cria a CONTESTAÇÃO 418 (com o 2. REVISAR e o 3. PROTOCOLAR dela), a
+  // INFORMAR CLIENTE e a Ciência; a AUD. INSTRUÇÃO (457) cria a INFORMAR CLIENTE.
+  const AUDIENCIA: FluxoDaTarefa = {
+    criacao: [
+      doTipo("418", "CONTESTAÇÃO", [doTipo("419", "2. REVISAR"), doTipo("420", "3. PROTOCOLAR")]),
+      doTipo("321", "1. CIÊNCIA DOS AGENDAMENTOS"),
+      doTipo("412", "INFORMAR CLIENTE"),
+    ],
+    conclusao: [],
+  };
+  const CONTESTACAO: FluxoDaTarefa = { criacao: [doTipo("419", "2. REVISAR"), doTipo("420", "3. PROTOCOLAR")], conclusao: [] };
+  const item = (chave: string, tarefaId: string | null, nome: string, fluxo: FluxoDaTarefa | null = null) => ({ chave, tarefaId, nome, fluxo });
+
+  it("a AUDIÊNCIA UNA/INICIAL já cria a CONTESTAÇÃO: a CONTESTAÇÃO pedida à parte fica duplicada", () => {
+    const criadaPor = criadaPeloFluxoDeOutra([
+      item("a", "202", "AUDIÊNCIA UNA/INICIAL", AUDIENCIA),
+      item("b", "418", "CONTESTAÇÃO", CONTESTACAO),
+    ]);
+    expect(criadaPor("b")).toBe("AUDIÊNCIA UNA/INICIAL");
+    expect(criadaPor("a")).toBeNull();
+  });
+
+  it("vale em qualquer ordem e casa pelo nome quando o id é outro (a lista pode ter outra CONTESTAÇÃO)", () => {
+    const criadaPor = criadaPeloFluxoDeOutra([item("b", "5", "Contestação"), item("a", "202", "AUDIÊNCIA UNA/INICIAL", AUDIENCIA)]);
+    expect(criadaPor("b")).toBe("AUDIÊNCIA UNA/INICIAL");
+    expect(criadaPor("a")).toBeNull();
+  });
+
+  it("vale para outros pares da árvore e em qualquer nível do fluxo", () => {
+    const impugnacao: FluxoDaTarefa = { criacao: [doTipo("900", "MANIFESTAÇÃO", [doTipo("412", "INFORMAR CLIENTE")])], conclusao: [] };
+    const criadaPor = criadaPeloFluxoDeOutra([item("a", "453", "IMPUGNAÇÃO AO LAUDO", impugnacao), item("b", "412", "INFORMAR CLIENTE")]);
+    expect(criadaPor("b")).toBe("IMPUGNAÇÃO AO LAUDO");
+  });
+
+  it("tarefas sem relação no fluxo ficam", () => {
+    const criadaPor = criadaPeloFluxoDeOutra([
+      item("a", "202", "AUDIÊNCIA UNA/INICIAL", AUDIENCIA),
+      item("b", "136", "MANIFESTAÇÃO - FLUXO D1", CONTESTACAO),
+      item("c", null, "COMPROVAR PAGAMENTO"),
+    ]);
+    expect([criadaPor("a"), criadaPor("b"), criadaPor("c")]).toEqual([null, null, null]);
+  });
+
+  it("a Ciência dos Agendamentos e o Embargos de Declaração seguem a regra deles (o robô cancela os do fluxo)", () => {
+    const agravo: FluxoDaTarefa = { criacao: [doTipo("462", "EMBARGOS DE DECLARAÇÃO")], conclusao: [] };
+    const criadaPor = criadaPeloFluxoDeOutra([
+      item("a", "202", "AUDIÊNCIA UNA/INICIAL", AUDIENCIA),
+      item("b", "321", "1. CIÊNCIA DOS AGENDAMENTOS"),
+      item("c", "465", "AGRAVO INTERNO", agravo),
+      item("d", "19", "EMBARGOS DE DECLARAÇÃO"),
+    ]);
+    expect(criadaPor("b")).toBeNull();
+    expect(criadaPor("d")).toBeNull();
+  });
+
+  it("duas que se criam uma à outra: fica a primeira", () => {
+    const umaCriaOutra = (id: string, nome: string): FluxoDaTarefa => ({ criacao: [doTipo(id, nome)], conclusao: [] });
+    const criadaPor = criadaPeloFluxoDeOutra([
+      item("a", "1", "TAREFA A", umaCriaOutra("2", "TAREFA B")),
+      item("b", "2", "TAREFA B", umaCriaOutra("1", "TAREFA A")),
+    ]);
+    expect(criadaPor("a")).toBeNull();
+    expect(criadaPor("b")).toBe("TAREFA A");
   });
 });

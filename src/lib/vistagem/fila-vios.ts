@@ -21,6 +21,19 @@ export function modoDaPublicacao(
   return lote?.origem === "colado" ? "pasta" : padrao;
 }
 
+export function ehCienciaNf(nomeDaTarefa: string | null | undefined): boolean {
+  return chaveNome(nomeDaTarefa) === "CIENCIA NF";
+}
+
+/**
+ * Quem vistou, na descrição da CIÊNCIA NF no VIOS (pedido de 24/11/2026): o robô cria a tarefa com o usuário dele, e
+ * a descrição só tinha o texto da intimação. Null sem o nome.
+ */
+export function linhaDeQuemVistou(nome: string | null | undefined): string | null {
+  const limpo = nome?.replace(/\s+/g, " ").trim();
+  return limpo ? `Vistada por: ${limpo}` : null;
+}
+
 /** Uma tarefa do lançamento pela intimação (coluna `lancamento` da fila do SAMA). */
 export interface TarefaDoLancamento {
   /** Id do agendamento no Orquestra; o robô devolve o CI de cada uma por esta chave. */
@@ -113,6 +126,8 @@ export interface PublicacaoParaFila {
   escritorio_responsavel?: string | null;
   /** IDs de comunicação das outras publicações do mesmo grupo de duplicidade. */
   comunicacoes_equivalentes?: (number | string)[];
+  /** Nome de quem vistou por último (revistado_por ?? vistado_por): vai na descrição da CIÊNCIA NF. */
+  vistada_por?: string | null;
 }
 
 export interface AgendamentoParaFila {
@@ -144,8 +159,8 @@ const TIPO_NA_FILA: Record<EtiquetaAgendamento, string> = { PRAZO: "Prazo", PROV
  * Linhas da fila do robô para as tarefas de uma publicação, com os agendamentos de cada uma.
  * - intimação: uma linha com todas as tarefas (depois de lançada, a intimação sai da lista do
  *   VIOS); a descrição leva só o cabeçalho e a observação, porque o VIOS insere o texto da intimação.
- *   Na CIÊNCIA NF a observação vai na JUSTIFICATIVA NF e a descrição fica só com o texto da
- *   intimação (modelo da Maria: CI 934338, 03/11/2026).
+ *   Na CIÊNCIA NF a observação vai na JUSTIFICATIVA NF e a descrição fica com quem vistou e o texto
+ *   da intimação (modelo da Maria: CI 934338, 03/11/2026; quem vistou, pedido de 24/11/2026).
  * - pasta (publicação colada à mão): a mesma linha, marcada para agendar direto na pasta. O robô põe o texto da
  *   publicação na descrição e a observação da CIÊNCIA NF na JUSTIFICATIVA NF, como na intimação (pedido de 11/11/2026:
  *   a linha antiga, uma por tarefa, ia sem o texto e com a justificativa na descrição).
@@ -192,6 +207,7 @@ export function linhasParaFila(
             item.hora ? `Horário: ${item.hora}${item.hora_fim ? ` às ${item.hora_fim}` : ""}` : null,
             // Na pasta o robô põe a data limite igual à data: a outra, pedida na Sessão de Julgamento, vai escrita.
             item.data_limite && item.data_limite !== item.data ? `Data limite: ${paraDataVios(item.data_limite)}` : null,
+            ehCienciaNf(item.tarefa) ? linhaDeQuemVistou(publicacao.vistada_por) : null,
             item.observacao,
           ]
             .filter(Boolean)
@@ -206,6 +222,10 @@ export function linhasParaFila(
   // Linha da fila do robô (não vai para a tarefa): só identifica a publicação.
   const cabecalho = referenciaDaPublicacao(referencia);
   const comunicacao = publicacao.djen_id_comunicacao ? String(publicacao.djen_id_comunicacao) : null;
+  // CIÊNCIA NF: a descrição leva quem vistou. Na intimação, o VIOS junta o texto dela abaixo; direto na pasta, o robô
+  // usa a descrição no lugar do cabeçalho "Publicação de…" e põe o texto da publicação embaixo, então o cabeçalho vai junto.
+  const vistadaPor = linhaDeQuemVistou(publicacao.vistada_por);
+  const descricaoDaCienciaNf = !vistadaPor ? "" : modo === "pasta" ? montarObservacaoVios(publicacao.data_publicacao, vistadaPor) : vistadaPor;
   return [
     {
       linha: {
@@ -219,7 +239,7 @@ export function linhasParaFila(
           ...(opcoes.modo === "pasta" ? { publicacao_colada: true } : {}),
           ...(atendimento && opcoes.tipoPasta ? { pasta_informada: { tipo: opcoes.tipoPasta } } : {}),
           tarefas: itens.map((item) => {
-            const cienciaNf = chaveNome(item.tarefa) === "CIENCIA NF";
+            const cienciaNf = ehCienciaNf(item.tarefa);
             return {
               chave: item.id,
               tarefa_id: item.tarefa_id,
@@ -232,7 +252,7 @@ export function linhasParaFila(
               responsavel: item.responsavel,
               revisor: item.revisor,
               revisor_na_tarefa: Boolean(item.revisor) && revisorFicaNaTarefa(item.tarefa, publicacao.escritorio_responsavel),
-              observacao: cienciaNf ? "" : montarObservacaoVios(publicacao.data_publicacao, item.observacao),
+              observacao: cienciaNf ? descricaoDaCienciaNf : montarObservacaoVios(publicacao.data_publicacao, item.observacao),
               justificativa: cienciaNf ? item.observacao?.trim() || null : null,
               fluxo_datas: (item.fluxoDatas ?? []).map((datada) => ({
                 caminho: datada.caminho,

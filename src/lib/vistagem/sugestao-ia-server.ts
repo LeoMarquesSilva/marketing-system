@@ -17,8 +17,10 @@ import {
   type AreasVistagem,
   type PublicacaoComArea,
 } from "./juridico-server";
-import { carregarCatalogoProcessos } from "./sama";
+import { carregarArvoreVios, carregarCatalogoProcessos, type CatalogoArea } from "./sama";
 import { lerConfiguracoes } from "./configuracoes-server";
+import { arvoreDaPublicacao } from "./fluxo-previsto-server";
+import { montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import { registrarSugestaoDaIa } from "./ia-registro-server";
 import { admin, falhou } from "./server";
 import {
@@ -32,6 +34,7 @@ import {
   esocialDaResposta,
   instrucoesDaSugestao,
   secaoDoHistorico,
+  sugestaoSemOQueOFluxoCria,
   tarefasDaResposta,
   trechoDecisivo,
   type SugestaoIa,
@@ -145,7 +148,9 @@ async function montarHistorico(escritorio: string, { ate, excluirProcesso }: { a
 export async function pedirSugestao(
   publicacao: PublicacaoComArea,
   catalogo: { area: string; tarefas: Record<EtiquetaAgendamento, OpcaoTarefa[]> },
-  historico: string | null
+  historico: string | null,
+  /** Fluxo do VIOS de cada tarefa na pasta: sai da sugestão o que o fluxo de outra sugerida já cria. */
+  fluxoDe?: (tarefaId: string) => FluxoDaTarefa | null
 ): Promise<{ sugestao: SugestaoIa; instrucoes: string }> {
   const apiKey = openAIKey("analisePublicacao");
   if (!apiKey) throw new VistagemError("A chave da OpenAI não está configurada.", 503);
@@ -196,7 +201,29 @@ export async function pedirSugestao(
       saida: usage.outputTokens ?? 0,
     }),
   };
-  return { sugestao, instrucoes };
+  return { sugestao: fluxoDe ? sugestaoSemOQueOFluxoCria(sugestao, fluxoDe) : sugestao, instrucoes };
+}
+
+/**
+ * O fluxo do VIOS de cada tarefa como vale para a pasta da publicação (`arvoreDaPublicacao`), para a sugestão sair sem
+ * o que o fluxo de outra sugerida já cria. Sem a árvore (SAMA fora do ar), a sugestão sai sem esse filtro: a tela do
+ * jurídico confere de novo ao mostrar.
+ */
+function fluxoNaPasta(
+  arvore: Map<number, TipoNaArvore> | null,
+  catalogos: CatalogoArea[],
+  publicacao: PublicacaoComArea
+): ((tarefaId: string) => FluxoDaTarefa | null) | undefined {
+  if (!arvore) return undefined;
+  const daPasta = arvoreDaPublicacao(arvore, catalogos, publicacao);
+  return (tarefaId) => montarFluxo(tarefaId, daPasta);
+}
+
+function arvoreParaSugestao(): Promise<Map<number, TipoNaArvore> | null> {
+  return carregarArvoreVios().catch((erro: unknown) => {
+    console.error("[vistagem] árvore do VIOS para a sugestão da IA:", erro instanceof Error ? erro.message : erro);
+    return null;
+  });
 }
 
 /** Grava a sugestão na publicação e, no registro da IA, o que ela leu e sugeriu. */
@@ -216,12 +243,14 @@ export async function sugestaoDaPublicacao(id: string, areas: AreasVistagem = nu
   garantirArea(publicacao, areas, veRisco);
   if (publicacao.sugestao_ia) return publicacao.sugestao_ia;
   if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
-  const catalogo = catalogoParaPublicacao(await carregarCatalogoProcessos(), publicacao);
+  const catalogos = await carregarCatalogoProcessos();
+  const catalogo = catalogoParaPublicacao(catalogos, publicacao);
   if (!catalogo || !areaComSugestaoIa(catalogo.area)) {
     throw new VistagemError("A sugestão da IA não está disponível para esta área.", 422);
   }
   if (!(await lerConfiguracoes()).iaSugestaoTarefa) throw new VistagemError("A sugestão da IA está desligada nas configurações da Vistagem.", 422);
-  const pedido = await pedirSugestao(publicacao, catalogo, await historicoDaArea(publicacao.escritorio_responsavel));
+  const [historico, arvore] = await Promise.all([historicoDaArea(publicacao.escritorio_responsavel), arvoreParaSugestao()]);
+  const pedido = await pedirSugestao(publicacao, catalogo, historico, fluxoNaPasta(arvore, catalogos, publicacao));
   await gravarSugestao(publicacao, catalogo.area, pedido);
   return pedido.sugestao;
 }
@@ -242,7 +271,7 @@ export async function gerarSugestoesPendentes(prazoMs: number): Promise<{ penden
     .order("data_publicacao", { ascending: true })
     .limit(300);
   if (error) falhou("listar as publicações sem sugestão da IA", error);
-  const catalogos = await carregarCatalogoProcessos();
+  const [catalogos, arvore] = await Promise.all([carregarCatalogoProcessos(), arvoreParaSugestao()]);
   const fila = ((data ?? []) as PublicacaoComArea[])
     .map((publicacao) => ({ publicacao, catalogo: catalogoParaPublicacao(catalogos, publicacao) }))
     .filter((item) => item.catalogo && areaComSugestaoIa(item.catalogo.area));
@@ -252,7 +281,12 @@ export async function gerarSugestoesPendentes(prazoMs: number): Promise<{ penden
   for (let i = 0; i < fila.length && Date.now() < fim; i += 4) {
     const lote = await Promise.allSettled(
       fila.slice(i, i + 4).map(async ({ publicacao, catalogo }) => {
-        const pedido = await pedirSugestao(publicacao, catalogo!, await historicoDaArea(publicacao.escritorio_responsavel));
+        const pedido = await pedirSugestao(
+          publicacao,
+          catalogo!,
+          await historicoDaArea(publicacao.escritorio_responsavel),
+          fluxoNaPasta(arvore, catalogos, publicacao)
+        );
         await gravarSugestao(publicacao, catalogo!.area, pedido);
         return pedido.sugestao.custoUS;
       })

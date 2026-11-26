@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { juntarFontes, lerCsvProcessos, lerData, lerNumeros, lerPartes, limparExcel, registroDoSioe, separarEtiquetas } from "./import-vios";
+import { catalogoDeEtiquetas, desgrudarEtiquetas, juntarFontes, lerCsvProcessos, lerData, lerNumeros, lerPartes, limparExcel, registroDoSioe, separarEtiquetas } from "./import-vios";
 
 describe("células do relatório do VIOS", () => {
   it("tira o truque do Excel e o zero de campo vazio", () => {
@@ -14,6 +14,9 @@ describe("células do relatório do VIOS", () => {
     expect(lerData("05/03/2024 14:10")).toBe("2024-03-05");
     expect(lerData("2024-03-05T10:00:00")).toBe("2024-03-05");
     expect(lerData("")).toBeNull();
+    expect(lerData("00/00/0000")).toBeNull();
+    expect(lerData("0000-00-00")).toBeNull();
+    expect(lerData("31/02/2024")).toBeNull();
   });
 
   it("separa o CNJ dos outros números, que vêm colados", () => {
@@ -42,6 +45,27 @@ describe("células do relatório do VIOS", () => {
     expect(separarEtiquetas("Carteira X Etiqueta Nova Crítico", catalogo)).toEqual(["Carteira X", "Etiqueta Nova", "Crítico"]);
     expect(separarEtiquetas("Sem Catálogo", [])).toEqual(["Sem Catálogo"]);
   });
+
+  it("separa sem se importar com caixa ou espaço dobrado e devolve a grafia do catálogo", () => {
+    expect(separarEtiquetas("carteira x  CRÉDITO ATIVO", ["Carteira X", "Crédito Ativo"])).toEqual(["Carteira X", "Crédito Ativo"]);
+  });
+
+  it("tira do catálogo a etiqueta que é só outras etiquetas coladas", () => {
+    const catalogo = catalogoDeEtiquetas(["Carteira X", "Crédito Ativo"], ["Carteira X Crédito Ativo", "Demanda de risco", "carteira x"], ["Carteira X Crédito Ativo Demanda de risco"]);
+    expect([...catalogo].sort()).toEqual(["Carteira X", "Crédito Ativo", "Demanda de risco"]);
+    expect(separarEtiquetas("Carteira X Crédito Ativo Demanda de risco", catalogo)).toEqual(["Carteira X", "Crédito Ativo", "Demanda de risco"]);
+    // "Carteira X Sul" não se divide por inteiro em etiquetas conhecidas: é uma etiqueta de verdade.
+    expect(catalogoDeEtiquetas(["Carteira X", "Carteira X Sul"])).toEqual(["Carteira X Sul", "Carteira X"]);
+  });
+
+  it("desgruda o que foi gravado colado e não mexe no resto", () => {
+    const catalogo = ["Carteira X", "Crédito Ativo", "Demanda de risco", "Crítico"];
+    expect(desgrudarEtiquetas(["Carteira X Crédito Ativo Demanda de risco"], catalogo)).toEqual(["Carteira X", "Crédito Ativo", "Demanda de risco"]);
+    expect(desgrudarEtiquetas(["Carteira X Crítico", "Crítico"], catalogo)).toEqual(["Carteira X", "Crítico"]);
+    expect(desgrudarEtiquetas(["Carteira X", "Crédito Ativo"], catalogo)).toBeNull();
+    expect(desgrudarEtiquetas(["Carteira X Etiqueta Nova"], catalogo)).toBeNull();
+    expect(desgrudarEtiquetas(["Etiqueta Solta"], catalogo)).toBeNull();
+  });
 });
 
 const CSV = [
@@ -51,6 +75,17 @@ const CSV = [
   '"Média:";"";"";"";"";"";"";"";"";"";"";"6.172,83";"";"";"";""',
   '"Total: 2";"";"";"";"";"";"";"";"";"";"";"12.345,67";"";"";"";""',
 ].join("\r\n");
+
+describe("lerCsvProcessos sem catálogo de etiquetas", () => {
+  const leitura = lerCsvProcessos(CSV, []);
+
+  it("não inventa etiqueta colada: deixa o campo de fora e conta a linha", () => {
+    expect(leitura.etiquetasSemCatalogo).toBe(1);
+    expect("etiquetas" in leitura.registros[0].valores).toBe(false);
+    // Coluna vazia no relatório é lista vazia de verdade, com ou sem catálogo.
+    expect(leitura.registros[1].valores.etiquetas).toEqual([]);
+  });
+});
 
 describe("lerCsvProcessos", () => {
   const leitura = lerCsvProcessos(CSV, ["Carteira X", "Crédito Ativo"]);

@@ -26,6 +26,7 @@ const processo: DadosDoProcessoNaCarteira = {
   valorAcao: null,
   valorOriginalCadastro: null,
   proximosPassos: "Pedir SISBAJUD",
+  advogadoResponsavel: null,
 };
 
 function citacao(resultado: Citacao["resultado"], endereco: string | null = null): Citacao {

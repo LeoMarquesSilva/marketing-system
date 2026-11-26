@@ -10,7 +10,11 @@ import {
   documentosDaFicha,
   documentosNovosJusbr,
   ehAreaLogadaJusbr,
+  JUSBR_LOTE_PADRAO,
+  loteJusbr,
   ehLoginPdpj,
+  desistirDoJusbr,
+  desistirDosOriginais,
   motivoDaResposta,
   textoParaPdf,
   urlDaApi,
@@ -27,6 +31,8 @@ const INTERVALO_MS = 250;
 const TENTATIVAS = 3;
 /** Conteúdo de origem por parte do PDF (o arquivo final fica abaixo dos 200 MB que o ORQESTRAI aceita). */
 const LIMITE_PARTE_BYTES = (Number(process.env.JUSBR_PARTE_MB) > 0 ? Number(process.env.JUSBR_PARTE_MB) : 80) * 1024 * 1024;
+/** Documentos por pedido: o resto de um processo enorme volta ao fim da fila (jusbr-urls.ts, loteJusbr). */
+const LOTE = Number(process.env.JUSBR_LOTE) > 0 ? Number(process.env.JUSBR_LOTE) : JUSBR_LOTE_PADRAO;
 
 /**
  * PROTÓTIPO (18/11/2026), fora da fila: um conector único pelo Jus.br, para qualquer tribunal integrado à PDPJ.
@@ -41,6 +47,8 @@ export class ConectorJusbr implements Conector {
   readonly chave = "jusbr:BR";
   private autorizacao: string | null = null;
   private diagnosticoFeito = false;
+  /** PDFs originais recusados pelo Jus.br (5xx) em sequência, neste pedido. */
+  private originaisRecusados = 0;
   private fonte: PDFFont | null = null;
 
   private abaDoPortal(ambiente: Ambiente): Page | null {
@@ -62,6 +70,18 @@ export class ConectorJusbr implements Conector {
     if (this.abaDoPortal(ambiente)) return;
     const nova = await ambiente.contexto.newPage();
     await entrarComAPessoa({ ...ambiente, pagina: nova }, this.opcoesDeLogin(ambiente));
+  }
+
+  /**
+   * A sessão venceu (a API responde 401 mesmo com a aba do portal aberta, ex.: de um dia para o outro): fecha as abas
+   * do portal e esquece o token; a próxima busca abre o portal de novo, e o login (certificado e código do painel)
+   * acontece sozinho.
+   */
+  private async reiniciarSessao(ambiente: Ambiente): Promise<void> {
+    this.autorizacao = null;
+    for (const aba of ambiente.contexto.pages()) {
+      if (!aba.isClosed() && ehAreaLogadaJusbr(aba.url()) && aba !== ambiente.pagina) await aba.close().catch(() => undefined);
+    }
   }
 
   private async portal(ambiente: Ambiente): Promise<Page> {
@@ -120,7 +140,9 @@ export class ConectorJusbr implements Conector {
         throw new FalhaDoConector(`A conexão com o ${SISTEMA} caiu (${erro instanceof Error ? erro.message.split("\n")[0].slice(0, 80) : "erro de rede"}). O pedido volta para a fila.`);
       }
       if (resposta.status() === 401) {
-        this.autorizacao = null;
+        // Primeiro só renova o token pela tela; se continuar 401, a sessão do portal venceu: entra de novo.
+        if (tentativa >= 2) await this.reiniciarSessao(ambiente);
+        else this.autorizacao = null;
         continue;
       }
       if (resposta.status() >= 500 && tentativa < TENTATIVAS) {
@@ -136,8 +158,15 @@ export class ConectorJusbr implements Conector {
     const digitos = digitosDoCnj(cnj);
     if (!digitos) throw new FalhaDoConector(`Número de processo inválido: ${cnj}.`);
     let busca = 0;
+    let entrouDeNovo = false;
     for (let tentativa = 1; tentativa <= TENTATIVAS; tentativa += 1) {
       busca = await this.buscarPelaTela(ambiente, digitos);
+      if (busca === 401 && !entrouDeNovo) {
+        entrouDeNovo = true;
+        ambiente.registrar(`${SISTEMA}: a sessão venceu; entrando de novo.`);
+        await this.reiniciarSessao(ambiente);
+        continue;
+      }
       if (busca < 500) break;
       await new Promise((r) => setTimeout(r, 3_000 * tentativa));
     }
@@ -153,12 +182,21 @@ export class ConectorJusbr implements Conector {
   /** O arquivo original, se for PDF. Qualquer falha (resposta malformada, link vencido) devolve null: vale o texto. */
   private async arquivoEmPdf(ambiente: Ambiente, digitos: string, documento: DocumentoJusbr): Promise<Buffer | null> {
     if (!documento.hrefBinario) return null;
+    // O tribunal não está servindo os originais (o Jus.br responde 503 a cada um): o resto do processo vai pelo
+    // texto, sem gastar as tentativas do PDF em cada peça.
+    if (desistirDosOriginais(this.originaisRecusados)) return null;
     try {
       // O arquivo pode responder com redirecionamento para um endereço temporário do armazenamento (link assinado):
       // esse segundo pedido vai sem o token da PDPJ, que o armazenamento não aceita junto da assinatura.
       let resposta = await this.get(ambiente, digitos, urlDaApi(documento.hrefBinario), true);
       const destinoDoArquivo = resposta.status() >= 300 && resposta.status() < 400 ? resposta.headers()["location"] : undefined;
       if (destinoDoArquivo) resposta = await ambiente.contexto.request.get(destinoDoArquivo, { timeout: 180_000 });
+      if (resposta.status() >= 500) {
+        this.originaisRecusados += 1;
+        if (desistirDosOriginais(this.originaisRecusados)) {
+          ambiente.registrar(`Jus.br: ${this.originaisRecusados} arquivos originais seguidos recusados (status ${resposta.status()}); o resto deste processo vai pelo texto.`);
+        }
+      } else this.originaisRecusados = 0;
       const corpo = resposta.ok() ? await resposta.body() : null;
       // O cabeçalho "%PDF-" pode vir depois de alguns bytes (o padrão admite até 1 KB antes dele).
       const inicio = corpo ? corpo.subarray(0, 1024).indexOf("%PDF-") : -1;
@@ -216,14 +254,16 @@ export class ConectorJusbr implements Conector {
     if (fichas.some((ficha) => (ficha.nivelSigilo ?? 0) > 0) && !pedido.segredoLiberado) throw new SegredoDeJustica();
     const documentos = documentosDaFicha(fichas);
     if (!documentos.length) throw new FalhaDoConector(`${pedido.cnj}: o Jus.br não trouxe documentos deste processo (integração incompleta do tribunal).`);
-    const novos = documentosNovosJusbr(documentos, pedido.pecasBaixadas);
+    const todosNovos = documentosNovosJusbr(documentos, pedido.pecasBaixadas);
+    const { lote: novos, restantes } = loteJusbr(todosNovos, LOTE);
     // A capa e os movimentos vão junto (o ORQESTRAI grava a capa e a linha do tempo), com ou sem peça nova.
     const capa = capaDaFicha(fichas) ?? undefined;
     if (!novos.length) {
       ambiente.registrar(`${documentos.length} documentos no Jus.br, todos já baixados antes: nada novo.`);
       return { semNovidades: true, capa };
     }
-    ambiente.registrar(`${novos.length} documentos ${novos.length < documentos.length ? `novos de ${documentos.length} ` : ""}no Jus.br (${fichas.map((f) => f.siglaTribunal).join(", ")}). Baixando um a um.`);
+    ambiente.registrar(`${todosNovos.length} documentos ${todosNovos.length < documentos.length ? `novos de ${documentos.length} ` : ""}no Jus.br (${fichas.map((f) => f.siglaTribunal).join(", ")}). Baixando um a um.`);
+    if (restantes) ambiente.registrar(`Processo grande: este pedido leva ${novos.length}; os outros ${restantes} voltam ao fim da fila num pedido novo.`);
     // Processo grande sai em partes (o ORQESTRAI aceita até 200 MB por arquivo): cada parte fecha perto de
     // LIMITE_PARTE_BYTES de conteúdo de origem. A primeira parte é o `destino`; as outras, "<destino>-parte2.pdf"…
     const partes: { caminho: string; pecas: string[]; paginas: number }[] = [];
@@ -231,6 +271,7 @@ export class ConectorJusbr implements Conector {
     let pecasDaParte: string[] = [];
     let bytesDaParte = 0;
     this.fonte = null;
+    this.originaisRecusados = 0;
     const fecharParte = async () => {
       if (!saida.getPageCount()) return;
       const caminho = partes.length ? destino.replace(/\.pdf$/i, `-parte${partes.length + 1}.pdf`) : destino;
@@ -243,9 +284,15 @@ export class ConectorJusbr implements Conector {
       bytesDaParte = 0;
     };
     const contagem = { pdf: 0, texto: 0, falhou: 0 };
+    let falhasSeguidas = 0;
     for (const documento of novos) {
+      await ambiente.sinalDeVida?.();
       const { como, bytes } = await this.acrescentar(ambiente, digitos, saida, documento);
       contagem[como] += 1;
+      falhasSeguidas = como === "falhou" ? falhasSeguidas + 1 : 0;
+      if (desistirDoJusbr(falhasSeguidas)) {
+        throw new FalhaDoConector(`${pedido.cnj}: o Jus.br não entregou ${falhasSeguidas} documentos seguidos (a integração do tribunal parece fora do ar).`);
+      }
       if (como !== "falhou") pecasDaParte.push(documento.chave);
       bytesDaParte += bytes;
       if (bytesDaParte >= LIMITE_PARTE_BYTES) await fecharParte();
@@ -256,7 +303,8 @@ export class ConectorJusbr implements Conector {
     const paginas = partes.reduce((total, parte) => total + parte.paginas, 0);
     ambiente.registrar(`Jus.br: ${contagem.pdf} em PDF, ${contagem.texto} pelo texto, ${contagem.falhou} sem arquivo; ${paginas} páginas${partes.length > 1 ? ` em ${partes.length} partes` : ""}.`);
     const pecas = partes.flatMap((parte) => parte.pecas);
-    return partes.length > 1 ? { pecas, capa, arquivos: partes.map(({ caminho, pecas: daParte }) => ({ caminho, pecas: daParte })) } : { pecas, capa };
+    const resto = restantes ? { restantes } : {};
+    return partes.length > 1 ? { pecas, capa, ...resto, arquivos: partes.map(({ caminho, pecas: daParte }) => ({ caminho, pecas: daParte })) } : { pecas, capa, ...resto };
   }
 
   async inspecionar(ambiente: Ambiente, cnj: string): Promise<void> {

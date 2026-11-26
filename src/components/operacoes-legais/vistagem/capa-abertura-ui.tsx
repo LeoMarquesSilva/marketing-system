@@ -422,8 +422,11 @@ export function ResumoDaCapaView({
 export interface AberturaReal {
   /** Configurações › Robô: abertura de pasta de verdade. */
   ligada: boolean;
-  /** Depois da abertura: a CI nova e se a publicação ainda está na triagem esperando a conferência. */
-  pastaAberta: { ci: string; naTriagem: boolean; liberada: boolean } | null;
+  /**
+   * Depois da abertura: a CI nova e se a publicação ainda está na triagem esperando a conferência. `jaExistia`: o robô
+   * não abriu nada, porque o processo já tinha essa pasta no VIOS.
+   */
+  pastaAberta: { ci: string; naTriagem: boolean; liberada: boolean; jaExistia?: boolean } | null;
   /** `conferidoNoVios`: a pessoa conferiu no VIOS que o pedido que parou depois do Gravar não criou a pasta. */
   onAbrir: (conferidoNoVios: boolean) => void;
 }
@@ -462,13 +465,15 @@ export function BlocoDoRobo({
     return (
       <div className="space-y-2 border-t border-[#e6eef0] pt-3">
         {cabecalho}
-        <Aviso tom="sucesso" titulo={`Pasta aberta no VIOS: CI ${aberta.ci}`}>
+        <Aviso tom="sucesso" titulo={aberta.jaExistia ? `O processo já tinha pasta no VIOS: CI ${aberta.ci}` : `Pasta aberta no VIOS: CI ${aberta.ci}`}>
           <a href={linkPastaVios(aberta.ci)} target="_blank" rel="noreferrer" className="block text-xs font-medium underline underline-offset-2">
             Abrir a pasta no VIOS (nova aba)
           </a>
           <span className="mt-1 block text-xs">
             {aberta.naTriagem
-              ? "Confira a pasta no VIOS (as partes ativas e passivas entram à mão) e, se estiver tudo certo, libere em \"Para onde vai\", aqui embaixo, com esta CI."
+              ? aberta.jaExistia
+                ? "O robô não abriu outra. Confira no VIOS se a pasta é deste processo e libere em \"Para onde vai\", aqui embaixo, com esta CI."
+                : "Confira a pasta no VIOS (as partes ativas e passivas entram à mão) e, se estiver tudo certo, libere em \"Para onde vai\", aqui embaixo, com esta CI."
               : aberta.liberada
                 ? "A publicação já foi liberada com esta CI."
                 : "A publicação já saiu da Triagem Manual."}

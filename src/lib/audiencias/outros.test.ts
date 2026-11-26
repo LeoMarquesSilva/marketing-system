@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { alertasDaAudiencia, respostasDosConvites } from "./agenda";
 import { duplaDaPasta, nomeCurto, pessoaPorSigla, siglaDoNome } from "./duplas";
-import { mensagemDaPauta, mensagemDeTroca, soDigitos } from "./mensagens";
-import { eventoDoConvite, localDoConvite, respostaDoGraph, versaoDoEvento } from "./outlook";
+import { mensagemDaPauta, mensagemDeAlerta, mensagemDeAlertas, mensagemDeTroca, soDigitos } from "./mensagens";
+import { eventoDoConvite, localDoConvite, partesDoLink, respostaDoGraph, versaoDoEvento } from "./outlook";
 import type { Audiencia, ConvitePauta, PessoaPauta } from "./tipos";
 import { inicioDoVios, lerCsvDoVios } from "./vios-csv";
 
@@ -48,14 +48,39 @@ describe("mensagens do WhatsApp", () => {
   it("marca quem tem número e escreve o nome de quem não tem", () => {
     const m = mensagemDaPauta("Pauta de amanhã", "2026-11-19", [aud()], mapa)!;
     expect(m.texto).toContain("qui 19/11");
-    expect(m.texto).toContain("08:40 Inicial · Exemplo · vídeo · @5519999990001 (backup Carla)");
+    expect(m.texto).toContain("*08:40 · Inicial*\nExemplo · online\nTitular: @5519999990001\nBackup: Carla");
     expect(m.mencoes).toEqual(["5519999990001"]);
     expect(soDigitos("123")).toBeNull();
   });
+  it("pauta com espaço: uma linha em branco depois do título e entre as audiências; a confirmar vai avisado", () => {
+    const m = mensagemDaPauta("Pauta de amanhã", "2026-11-19", [aud(), aud({ id: "a2", origem: "vios", inicio: "2026-11-19T13:00:00.000Z", tipo: "instrucao", titularId: "p3", backupId: null })], mapa)!;
+    expect(m.texto).toBe(
+      "📅 *Pauta de amanhã · qui 19/11*\n\n" +
+        "*08:40 · Inicial*\nExemplo · online\nTitular: @5519999990001\nBackup: Carla\n\n" +
+        "*10:00 · Instrução*\nExemplo · online\nTitular: Diana\nBackup: —\n_a confirmar no tribunal_"
+    );
+  });
   it("troca de titular diz quem sai e por quê", () => {
     const m = mensagemDeTroca(aud({ titularId: "p3" }), "titular", "p1", "p3", "Deslocamento", mapa);
-    expect(m.texto).toContain("Troca de titular");
-    expect(m.texto).toContain("Sai: Bruna Teixeira (deslocamento)");
+    expect(m.texto).toBe("🔁 *Troca de titular*\n\nInicial 08:40 · Exemplo · qui 19/11\nTitular: Diana\nBackup: Carla\nSai: Bruna Teixeira (deslocamento)");
+  });
+  it("alertas: um sai igual ao desenho; vários vão numa mensagem só, em ordem de horário, marcando a coordenação", () => {
+    expect(mensagemDeAlertas([{ aud: aud(), texto: "Sem titular." }], ["p1"], mapa)).toEqual(mensagemDeAlerta(aud(), "Sem titular.", ["p1"], mapa));
+    const varios = mensagemDeAlertas(
+      [
+        { aud: aud({ id: "a2", inicio: "2026-11-19T13:00:00.000Z", tipo: "instrucao" }), texto: "Sem titular." },
+        { aud: aud(), texto: "Diana Souza está na UNA das 08:30 no mesmo horário." },
+      ],
+      ["p1"],
+      mapa
+    );
+    expect(varios.texto).toBe(
+      "⚠️ *Precisa de decisão (2)*\n\n" +
+        "*Inicial 08:40 · Exemplo · qui 19/11*\nDiana Souza está na UNA das 08:30 no mesmo horário.\n\n" +
+        "*Instrução 10:00 · Exemplo · qui 19/11*\nSem titular.\n\n" +
+        "@5519999990001, dá para resolver na distribuição?"
+    );
+    expect(varios.mencoes).toEqual(["5519999990001"]);
   });
 });
 
@@ -63,7 +88,7 @@ describe("convite do Outlook", () => {
   it("titular ocupada, backup livre e com [BACKUP]", () => {
     const titular = eventoDoConvite(aud(), "titular", equipe[0]!, mapa);
     const backup = eventoDoConvite(aud(), "backup", equipe[1]!, mapa);
-    expect(titular.subject).toBe("Inicial · Exemplo · 08:40 · Vídeo");
+    expect(titular.subject).toBe("Inicial · Exemplo · 08:40 · Online");
     expect(titular.showAs).toBe("busy");
     expect(titular.start).toEqual({ dateTime: "2026-11-19T08:40:00", timeZone: "America/Sao_Paulo" });
     expect(titular.end.dateTime).toBe("2026-11-19T09:40:00");
@@ -95,6 +120,14 @@ describe("convite do Outlook", () => {
     expect(localDoConvite(aud({ modalidadeTribunal: "presencial", sala: "Sala 2" }))).toBe("CON1 - Piracicaba · Sala 2");
     expect(localDoConvite(aud({ modalidadeTribunal: "hibrida", modalidadeEquipe: "presencial", sala: "Sala 2" }))).toBe("CON1 - Piracicaba · Sala 2");
     expect(localDoConvite(aud({ orgao: null, linkSala: null }))).toBe("A confirmar");
+  });
+  it("link com ID e senha da reunião no mesmo campo: o link fica só com o endereço, o resto vai ao lado", () => {
+    const linkSala = "https://trt15-jus-br.zoom.us/j/88307820364?pwd=abc ID da reunião: 883 07820 364            Senha de acesso: 277454";
+    expect(partesDoLink(linkSala)).toEqual({ url: "https://trt15-jus-br.zoom.us/j/88307820364?pwd=abc", resto: "ID da reunião: 883 07820 364 Senha de acesso: 277454" });
+    expect(localDoConvite(aud({ linkSala }))).toBe("CON1 - Piracicaba · https://trt15-jus-br.zoom.us/j/88307820364?pwd=abc");
+    const corpo = eventoDoConvite(aud({ linkSala }), "titular", equipe[0]!, mapa).body.content;
+    expect(corpo).toContain('<b>Sala:</b> <a href="https://trt15-jus-br.zoom.us/j/88307820364?pwd=abc">https://trt15-jus-br.zoom.us/j/88307820364?pwd=abc</a> · ID da reunião: 883 07820 364 Senha de acesso: 277454</p>');
+    expect(partesDoLink("Sala 3, 2º andar")).toEqual({ url: null, resto: "Sala 3, 2º andar" });
   });
   it("a tarefa do VIOS aparecer depois não atualiza o convite sozinha (cada atualização manda e-mail)", () => {
     const v1 = versaoDoEvento(eventoDoConvite(aud(), "titular", equipe[0]!, mapa));

@@ -17,6 +17,7 @@ import {
   Hourglass,
   MousePointerClick,
   Pencil,
+  Repeat,
   Scale,
   Sparkles,
   Workflow,
@@ -313,6 +314,7 @@ const VISUAL_ORIGEM: Record<OrigemPrazo | "nenhuma", { icone: LucideIcon; tom: T
   tarefa: { icone: Scale, tom: "neutro" },
   publicacao: { icone: FileText, tom: "neutro" },
   sugestao_ia: { icone: Sparkles, tom: "ia" },
+  repeticao: { icone: Repeat, tom: "escuro" },
   nenhuma: { icone: CircleHelp, tom: "neutro" },
 };
 

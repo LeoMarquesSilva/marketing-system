@@ -23,6 +23,7 @@ import { CompaniesTab } from "./companies-tab";
 import { ListsTab } from "./lists-tab";
 import { SettingsTab } from "./settings-tab";
 import { ProgressTab } from "./progress-tab";
+import { MateriaisTab } from "./materiais-tab";
 import EmailMarketingLoading from "@/app/email-marketing/loading";
 
 export type EmailMarketingTabId =
@@ -31,6 +32,7 @@ export type EmailMarketingTabId =
   | "empresas"
   | "listas"
   | "progresso"
+  | "materiais"
   | "configuracoes";
 
 /** O que cada aba precisa carregar (as abas agora são páginas do cabeçalho). */
@@ -40,6 +42,7 @@ const NEEDS: Record<EmailMarketingTabId, { contacts?: boolean; companies?: boole
   empresas: { contacts: true, companies: true, people: true },
   listas: { contacts: true, lists: true, campaigns: true },
   progresso: { contacts: true, people: true },
+  materiais: {},
   configuracoes: {},
 };
 
@@ -131,6 +134,8 @@ export function EmailMarketingClient({ tab }: { tab: EmailMarketingTabId }) {
       return <ListsTab lists={lists} contacts={contacts} campaigns={campaigns} onChanged={reloadLists} />;
     case "progresso":
       return <ProgressTab contacts={contacts} people={people} />;
+    case "materiais":
+      return <MateriaisTab />;
     case "configuracoes":
       return <SettingsTab />;
   }

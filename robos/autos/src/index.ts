@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as dormir } from "node:timers/promises";
 import type { Page } from "playwright";
@@ -15,7 +15,9 @@ import { ConectorPjeTjrj, mapearPje } from "./conectores/pje.ts";
 import { ConectorJusbr } from "./conectores/jusbr.ts";
 import { EsperaEsgotada, FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./conectores/tipos.ts";
 import { Fila, PedidoEncerrado, type Pedido } from "./fila.ts";
-import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
+import { abrirNavegador, guardarDiagnostico, type Navegador } from "./navegador.ts";
+import { navegadorParadoDemais } from "./navegador-parado.ts";
+import { planoDaReserva } from "./reserva.ts";
 
 /**
  * Robô de autos do ORQESTRAI. Consome a fila proc_autos_pedidos (pelas rotas /api/robos/autos), baixa os
@@ -136,15 +138,29 @@ async function principal(): Promise<void> {
     return null;
   });
   let assinaturaDoCertificado = certificado?.assinatura ?? (await assinaturaDaFonte(config.certificado));
-  let navegador = await abrirNavegador(config, certificado);
+  // Null quando o robô fechou o navegador com a fila parada (navegador-parado.ts): reabre no próximo pedido.
+  let navegador: Navegador | null = await abrirNavegador(config, certificado);
   let encerrando = false;
   const encerrar = async () => {
     if (encerrando) return;
     encerrando = true;
     registrar("Encerrando o robô.");
-    await navegador.fechar();
+    await navegador?.fechar();
     process.exit(0);
   };
+
+  /** O navegador aberto (os modos de linha de comando e o pedido em curso sempre têm um). */
+  function navegadorAtual(): Navegador {
+    if (!navegador) throw new FalhaDoConector("O navegador do robô está fechado.");
+    return navegador;
+  }
+
+  /** Reabre o navegador que o robô fechou com a fila parada. */
+  async function reabrirSeFechado(): Promise<void> {
+    if (navegador) return;
+    registrar("Pedido na fila: reabrindo o navegador.");
+    navegador = await abrirNavegador(config, certificado);
+  }
 
   /**
    * O painel trocou o certificado? Confere entre um pedido e outro (é só ler um arquivo pequeno). Com um
@@ -157,6 +173,12 @@ async function principal(): Promise<void> {
     assinaturaDoCertificado = assinatura;
     try {
       const novo = await carregarCertificado(config);
+      if (!navegador) {
+        // Fechado com a fila parada: o certificado novo vale quando ele reabrir.
+        certificado = novo;
+        registrar("Certificado novo: vale quando o navegador reabrir.");
+        return;
+      }
       registrar("Certificado novo: reabrindo o navegador com ele.");
       await navegador.fechar();
       certificado = novo;
@@ -169,13 +191,25 @@ async function principal(): Promise<void> {
   process.on("SIGTERM", () => void encerrar());
 
   function ambientePara(pedido: Pedido | null): Ambiente {
-    const { contexto, pagina } = navegador;
+    const { contexto, pagina } = navegadorAtual();
+    let ultimoSinalDeVida = Date.now();
     return {
       config,
       contexto,
       pagina,
       registrar,
       diagnostico: (alvo: Page, etapa: string) => guardarDiagnostico(config, alvo, etapa),
+      async sinalDeVida() {
+        if (!pedido || Date.now() - ultimoSinalDeVida < 60_000) return;
+        ultimoSinalDeVida = Date.now();
+        try {
+          await fila.seguir(pedido.id);
+        } catch (erro) {
+          // Cancelado na ficha: larga o download. Falha de rede não derruba o download (o próximo sinal tenta de novo).
+          if (erro instanceof PedidoEncerrado) throw erro;
+          registrar(`Sinal de vida ao ORQESTRAI falhou: ${mensagemLimpa(erro)}`);
+        }
+      },
       async aguardarPessoa(motivo, instrucao, resolvido) {
         registrar(`>>> PRECISA DE UMA PESSOA: ${instrucao}`);
         if (config.telaRemotaUrl) registrar(`Tela do robô: ${config.telaRemotaUrl}`);
@@ -205,7 +239,7 @@ async function principal(): Promise<void> {
   if (modo === "login") {
     await conectorDaLinhaDeComando().entrar(ambientePara(null));
     registrar("Sessão do tribunal aberta e guardada no perfil do robô.");
-    await navegador.fechar();
+    await navegadorAtual().fechar();
     return;
   }
 
@@ -230,7 +264,7 @@ async function principal(): Promise<void> {
     try {
       await conectorDaLinhaDeComando(cnj).inspecionar?.(ambientePara(null), cnj);
     } finally {
-      await navegador.fechar();
+      await navegadorAtual().fechar();
     }
     return;
   }
@@ -241,12 +275,19 @@ async function principal(): Promise<void> {
       if (pedidoDeMapa.sistema === "dcp") await mapearDcp(ambiente, pedidoDeMapa.cnj);
       else await mapearPje(ambiente, pedidoDeMapa.cnj, pedidoDeMapa.grau);
     } finally {
-      await navegador.fechar();
+      await navegadorAtual().fechar();
     }
     return;
   }
 
   registrar(`Robô "${config.nome}" atendendo ${CONECTORES.map((conector) => conector.chave).join(", ")} em ${config.orqestraiUrl}.`);
+  registrar(
+    config.navegadorParadoMs > 0
+      ? `Com a fila parada por ${Math.round(config.navegadorParadoMs / 60_000)} min, o navegador fecha e reabre no próximo pedido (NAVEGADOR_FECHAR_PARADO_MINUTOS).`
+      : "O navegador fica aberto com a fila parada (NAVEGADOR_FECHAR_PARADO_MINUTOS)."
+  );
+  // Desde quando a fila está vazia (null com pedido em curso): conta para fechar o navegador parado.
+  let paradoDesde: number | null = null;
   // Com a fila de autos vazia, o robô completa a capa dos processos pelo DataJud, um por vez.
   let proximaCapa = 0;
   let capasFeitas = 0;
@@ -278,12 +319,23 @@ async function principal(): Promise<void> {
     } catch (erro) {
       registrar(`Não consegui consultar a fila: ${mensagemLimpa(erro)}`);
     }
+    // Decisão do escritório (24/11/2026): processo em segredo de justiça que o robô abre com o login do advogado é
+    // processo do advogado; baixa sem esperar a liberação na ficha. SEGREDO_JUSTICA=esperar volta à regra antiga.
+    if (pedido && config.segredoSempreLiberado && !pedido.segredoLiberado) pedido = { ...pedido, segredoLiberado: true };
     if (!pedido) {
       if (modo === "uma-vez") break;
+      paradoDesde ??= Date.now();
+      if (navegadorParadoDemais({ aberto: Boolean(navegador), paradoDesdeMs: paradoDesde, agoraMs: Date.now(), limiteMs: config.navegadorParadoMs })) {
+        registrar(`Fila parada há ${Math.round((Date.now() - paradoDesde) / 60_000)} min: fechando o navegador para liberar memória. Ele reabre no próximo pedido.`);
+        const aberto = navegador;
+        navegador = null;
+        await aberto?.fechar().catch((erro) => registrar(`O navegador não fechou direito: ${mensagemLimpa(erro)}`));
+      }
       if (config.capaDataJud && Date.now() >= proximaCapa) proximaCapa = await completarUmaCapa();
       await dormir(config.intervaloMs);
       continue;
     }
+    paradoDesde = null;
 
     const chave = pedido.sistema === "jusbr" ? JUSBR.chave : `${pedido.sistema}:${pedido.tribunal}`;
     const conector = CONECTORES.find((item) => item.chave === chave);
@@ -292,25 +344,38 @@ async function principal(): Promise<void> {
     registrar(`Pedido ${pedido.cnj} (${pedido.tribunal}), tentativa ${pedido.tentativas}.`);
     try {
       if (!conector || !cnj) throw new FalhaDoConector(`Este robô não atende ${pedido.sistema} do ${pedido.tribunal}.`);
-      let resultado: ResultadoDoDownload | void;
+      // Fechado com a fila parada: reabre aqui, dentro do pedido (se não abrir, o pedido volta como erro).
+      await reabrirSeFechado();
+      let resultado: ResultadoDoDownload | void = undefined;
+      let repassado = false;
       try {
         resultado = await conector.baixar(ambientePara(pedido), pedido, destino);
       } catch (erro) {
-        // O Jus.br não trouxe os autos (tribunal ainda não integrado, documentos incompletos, instabilidade):
-        // segue pelo robô do tribunal no mesmo pedido, se este robô o tiver.
-        const reserva = pedido.sistema === "jusbr" && erro instanceof FalhaDoConector && pedido.reserva ? CONECTORES.find((item) => item.chave === pedido.reserva) : undefined;
-        if (!reserva || !pedido.reserva || !(erro instanceof FalhaDoConector)) throw erro;
-        registrar(`${erro.message} Seguindo pelo ${pedido.reserva}.`);
-        const doTribunal = await reserva.baixar(ambientePara(pedido), { ...pedido, sistema: pedido.reserva.split(":")[0] }, destino);
-        resultado = { ...(doTribunal ?? {}), sistema: doTribunal?.sistema ?? pedido.reserva.split(":")[0] };
+        // O Jus.br não trouxe os autos (tribunal ainda não integrado, documentos incompletos, instabilidade): segue
+        // pelo robô do tribunal no mesmo pedido, se este robô o tiver; se não (robô só do Jus.br), repassa o pedido.
+        const plano = planoDaReserva(pedido, erro, CONECTORES);
+        if (!plano) throw erro;
+        const sistemaDaReserva = plano.reserva.split(":")[0];
+        if (plano.tipo === "repassar") {
+          await fila.repassar(pedido.id, plano.reserva);
+          registrar(`${mensagemLimpa(erro)} Repassado ao robô do tribunal (${plano.reserva}).`);
+          repassado = true;
+        } else {
+          registrar(`${mensagemLimpa(erro)} Seguindo pelo ${plano.reserva}.`);
+          const doTribunal = await plano.conector.baixar(ambientePara(pedido), { ...pedido, sistema: sistemaDaReserva }, destino);
+          resultado = { ...(doTribunal ?? {}), sistema: doTribunal?.sistema ?? sistemaDaReserva };
+        }
       }
-      if (resultado?.semNovidades) {
+      if (repassado) {
+        // O pedido voltou à fila no sistema do tribunal: nada a entregar daqui.
+      } else if (resultado?.semNovidades) {
         await fila.semNovidades(pedido.id, resultado.sistema, resultado.capa);
         registrar(`Autos de ${pedido.cnj} conferidos: nenhuma peça nova desde o último download.`);
       } else {
         registrar(resultado?.arquivos && resultado.arquivos.length > 1 ? `PDF baixado em ${resultado.arquivos.length} partes. Enviando ao ORQESTRAI.` : "PDF baixado. Enviando ao ORQESTRAI.");
-        await fila.entregar(pedido.id, destino, nomeDoPdf(cnj), resultado?.pecas, resultado?.sistema, resultado?.arquivos, resultado?.capa);
+        await fila.entregar(pedido.id, destino, nomeDoPdf(cnj), resultado?.pecas, resultado?.sistema, resultado?.arquivos, resultado?.capa, resultado?.restantes);
         registrar(`Autos de ${pedido.cnj} entregues${resultado?.pecas?.length ? ` (${resultado.pecas.length} peças)` : ""}. A leitura pela IA segue no ORQESTRAI.`);
+        if (resultado?.restantes) registrar(`Faltam ${resultado.restantes} documentos de ${pedido.cnj}: voltaram ao fim da fila num pedido novo.`);
       }
     } catch (erro) {
       if (erro instanceof PedidoEncerrado) {
@@ -329,10 +394,14 @@ async function principal(): Promise<void> {
     } finally {
       // O PDF não fica nesta máquina: ou subiu ao bucket privado, ou é descartado.
       await rm(destino, { force: true }).catch(() => undefined);
+      // Partes de um PDF grande ("<pedido>-parteN.pdf") também saem.
+      for (const nome of await readdir(config.pastas.downloads).catch(() => [] as string[])) {
+        if (nome.startsWith(`${pedido.id}-parte`)) await rm(join(config.pastas.downloads, nome), { force: true }).catch(() => undefined);
+      }
     }
     if (!encerrando) await dormir(config.pausaEntrePedidosMs);
   }
-  await navegador.fechar();
+  await navegador?.fechar();
 }
 
 principal().catch((erro) => {

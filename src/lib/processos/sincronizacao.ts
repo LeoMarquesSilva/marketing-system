@@ -30,8 +30,9 @@ const SEM_HISTORICO = new Set(["vios_editado_em"]);
  * @param atual valores gravados hoje (null na primeira carga)
  * @param importado só os campos que a fonte trouxe; campo ausente não é tocado
  * @param pendentes campo → valor pedido ao VIOS (texto canônico), dos envios em aberto
+ * @param soVazios carga que não substitui nada: no processo que já existe, só preenche o campo vazio
  */
-export function mesclarComVios(atual: Valores | null, importado: Valores, pendentes: Map<string, string>): ResultadoMescla {
+export function mesclarComVios(atual: Valores | null, importado: Valores, pendentes: Map<string, string>, soVazios = false): ResultadoMescla {
   const patch: Valores = {};
   const mudancas: MudancaDoVios[] = [];
   const confirmados: string[] = [];
@@ -49,6 +50,7 @@ export function mesclarComVios(atual: Valores | null, importado: Valores, penden
     }
     const anterior = textoDoValor(item, atual[chave]);
     if (anterior === novo) continue;
+    if (soVazios && anterior !== "" && !SEM_HISTORICO.has(chave)) continue;
     patch[chave] = valor;
     if (!SEM_HISTORICO.has(chave)) mudancas.push({ campo: chave, anterior, novo });
   }
@@ -70,7 +72,7 @@ export interface Recorte {
   grupos: string[] | null;
 }
 
-function lerLista(valor: string | undefined, padrao: string[]): string[] | null {
+function lerLista(valor: string | undefined, padrao: string[] | null): string[] | null {
   const texto = valor?.trim();
   if (!texto) return padrao;
   if (texto === "*") return null;
@@ -79,13 +81,13 @@ function lerLista(valor: string | undefined, padrao: string[]): string[] | null 
 }
 
 /**
- * PROCESSOS_AREAS e PROCESSOS_GRUPOS (separados por vírgula; "*" = todos). O padrão é o piloto:
- * Recuperação de Crédito, Grupo PST.
+ * PROCESSOS_AREAS e PROCESSOS_GRUPOS (separados por vírgula; "*" = todos). O padrão é a carteira de
+ * Recuperação de Crédito inteira (todos os grupos), carregada do VIOS em 24/11/2026.
  */
 export function lerRecorte(env: Record<string, string | undefined> = process.env): Recorte {
   return {
     areas: lerLista(env.PROCESSOS_AREAS, ["Recuperação de Crédito"]),
-    grupos: lerLista(env.PROCESSOS_GRUPOS, ["Grupo PST"]),
+    grupos: lerLista(env.PROCESSOS_GRUPOS, null),
   };
 }
 

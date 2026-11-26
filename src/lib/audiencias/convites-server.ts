@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { tokenGraph } from "@/lib/vistagem/sharepoint";
-import { respostasDosConvites, type RespostasDosConvites } from "./agenda";
+import { geraAvisos, respostasDosConvites, type RespostasDosConvites } from "./agenda";
 import { lerConfig, modoOutlook, type ConfigPauta } from "./config-server";
 import { eventoDoConvite, respostaDoGraph, versaoDoEvento } from "./outlook";
 import { AudienciasError, carregarAudiencias, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
@@ -13,7 +13,7 @@ import type { Audiencia, ConvitePauta, Papel, PessoaPauta } from "./tipos";
  * Um convite por papel em cada audiência dos próximos 45 dias. Em modo teste (padrão), grava o convite que
  * mandaria e não chama o Graph.
  *
- * Quando sai: na rotina (7h30 e 17h30) e logo depois do que muda a audiência (troca de titular ou backup, o que a
+ * Quando sai: na rotina (7h e 17h) e logo depois do que muda a audiência (troca de titular ou backup, o que a
  * equipe completa, a leitura do robô), só para as audiências mexidas — como no desenho da pauta, o convite sai "ao
  * distribuir", sem esperar a próxima rotina.
  */
@@ -156,7 +156,7 @@ async function sincronizarUm(
   ctx: { real: boolean; token: string; organizador: string; urlPauta?: string; duracoes: Partial<Record<Audiencia["tipo"], number>> }
 ): Promise<"criados" | "atualizados" | "cancelados" | null> {
   const base = `/users/${encodeURIComponent(ctx.organizador)}/events`;
-  const deveExistir = aud.situacao === "designada" && Boolean(pessoa?.email) && Boolean(pessoa?.ativo);
+  const deveExistir = aud.situacao === "designada" && geraAvisos(aud) && Boolean(pessoa?.email) && Boolean(pessoa?.ativo);
   const trocouPessoa = atual && atual.pessoa_id !== (pessoa?.id ?? null);
 
   if (atual && atual.status !== "cancelado" && (!deveExistir || trocouPessoa)) {
@@ -196,9 +196,9 @@ async function sincronizarUm(
  * organizadora (calendarView) traz todos os convites com a resposta de cada convidado, em vez de uma por convite.
  * Recusa fica no histórico da audiência; a Distribuição mostra em vermelho.
  */
-export async function lerRespostas(): Promise<{ lidas: number; mudaram: number }> {
+export async function lerRespostas(): Promise<{ lidas: number; mudaram: number; recusas: number }> {
   const config = await lerConfig();
-  if (!(modoOutlook() === "real" && config.outlook.ligado)) return { lidas: 0, mudaram: 0 };
+  if (!(modoOutlook() === "real" && config.outlook.ligado)) return { lidas: 0, mudaram: 0, recusas: 0 };
   const organizador = organizadorDe(config);
   const { data, error } = await db()
     .from("aud_convites")
@@ -208,7 +208,7 @@ export async function lerRespostas(): Promise<{ lidas: number; mudaram: number }
     .limit(2000);
   if (error) falhou("ler os convites enviados", error);
   const convites = (data ?? []) as { id: string; audiencia_id: string; papel: Papel; pessoa_id: string | null; graph_event_id: string; resposta: string | null }[];
-  if (!convites.length) return { lidas: 0, mudaram: 0 };
+  if (!convites.length) return { lidas: 0, mudaram: 0, recusas: 0 };
 
   const token = await tokenGraph();
   const agora = Date.now();
@@ -225,12 +225,14 @@ export async function lerRespostas(): Promise<{ lidas: number; mudaram: number }
   const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
   let lidas = 0;
   let mudaram = 0;
+  let recusas = 0;
   for (const c of convites) {
     if (!respostas.has(c.graph_event_id)) continue;
     lidas += 1;
     const resposta = respostaDoGraph(respostas.get(c.graph_event_id));
     if (resposta === c.resposta) continue;
     mudaram += 1;
+    if (resposta === "recusado") recusas += 1;
     await db().from("aud_convites").update({ resposta }).eq("id", c.id);
     if (resposta === "recusado" || resposta === "aceito")
       await registrarHistorico(c.audiencia_id, resposta === "recusado" ? "recusou o convite" : "aceitou o convite", {
@@ -238,7 +240,24 @@ export async function lerRespostas(): Promise<{ lidas: number; mudaram: number }
         feitoPor: "Outlook",
       });
   }
-  return { lidas, mudaram };
+  return { lidas, mudaram, recusas };
+}
+
+const RESPOSTAS_LIDAS_EM = "respostas_lidas_em";
+
+/**
+ * Lê as respostas se a última leitura tem mais de `minutos` (a data fica em aud_config). Para ler "na hora" sem pesar:
+ * depois de cada leitura do robô e quando alguém abre a Pauta ou a Distribuição. null = não leu (modo teste ou recente).
+ */
+export async function lerRespostasSeDevido(minutos = 10): Promise<{ lidas: number; mudaram: number; recusas: number } | null> {
+  const config = await lerConfig();
+  if (!(modoOutlook() === "real" && config.outlook.ligado)) return null;
+  const { data } = await db().from("aud_config").select("valor").eq("chave", RESPOSTAS_LIDAS_EM).maybeSingle();
+  const ultima = typeof data?.valor === "string" ? Date.parse(data.valor) : 0;
+  if (Date.now() - ultima < minutos * 60 * 1000) return null;
+  const agora = new Date().toISOString();
+  await db().from("aud_config").upsert({ chave: RESPOSTAS_LIDAS_EM, valor: agora, atualizado_em: agora, atualizado_por: "sistema" }, { onConflict: "chave" });
+  return lerRespostas();
 }
 
 /** As respostas ao convite das audiências (para os alertas do servidor: recusa vira aviso à coordenação). */
@@ -257,7 +276,7 @@ export async function respostasDasAudiencias(auds: Audiencia[]): Promise<Respost
 /**
  * Convite de teste: o convite de titular da próxima audiência designada, com "[TESTE]" no título, mandado só para
  * um e-mail (o de quem está testando), para ver no Outlook como fica antes de ligar para a equipe. Sai mesmo em modo
- * teste e não fica registrado em aud_convites. Só para o domínio da caixa organizadora ou para quem está na equipe.
+ * teste e não fica registrado em aud_convites. Só para e-mails do escritório (domínio da organizadora ou da equipe).
  */
 export async function mandarConviteDeTeste(entrada: unknown): Promise<{ para: string; assunto: string; processo: string; organizador: string }> {
   const lido = z.object({ email: z.string().trim().toLowerCase().email("Digite um e-mail válido.") }).safeParse(entrada);
@@ -268,8 +287,9 @@ export async function mandarConviteDeTeste(entrada: unknown): Promise<{ para: st
   if (!organizador) throw new AudienciasError("Preencha e salve a caixa organizadora antes do teste: é ela quem manda o convite.", 400);
   if (para === organizador) throw new AudienciasError("Use um e-mail diferente da caixa organizadora: ela é quem manda o convite e não recebe convite dela mesma.", 400);
   const lista = await carregarPessoas();
-  const daEquipe = lista.some((p) => p.email?.toLowerCase() === para);
-  if (!daEquipe && para.split("@")[1] !== organizador.split("@")[1]) throw new AudienciasError("O teste vai só para e-mails do escritório (o mesmo domínio da caixa organizadora) ou da equipe da pauta.", 400);
+  // Domínios do escritório: o da caixa organizadora e os dos e-mails da equipe (o escritório usa mais de um).
+  const dominios = new Set([organizador, ...lista.map((p) => p.email?.toLowerCase() ?? "")].map((e) => e.split("@")[1]).filter(Boolean));
+  if (!dominios.has(para.split("@")[1] ?? "")) throw new AudienciasError(`O teste vai só para e-mails do escritório (${[...dominios].map((d) => `@${d}`).join(" ou ")}).`, 400);
 
   const agora = new Date();
   const auds = await carregarAudiencias(agora.toISOString(), new Date(agora.getTime() + JANELA_DIAS * 24 * 60 * 60 * 1000).toISOString());

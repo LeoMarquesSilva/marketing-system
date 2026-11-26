@@ -66,6 +66,19 @@ export function cidadeDoOrgao(orgao: string | null | undefined): string | null {
   return t;
 }
 
+/**
+ * Sessão de 2º grau e perícia aparecem na pauta e na distribuição, mas ainda não geram convite do Outlook nem aviso
+ * no WhatsApp: a coordenação decide depois (24/11/2026).
+ */
+export function geraAvisos(aud: Pick<Audiencia, "tipo">): boolean {
+  return aud.tipo !== "sessao" && aud.tipo !== "pericia";
+}
+
+/** Prende a agenda da pessoa (entra em choque e deslocamento)? Sessão de 2º grau e compromisso sem horário não. */
+export function ocupaAgenda(aud: Pick<Audiencia, "tipo" | "inicio">): boolean {
+  return aud.tipo !== "sessao" && local(aud.inicio).hora !== "00:00";
+}
+
 function ativas(todas: Audiencia[]): Audiencia[] {
   return todas.filter((a) => a.situacao === "designada");
 }
@@ -82,7 +95,7 @@ function rotulo(aud: Audiencia): string {
 
 /** As outras audiências em que a pessoa é titular no mesmo dia. */
 export function compromissosDoDia(pessoaId: string, dia: string, todas: Audiencia[], exceto?: string): Audiencia[] {
-  return ativas(todas).filter((a) => a.id !== exceto && a.titularId === pessoaId && local(a.inicio).dia === dia);
+  return ativas(todas).filter((a) => a.id !== exceto && a.titularId === pessoaId && local(a.inicio).dia === dia && ocupaAgenda(a));
 }
 
 /** Choque ou deslocamento apertado entre `aud` e as audiências em que a pessoa já é titular. */
@@ -92,6 +105,7 @@ export function conflitoDaPessoa(
   todas: Audiencia[],
   duracoes?: Partial<Record<TipoAudiencia, number>>
 ): { tipo: "choque" | "deslocamento"; com: Audiencia } | null {
+  if (!ocupaAgenda(aud)) return null;
   const [ini, fim] = intervalo(aud, duracoes);
   const minha = modalidadeEfetiva(aud);
   let deslocamento: { tipo: "deslocamento"; com: Audiencia } | null = null;
@@ -222,8 +236,10 @@ export function alertasDaAudiencia(aud: Audiencia, ctx: Contexto): AlertaAudienc
     if (conflito?.tipo === "deslocamento")
       alertas.push({ tipo: "deslocamento", grave: true, texto: `${nome(ctx, aud.titularId)} tem a ${rotulo(conflito.com)}: sem tempo de deslocamento.` });
   }
-  if (aud.backupId) {
-    const ocupado = ativas(ctx.todas).find((o) => o.id !== aud.id && o.titularId === aud.backupId && sobrepoe(intervalo(o, ctx.duracoes), intervalo(aud, ctx.duracoes)));
+  if (aud.backupId && ocupaAgenda(aud)) {
+    const ocupado = ativas(ctx.todas).find(
+      (o) => o.id !== aud.id && o.titularId === aud.backupId && ocupaAgenda(o) && sobrepoe(intervalo(o, ctx.duracoes), intervalo(aud, ctx.duracoes))
+    );
     if (ocupado) alertas.push({ tipo: "backup_ocupado", grave: false, texto: `A backup ${nome(ctx, aud.backupId)} está na ${rotulo(ocupado)}.` });
   }
   // Recusou o convite do Outlook: a titular vai para o vermelho (precisa de troca); a backup, só aviso.
@@ -237,10 +253,12 @@ export function alertasDaAudiencia(aud: Audiencia, ctx: Contexto): AlertaAudienc
   }
   const doVios = vistaDepois ? null : alertaDoVios(aud, estado);
   if (doVios) alertas.push(doVios);
-  if (local(aud.inicio).minutos < HORA_CEDO * 60) alertas.push({ tipo: "cedo", grave: false, texto: `Antes das ${HORA_CEDO}h.` });
-  if (aud.modalidadeTribunal === "video" && !aud.linkSala) alertas.push({ tipo: "sem_link", grave: false, texto: "Por vídeo e ainda sem link da sala." });
-  if (aud.modalidadeTribunal === "hibrida" && !aud.modalidadeEquipe) alertas.push({ tipo: "a_completar", grave: false, texto: "Híbrida: dizer se a equipe vai presencial ou por vídeo." });
-  if (!aud.modalidadeTribunal) alertas.push({ tipo: "a_completar", grave: false, texto: "Modalidade a completar." });
+  const semHorario = local(aud.inicio).hora === "00:00";
+  if (!semHorario && local(aud.inicio).minutos < HORA_CEDO * 60) alertas.push({ tipo: "cedo", grave: false, texto: `Antes das ${HORA_CEDO}h.` });
+  if (aud.modalidadeTribunal === "video" && !aud.linkSala) alertas.push({ tipo: "sem_link", grave: false, texto: "Online e ainda sem link da sala." });
+  if (aud.modalidadeTribunal === "hibrida" && !aud.modalidadeEquipe) alertas.push({ tipo: "a_completar", grave: false, texto: "Híbrida: dizer se a equipe vai presencial ou online." });
+  // Sessão de 2º grau: a modalidade é a da sessão (virtual ou presencial), não da equipe.
+  if (!aud.modalidadeTribunal && aud.tipo !== "sessao") alertas.push({ tipo: "a_completar", grave: false, texto: "Modalidade a completar." });
   return alertas;
 }
 

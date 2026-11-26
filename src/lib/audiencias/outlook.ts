@@ -47,8 +47,20 @@ export function tituloDoConvite(aud: Audiencia, papel: Papel): string {
  * desenho da pauta ("CON1 - Piracicaba · us02web.zoom.us/j/…"); presencial, a vara e a sala.
  */
 export function localDoConvite(aud: Audiencia): string {
-  const partes = modalidadeEfetiva(aud) === "video" && aud.linkSala ? [aud.orgao, aud.linkSala] : [aud.orgao, aud.sala];
+  const link = aud.linkSala ? partesDoLink(aud.linkSala) : null;
+  const partes = modalidadeEfetiva(aud) === "video" && link ? [aud.orgao, link.url ?? link.resto] : [aud.orgao, aud.sala];
   return partes.filter(Boolean).join(" · ") || "A confirmar";
+}
+
+/**
+ * O link da sala às vezes vem com o ID e a senha da reunião no mesmo campo ("https://… ID da reunião: 883 0782 …
+ * Senha de acesso: 277454", com espaços sobrando). Separa o endereço (o que vai no link) do resto (o que vai ao lado).
+ */
+export function partesDoLink(link: string): { url: string | null; resto: string } {
+  const texto = link.replace(/\s+/g, " ").trim();
+  const url = texto.match(/https?:\/\/\S+/)?.[0] ?? null;
+  if (!url) return { url: null, resto: texto };
+  return { url, resto: texto.replace(url, "").replace(/^[\s·,;|-]+|[\s·,;|-]+$/g, "").trim() };
 }
 
 function linkHtml(url: string, texto: string): string {
@@ -84,7 +96,10 @@ export function eventoDoConvite(
   const tabela = linhas
     .map(([k, v]) => `<tr${k.endsWith("no VIOS") ? " data-vios" : ""}><td style="color:#6b7d8c;padding:2px 12px 2px 0">${escapar(k)}</td><td>${v}</td></tr>`)
     .join("");
-  const sala = aud.linkSala ? `<p><b>Sala:</b> ${linkHtml(aud.linkSala, aud.linkSala)}</p>` : "";
+  const link = aud.linkSala ? partesDoLink(aud.linkSala) : null;
+  const sala = link
+    ? `<p><b>Sala:</b> ${[link.url ? linkHtml(link.url, link.url) : null, link.resto ? escapar(link.resto) : null].filter(Boolean).join(" · ")}</p>`
+    : "";
   const papelTexto =
     papel === "backup"
       ? "<p>Você é o backup desta audiência. Se a titular recusar ou for trocada, você é avisado aqui e no grupo.</p>"

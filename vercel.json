@@ -1,6 +1,13 @@
 {
   "framework": "nextjs",
   "buildCommand": "npm run build",
+  "ignoreCommand": "bash scripts/vercel-pular-build.sh",
+  "git": {
+    "deploymentEnabled": {
+      "**": false,
+      "main": true
+    }
+  },
   "regions": ["gru1"],
   "crons": [
     {

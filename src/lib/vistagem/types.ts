@@ -153,6 +153,10 @@ export interface PublicacaoResumo {
   conferidoEm: string | null;
   devolucaoMotivo: string | null;
   devolvidoEm: string | null;
+  /** De onde veio a última devolução (só a fila do jurídico e o detalhe trazem): a faixa amarela diz qual. */
+  devolucaoOrigem?: "conferencia" | "check" | null;
+  /** Quem vistou, na publicação devolvida (fila do jurídico): volta marcada para essa pessoa ver. */
+  vistadoPorNome?: string | null;
   /** Vistada de novo depois da devolução (vistadoEm continua sendo a primeira vistagem). */
   revistadoEm: string | null;
   /** Reaberta por quem vistou para alterar antes da Conferência (pedido de 11/11/2026). */
@@ -245,6 +249,24 @@ export interface PublicacaoCapturada {
 // ---------------------------------------------------------------------------
 
 export type EnvioStatus = "nao_enviado" | "pendente" | "enviado" | "processando" | "concluido" | "erro";
+
+/**
+ * Publicação devolvida para a Vistagem (pedido de 25/11/2026): pela Conferência da controladoria ou pelo Check da
+ * Operações Legais. A faixa do processo fica amarela até vistar de novo.
+ */
+export interface DevolucaoNaVistagem {
+  origem: "conferencia" | "check";
+  em: string | null;
+  /** Nome de quem devolveu. */
+  por: string | null;
+  motivo: string | null;
+  /** Quem vistou antes (a devolução volta marcada para essa pessoa). */
+  vistouNome: string | null;
+  /** Devolução do Check: as tarefas que estavam no VIOS, com as CIs. */
+  tarefasCanceladas?: { tarefa: string; data: string | null; responsavel: string | null; cis: string[] }[];
+  /** Devolução do Check: o cancelamento no VIOS, um por lançamento (texto e se precisa de atenção). */
+  cancelamentos?: { cis: string[]; texto: string; atencao: boolean; pronto: boolean }[];
+}
 
 /**
  * O que o jurídico escolheu para uma tarefa do fluxo (o robô grava no VIOS depois de lançar): a data e/ou os
@@ -427,6 +449,15 @@ export interface VistagemDetalhe {
   sistemasVios: MateriaVios[];
   /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
   feriados: string[];
+  /**
+   * Feriados do VIOS (AAAA-MM-DD) que valem para este processo (UF e tribunal): o VIOS passa uma tarefa nesses dias
+   * para o dia útil seguinte. Com `feriados`, travam as datas do fluxo e o Enviar escolhido à mão.
+   */
+  feriadosVios?: string[];
+  /** Nome de cada feriado de `feriados` e `feriadosVios` (AAAA-MM-DD → nome): o informativo do calendário. */
+  nomesDosFeriados?: Record<string, string>;
+  /** Devolvida e ainda não vistada de novo: de onde veio, por quê e, no Check, o que acontece no VIOS. */
+  devolucao?: DevolucaoNaVistagem | null;
   /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */
   fluxos: Record<string, FluxoDaTarefa>;
   /** Por que o fluxo do VIOS não pôde ser carregado. */

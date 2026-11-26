@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   cisDoResultado,
+  ehCienciaNf,
+  linhaDeQuemVistou,
   linhasParaFila,
   modoDaPublicacao,
   podeTerGravadoNoVios,
@@ -314,5 +316,50 @@ describe("responsavelQueOViosPos: para quem o VIOS agendou a Renúncia pedida se
     expect(responsavelQueOViosPos("", null)).toBeNull();
     expect(responsavelQueOViosPos("", [{ ...noVios[0], responsaveis: null }])).toBeNull();
     expect(responsavelQueOViosPos("", [{ ...noVios[0], principal: false }])).toBeNull();
+  });
+});
+
+describe("CIÊNCIA NF com quem vistou (pedido de 24/11/2026)", () => {
+  const ciencia: AgendamentoParaFila = { ...ITENS[1], id: "ag-nf", tarefa: "CIÊNCIA NF", tarefa_id: "796", observacao: "Prazo da parte contrária." };
+  const comQuemVistou = { ...PUBLICACAO, vistada_por: "  Isadora   Exemplo " };
+
+  it("intimação: a descrição leva quem vistou (o VIOS junta o texto da intimação embaixo); a observação segue na justificativa", () => {
+    const [grupo] = linhasParaFila(comQuemVistou, [ITENS[0], ciencia], { simular: false, modo: "intimacao" });
+    expect(grupo.linha.lancamento?.tarefas.map((t) => [t.tarefa, t.observacao, t.justificativa])).toEqual([
+      ["MANIFESTAÇÃO - FLUXO D1", "Publicação de 15/10/2026\nlaudo", null],
+      ["CIÊNCIA NF", "Vistada por: Isadora Exemplo", "Prazo da parte contrária."],
+    ]);
+  });
+
+  it("direto na pasta: o cabeçalho da publicação vai junto, porque o robô usa a descrição no lugar dele", () => {
+    const [grupo] = linhasParaFila(comQuemVistou, [ciencia], { simular: false, modo: "pasta" });
+    expect(grupo.linha.lancamento?.tarefas[0]).toMatchObject({
+      observacao: "Publicação de 15/10/2026\nVistada por: Isadora Exemplo",
+      justificativa: "Prazo da parte contrária.",
+    });
+    // A linha antiga (sem o CI da pasta) leva tudo na descrição.
+    const [antiga] = linhasParaFila({ ...comQuemVistou, pasta_ci: null }, [ciencia], { simular: false, modo: "pasta" });
+    expect(antiga.linha.observacao).toBe("Publicação de 15/10/2026\nVistada por: Isadora Exemplo\nPrazo da parte contrária.");
+  });
+
+  it("sem o nome, fica como antes: a descrição só com o texto da intimação", () => {
+    for (const publicacao of [PUBLICACAO, { ...PUBLICACAO, vistada_por: "  " }]) {
+      const [grupo] = linhasParaFila(publicacao, [ciencia], { simular: false, modo: "intimacao" });
+      expect(grupo.linha.lancamento?.tarefas[0].observacao).toBe("");
+    }
+    const [naPasta] = linhasParaFila(PUBLICACAO, [ciencia], { simular: false, modo: "pasta" });
+    expect(naPasta.linha.lancamento?.tarefas[0].observacao).toBe("");
+  });
+
+  it("as outras tarefas não levam quem vistou", () => {
+    const [grupo] = linhasParaFila(comQuemVistou, ITENS, { simular: false, modo: "intimacao" });
+    expect(grupo.linha.lancamento?.tarefas.map((t) => t.observacao).join("\n")).not.toContain("Vistada por");
+  });
+
+  it("linhaDeQuemVistou e ehCienciaNf", () => {
+    expect(linhaDeQuemVistou(null)).toBeNull();
+    expect(linhaDeQuemVistou("Maria")).toBe("Vistada por: Maria");
+    expect(ehCienciaNf("Ciência NF")).toBe(true);
+    expect(ehCienciaNf("1. CIÊNCIA DOS AGENDAMENTOS")).toBe(false);
   });
 });

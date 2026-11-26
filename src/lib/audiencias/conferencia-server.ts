@@ -9,6 +9,7 @@ import { audienciaNasIntimacoes, type ComunicacaoDjen } from "./djen";
 import { chaveDoLink, horaLocalParaIso } from "./pje";
 import { AudienciasError, carregarAudiencias, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
 import { substituirJusbrPeloPje } from "./jusbr-server";
+import { sincronizarReservas, type ResumoReservas } from "./reserva-server";
 import { deTarefaDoSama, lerCsvDoVios, type AudienciaNoVios, type TarefaDoSama } from "./vios-csv";
 
 /**
@@ -171,6 +172,8 @@ export interface ResumoConferenciaVios {
   /** Mudanças do PJe que o VIOS já mostra feitas (marcadas como conferidas sozinhas). */
   resolvidas: number;
   soNoVios: number;
+  /** Rede de segurança: o que só o VIOS ou a Vistagem têm entrou na pauta "a confirmar" (null = não rodou). */
+  reservas?: ResumoReservas | null;
 }
 
 /** Origem das conferências automáticas (após a leitura do PJe, rotina e "Rodar a rotina agora"); o upload do CSV grava o nome de quem subiu. */
@@ -299,7 +302,12 @@ export async function conferirComVios(origem = ORIGEM_AUTOMATICA, agora = new Da
     for (const t of juntas) if (t.cnj && t.ciProcesso) cnjPorCiProcesso.set(t.ciProcesso, t.cnj);
     for (const a of auds) if (a.ciProcesso) cnjPorCiProcesso.set(a.ciProcesso, a.cnj);
     const { tarefas, semCnj } = completarCnj(juntas, cnjPorCiProcesso);
-    const { tarefaDa, soNoVios } = conferirPautaComVios(auds, tarefas, agora);
+    // Só as do tribunal entram na conferência: as "a confirmar" (origem vios) são a própria tarefa do VIOS.
+    const { tarefaDa, soNoVios } = conferirPautaComVios(
+      auds.filter((a) => a.origem !== "vios"),
+      tarefas,
+      agora
+    );
     const relatorioEm = maisNova(...arquivos.map((a) => a.em));
     const copiaEm = maisNova(relatorioEm, copia?.copiaEm ?? null) ?? agora.toISOString();
     const resumo: ResumoConferenciaVios = {
@@ -362,6 +370,13 @@ export async function conferirComVios(origem = ORIGEM_AUTOMATICA, agora = new Da
     }
     for (const r of resolvidas) await registrarHistorico(r.id, "conferida no VIOS", { para: r.mudancas.join(", "), feitoPor: "conferência automática com o VIOS" });
     resumo.resolvidas = resolvidas.length;
+
+    try {
+      resumo.reservas = await sincronizarReservas({ tarefas, tarefaDa, audiencias: auds, relatorioCompleto: Boolean(audienciasCsv), agora });
+    } catch (erro) {
+      resumo.reservas = null;
+      avisos.push(`Audiências só do VIOS e da Vistagem não acertadas: ${erro instanceof Error ? erro.message : String(erro)}`);
+    }
 
     const noTribunal = datasNoTribunal(auds);
     const lista: TarefaSoNoVios[] = soNoVios.slice(0, 300).map((t) => {

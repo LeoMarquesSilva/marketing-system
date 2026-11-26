@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * O robô informa o andamento do pedido: espera por pessoa, erro, pedido de upload e conclusão.
+ * O robô informa o andamento do pedido: espera por pessoa, erro, repasse ao robô do tribunal, pedido de upload e conclusão.
  * Ao concluir, a leitura do PDF pela IA começa depois da resposta (o robô não espera por ela).
  */
 export async function POST(request: Request, { params }: { params: Promise<{ pedidoId: string }> }) {

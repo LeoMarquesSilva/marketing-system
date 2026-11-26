@@ -35,6 +35,7 @@ import {
   Tag,
   Trash2,
   TriangleAlert,
+  Undo2,
   X,
 } from "lucide-react";
 import { Segmented } from "@/components/facilities/form-parts";
@@ -47,6 +48,7 @@ import { cn } from "@/lib/utils";
 import {
   ETIQUETAS_AGENDAMENTO,
   HORA_LIMITE_DO_DIA,
+  MAX_AGENDAMENTOS,
   ROTULO_ETIQUETA,
   atalhosDePrazo,
   avisoDepoisDoHorario,
@@ -63,19 +65,24 @@ import {
   observacaoObrigatoria,
   pedeDataLimite,
   primeiroDiaDaTarefa,
+  problemaNaRecorrencia,
+  problemasDasDatasDoFluxo,
   renunciaComDataFixa,
+  repeteTodoMes,
   revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
   type OrigemPrazo,
 } from "@/lib/vistagem/agendamento";
+import { comPrimeiraFatal, type MesDaRecorrencia } from "@/lib/vistagem/repeticao-mensal";
 import { reabertaParaAlterar } from "@/lib/vistagem/alterar-vistagem";
-import { cienciaDosAgendamentos, repetidasNaVistagem, textoDaRepetida } from "@/lib/vistagem/ciencia-agendamentos";
+import { cienciaDosAgendamentos, criadaPeloFluxoDeOutra, repetidasNaVistagem, textoDaRepetida } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
   ROTULO_CONTAGEM,
   criarCalendario,
   criarCalendarioDePrazo,
+  criarNomeDoDia,
   dataDaTarefaSemPrazo,
   datasDoPrazo,
   fatalPorContagem,
@@ -97,7 +104,17 @@ import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import { ehAberturaDePasta, vaiParaCentral } from "@/lib/vistagem/central";
-import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
+import type {
+  DataDoFluxo,
+  DevolucaoNaVistagem,
+  InconsistenciaResumo,
+  PublicacaoResumo,
+  ResolucaoPendencia,
+  ResultadoCentral,
+  TarefaPrevista,
+  VistagemDetalhe,
+} from "@/lib/vistagem/types";
+import { DialogoAcao } from "./dialogo-acao";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { SeloAberturaDePasta } from "./abertura-pasta";
 import { CampoData, CampoHora } from "./campo-data";
@@ -118,6 +135,7 @@ import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import { ReguaDatas, diaDaSemana, relativoAHoje } from "./regua-datas";
+import { RecorrenciaMensal } from "./repeticao-mensal";
 import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
 import { Aviso, Busca, Carregando, ICONE_ETIQUETA_DESTAQUE, Painel, Selo, SelosDeEtiqueta, Vazio, campoClasse, linhaLista } from "./ui";
@@ -153,6 +171,8 @@ interface Linha {
   ia: boolean;
   /** Datas e responsáveis do Fluxo do VIOS que a pessoa mudou, pela chave do caminho (chaveDoCaminho). */
   fluxoDatas: Record<string, DataDoFluxo>;
+  /** COMPROVAR PAGAMENTO recorrente: os meses seguintes, com a data de cada um; null = vai só a da fatal. */
+  recorrencia: MesDaRecorrencia[] | null;
 }
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
@@ -232,6 +252,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     esocial: false,
     ia: false,
     fluxoDatas: {},
+    recorrencia: null,
     ...base,
   };
 }
@@ -267,6 +288,7 @@ function ModalHorario({
   hoje,
   primeiroDia,
   ehDiaUtil,
+  nomeDoDia,
   onConfirmar,
   onFechar,
 }: {
@@ -275,6 +297,7 @@ function ModalHorario({
   /** Primeira data que se pode escolher: hoje; depois das 18h, o dia útil seguinte. */
   primeiroDia: string;
   ehDiaUtil: (iso: string) => boolean;
+  nomeDoDia?: (iso: string) => string | null;
   onConfirmar: (data: string, hora: string) => void;
   onFechar: () => void;
 }) {
@@ -282,7 +305,7 @@ function ModalHorario({
   const [hora, setHora] = useState(linha?.hora ?? "");
   const depoisDoHorario = primeiroDia > hoje;
   const antesDoPermitido = Boolean(depoisDoHorario && data && data < primeiroDia);
-  const avisos = antesDoPermitido ? [avisoDepoisDoHorario(primeiroDia)] : data ? avisosDaData(data, hoje) : [];
+  const avisos = antesDoPermitido ? [avisoDepoisDoHorario(primeiroDia)] : data ? avisosDaData(data, hoje, ehDiaUtil) : [];
   const pronto = Boolean(data) && horaValida(hora) && !antesDoPermitido;
 
   return (
@@ -307,6 +330,7 @@ function ModalHorario({
                 valor={data}
                 onChange={setData}
                 ehDiaUtil={ehDiaUtil}
+                nomeDoDia={nomeDoDia}
                 min={depoisDoHorario ? primeiroDia : undefined}
                 invalido={!data || antesDoPermitido}
               />
@@ -478,15 +502,20 @@ export function FluxoNoVios({
   previstas,
   principal,
   fatais,
+  dataFatal = null,
   hoje,
   primeiroDia,
   ehDiaUtil,
+  ehDiaDoVios = ehDiaUtil,
+  nomeDoDia,
   onMudarData,
   onMudarResponsaveis,
   pessoas,
   classeDe,
 }: {
   previstas: TarefaPrevista[];
+  /** Fatal do Prazo: 2. REVISAR e 3. PROTOCOLAR escolhidos depois dela ficam marcados (e o envio, travado). */
+  dataFatal?: string | null;
   /** Classe da tarefa do fluxo na lista do VIOS da área (Prazo, Providência…), pelo nome; null quando não está lá. */
   classeDe: (nome: string) => Etiqueta | null;
   /** A tarefa pedida, com a data que vai para o VIOS (no Prazo, o Enviar), a classe e quem fica. */
@@ -499,6 +528,10 @@ export function FluxoNoVios({
   /** Primeira data que se pode escolher para as tarefas do fluxo: hoje; depois das 18h, o dia útil seguinte. */
   primeiroDia?: string;
   ehDiaUtil: (iso: string) => boolean;
+  /** Dia em que o VIOS deixa uma tarefa deste processo (com os feriados do VIOS que valem para ele). Trava as datas. */
+  ehDiaDoVios?: (iso: string) => boolean;
+  /** Nome do feriado ou do fim de semana, para o informativo do calendário. */
+  nomeDoDia?: (iso: string) => string | null;
   onMudarData: (caminho: string[], data: string | null) => void;
   /** null volta à regra do robô. */
   onMudarResponsaveis: (caminho: string[], nomes: string[] | null) => void;
@@ -560,21 +593,37 @@ export function FluxoNoVios({
   const tons = [...new Set(marcos.map((marco) => marco.tom))];
   const algumaEditada = marcos.some((marco) => marco.editada);
 
+  // Data escolhida que o VIOS não guardaria assim (dia não útil) ou 2. REVISAR / 3. PROTOCOLAR depois da fatal.
+  const problemasDe = (tarefa: TarefaPrevista) =>
+    tarefa.editada && tarefa.data && !tarefa.repetida ? problemasDasDatasDoFluxo([{ caminho: tarefa.caminho, data: tarefa.data }], { ehDiaUtil: ehDiaDoVios, dataFatal }) : [];
   const campoDoFluxo = (tarefa: TarefaPrevista) => (
     <CampoData
       compacto
       rotulo={`Data de ${tarefa.caminho.join(" › ")}`}
       valor={tarefa.data ?? ""}
       min={primeiroDia ?? hoje}
-      ehDiaUtil={ehDiaUtil}
+      ehDiaUtil={ehDiaDoVios}
+      bloquearNaoUtil
+      nomeDoDia={nomeDoDia}
       destacado={tarefa.editada}
+      invalido={problemasDe(tarefa).length > 0}
       permitirVazio
       dica={tarefa.data ? undefined : "O VIOS data esta tarefa sozinho; escolha uma data só se precisar."}
       onChange={(data) => onMudarData(tarefa.caminho, data || null)}
       className="w-[8.5rem]"
     />
   );
-  const extrasDoFluxo = (tarefa: TarefaPrevista) =>
+  const extrasDoFluxo = (tarefa: TarefaPrevista) => (
+    <>
+      {outrosExtras(tarefa)}
+      {problemasDe(tarefa).map((problema) => (
+        <span key={problema.curto} role="alert" className="basis-full pl-7 font-medium text-red-700">
+          {problema.curto.charAt(0).toUpperCase() + problema.curto.slice(1)}
+        </span>
+      ))}
+    </>
+  );
+  const outrosExtras = (tarefa: TarefaPrevista) =>
     tarefa.editada ? (
       <span className="inline-flex flex-wrap items-center gap-1.5">
         {tarefa.dataVios ? <span className="text-muted-foreground">VIOS: {formatarData(tarefa.dataVios)}</span> : null}
@@ -688,6 +737,152 @@ export function FluxoNoVios({
         ) : null}
       </div>
     </details>
+  );
+}
+
+/** "Henrique Souza Lima" → "Henrique" (selo da devolvida na fila). */
+function primeiroNome(nome: string): string {
+  return nome.trim().split(/\s+/)[0] ?? nome;
+}
+
+/**
+ * Publicação devolvida para a Vistagem (pela Conferência ou pelo Check). No topo fica só uma linha: de onde veio,
+ * quando e por quem, o tipo do erro e, no Check, como está o cancelamento no VIOS. O clique abre o detalhe num modal
+ * (pedido de 26/11/2026: o histórico inteiro no topo ocupava a tela).
+ */
+export function DevolucaoNoTopo({
+  devolucao,
+  inconsistencias,
+  motivo,
+  devolvidoEm,
+  onAlterada,
+}: {
+  devolucao: DevolucaoNaVistagem | null;
+  /** Inconsistências da Conferência (com contestar). */
+  inconsistencias: InconsistenciaResumo[];
+  motivo: string | null;
+  devolvidoEm: string | null;
+  onAlterada: () => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const doCheck = devolucao?.origem === "check";
+  const origem = doCheck ? "Devolvida pelo check da Operações Legais" : "Devolvida pela Conferência (controladoria)";
+  const titulo = `${origem} em ${formatarDataHora(devolucao?.em ?? devolvidoEm)}${devolucao?.por ? ` por ${devolucao.por}` : ""}`;
+  const motivoLimpo = (devolucao?.motivo ?? motivo ?? "").replace(/^Check da Operações Legais: /, "").trim();
+  // O tipo do erro (o que vem antes dos dois-pontos) ou, sem ele, o começo do motivo.
+  const tipoDoErro = motivoLimpo.includes(":") ? motivoLimpo.slice(0, motivoLimpo.indexOf(":")).trim() : motivoLimpo;
+  const cancelamentos = devolucao?.cancelamentos ?? [];
+  const atencao = cancelamentos.some((item) => item.atencao);
+  const situacao = !doCheck
+    ? inconsistencias.length > 1
+      ? `${inconsistencias.length} inconsistências`
+      : null
+    : !cancelamentos.length
+      ? null
+      : atencao
+        ? "Cancelamento no VIOS: precisa de atenção"
+        : cancelamentos.every((item) => item.pronto)
+          ? "Cancelamento no VIOS: feito"
+          : "Cancelamento no VIOS: com o robô";
+  const resumo = [tipoDoErro || null, situacao].filter(Boolean).join(" · ");
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className="group block w-full rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
+        aria-label={`${titulo}. Ver detalhes da devolução`}
+      >
+        <Aviso
+          tom="alerta"
+          titulo={titulo}
+          className="transition-shadow group-hover:shadow-[0_2px_10px_-4px_rgba(146,64,14,0.35)]"
+          acao={
+            <span className="inline-flex shrink-0 items-center gap-0.5 self-center text-xs font-medium text-amber-900 underline-offset-4 group-hover:underline">
+              Ver detalhes
+              <ChevronRight className="size-3.5" aria-hidden />
+            </span>
+          }
+        >
+          {resumo ? <span className={cn("block truncate", atencao && "font-medium text-red-700")}>{resumo}</span> : null}
+        </Aviso>
+      </button>
+      <DialogoAcao
+        aberto={aberto}
+        onFechar={() => setAberto(false)}
+        ocupado={false}
+        icone={Undo2}
+        tom="alerta"
+        titulo={origem}
+        descricao={[
+          formatarDataHora(devolucao?.em ?? devolvidoEm),
+          devolucao?.por ? `por ${devolucao.por}` : null,
+          devolucao?.vistouNome ? `vistada antes por ${devolucao.vistouNome}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        className="sm:max-w-2xl"
+        rodape={<Button onClick={() => setAberto(false)}>Fechar</Button>}
+      >
+        {doCheck && devolucao ? (
+          <DetalheDaDevolucaoDoCheck devolucao={devolucao} />
+        ) : inconsistencias.length ? (
+          <div className="space-y-2">
+            {inconsistencias.map((item) => (
+              <CartaoInconsistencia key={item.id} inconsistencia={item} acao="contestar" onAlterada={onAlterada} />
+            ))}
+          </div>
+        ) : (
+          <p className="whitespace-pre-wrap text-sm">{motivoLimpo || "Sem motivo registrado."}</p>
+        )}
+        <p className="mt-3 text-sm text-muted-foreground">Corrija as tarefas e vista de novo: a publicação volta para a Conferência.</p>
+      </DialogoAcao>
+    </>
+  );
+}
+
+/**
+ * Devolvida pelo check da Operações Legais (pedido de 25/11/2026): o erro apontado, o que estava no VIOS e como está o
+ * cancelamento pelo robô. Fica no modal da devolução; as tarefas da vistagem são as mesmas, para corrigir.
+ */
+function DetalheDaDevolucaoDoCheck({ devolucao }: { devolucao: DevolucaoNaVistagem }) {
+  const atencao = (devolucao.cancelamentos ?? []).some((item) => item.atencao);
+  return (
+    <div className="space-y-3 text-sm">
+      {devolucao.motivo ? (
+        <section className="space-y-1">
+          <h3 className="text-xs font-medium text-muted-foreground">Erro apontado no check</h3>
+          <p className="whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
+            {devolucao.motivo.replace(/^Check da Operações Legais: /, "")}
+          </p>
+        </section>
+      ) : null}
+      {devolucao.tarefasCanceladas?.length ? (
+        <section className="space-y-1">
+          <h3 className="text-xs font-medium text-muted-foreground">Estavam no VIOS e o robô cancela (tipo INCONSISTÊNCIA NA VISTAGEM)</h3>
+          <ul className="list-disc pl-5">
+            {devolucao.tarefasCanceladas.map((tarefa) => (
+              <li key={`${tarefa.tarefa}-${tarefa.cis.join(",")}`}>
+                {tarefa.tarefa}
+                {tarefa.data ? ` · ${formatarData(tarefa.data)}` : ""}
+                {tarefa.cis.length ? ` · CI ${tarefa.cis.join(", ")}` : ""}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {(devolucao.cancelamentos ?? []).length ? (
+        <section className="space-y-1">
+          <h3 className="text-xs font-medium text-muted-foreground">Cancelamento no VIOS</h3>
+          {(devolucao.cancelamentos ?? []).map((item) => (
+            <p key={item.cis.join(",")} className={cn(item.atencao ? "font-medium text-red-700" : item.pronto ? "text-[#285f7a]" : undefined)}>
+              {item.texto.replace(/^Cancelamento no VIOS: /, "")}
+            </p>
+          ))}
+          {atencao ? <p className="text-red-700">Confira no VIOS antes de vistar de novo, para não ficar tarefa repetida.</p> : null}
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -942,6 +1137,14 @@ export function EditorVistagem({
   }, [id, recarga, consultaPrevia]);
 
   const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
+  // Com os feriados do VIOS que valem para o processo: o dia que o VIOS passaria para o dia útil seguinte fica barrado.
+  const ehDiaDoVios = useMemo(
+    () => criarCalendario([...(detalhe?.feriados ?? []), ...(detalhe?.feriadosVios ?? [])]),
+    [detalhe?.feriados, detalhe?.feriadosVios]
+  );
+  // O informativo do calendário: o nome do feriado (do VIOS ou da Controladoria) e, na data fatal, o recesso.
+  const nomeDoDiaDaTarefa = useMemo(() => criarNomeDoDia(detalhe?.nomesDosFeriados), [detalhe?.nomesDosFeriados]);
+  const nomeDoDiaDoPrazo = useMemo(() => criarNomeDoDia(detalhe?.nomesDosFeriados, { recesso: true }), [detalhe?.nomesDosFeriados]);
   // Depois das 18h nada fica para hoje: as datas vão a partir do dia útil seguinte (pedido de 13/11/2026). A hora é
   // relida a cada minuto, para a trava valer mesmo com a tela aberta desde antes das 18h.
   const [hora, setHora] = useState(() => horaEmSaoPaulo());
@@ -958,18 +1161,27 @@ export function EditorVistagem({
    * (ela mesma, ou a mais perto dela no fluxo do VIOS); as outras o robô cancela no VIOS depois de lançar (tipo
    * Duplicidade), e o Embargos repetido sai com o que ele cria.
    */
-  const repetidaEm = useMemo(() => {
+  const tarefasComFluxo = useMemo(() => {
     const catalogo = detalhe?.catalogo;
-    if (!detalhe || !catalogo) return () => false;
-    return repetidasNaVistagem(
-      linhas
-        .filter((linha) => linha.tarefa)
-        .map((linha) => {
-          const opcao = catalogo.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
-          return { chave: linha.chave, nome: opcao?.nomeVios ?? linha.tarefa, fluxo: opcao ? detalhe.fluxos[opcao.id] ?? null : null };
-        })
-    );
+    if (!detalhe || !catalogo) return [];
+    return linhas
+      .filter((linha) => linha.tarefa)
+      .map((linha) => {
+        const opcao = catalogo.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
+        return {
+          chave: linha.chave,
+          tarefaId: opcao?.id ?? null,
+          nome: opcao?.nomeVios ?? linha.tarefa,
+          fluxo: opcao ? detalhe.fluxos[opcao.id] ?? null : null,
+        };
+      });
   }, [detalhe, linhas]);
+  const repetidaEm = useMemo(() => repetidasNaVistagem(tarefasComFluxo), [tarefasComFluxo]);
+  /**
+   * Tarefa que o fluxo do VIOS de outra desta vistagem já cria (a AUDIÊNCIA UNA/INICIAL cria a CONTESTAÇÃO): com as
+   * duas, fica duplicada no VIOS. A tela avisa no cartão da tarefa; quem decide é o jurídico.
+   */
+  const criadaPorOutra = useMemo(() => criadaPeloFluxoDeOutra(tarefasComFluxo), [tarefasComFluxo]);
   /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência e nas pastas RC-Insolvência, Úteis nas outras. */
   const contagemPadrao = contagemPadraoDaPublicacao(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area, detalhe?.publicacao.etiquetas);
   /** Área da publicação: nas audiências do Trabalhista o revisor fica na tarefa (`revisorFicaNaTarefa`). */
@@ -996,12 +1208,37 @@ export function EditorVistagem({
     return pedeDataLimite(opcao ? opcao.nomeVios ?? opcao.nome : linha.tarefa);
   }
 
+  /** O tipo pode ir ao VIOS todo mês (COMPROVAR PAGAMENTO), pelo nome como está no VIOS; só no Prazo com fatal. */
+  function repetivel(linha: Pick<Linha, "etiqueta" | "tarefa">): boolean {
+    if (linha.etiqueta !== "PRAZO" || semFatal(linha)) return false;
+    const opcao = detalhe?.catalogo?.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
+    return repeteTodoMes(opcao ? opcao.nomeVios ?? opcao.nome : linha.tarefa);
+  }
+
+  /** Os meses seguintes que vão ao VIOS: só no COMPROVAR PAGAMENTO recorrente. */
+  function mesesSeguintes(linha: Linha): MesDaRecorrencia[] {
+    return repetivel(linha) ? linha.recorrencia ?? [] : [];
+  }
+
+  /** Quantas tarefas a linha vira no VIOS: os meses da recorrência contam no limite de tarefas da publicação. */
+  function tarefasDaLinha(linha: Linha): number {
+    return 1 + mesesSeguintes(linha).length;
+  }
+
+  /** Tarefas que a vistagem manda ao VIOS, com as repetições mensais. */
+  function totalDeTarefas(atuais: Linha[]): number {
+    return atuais.reduce((soma, linha) => soma + tarefasDaLinha(linha), 0);
+  }
+
   function linhaPronta(linha: Linha): boolean {
     // Depois das 18h, a data escolhida para hoje não deixa vistar (o Prazo com fatal tem o Enviar calculado).
     const dataEscolhida = linha.etiqueta !== "PRAZO" || semFatal(linha);
     if (depoisDoHorario && dataEscolhida && linha.data && linha.data < primeiroDia) return false;
     // VERIFICAR RENÚNCIA da Operações Legais: o responsável não é escolhido (o VIOS divide entre as estagiárias).
     const conferida = dataFixa(linha.etiqueta, linha.tarefa) ? { ...linha, responsavel: "VIOS" } : linha;
+    // COMPROVAR PAGAMENTO recorrente: cada mês com data, depois da primeira fatal e sem repetir (como o servidor confere).
+    const meses = mesesSeguintes(linha);
+    if (meses.length && (!linha.dataFatal || problemaNaRecorrencia(linha.dataFatal, meses))) return false;
     return linhaCompleta(conferida, semFatal(linha), pedeObservacao(linha), pedeLimite(linha));
   }
 
@@ -1022,7 +1259,19 @@ export function EditorVistagem({
             : {};
         // A data limite igual à data acompanha a data; a escolhida pela pessoa fica.
         const limiteAcompanha = mudanca.data !== undefined && mudanca.dataLimite === undefined && linha.dataLimite === linha.data ? { dataLimite: "" } : {};
-        return { ...linha, ...mudanca, ...horaFimAcompanha, ...limiteAcompanha, ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}) };
+        return {
+          ...linha,
+          ...mudanca,
+          ...horaFimAcompanha,
+          ...limiteAcompanha,
+          ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}),
+          // A recorrência é do COMPROVAR PAGAMENTO: outro tipo volta a ir uma vez só. Com outra primeira fatal, os meses
+          // com a data sugerida acompanham; os que a pessoa mudou ficam.
+          ...(outroTipo && mudanca.recorrencia === undefined ? { recorrencia: null } : {}),
+          ...(!outroTipo && mudanca.dataFatal !== undefined && mudanca.recorrencia === undefined && linha.recorrencia
+            ? { recorrencia: comPrimeiraFatal(linha.recorrencia, mudanca.dataFatal, ehDiaUtil) }
+            : {}),
+        };
       })
     );
   }
@@ -1034,7 +1283,7 @@ export function EditorVistagem({
   /** Mais uma tarefa, já com o responsável e o revisor sugeridos da pasta (no topo e no fim da lista). */
   function adicionarTarefa() {
     setLinhas((atuais) =>
-      atuais.length >= 10
+      totalDeTarefas(atuais) >= MAX_AGENDAMENTOS
         ? atuais
         : [...atuais, novaLinha({ responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "", contagemPrazo: contagemPadrao })]
     );
@@ -1183,7 +1432,7 @@ export function EditorVistagem({
       const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? contagemPadrao;
       const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo), origemPrazo: "publicacao" as const };
       if (alvo) return atuais.map((linha) => (linha === alvo ? { ...linha, ...mudanca } : linha));
-      if (atuais.length >= 10) return atuais;
+      if (totalDeTarefas(atuais) >= MAX_AGENDAMENTOS) return atuais;
       return [...atuais, novaLinha({ ...mudanca, responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "" })];
     });
   }
@@ -1226,6 +1475,8 @@ export function EditorVistagem({
             revisor: linha.etiqueta === "PROVIDENCIA" ? null : linha.revisor || null,
             observacao: linha.observacao || null,
             fluxoDatas: Object.values(linha.fluxoDatas),
+            // COMPROVAR PAGAMENTO recorrente: o servidor grava mais uma tarefa para cada mês, com a fatal dele.
+            repeticoes: mesesSeguintes(linha).length ? mesesSeguintes(linha).map(({ fatal, editada }) => ({ fatal, editada })) : null,
           })),
         }),
       });
@@ -1260,7 +1511,16 @@ export function EditorVistagem({
   const abertura = vaiParaCentral(publicacao);
   // Sem o tipo Inserir E-social no VIOS, Acordo homologado e Homologação de cálculo não podem ser enviados.
   const faltaTarefaEsocial = Boolean(detalhe.esocial && pedeTarefaEsocial(esocial) && !detalhe.esocial.tarefa);
-  const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial;
+  // As repetições mensais do COMPROVAR PAGAMENTO contam no limite de tarefas da publicação.
+  const tarefasNoVios = totalDeTarefas(linhas);
+  const passaDoLimite = tarefasNoVios > MAX_AGENDAMENTOS;
+  // Data do fluxo em dia não útil (o VIOS passaria para o dia útil seguinte) ou Revisar/Protocolar depois da fatal.
+  const dataDoFluxoErrada = linhas.some(
+    (linha) =>
+      problemasDasDatasDoFluxo(Object.values(linha.fluxoDatas), { ehDiaUtil: ehDiaDoVios, dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal || null : null })
+        .length > 0
+  );
+  const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial && !passaDoLimite && !dataDoFluxoErrada;
   const incompletas = linhas.filter((linha) => !linhaPronta(linha)).length;
   const faltaObservacao = linhas.some((linha) => pedeObservacao(linha) && !linha.observacao.trim());
   const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
@@ -1298,17 +1558,14 @@ export function EditorVistagem({
             </Aviso>
           ) : null}
 
-          {devolucoes.length ? (
-            <div className="space-y-2">
-              <Aviso tom="alerta" titulo={`Devolvida pela controladoria em ${formatarDataHora(publicacao.devolvidoEm)}`} />
-              {devolucoes.map((item) => (
-                <CartaoInconsistencia key={item.id} inconsistencia={item} acao="contestar" onAlterada={() => setRecarga((valor) => valor + 1)} />
-              ))}
-            </div>
-          ) : publicacao.devolucaoMotivo ? (
-            <Aviso tom="alerta" titulo={`Devolvida pela controladoria em ${formatarDataHora(publicacao.devolvidoEm)}`}>
-              {publicacao.devolucaoMotivo}
-            </Aviso>
+          {detalhe.devolucao || devolucoes.length || publicacao.devolucaoMotivo ? (
+            <DevolucaoNoTopo
+              devolucao={detalhe.devolucao ?? null}
+              inconsistencias={devolucoes}
+              motivo={publicacao.devolucaoMotivo}
+              devolvidoEm={publicacao.devolvidoEm}
+              onAlterada={() => setRecarga((valor) => valor + 1)}
+            />
           ) : null}
 
           {publicacao.transferidoDe ? (
@@ -1331,6 +1588,14 @@ export function EditorVistagem({
               risco={Boolean(publicacao.demandaRisco)}
               // O selo "Demanda de risco" já está na ficha da pasta, logo abaixo; a faixa fica só vermelha.
               seloDeRisco={false}
+              // Devolvida e ainda não vistada de novo: faixa amarela, dizendo de onde veio (pedido de 25/11/2026).
+              devolvida={
+                detalhe.devolucao
+                  ? detalhe.devolucao.origem === "check"
+                    ? "Devolvida pelo check da Operações Legais"
+                    : "Devolvida pela Conferência"
+                  : null
+              }
               antes={
                 fila ? (
                   // Só no desktop: no celular a lista abre por "Voltar à lista".
@@ -1487,10 +1752,12 @@ export function EditorVistagem({
                         Incluir tarefas
                       </h2>
                       <p className="text-xs text-muted-foreground">
-                        {plural(linhas.length, "tarefa", "tarefas")} · vão para a conferência da controladoria e depois para o VIOS
+                        {plural(linhas.length, "tarefa", "tarefas")}
+                        {tarefasNoVios > linhas.length ? ` (${tarefasNoVios} no VIOS, com as repetições mensais)` : ""} · vão para a conferência
+                        da controladoria e depois para o VIOS
                       </p>
                     </div>
-                    <Button type="button" variant="outline" size="sm" onClick={adicionarTarefa} disabled={linhas.length >= 10}>
+                    <Button type="button" variant="outline" size="sm" onClick={adicionarTarefa} disabled={tarefasNoVios >= MAX_AGENDAMENTOS}>
                       <Plus />
                       Adicionar tarefa
                     </Button>
@@ -1572,6 +1839,7 @@ export function EditorVistagem({
                         )
                       : [];
                     const cienciaPedidaRepetida = repetidaEm(linha.chave, null);
+                    const criadaPor = criadaPorOutra(linha.chave);
                     const avisos = comFatal
                       ? linha.dataFatal
                         ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(
@@ -1583,7 +1851,7 @@ export function EditorVistagem({
                       : linha.data
                         ? depoisDoHorario && linha.data < primeiroDia
                           ? [avisoDepoisDoHorario(primeiroDia)]
-                          : avisosDaData(linha.data, detalhe.hoje)
+                          : avisosDaData(linha.data, detalhe.hoje, ehDiaDoVios)
                         : [];
                     const dataAntesDoPermitido = Boolean(!comFatal && depoisDoHorario && linha.data && linha.data < primeiroDia);
                     const IconeClasse = ICONE_CLASSE[linha.etiqueta];
@@ -1682,6 +1950,29 @@ export function EditorVistagem({
                                 )}
                               </div>
                             </div>
+                            {criadaPor ? (
+                              <Aviso
+                                tom="alerta"
+                                titulo="Esta tarefa já vem no fluxo de outra"
+                                acao={
+                                  !linha.esocial ? (
+                                    <Button
+                                      type="button"
+                                      size="xs"
+                                      variant="outline"
+                                      className="shrink-0"
+                                      onClick={() => setLinhas((atuais) => atuais.filter((item) => item.chave !== linha.chave))}
+                                    >
+                                      <Trash2 />
+                                      Remover
+                                    </Button>
+                                  ) : null
+                                }
+                              >
+                                O fluxo da tarefa {criadaPor} já cria a {linha.tarefa} no VIOS. Com as duas, ela fica duplicada: remova esta, a não
+                                ser que precise mesmo de outra.
+                              </Aviso>
+                            ) : null}
                           </BlocoTarefa>
 
                           <BlocoTarefa titulo={comFatal ? "Prazo" : linha.etiqueta === "COMPROMISSO" ? "Data e horário" : "Data"} icone={CalendarDays}>
@@ -1748,6 +2039,7 @@ export function EditorVistagem({
                                         rotulo={`Data fatal da tarefa ${indice + 1}`}
                                         valor={linha.dataFatal}
                                         ehDiaUtil={contaPrazo}
+                                        nomeDoDia={nomeDoDiaDoPrazo}
                                         onChange={(data) => alterar(linha.chave, { dataFatal: data, diasPrazo: null, origemPrazo: data ? "calendario" : null })}
                                       />
                                     </div>
@@ -1790,6 +2082,16 @@ export function EditorVistagem({
                                     VIOS criaria (5 dias antes da fatal); o Protocolar e a fatal não mudam (o robô grava o Protocolar no VIOS).
                                   </p>
                                 ) : null}
+                                {repetivel(linha) ? (
+                                  <RecorrenciaMensal
+                                    indice={indice}
+                                    primeira={linha.dataFatal}
+                                    meses={linha.recorrencia}
+                                    maximo={Math.max(1, MAX_AGENDAMENTOS - (tarefasNoVios - tarefasDaLinha(linha)))}
+                                    ehDiaUtil={ehDiaUtil}
+                                    onChange={(recorrencia) => alterar(linha.chave, { recorrencia })}
+                                  />
+                                ) : null}
                               </div>
                             ) : (
                               <div className="flex flex-wrap items-end gap-3">
@@ -1803,7 +2105,10 @@ export function EditorVistagem({
                                     <CampoData
                                       rotulo={`Data da tarefa ${indice + 1} no VIOS`}
                                       valor={linha.data}
-                                      ehDiaUtil={ehDiaUtil}
+                                      ehDiaUtil={ehDiaDoVios}
+                                      // A audiência é na data do tribunal: o feriado só aparece, não se barra.
+                                      bloquearNaoUtil={linha.etiqueta !== "COMPROMISSO"}
+                                      nomeDoDia={nomeDoDiaDaTarefa}
                                       // Depois das 18h, hoje (e antes) fica bloqueado no calendário.
                                       min={depoisDoHorario ? primeiroDia : undefined}
                                       invalido={dataAntesDoPermitido}
@@ -1854,6 +2159,7 @@ export function EditorVistagem({
                                       valor={linha.dataLimite || linha.data}
                                       min={linha.data || undefined}
                                       ehDiaUtil={ehDiaUtil}
+                                      nomeDoDia={nomeDoDiaDaTarefa}
                                       destacado={Boolean(linha.dataLimite && linha.dataLimite !== linha.data)}
                                       invalido={!dataLimiteValida(linha)}
                                       onChange={(dataLimite) => alterar(linha.chave, { dataLimite })}
@@ -1979,10 +2285,13 @@ export function EditorVistagem({
                                       }))
                                     : []
                               }
+                              dataFatal={comFatal ? linha.dataFatal || null : null}
                               pessoas={pessoasDoCampo}
                               hoje={detalhe.hoje}
                               primeiroDia={primeiroDia}
                               ehDiaUtil={ehDiaUtil}
+                              ehDiaDoVios={ehDiaDoVios}
+                              nomeDoDia={nomeDoDiaDaTarefa}
                               onMudarData={(caminho, data) => mudarNoFluxo(linha, caminho, { data })}
                               onMudarResponsaveis={(caminho, nomes) => mudarNoFluxo(linha, caminho, { responsaveis: nomes })}
                               classeDe={classeDaTarefa}
@@ -1992,7 +2301,7 @@ export function EditorVistagem({
                       </li>
                     );
                   })}
-                  {linhas.length < 10 ? (
+                  {tarefasNoVios < MAX_AGENDAMENTOS ? (
                     <li>
                       {/* Mais uma tarefa no fim da lista, onde a pessoa está, sem voltar ao topo. */}
                       <button
@@ -2026,10 +2335,14 @@ export function EditorVistagem({
                 <div data-tour="vj-enviar" className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-b-lg border-t border-[#e6eef0] bg-white px-4 py-3 shadow-[0_-8px_16px_-12px_rgba(16,41,58,0.18)]">
                   <p className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
                     {completo
-                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência.`
+                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência${tarefasNoVios > linhas.length ? ` (${tarefasNoVios} no VIOS, com as repetições mensais)` : ""}.`
                       : faltaTarefaEsocial
                         ? `Falta o tipo ${TAREFA_ESOCIAL} no VIOS.`
-                        : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}${faltaObservacao ? ", observação" : ""} e responsável.`}
+                        : passaDoLimite
+                          ? `São ${tarefasNoVios} tarefas no VIOS, contando as repetições mensais: o máximo é ${MAX_AGENDAMENTOS} por publicação.`
+                          : dataDoFluxoErrada && linhas.every(linhaPronta)
+                            ? "Há data no Fluxo das tarefas em dia que não é útil ou depois da data fatal: veja a marcada em vermelho."
+                            : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}${faltaObservacao ? ", observação" : ""} e responsável.`}
                   </p>
                   <Button onClick={enviar} disabled={enviando || !completo}>
                     {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}
@@ -2048,6 +2361,7 @@ export function EditorVistagem({
         hoje={detalhe.hoje}
         primeiroDia={primeiroDia}
         ehDiaUtil={ehDiaUtil}
+        nomeDoDia={nomeDoDiaDaTarefa}
         onConfirmar={(data, hora) => {
           if (horarioDe !== null) alterar(horarioDe, { data, hora });
           setHorarioDe(null);
@@ -2736,7 +3050,14 @@ function Juridico() {
                               ) : null}
                               <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
                               <SeloAberturaDePasta publicacao={publicacao} />
-                              {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? <Selo tom="alerta">Devolvida</Selo> : null}
+                              {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? (
+                                <span title={publicacao.vistadoPorNome ? `Vistada antes por ${publicacao.vistadoPorNome}` : undefined}>
+                                  <Selo tom="alerta">
+                                    {publicacao.devolucaoOrigem === "check" ? "Devolvida pelo check" : "Devolvida"}
+                                    {publicacao.vistadoPorNome ? ` · ${primeiroNome(publicacao.vistadoPorNome)}` : ""}
+                                  </Selo>
+                                </span>
+                              ) : null}
                               {reabertaParaAlterar({ reabertaEm: publicacao.reabertaEm ?? null, devolvidoEm: publicacao.devolvidoEm }) ? <Selo tom="marca">Reaberta</Selo> : null}
                               {publicacao.transferidoDe ? <Selo tom="marca">Transferida</Selo> : null}
                             </span>

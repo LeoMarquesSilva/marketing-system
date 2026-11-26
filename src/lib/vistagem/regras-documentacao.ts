@@ -1,3 +1,4 @@
+import { MAX_AGENDAMENTOS, RESPONSAVEL_FIXO_DA_AREA, chaveNome } from "./agendamento";
 import { MOTIVO_INDICE } from "./captura";
 import { DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA } from "./dias-uteis";
 import { ESOCIAL_COM_TAREFA, RESPONSAVEL_ESOCIAL, TAREFA_ESOCIAL } from "./esocial";
@@ -226,8 +227,25 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "tarefas",
         titulo: "Tarefas da vistagem",
         quando: "a pessoa enviar a vistagem para a conferência",
-        entao: "precisa de 1 a 10 tarefas da lista do VIOS da área. Prazo exige data fatal e revisor; Compromisso exige hora.",
+        entao: `precisa de 1 a ${MAX_AGENDAMENTOS} tarefas da lista do VIOS da área, contando as repetições mensais. Prazo exige data fatal e revisor; Compromisso exige hora.`,
         origem: "vios",
+      },
+      ...RESPONSAVEL_FIXO_DA_AREA.map(
+        (regra): RegraDocumentada => ({
+          id: `responsavel-fixo-${chaveNome(regra.area).toLowerCase()}`,
+          titulo: `Responsável da ${regra.tarefa} (${regra.area})`,
+          quando: `a tarefa for ${regra.tarefa} numa pasta da área ${regra.area}, escolhida ou criada pelo fluxo de outra (audiência, sessão, perícia)`,
+          entao: `ela já vem com ${regra.responsavel} no responsável, em vez do advogado da pasta, e o robô a grava assim no VIOS (dá para trocar).`,
+          origem: "codigo",
+        })
+      ),
+      {
+        id: "repeticao-mensal",
+        titulo: "COMPROVAR PAGAMENTO recorrente",
+        quando: "a pessoa ligar \"Recorrente todo mês\" no COMPROVAR PAGAMENTO",
+        entao:
+          "ela acrescenta quantos meses quiser (até o limite de tarefas), e cada mês vem com a data sugerida: o mesmo dia do mês da 1ª fatal; sem esse dia, o último do mês; sem expediente, o dia útil anterior. Dá para mudar ou tirar cada data. Cada mês vai como um Prazo próprio, com o Enviar, o Revisar e o Protocolar contados da fatal dele.",
+        origem: "codigo",
       },
       {
         id: "ciencia",
@@ -345,6 +363,14 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         quando: "a tarefa tiver fluxo no VIOS",
         entao: `o VIOS cria as tarefas do fluxo junto. Revisar fica com o revisor; Protocolar com o responsável e ${PESSOA_FIXA_PROTOCOLAR}. Se o jurídico escolher outros responsáveis numa tarefa do fluxo, o robô põe os escolhidos. Tarefa que o VIOS cria sem ninguém (ex.: Inserir Pauta numa pasta sem estagiário) fica com o responsável da vistagem, e não com o usuário do robô.`,
         origem: "vios",
+      },
+      {
+        id: "ciencia-nf-vistador",
+        titulo: "Quem vistou, na CIÊNCIA NF",
+        quando: "a tarefa for CIÊNCIA NF",
+        entao:
+          "a descrição no VIOS leva \"Vistada por:\" e o nome de quem vistou por último, acima do texto da intimação; a observação vai na JUSTIFICATIVA NF.",
+        origem: "codigo",
       },
       {
         id: "revisor-na-tarefa",

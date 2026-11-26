@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ESCRITORIO_EX_CLIENTE,
+  GRUPO_EX_CLIENTE,
   MOTIVO_EX_CLIENTE_SEM_ESCRITORIO,
   advogadosDoEscritorioCitados,
   chavePessoa,
@@ -8,6 +9,8 @@ import {
   escritorioDaAreaDoProcesso,
   ehExCliente,
   ehPastaDeAtendimento,
+  grupoDaPastaNaPublicacao,
+  grupoPropostoNaTriagem,
   pastaInformada,
   tipoDaPastaDaPublicacao,
   triar,
@@ -202,5 +205,34 @@ describe("pasta informada pela CI na Triagem Manual (18/11/2026)", () => {
     expect(tipoDaPastaDaPublicacao({ pasta_ci: "56927", pastas_candidatas: [doSioe, atendimento] })).toBe("Processo");
     expect(tipoDaPastaDaPublicacao({ pasta_ci: "56927", pastas_candidatas: null })).toBe("Processo");
     expect(tipoDaPastaDaPublicacao({ pasta_ci: null, pastas_candidatas: [atendimento] })).toBe("Processo");
+  });
+});
+
+describe("grupo na Triagem Manual (24/11/2026: Operações Legais fica com o Grupo Ex-Cliente)", () => {
+  it("o grupo do atendimento da controladoria (CI 51762) vira Grupo Ex-Cliente; os outros ficam como estão", () => {
+    expect(grupoDaPastaNaPublicacao("Grupo Operações Legais")).toBe(GRUPO_EX_CLIENTE);
+    expect(grupoDaPastaNaPublicacao("  grupo operacoes legais ")).toBe(GRUPO_EX_CLIENTE);
+    expect(grupoDaPastaNaPublicacao("Grupo Colombo")).toBe("Grupo Colombo");
+    expect(grupoDaPastaNaPublicacao("  ")).toBeNull();
+    expect(grupoDaPastaNaPublicacao(null)).toBeNull();
+  });
+
+  it("0049237-61: sugestão da IA sem grupo + CI 51762 → Grupo Ex-Cliente, não mais Grupo Operações Legais (sugerido)", () => {
+    expect(grupoPropostoNaTriagem({ escritorio: "Insolvência", grupoDaPasta: "Grupo Operações Legais", grupoDaSugestao: null })).toBe(GRUPO_EX_CLIENTE);
+    expect(grupoPropostoNaTriagem({ escritorio: ESCRITORIO_EX_CLIENTE, grupoDaPasta: "Grupo Operações Legais", grupoDaSugestao: null })).toBe(GRUPO_EX_CLIENTE);
+  });
+
+  it("sugestão pela parte com o grupo do cliente + Operações Legais → Grupo Ex-Cliente (era trocado à mão)", () => {
+    expect(grupoPropostoNaTriagem({ escritorio: ESCRITORIO_EX_CLIENTE, grupoDaPasta: null, grupoDaSugestao: "Grupo Colombo" })).toBe(GRUPO_EX_CLIENTE);
+    expect(grupoPropostoNaTriagem({ escritorio: ESCRITORIO_EX_CLIENTE, grupoDaPasta: "Grupo Operações Legais", grupoDaSugestao: "Grupo BMF" })).toBe(
+      GRUPO_EX_CLIENTE
+    );
+  });
+
+  it("a pasta com grupo de verdade manda; nas outras áreas, sem pasta, vale a sugestão", () => {
+    expect(grupoPropostoNaTriagem({ escritorio: ESCRITORIO_EX_CLIENTE, grupoDaPasta: "Grupo Teixeira", grupoDaSugestao: "Grupo Colombo" })).toBe("Grupo Teixeira");
+    expect(grupoPropostoNaTriagem({ escritorio: "Cível", grupoDaPasta: null, grupoDaSugestao: "Grupo Colombo" })).toBe("Grupo Colombo");
+    expect(grupoPropostoNaTriagem({ escritorio: "Cível", grupoDaPasta: null, grupoDaSugestao: null })).toBe("");
+    expect(grupoPropostoNaTriagem({ escritorio: "", grupoDaPasta: undefined, grupoDaSugestao: undefined })).toBe("");
   });
 });

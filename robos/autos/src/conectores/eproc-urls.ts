@@ -189,3 +189,22 @@ export function arquivoEmbutido(html: string, endereco: string): string | null {
     return null;
   }
 }
+
+/** Perfil do eproc escolhido por padrão quando há mais de um (decisão do escritório, 24/11): o da inscrição SP. */
+export const PERFIL_EPROC_PADRAO = "SP";
+
+/**
+ * Qual linha da tela "Seleção de perfil" escolher: a do advogado cuja sigla começa pelo prefixo (SP275…), depois
+ * qualquer uma com o prefixo, depois o primeiro perfil de advogado. -1 se não houver linha.
+ */
+export function perfilDoEproc(linhas: readonly string[], prefixo: string = PERFIL_EPROC_PADRAO): number {
+  const limpas = linhas.map((linha) => semAcento(linha).replace(/\s+/g, " ").trim());
+  const comPrefixo = (linha: string) => new RegExp(`^${prefixo.replace(/[^a-z]/gi, "").toLowerCase()}\\d`).test(linha);
+  const advogado = (linha: string) => /advogad/.test(linha);
+  const ordem = [(l: string) => comPrefixo(l) && advogado(l), comPrefixo, advogado];
+  for (const criterio of ordem) {
+    const indice = limpas.findIndex(criterio);
+    if (indice >= 0) return indice;
+  }
+  return -1;
+}

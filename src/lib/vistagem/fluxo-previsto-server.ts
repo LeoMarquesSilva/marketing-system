@@ -4,7 +4,7 @@ import { areaDoCatalogo, contagemPadraoDaArea } from "./agendamento";
 import { dataDaCienciaNoEnvio, repetidasNaVistagem } from "./ciencia-agendamentos";
 import { criarCalendario, criarCalendarioDePrazo } from "./dias-uteis";
 import { carregarFeriados } from "./feriados";
-import { fluxoDoPrazo, fluxoPrevisto, prazoApertado, type PrazoDaPublicacao } from "./fluxo-previsto";
+import { arvoreComResponsavelDaArea, fluxoDoPrazo, fluxoPrevisto, prazoApertado, type PrazoDaPublicacao } from "./fluxo-previsto";
 import { arvoreDaArea, montarFluxo, type TipoNaArvore } from "./fluxo-vios";
 import { carregarArvoreVios, carregarCatalogoProcessos, catalogoDaArea, type CatalogoArea } from "./sama";
 import type { AgendamentoResumo, TarefaPrevista } from "./types";
@@ -38,7 +38,9 @@ export function prazoDaPublicacao(publicacao: AreaDaPublicacao, areas: CatalogoA
  */
 export function arvoreDaPublicacao(arvore: Map<number, TipoNaArvore>, areas: CatalogoArea[], publicacao: AreaDaPublicacao): Map<number, TipoNaArvore> {
   const catalogo = catalogoDaPublicacao(areas, publicacao);
-  return arvoreDaArea(arvore, catalogo?.etapas.map((etapa) => etapa.id) ?? null, catalogo?.area ?? null);
+  const daArea = arvoreDaArea(arvore, catalogo?.etapas.map((etapa) => etapa.id) ?? null, catalogo?.area ?? null);
+  // Trabalhista: a INSERIR PAUTA do fluxo fica com a Manoela (responsável fixo da área).
+  return catalogo ? arvoreComResponsavelDaArea(daArea, catalogo.area) : daArea;
 }
 
 /**

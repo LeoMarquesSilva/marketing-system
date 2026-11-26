@@ -4,9 +4,18 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CalendarDays, LoaderCircle, Pencil, Save, TriangleAlert, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
-import { avisosDaData, chaveDoCaminho, contagemPadraoDaPublicacao, horaFinalPadrao, horaValida, pedeDataLimite, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
+import {
+  avisosDaData,
+  chaveDoCaminho,
+  contagemPadraoDaPublicacao,
+  horaFinalPadrao,
+  horaValida,
+  pedeDataLimite,
+  problemasDasDatasDoFluxo,
+  revisorFicaNaTarefa,
+} from "@/lib/vistagem/agendamento";
 import { mudancasNaTarefa, type CamposDaTarefa } from "@/lib/vistagem/ajuste-conferencia";
-import { ROTULO_CONTAGEM, criarCalendario, criarCalendarioDePrazo, datasDoPrazo, noRecessoForense } from "@/lib/vistagem/dias-uteis";
+import { ROTULO_CONTAGEM, criarCalendario, criarCalendarioDePrazo, criarNomeDoDia, datasDoPrazo, noRecessoForense } from "@/lib/vistagem/dias-uteis";
 import { caminhosDoFluxo, fluxoDoPrazo, fluxoPrevisto, prazoApertado } from "@/lib/vistagem/fluxo-previsto";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
 import { fataisDoFluxo } from "@/lib/vistagem/prazo-legal";
@@ -126,6 +135,11 @@ function FormularioDaTarefa({
   const { hoje } = dados;
   const fluxoDoTipo = tarefa.tarefaId ? dados.fluxos[tarefa.tarefaId] ?? null : null;
   const ehDiaUtil = useMemo(() => criarCalendario(dados.feriados), [dados.feriados]);
+  // Com os feriados do VIOS que valem para o processo: trava as datas que o VIOS passaria para o dia útil seguinte.
+  const ehDiaDoVios = useMemo(() => criarCalendario([...dados.feriados, ...(dados.feriadosVios ?? [])]), [dados.feriados, dados.feriadosVios]);
+  // O informativo do calendário: o nome do feriado (do VIOS ou da Controladoria) e, na data fatal, o recesso.
+  const nomeDoDia = useMemo(() => criarNomeDoDia(dados.nomesDosFeriados), [dados.nomesDosFeriados]);
+  const nomeDoDiaDoPrazo = useMemo(() => criarNomeDoDia(dados.nomesDosFeriados, { recesso: true }), [dados.nomesDosFeriados]);
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(dados.feriados), [dados.feriados]);
   const pessoas = useMemo(() => pessoasDoDetalhe(dados), [dados]);
   const classeDe = useMemo(() => classeNoCatalogo(dados.catalogo), [dados.catalogo]);
@@ -200,12 +214,18 @@ function FormularioDaTarefa({
 
   const horaFimOk = !form.horaFim || (horaValida(form.horaFim) && form.horaFim > form.hora);
   const limiteOk = !comLimite || !form.dataLimite || !form.data || form.dataLimite >= form.data;
+  // O que o servidor recusa (o VIOS passaria a data para o dia útil seguinte): data do fluxo em dia não útil,
+  // Revisar/Protocolar depois da fatal e Enviar em dia não útil.
+  const problemasDoFluxo = problemasDasDatasDoFluxo(campos(form).fluxoDatas, { ehDiaUtil: ehDiaDoVios, dataFatal: comFatal ? form.dataFatal || null : null });
+  const enviarNaoUtil = enviarAMao && Boolean(form.data) && !ehDiaDoVios(form.data);
   const completo =
     limiteOk &&
     Boolean(form.responsavel.trim()) &&
     (comFatal ? Boolean(form.dataFatal && form.data) : Boolean(form.data)) &&
     (!prazo || Boolean(form.revisor)) &&
-    (!compromisso || (horaValida(form.hora) && horaFimOk));
+    (!compromisso || (horaValida(form.hora) && horaFimOk)) &&
+    !problemasDoFluxo.length &&
+    !enviarNaoUtil;
 
   // Prazo apertado: o Enviar vistado já passou e o formulário abre com o de hoje (é o que o robô lança).
   const enviarVistadoPassou = comFatal && dataInicial !== tarefa.data && tarefa.data < hoje;
@@ -219,7 +239,7 @@ function FormularioDaTarefa({
           ...(contaPrazo(form.dataFatal) ? [] : [noRecessoForense(form.dataFatal) ? "A data fatal cai no recesso forense (20/12 a 20/01)." : "A data fatal não é dia útil."]),
         ]
       : []),
-    ...(form.data ? avisosDaData(form.data, hoje).map((texto) => `${comFatal ? "Enviar" : "Data"}: ${texto.toLowerCase()}`) : []),
+    ...(form.data ? avisosDaData(form.data, hoje, ehDiaDoVios).map((texto) => `${comFatal ? "Enviar" : "Data"}: ${texto.toLowerCase()}`) : []),
     ...(comFatal && form.dataFatal && form.data > form.dataFatal ? ["O Enviar não pode ficar depois da data fatal."] : []),
     ...(comFatal && form.dataFatal && previstas.some((item) => item.quando === "criacao" && !item.repetida && item.data && item.data > form.dataFatal)
       ? ["Há tarefa do fluxo depois da data fatal: confira as datas abaixo."]
@@ -267,6 +287,13 @@ function FormularioDaTarefa({
           <span role="alert" className="font-medium text-red-700">
             {erro}
           </span>
+        ) : enviarNaoUtil || problemasDoFluxo.length ? (
+          <span role="alert" className="font-medium text-red-700">
+            {[
+              ...(enviarNaoUtil ? [`O Enviar (${formatarData(form.data)}) não é dia útil (fim de semana ou feriado). Escolha um dia útil.`] : []),
+              ...problemasDoFluxo.map((problema) => problema.texto),
+            ].join(" ")}
+          </span>
         ) : mudancas.length ? (
           `${mudancas.length === 1 ? "1 alteração" : `${mudancas.length} alterações`}: ${comEnvio ? "vai para o robô ao rodar de novo." : "vai para o robô ao validar."}`
         ) : (
@@ -294,6 +321,7 @@ function FormularioDaTarefa({
                 rotulo="Data fatal"
                 valor={form.dataFatal}
                 ehDiaUtil={contaPrazo}
+                nomeDoDia={nomeDoDiaDoPrazo}
                 invalido={!form.dataFatal}
                 // O Enviar segue a conta do fluxo da tarefa, como na vistagem.
                 onChange={(dataFatal) => alterar({ dataFatal, ...(dataFatal ? { data: enviarPelaFatal(dataFatal) } : {}) })}
@@ -305,8 +333,11 @@ function FormularioDaTarefa({
             <CampoData
               rotulo={comFatal ? "Enviar: data no VIOS" : "Data no VIOS"}
               valor={form.data}
-              ehDiaUtil={ehDiaUtil}
-              invalido={!form.data}
+              ehDiaUtil={ehDiaDoVios}
+              // A audiência é na data do tribunal: o feriado só aparece, não se barra.
+              bloquearNaoUtil={!compromisso}
+              nomeDoDia={nomeDoDia}
+              invalido={!form.data || enviarNaoUtil}
               destacado={enviarAMao}
               // A data limite igual à data acompanha a data; a escolhida fica.
               onChange={(data) => alterar({ data, ...(form.dataLimite && form.dataLimite === form.data ? { dataLimite: "" } : {}) })}
@@ -346,6 +377,7 @@ function FormularioDaTarefa({
                 valor={form.dataLimite || form.data}
                 min={form.data || undefined}
                 ehDiaUtil={ehDiaUtil}
+                nomeDoDia={nomeDoDia}
                 destacado={Boolean(form.dataLimite && form.dataLimite !== form.data)}
                 invalido={!limiteOk}
                 onChange={(dataLimite) => alterar({ dataLimite })}
@@ -412,9 +444,12 @@ function FormularioDaTarefa({
                   }))
                 : []
           }
+          dataFatal={comFatal ? form.dataFatal || null : null}
           pessoas={pessoas}
           hoje={hoje}
           ehDiaUtil={ehDiaUtil}
+          ehDiaDoVios={ehDiaDoVios}
+          nomeDoDia={nomeDoDia}
           classeDe={classeDe}
           onMudarData={(caminho, data) => alterar({ fluxoDatas: comMudancaNoFluxo(form.fluxoDatas, caminho, { data }) })}
           onMudarResponsaveis={(caminho, nomes) => alterar({ fluxoDatas: comMudancaNoFluxo(form.fluxoDatas, caminho, { responsaveis: nomes }) })}

@@ -108,6 +108,19 @@ export function documentosNovosJusbr<T extends DocumentoComChave>(documentos: T[
   return ja.size ? documentos.filter((documento) => !ja.has(documento.chave)) : documentos;
 }
 
+/** Documentos por pedido (JUSBR_LOTE muda): processo com mais que isso sai em vários pedidos, um lote por vez. */
+export const JUSBR_LOTE_PADRAO = 300;
+
+/**
+ * O lote deste pedido e quantos documentos ficam para o próximo. Processo enorme (4.930 documentos, 24/11) prendia
+ * a fila por horas e estourava a memória do robô, que recomeçava do zero: agora cada pedido leva no máximo `limite`
+ * documentos, em ordem de juntada, e o resto volta ao fim da fila num pedido novo (o próximo pula o já baixado).
+ */
+export function loteJusbr<T>(novos: T[], limite: number): { lote: T[]; restantes: number } {
+  const tamanho = Number.isFinite(limite) && limite >= 1 ? Math.floor(limite) : JUSBR_LOTE_PADRAO;
+  return { lote: novos.slice(0, tamanho), restantes: Math.max(0, novos.length - tamanho) };
+}
+
 /** A capa que o robô envia ao ORQESTRAI junto com os autos (o formato do CapaDoJusbr de lá). */
 export interface CapaDoJusbr {
   siglaTribunal: string | null;
@@ -182,4 +195,23 @@ export function textoParaPdf(texto: string): string {
     .replace(/[–—]/g, "-")
     .replace(/…/g, "...")
     .replace(/[^\n\t\x20-\x7E -ÿ]/g, "?");
+}
+
+/** Documentos seguidos sem arquivo nem texto que fazem o robô desistir do Jus.br e seguir pelo tribunal. */
+export const JUSBR_FALHAS_SEGUIDAS = 10;
+
+/**
+ * Desiste do Jus.br? Quando a integração de um tribunal está fora (o Jus.br responde 503 a cada peça), insistir
+ * peça por peça leva quase uma hora num processo grande e termina sem nada (24/11, TJRJ): depois de
+ * JUSBR_FALHAS_SEGUIDAS falhas seguidas, o pedido segue pelo robô do tribunal.
+ */
+export function desistirDoJusbr(falhasSeguidas: number): boolean {
+  return falhasSeguidas >= JUSBR_FALHAS_SEGUIDAS;
+}
+
+/** Originais (PDF) recusados em sequência que fazem o robô seguir só pelo texto no resto do processo. */
+export const JUSBR_ORIGINAIS_RECUSADOS = 3;
+
+export function desistirDosOriginais(recusadosSeguidos: number): boolean {
+  return recusadosSeguidos >= JUSBR_ORIGINAIS_RECUSADOS;
 }

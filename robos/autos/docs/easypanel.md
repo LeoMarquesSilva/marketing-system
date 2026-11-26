@@ -9,7 +9,7 @@ Estudo de 17/11/2026 (2 fatores pelo painel em 18/11/2026) sobre rodar o robô d
 - **eproc do TJSP e do TJRJ:** rodam inteiros no servidor. O Playwright apresenta o certificado A1 (.pfx) ao SSO do tribunal sozinho, sem a lista de certificados do Chrome. Depois do certificado vem o código de 2 fatores, que o robô gera sozinho com o segredo do TOTP cadastrado no painel de robôs (sem ele, busca no webhook do n8n; sem os dois, uma pessoa digita pela tela remota). Testado localmente com um servidor que exige certificado de cliente; falta o teste com o certificado e os tribunais de verdade.
 - **PJe do TJRJ (1º grau, login pelo jus.br/PDPJ):** o botão "CERTIFICADO DIGITAL" do jus.br chama o PJe Office, programa que não existe no servidor. O robô faz o papel dele (`src/pje-office.ts`): intercepta o pedido da página ao PJe Office dentro do próprio navegador, assina o desafio com o A1 do painel e entrega ao SSO, como o programa faria. Depois vem o código de 2 fatores, que o robô gera com o segredo `pdpj` do painel (o CNJ exige 2 fatores no jus.br desde 03/11/2025, mesmo com certificado). Testado com um SSO de teste que confere a assinatura e, em 23/11/2026, **no jus.br de verdade** pelo robô da pauta (TRT-15): certificado pelo PJe Office do robô e código do painel. Na mesma data o jus.br trocou o botão "CERTIFICADO DIGITAL" pelo link "Seu certificado digital"; o seletor aceita os dois. A assinatura vai ao SSO pelo próprio navegador (`contexto.request`), então sai pelo mesmo proxy do login quando há `NAVEGADOR_PROXY` (o WARP, contra o bloqueio do CloudFront ao IP do servidor). O 2º grau tem login próprio e fica com a pessoa.
 - **DCP do TJRJ:** a pessoa entra pela tela remota. O login por certificado do tribunal (`www7.tjrj.jus.br`) pede o certificado de cliente numa renegociação TLS; se o Playwright apresentar o A1 ali (a testar), o certificado deixa de depender da pessoa. O duplo fator vem por e-mail, ou pelo Microsoft Authenticator se o advogado trocar (aí o robô pode gerar o código).
-- **e-SAJ (TJSP, TJCE, TJAL, TJMS):** o login por certificado depende do Web Signer da Softplan, sem uso confirmado em Linux. No servidor o login é feito pela pessoa, pela tela remota, com CPF e senha (`ESAJ_LOGIN=manual`); no TJSP o tribunal manda um código por e-mail a cada login, que a pessoa digita. Automatizar a leitura desse código ou testar o Web Signer em Linux são decisões para depois.
+- **e-SAJ (TJSP, TJCE, TJAL, TJMS):** o login por certificado depende do Web Signer da Softplan, que não existe no servidor. O robô faz o papel dele (`src/web-signer.ts`, desde 24/11/2026): troca o `softplan-websigner.js` da página de login por uma versão própria com as mesmas funções (listar, ler o certificado, assinar o hash do desafio), e a assinatura sai do A1 do painel no Node do robô. O login por certificado do e-SAJ não pede o código por e-mail. Com `ESAJ_LOGIN=certificado` e `esaj` em `ROBO_CONECTORES`, o e-SAJ entra sozinho. Testado com uma página que imita o login e confere a assinatura; **falta o primeiro login no e-SAJ de verdade**. `WEB_SIGNER=nao` desliga (aí o login fica com a pessoa, pela tela remota).
 - **Pessoa no circuito:** quando o robô precisa de alguém (login, código, CAPTCHA), a pessoa abre a tela do robô no navegador (noVNC), protegida por HTTPS e senha no Easypanel. É o mesmo que acontecia na janela do Mac, só que pelo navegador. O robô continua sem resolver CAPTCHA sozinho.
 - **Certificado e 2 fatores no servidor:** decidido pelo usuário: a cópia do A1 vai também para o servidor, enviada pelo painel de robôs, e o segredo do TOTP de cada eproc fica configurado no painel. O robô lê os dois de uma pasta que o painel grava (contrato na seção [Painel de robôs](#painel-de-robôs-certificado-e-segredo-do-2fa)).
 - **Depende de outra entrega:** as rotas `/api/robos/autos/*` só existem na branch `feat/processos-linha-do-tempo`. O robô do servidor só funciona depois que ela estiver em produção no ORQESTRAI.
@@ -270,6 +270,7 @@ O que o painel tem (o código está no repositório do painel, fora deste):
 - **Logs:** o robô escreve no terminal; no Easypanel, aba Logs do serviço. Os logs não trazem senha, certificado nem código de 2 fatores; trazem o número dos processos atendidos, como no Mac.
 - **Reinício:** se o robô cair, o processo principal termina e o contêiner para. A página oficial do Easypanel não descreve a política de reinício automático: no primeiro teste, encerre o robô de propósito e confira se o serviço volta sozinho. Quando volta, a sessão do tribunal recomeça (novo login). Trocar o certificado não exige reinício.
 - **Recursos (estimativa, não medida):** 2 vCPU; memória com reserva de 1,5 GB e limite de 3 GB (o Chromium com janela usa de 0,5 a 1 GB, e o eproc monta o PDF dos autos na memória, que pode chegar a 200 MB). Disco: 5 GB no volume.
+- **Processo enorme (Jus.br):** cada pedido leva no máximo `JUSBR_LOTE` documentos (300). O resto volta ao fim da fila num pedido novo, que pula o que já foi entregue: um processo de milhares de documentos não prende a fila por horas nem estoura a memória (24/11/2026, 4.930 documentos derrubaram o robô e ele recomeçava do zero). Durante o download o robô dá sinal ao ORQESTRAI a cada minuto; pedido cancelado na tela é largado na hora, sem reiniciar o serviço.
 - **Volume `/dados`:** `perfil/` (sessão dos tribunais), `downloads/` (PDF em trânsito) e `diagnostico/` (capturas e HTML das telas, que podem ter dados de processos).
 - **Limpeza:** o PDF sai de `downloads/` logo depois do envio (como hoje); a cópia temporária que o navegador guarda de cada download do e-SAJ agora também é apagada na hora; no início do contêiner saem diagnósticos com mais de `DIAGNOSTICO_DIAS` (7) e PDFs esquecidos de pedidos interrompidos.
 - **Fuso:** `TZ=America/Sao_Paulo`, para os horários do log baterem com os do escritório.
@@ -278,7 +279,25 @@ O que o painel tem (o código está no repositório do painel, fora deste):
 
 Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)). Nenhum valor real vai para o repositório: senhas, token, chave privada, certificado e segredos entram só no Easypanel e no painel.
 
+### Dois serviços de autos: Jus.br e tribunal (24/11/2026)
+
+**É o arranjo em uso.** Até aqui um só serviço (`robo-autos-eproc-tjsp`, `ROBO_NOME=servidor-jusbr`) atendia Jus.br, eproc e e-SAJ, um pedido por vez: um processo grande num sistema segurava a fila dos outros. O trabalhista vai usar muito o Jus.br, então ele ganha um serviço só dele:
+
+| Serviço | `ROBO_NOME` | `ROBO_CONECTORES` | `CAPA_DATAJUD` | Volume `/dados` |
+|---|---|---|---|---|
+| `robo-autos-jusbr` (novo) | `servidor-jusbr` | `jusbr` | `nao` | próprio |
+| `robo-autos-eproc-tjsp` (o atual) | `servidor-tribunal` | `eproc,esaj` | como está (só um serviço completa capas) | o que já tem |
+
+- **Repasse entre os dois:** o pedido de autos vai primeiro ao Jus.br. Quando o Jus.br não traz os autos e o pedido tem reserva (o conector do tribunal, ex. `esaj:TJSP`), o robô que tem o conector da reserva segue por ele no mesmo pedido (como antes, num robô com todos os conectores). O `robo-autos-jusbr` não tem: ele chama a ação `repassar` do ORQESTRAI, o pedido volta à fila em `pendente` já no sistema da reserva, e o `robo-autos-eproc-tjsp` o pega. No log do robô do Jus.br: `Repassado ao robô do tribunal (esaj:TJSP).`
+- **Ordem:** a ação `repassar` precisa estar em produção no ORQESTRAI (Vercel) **antes** de o `robo-autos-jusbr` subir com `ROBO_CONECTORES=jusbr`. Sem ela, o repasse recebe 400 e o pedido vira erro.
+- **Criar o `robo-autos-jusbr`:** mesma fonte, Build Path e Dockerfile do `robo-autos-eproc-tjsp`. Environment: copie as variáveis do serviço atual (inclusive `NAVEGADOR_PROXY`, se houver: o jus.br bloqueia o IP do servidor sem ele) e troque só `ROBO_NOME`, `ROBO_CONECTORES`, `CAPA_DATAJUD` e `TELA_REMOTA_URL`. `ROBO_AUTOS_TOKEN` e `VNC_SENHA` quem cola é o usuário. Mounts: **volume `/dados` próprio** (o perfil do navegador não pode ser dividido), bind de `/srv/robos/certificados` em `/certificados` e de `/srv/robos/segredos` em `/segredos`, os mesmos do serviço atual. Domínio próprio para a tela remota (porta 6080, Basic Auth). Resources, réplicas e zero-downtime como no [passo 3](#3-serviços-do-robô-app-um-por-linha-da-tabela).
+- **No `robo-autos-eproc-tjsp`:** `ROBO_CONECTORES=eproc,esaj` e `ROBO_NOME=servidor-tribunal`; deploy depois que o `robo-autos-jusbr` estiver atendendo. Um sistema nunca fica nos dois (seriam dois logins do mesmo advogado no mesmo tribunal).
+- **Memória:** cada serviço abre o seu Chromium (de 0,5 a 1 GB com janela). Confira a sobra da VPS antes de criar o segundo (`free -h` no servidor, ou a aba Monitor do Easypanel): com menos de ~1,5 GB livres, o segundo navegador pode derrubar os dois.
+- **Teste:** um pedido de processo do TJSP em segredo de justiça que o Jus.br não atenda deve aparecer no log do `robo-autos-jusbr` como repassado e, em seguida, no `robo-autos-eproc-tjsp`, baixado pelo e-SAJ ou pelo eproc.
+
 ### Três serviços no projeto `bibliotecaBP`
+
+Plano anterior (17 a 23/11/2026), mantido para a migração do Mac e para quando o TJRJ entrar no servidor; o que vale hoje para autos é a seção [acima](#dois-serviços-de-autos-jusbr-e-tribunal-24112026).
 
 O servidor roda o robô em três serviços, do mesmo código e da mesma imagem, para os tribunais andarem em paralelo (dentro de cada serviço, um processo por vez, no ritmo que o tribunal aguenta):
 
@@ -493,7 +512,7 @@ O robô lê logo ao subir e de novo em cada horário de `PAUTA_HORARIOS`, sem ma
 
 | Variável | Padrão | O que faz |
 |---|---|---|
-| `ROBO_CONECTORES` | todos | Conectores atendidos: `eproc`, `esaj`, `esaj:TJCE`… |
+| `ROBO_CONECTORES` | todos | Conectores atendidos: `jusbr`, `eproc`, `esaj`, `esaj:TJCE`… Sem o conector da reserva, o robô repassa ao robô do tribunal o pedido que o Jus.br não atende. |
 | `NAVEGADOR_MODO` | `comum` (ou `playwright` com certificado em arquivo) | Quem abre o navegador. |
 | `NAVEGADOR_HEADLESS` | `nao` | Sem janela (só no modo `playwright`). |
 | `NAVEGADOR_ARGS` | — | Argumentos extras do navegador. |
@@ -501,6 +520,9 @@ O robô lê logo ao subir e de novo em cada horário de `PAUTA_HORARIOS`, sem ma
 | `TELA_REMOTA_URL` | — | Endereço da tela remota, mostrado no log. |
 | `CERTIFICADO_PFX`, `CERTIFICADO_SENHA`, `CERTIFICADO_SENHA_ARQUIVO` | — | Certificado em arquivo, fonte simples. |
 | `CERTIFICADO_PASTA`, `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO` | — | Certificado enviado pelo painel. |
+| `SEGREDO_JUSTICA` | baixa | Processo em segredo de justiça que o robô abre com o login do advogado é baixado sem esperar a liberação na ficha (decisão de 24/11/2026). `esperar` volta a parar e esperar a liberação. |
+| `EPROC_PERFIL` | `SP` | Na tela "Seleção de perfil" do eproc (advogado com inscrições em mais de um estado), o robô escolhe o perfil de advogado cuja sigla começa por este prefixo; sem ele, o primeiro de advogado. Vale para o TJSP e o TJRJ. |
+| `WEB_SIGNER` | ligado com certificado no modo playwright | `nao` desliga o Web Signer do robô (o login por certificado no e-SAJ volta para a pessoa). |
 | `PJE_OFFICE` | ligado com certificado no modo playwright | `nao` desliga o PJe Office do robô (o login por certificado no jus.br volta para a pessoa). |
 | `ROBO_2FA_PASTA` | `CERTIFICADO_PASTA` | Onde está o `segundo-fator.json` gravado pelo painel (segredo do TOTP, decifrado com `CERTIFICADO_CHAVE_PRIVADA_ARQUIVO`). |
 | `CERTIFICADO_ORIGENS` | `https://certificado-sso.tjsp.jus.br` | Onde o certificado é apresentado. |

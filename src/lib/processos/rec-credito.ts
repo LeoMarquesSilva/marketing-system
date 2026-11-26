@@ -305,6 +305,7 @@ export interface DadosDoProcessoNaCarteira {
   grupoCliente: string | null;
   cliente: string | null;
   devedor: string | null;
+  advogadoResponsavel: string | null;
   acao: string | null;
   fase: string | null;
   situacao: string | null;

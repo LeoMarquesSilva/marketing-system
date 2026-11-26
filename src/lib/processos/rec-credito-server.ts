@@ -4,6 +4,8 @@ import { acordoNaCarteira, recebidoEmAcordos } from "./acordos";
 import { acordosPorProcesso, carregarAcordos } from "./acordos-dados";
 import { ProcessosError } from "./errors";
 import { carregarTabelaTjsp, situacaoDosIndices } from "./indices-server";
+import { chaveDaOpcao } from "./opcoes";
+import { incluirOpcao } from "./opcoes-server";
 import { registrarNoHistorico } from "./processos-server";
 import {
   SEM_ATUALIZACAO,
@@ -122,7 +124,7 @@ function hoje(): string {
 }
 
 const SELECAO_PROCESSO =
-  "id, ci, cnj, grupo_cliente, cliente, acao, fase, situacao, area, data_distribuicao, data_cadastro, data_encerramento, valor_acao, credito:proc_credito(valor_original, proximos_passos), partes:proc_partes(polo, papel, devedor, pessoa:proc_pessoas(nome))";
+  "id, ci, cnj, grupo_cliente, cliente, advogado_responsavel, acao, fase, situacao, area, data_distribuicao, data_cadastro, data_encerramento, valor_acao, credito:proc_credito(valor_original, proximos_passos), partes:proc_partes(polo, papel, devedor, pessoa:proc_pessoas(nome))";
 
 function dadosDoProcesso(linha: Linha): DadosDoProcessoNaCarteira {
   const credito = (Array.isArray(linha.credito) ? linha.credito[0] : linha.credito) as Linha | null;
@@ -143,6 +145,7 @@ function dadosDoProcesso(linha: Linha): DadosDoProcessoNaCarteira {
     grupoCliente: texto(linha.grupo_cliente),
     cliente: texto(linha.cliente),
     devedor: lista.map((parte) => parte.nome).join("; ") || null,
+    advogadoResponsavel: texto(linha.advogado_responsavel),
     acao: texto(linha.acao),
     fase: texto(linha.fase),
     situacao: texto(linha.situacao),
@@ -264,7 +267,8 @@ export async function incluirItem(
   dosAutos?: { documentoId: string | null; pagina: number | null }
 ): Promise<RecCreditoDoProcesso> {
   const colunas = colunasDoItem(tipo, dados);
-  if (tipo === "titulo") await conferirTipoDeTitulo(colunas.tipo as string);
+  // Título lido dos autos e aprovado por uma pessoa pode trazer uma espécie que a lista ainda não tem.
+  if (tipo === "titulo") colunas.tipo = await conferirTipoDeTitulo(colunas.tipo as string, dosAutos ? ator : null);
   const { data: processo, error: erroProcesso } = await db().from("proc_processos").select("id").eq("id", processoId).maybeSingle();
   if (erroProcesso) falhou("carregar o processo", erroProcesso);
   if (!processo) throw new ProcessosError("Processo não encontrado.", 404);
@@ -294,7 +298,7 @@ async function itemExistente(tipo: TipoItem, itemId: string): Promise<Linha> {
 export async function alterarItem(tipo: TipoItem, itemId: string, dados: Record<string, unknown>, ator: Ator): Promise<RecCreditoDoProcesso> {
   const atual = await itemExistente(tipo, itemId);
   const colunas = colunasDoItem(tipo, dados);
-  if (tipo === "titulo" && colunas.tipo !== atual.tipo) await conferirTipoDeTitulo(colunas.tipo as string);
+  if (tipo === "titulo" && colunas.tipo !== atual.tipo) colunas.tipo = await conferirTipoDeTitulo(colunas.tipo as string, null);
   const { error } = await db().from(TABELA_DO_ITEM[tipo]).update(colunas).eq("id", itemId);
   if (error) falhou("salvar o item", error);
   await registrarNoHistorico(atual.processo_id as string, ROTULO_HISTORICO, descreverItem(tipo, atual), `Alterado: ${descreverItem(tipo, colunas)}`, ator);
@@ -309,11 +313,24 @@ export async function excluirItem(tipo: TipoItem, itemId: string, ator: Ator): P
   return carregarRecCredito(atual.processo_id as string);
 }
 
-/** O tipo do título vem da lista "Tipo de título" de Cadastros (só opção ativa). */
-async function conferirTipoDeTitulo(tipo: string): Promise<void> {
-  const { data, error } = await db().from("proc_opcoes").select("valor").eq("lista", "tipo_titulo").eq("ativo", true);
+/**
+ * O tipo do título vem da lista "Tipo de título" de Cadastros (só opção ativa) e é gravado com a grafia da
+ * lista. Com `incluirPor` (a pessoa que aprovou uma sugestão da leitura dos autos), a espécie que ainda não
+ * está na lista entra nela, em nome de quem aprovou; à mão, na ficha, só vale o que já está na lista.
+ */
+async function conferirTipoDeTitulo(tipo: string, incluirPor: Ator | null): Promise<string> {
+  const { data, error } = await db().from("proc_opcoes").select("valor, ativo").eq("lista", "tipo_titulo");
   if (error) falhou("carregar os tipos de título", error);
-  if (!(data ?? []).some((opcao) => opcao.valor === tipo)) throw new ProcessosError(`"${tipo}" não está na lista de tipos de título (Cadastros).`, 400);
+  const chave = chaveDaOpcao("tipo_titulo", tipo);
+  const opcao = (data ?? []).find((item) => chaveDaOpcao("tipo_titulo", item.valor as string) === chave);
+  if (opcao?.ativo) return opcao.valor as string;
+  if (opcao) throw new ProcessosError(`"${opcao.valor}" está desativado na lista de tipos de título (Cadastros). Reative ou escolha outro tipo.`, 400);
+  if (!incluirPor) throw new ProcessosError(`"${tipo}" não está na lista de tipos de título (Cadastros).`, 400);
+  // O tipo é a espécie do título ("Nota fiscal"); número ou texto longo aqui é dado que foi parar no campo errado.
+  if (/\d/.test(tipo) || tipo.length > 60) {
+    throw new ProcessosError(`"${tipo}" não é um tipo de título: edite a sugestão e escolha o tipo (o número vai no campo Número).`, 400);
+  }
+  return (await incluirOpcao("tipo_titulo", { valor: tipo }, incluirPor)).valor;
 }
 
 /** Opções ativas da lista "Tipo de título", para o formulário. */

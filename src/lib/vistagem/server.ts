@@ -14,9 +14,11 @@ import { pastaNoSama } from "./sama";
 import {
   ESCRITORIOS,
   ESCRITORIO_EX_CLIENTE,
+  GRUPO_EX_CLIENTE,
   MOTIVO_EX_CLIENTE_SEM_ESCRITORIO,
   PREFIXO_DESCARTE_CONTROLADORIA,
   citaAdvogadoDoEscritorio,
+  grupoDaPastaNaPublicacao,
   pastaInformada,
   temDemandaDeRisco,
   triar,
@@ -119,6 +121,8 @@ export type PublicacaoRow = {
   pendencia: Pendencia | null; pastas_candidatas: PastaSioe[] | null; triada_em: string | null;
   observacao_vistagem: string | null; vistado_por: string | null; vistado_em: string | null; conferido_por: string | null;
   conferido_em: string | null; devolucao_motivo: string | null; devolvido_em: string | null;
+  /** Só nas consultas que pedem a coluna (migração 20261125180000). */
+  devolucao_origem?: "conferencia" | "check" | null;
   devolvido_por: string | null; revistado_por: string | null; revistado_em: string | null; reaberta_em?: string | null;
   checado_em: string | null; check_nota: string | null;
   transferido_de: string | null; transferido_em: string | null; transferencia_motivo: string | null;
@@ -171,6 +175,7 @@ export function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null =
     conferidoEm: row.conferido_em,
     devolucaoMotivo: row.devolucao_motivo,
     devolvidoEm: row.devolvido_em,
+    devolucaoOrigem: row.devolucao_origem ?? null,
     revistadoEm: row.revistado_em ?? null,
     reabertaEm: row.reaberta_em ?? null,
     checadoEm: row.checado_em,
@@ -882,7 +887,11 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
   const { etiquetasDeRisco } = await lerConfiguracoes();
   const automatico = pasta && !informada ? triar([pasta], await carregarAreasDasPessoas(), { etiquetasDeRisco }) : null;
   const escritorio = entrada.escritorio?.trim() || automatico?.escritorio || (informada ? escritorioDaPastaInformada(informada) : null) || null;
-  const grupo = entrada.grupo?.trim() || pasta?.grupoCliente?.trim() || null;
+  // O grupo do atendimento da controladoria (CI 51762) vira "Grupo Ex-Cliente"; sem grupo, a Operações Legais fica com ele.
+  const grupo =
+    grupoDaPastaNaPublicacao(entrada.grupo) ??
+    grupoDaPastaNaPublicacao(pasta?.grupoCliente) ??
+    (escritorio === ESCRITORIO_EX_CLIENTE ? GRUPO_EX_CLIENTE : null);
   if (!escritorio) throw new VistagemError("Informe o escritório responsável.");
   if (entrada.escritorio && !(ESCRITORIOS as readonly string[]).includes(escritorio)) {
     throw new VistagemError("Escritório inválido.");

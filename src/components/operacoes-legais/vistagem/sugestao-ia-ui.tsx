@@ -175,6 +175,15 @@ export function CartaoSugestaoIa({
         nomeDaTarefa={nomeDaTarefa}
         className="mt-2 border-t border-[#eef3f5]"
       />
+      {sugestao.tiradasPeloFluxo?.length ? (
+        <ul className="space-y-0.5 border-t border-[#eef3f5] px-4 py-2 text-xs text-muted-foreground">
+          {sugestao.tiradasPeloFluxo.map((tirada) => (
+            <li key={`${tirada.tarefa}-${tirada.criadaPor}`}>
+              <span className="line-through">{tirada.tarefa}</span> fora da sugestão: o fluxo da tarefa {tirada.criadaPor} já cria no VIOS.
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2 border-t border-[#eef3f5] bg-[#fbfcfd] px-4 py-2.5">
         <span className="min-w-0 flex-1 text-xs text-muted-foreground">
           {comEsocial ? (

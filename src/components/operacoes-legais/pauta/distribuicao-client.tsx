@@ -280,7 +280,7 @@ function Distribuicao() {
                     <li key={aud.id} className="grid grid-cols-[4.25rem_minmax(0,1fr)_auto] items-start gap-3 border-b border-[#e6eef0] px-4 py-2.5 last:border-b-0">
                       <span className="font-mono text-sm font-medium">
                         {hora(aud.inicio)}
-                        <span className="block font-sans text-xs text-muted-foreground">{aud.modalidadeTribunal === "presencial" ? "presencial" : aud.modalidadeTribunal === "hibrida" ? "híbrida" : "vídeo"}</span>
+                        <span className="block font-sans text-xs text-muted-foreground">{aud.modalidadeTribunal === "presencial" ? "presencial" : aud.modalidadeTribunal === "hibrida" ? "híbrida" : "online"}</span>
                       </span>
                       <div className="min-w-0 space-y-1">
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">

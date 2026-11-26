@@ -67,3 +67,11 @@ describe("botão usado mesmo com a fatal mudada na Conferência (pedido de 19/11
     expect(origemDaFatal(prazo({ origemPrazo: "atalho", ajustes: mudouFatal }))?.rotulo).toBe("Botões de dias");
   });
 });
+
+describe("origemDaFatal: repetição mensal do COMPROVAR PAGAMENTO (pedido de 24/11/2026)", () => {
+  it("diz que a fatal veio da repetição mensal, e não do calendário", () => {
+    const origem = origemDaFatal(prazo({ origemPrazo: "repeticao" }));
+    expect(origem).toMatchObject({ origem: "repeticao", rotulo: "Repetição mensal", mudadaNaConferencia: false });
+    expect(origem?.descricao).toContain("mesmo dia do mês da primeira fatal");
+  });
+});

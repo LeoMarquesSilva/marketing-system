@@ -87,6 +87,15 @@ export interface ResultadoTriagem {
 
 export const ESCRITORIO_EX_CLIENTE = "Operações Legais";
 
+/** Grupo das publicações que a controladoria manda à Operações Legais na Triagem Manual (decisão de 24/11/2026). */
+export const GRUPO_EX_CLIENTE = "Grupo Ex-Cliente";
+
+/**
+ * Grupo do atendimento da própria controladoria no VIOS (CI 51762, "Área Controladoria"). Não é grupo de cliente: não
+ * está na lista de grupos (só tem atendimento) e aparecia como "(sugerido)" quando a CI preenchia o grupo.
+ */
+const GRUPO_DA_CONTROLADORIA = "Grupo Operações Legais";
+
 /** Prefixo do motivo quando quem descarta é a controladoria (os automáticos têm motivo próprio). */
 export const PREFIXO_DESCARTE_CONTROLADORIA = "Descartada pela controladoria: ";
 
@@ -152,6 +161,37 @@ export function chavePessoa(nome: string | null | undefined): string {
 /** Ex-cliente aparece no grupo, na etiqueta "Carteira Ex-Cliente" ou na situação "Encerrado - Ex-Cliente". */
 export function ehExCliente(pasta: PastaSioe): boolean {
   return /\bex.?cliente\b/.test(normalizar(`${pasta.grupoCliente} | ${pasta.etiquetas} | ${pasta.situacao}`));
+}
+
+/**
+ * Grupo que a publicação recebe da pasta: o da pasta, menos o do atendimento da controladoria (CI 51762), que vira
+ * "Grupo Ex-Cliente" (24/11/2026: no 0049237-61 a CI deixou "Grupo Operações Legais"; nas outras, Ex-Cliente à mão).
+ */
+export function grupoDaPastaNaPublicacao(grupo: string | null | undefined): string | null {
+  const limpo = grupo?.trim();
+  if (!limpo) return null;
+  return normalizar(limpo) === normalizar(GRUPO_DA_CONTROLADORIA) ? GRUPO_EX_CLIENTE : limpo;
+}
+
+/**
+ * Grupo que a Triagem Manual propõe em "Para onde vai", até a controladoria escolher outro no combo:
+ * 1. o da pasta (a da publicação ou a informada pela CI), que é o grupo de verdade;
+ * 2. sem ele, na Operações Legais, "Grupo Ex-Cliente" (no lugar do grupo que a sugestão achou pela parte ou pela IA);
+ * 3. nas outras áreas, o da sugestão.
+ */
+export function grupoPropostoNaTriagem({
+  escritorio,
+  grupoDaPasta,
+  grupoDaSugestao,
+}: {
+  escritorio: string;
+  grupoDaPasta: string | null | undefined;
+  grupoDaSugestao: string | null | undefined;
+}): string {
+  const daPasta = grupoDaPastaNaPublicacao(grupoDaPasta);
+  if (daPasta) return daPasta;
+  if (escritorio === ESCRITORIO_EX_CLIENTE) return GRUPO_EX_CLIENTE;
+  return grupoDaPastaNaPublicacao(grupoDaSugestao) ?? "";
 }
 
 /** Pasta em andamento no VIOS: não está encerrada, arquivada, baixada nem extinta. */

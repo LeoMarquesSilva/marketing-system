@@ -70,7 +70,7 @@ const ROTULO_CARTAO: Record<CartaoCheck, string> = {
   canceladas: "Canceladas a conferir",
   naoBatem: "Não batem com o VIOS",
   soNoVios: "Só no VIOS",
-  semLink: "Vídeo ainda sem link",
+  semLink: "Online ainda sem link",
 };
 
 function noCartao(cartao: CartaoCheck, a: Audiencia): boolean {
@@ -223,7 +223,7 @@ function Tribunal() {
         <Indicador icone={CircleSlash} rotulo={ROTULO_CARTAO.canceladas} valor={dados ? numeros.canceladas : "—"} tom={numeros.canceladas ? "perigo" : "neutro"} ativo={cartao === "canceladas"} onClick={alternar("canceladas")} dica="Mostrar só as canceladas no PJe que ainda pedem conferência no VIOS" />
         <Indicador icone={CalendarX2} rotulo={ROTULO_CARTAO.naoBatem} valor={dados ? numeros.naoBatem : "—"} tom={numeros.naoBatem ? "perigo" : "neutro"} ativo={cartao === "naoBatem"} onClick={alternar("naoBatem")} dica="Mostrar só as que estão diferentes no VIOS (falta, concluída ou outra data)" />
         <Indicador icone={ClipboardList} rotulo={ROTULO_CARTAO.soNoVios} valor={vios?.resumo ? soNoVios.length : "—"} tom={soNoVios.length ? "alerta" : "neutro"} ativo={soDoVios} onClick={alternar("soNoVios")} dica="Mostrar só as tarefas de audiência do VIOS sem audiência no PJe" />
-        <Indicador icone={Video} rotulo={ROTULO_CARTAO.semLink} valor={dados ? numeros.semLink : "—"} tom={numeros.semLink ? "alerta" : "neutro"} ativo={cartao === "semLink"} onClick={alternar("semLink")} dica="Mostrar só as por vídeo ainda sem link da sala" />
+        <Indicador icone={Video} rotulo={ROTULO_CARTAO.semLink} valor={dados ? numeros.semLink : "—"} tom={numeros.semLink ? "alerta" : "neutro"} ativo={cartao === "semLink"} onClick={alternar("semLink")} dica="Mostrar só as online ainda sem link da sala" />
       </Indicadores>
 
       <div className="flex flex-wrap items-center gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ArrowUpDown, Banknote, FileSpreadsheet, FolderSearch, LoaderCircle, Percent, Receipt, RefreshCw, Scale, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,37 @@ import { TOM_SITUACAO_ACORDO } from "./acordos-painel";
 import { AcessoProcessos } from "./acesso-processos";
 import { mensagemDeErro, processosApi } from "./processos-api";
 
+/** Filtros, busca, ordem e rolagem da carteira: guardados na aba para voltar da ficha como estavam. */
+const CHAVE_ESTADO = "carteira-rec-credito:estado";
+
+interface EstadoCarteira {
+  busca: string;
+  grupo: string;
+  advogado: string;
+  situacao: string;
+  atualizacao: string;
+  filtroAcordo: string;
+  ordem: { coluna: string; sentido: 1 | -1 } | null;
+  rolagem: number;
+}
+
+function lerEstadoGuardado(): Partial<EstadoCarteira> | null {
+  try {
+    const texto = window.sessionStorage.getItem(CHAVE_ESTADO);
+    return texto ? (JSON.parse(texto) as Partial<EstadoCarteira>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function guardarEstado(estado: Partial<EstadoCarteira>): void {
+  try {
+    window.sessionStorage.setItem(CHAVE_ESTADO, JSON.stringify({ ...lerEstadoGuardado(), ...estado }));
+  } catch {
+    // Aba sem armazenamento (modo privado restrito): a carteira só não lembra os filtros.
+  }
+}
+
 export function CarteiraClient() {
   return (
     <AcessoProcessos>
@@ -49,8 +80,12 @@ const FILTROS_ACORDO: OpcaoSeletor[] = [
   { valor: "sem", rotulo: "Sem acordo" },
 ];
 /** Colunas da tabela e o valor pelo qual cada uma ordena a lista. */
+/** Valor do filtro para os processos sem advogado responsável no cadastro. */
+const SEM_ADVOGADO = "__sem__";
+
 const COLUNAS: { titulo: string; valor: (linha: LinhaCarteira) => Valor }[] = [
   { titulo: "Processo", valor: (linha) => linha.cnj ?? linha.ci },
+  { titulo: "Advogado responsável", valor: (linha) => linha.advogadoResponsavel },
   { titulo: "Robô e IA", valor: (linha) => linha.autos.roboEm },
   { titulo: "Situação", valor: (linha) => `${linha.encerrado ? "1" : "0"} ${linha.fase ?? ""}` },
   { titulo: "Tipo do crédito", valor: (linha) => linha.tiposCredito.join(", ") || null },
@@ -85,6 +120,7 @@ function Carteira() {
   const [erro, setErro] = useState("");
   const [busca, setBusca] = useState("");
   const [grupo, setGrupo] = useState("");
+  const [advogado, setAdvogado] = useState("");
   const [situacao, setSituacao] = useState("");
   const [atualizacao, setAtualizacao] = useState("");
   const [filtroAcordo, setFiltroAcordo] = useState("");
@@ -93,6 +129,27 @@ function Carteira() {
   const [atualizando, setAtualizando] = useState(false);
   const [feito, setFeito] = useState("");
   const [tentativa, setTentativa] = useState(0);
+  const [restaurado, setRestaurado] = useState(false);
+  const rolagemPendente = useRef<number | null>(null);
+
+  // Volta da ficha com os filtros de antes; depois, cada mudança fica guardada.
+  useEffect(() => {
+    const guardado = lerEstadoGuardado();
+    if (guardado) {
+      setBusca(guardado.busca ?? "");
+      setGrupo(guardado.grupo ?? "");
+      setAdvogado(guardado.advogado ?? "");
+      setSituacao(guardado.situacao ?? "");
+      setAtualizacao(guardado.atualizacao ?? "");
+      setFiltroAcordo(guardado.filtroAcordo ?? "");
+      setOrdem(guardado.ordem ?? null);
+      rolagemPendente.current = guardado.rolagem ?? null;
+    }
+    setRestaurado(true);
+  }, []);
+  useEffect(() => {
+    if (restaurado) guardarEstado({ busca, grupo, advogado, situacao, atualizacao, filtroAcordo, ordem });
+  }, [restaurado, busca, grupo, advogado, situacao, atualizacao, filtroAcordo, ordem]);
 
   useEffect(() => {
     let ativo = true;
@@ -115,6 +172,13 @@ function Carteira() {
   const opcoesGrupo: OpcaoSeletor[] = [...new Set(todas.map((linha) => linha.grupoCliente).filter((valor): valor is string => Boolean(valor)))]
     .sort((a, b) => a.localeCompare(b, "pt-BR"))
     .map((valor) => ({ valor, rotulo: valor, contagem: todas.filter((linha) => linha.grupoCliente === valor).length }));
+  const semAdvogado = todas.filter((linha) => !linha.advogadoResponsavel).length;
+  const opcoesAdvogado: OpcaoSeletor[] = [
+    ...[...new Set(todas.map((linha) => linha.advogadoResponsavel).filter((valor): valor is string => Boolean(valor)))]
+      .sort((a, b) => a.localeCompare(b, "pt-BR"))
+      .map((valor) => ({ valor, rotulo: valor, contagem: todas.filter((linha) => linha.advogadoResponsavel === valor).length })),
+    ...(semAdvogado ? [{ valor: SEM_ADVOGADO, rotulo: "Sem advogado responsável", contagem: semAdvogado }] : []),
+  ];
 
   const hoje = diaEmBrasilia(new Date());
   // Enquanto o robô ou a IA trabalham em algum processo, a carteira se recarrega sozinha a cada 30 s.
@@ -129,6 +193,7 @@ function Carteira() {
     const termo = busca.trim().toLowerCase();
     return todas.filter((linha) => {
       if (grupo && linha.grupoCliente !== grupo) return false;
+      if (advogado && (linha.advogadoResponsavel ?? SEM_ADVOGADO) !== advogado) return false;
       if (situacao === "ativos" && linha.encerrado) return false;
       if (situacao === "encerrados" && !linha.encerrado) return false;
       if (atualizacao && situacaoDaAtualizacao(linha.autos, hoje) !== atualizacao) return false;
@@ -137,9 +202,17 @@ function Carteira() {
       if (filtroAcordo === "atencao" && !(linha.acordo && ["em_atraso", "descumprido"].includes(linha.acordo.resumo.situacao))) return false;
       if (!termo) return true;
       if (digitos.length >= 4 && ((linha.cnj ?? "").replace(/\D/g, "").includes(digitos) || (linha.ci ?? "").includes(digitos))) return true;
-      return [linha.devedor, linha.cliente].some((campo) => campo?.toLowerCase().includes(termo));
+      return [linha.devedor, linha.cliente, linha.advogadoResponsavel].some((campo) => campo?.toLowerCase().includes(termo));
     });
-  }, [todas, busca, grupo, situacao, atualizacao, filtroAcordo, hoje]);
+  }, [todas, busca, grupo, advogado, situacao, atualizacao, filtroAcordo, hoje]);
+
+  // A rolagem só volta depois que as linhas chegam (antes disso a página não tem altura).
+  useEffect(() => {
+    if (!dados || rolagemPendente.current === null) return;
+    const alvo = rolagemPendente.current;
+    rolagemPendente.current = null;
+    window.requestAnimationFrame(() => window.scrollTo({ top: alvo }));
+  }, [dados]);
 
   const ordenadas = useMemo(() => {
     const coluna = ordem ? COLUNAS.find((item) => item.titulo === ordem.coluna) : null;
@@ -189,7 +262,7 @@ function Carteira() {
   async function baixar() {
     setBaixando(true);
     try {
-      const filtrado = Boolean(busca || grupo || situacao || atualizacao || filtroAcordo);
+      const filtrado = Boolean(busca || grupo || advogado || situacao || atualizacao || filtroAcordo);
       await processosApi.baixarCarteira(filtrado ? filtradas.map((linha) => linha.id) : null);
     } catch (falha) {
       setErro(mensagemDeErro(falha));
@@ -237,8 +310,9 @@ function Carteira() {
           </span>
         }
       >
-        <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="CNJ, CI, devedor ou cliente" aria-label="Buscar processo" />
+        <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="CNJ, CI, devedor, cliente ou advogado" aria-label="Buscar processo" />
         <SeletorBusca valor={grupo} onChange={setGrupo} opcoes={opcoesGrupo} todos={{ rotulo: "Todos os grupos" }} rotulo="Grupo do cliente" className="sm:w-52" />
+        <SeletorBusca valor={advogado} onChange={setAdvogado} opcoes={opcoesAdvogado} todos={{ rotulo: "Todos os advogados" }} rotulo="Advogado responsável" className="sm:w-56" />
         <Seletor valor={situacao} onChange={setSituacao} opcoes={SITUACOES} todos={{ rotulo: "Ativos e encerrados" }} rotulo="Situação" className="sm:w-48" />
         <Seletor valor={atualizacao} onChange={setAtualizacao} opcoes={ATUALIZACOES} todos={{ rotulo: "Toda atualização" }} rotulo="Atualização dos autos" className="sm:w-56" />
         <Seletor valor={filtroAcordo} onChange={setFiltroAcordo} opcoes={FILTROS_ACORDO} todos={{ rotulo: "Com e sem acordo" }} rotulo="Acordo" className="sm:w-56" />
@@ -283,15 +357,19 @@ function Carteira() {
                 {ordenadas.map((linha) => (
                   <tr key={linha.id} className="hover:bg-[#f6fafb]">
                     <td className="min-w-[16rem] px-3 py-2.5">
-                      <Link href={`/operacoes-legais/processos/${linha.id}?de=carteira`} className="flex min-w-0 items-start gap-2.5 hover:underline">
+                      <Link href={`/operacoes-legais/processos/${linha.id}?de=carteira`} onClick={() => guardarEstado({ rolagem: window.scrollY })} className="flex min-w-0 max-w-[24rem] items-start gap-2.5 hover:underline">
                         <LogoGrupo grupo={linha.grupoCliente} tamanho="md" />
                         <span className="min-w-0">
                           <span className="block truncate font-semibold tabular-nums text-[#10293a]">{linha.cnj ?? "Sem número CNJ"}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
+                          {/* Vários devedores numa linha só esticavam a coluna até o fim da tela: quebra em até duas linhas. */}
+                          <span className="line-clamp-2 text-xs text-muted-foreground" title={linha.devedor ?? undefined}>
                             CI {linha.ci ?? "—"} · {linha.devedor ?? "devedor não informado"}
                           </span>
                         </span>
                       </Link>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-xs">
+                      {linha.advogadoResponsavel ?? <span className="text-muted-foreground">—</span>}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-xs">
                       <AtualizacaoDosAutosNaLinha autos={linha.autos} hoje={hoje} />

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { criarCalendario, datasDoPrazo } from "./dias-uteis";
 import {
   ESTAGIARIO_DA_PASTA,
+  arvoreComResponsavelDaArea,
   caminhosDoFluxo,
+  comResponsaveisFixosNoFluxo,
   emOrdemDeArvore,
   fluxoDoPrazo,
   fluxoParaOVios,
@@ -11,6 +13,7 @@ import {
   prazoMarcadoCurto,
   prazoMarcadoLongo,
   quemFicaNoFluxo,
+  responsaveisFixosDoFluxo,
 } from "./fluxo-previsto";
 import { arvoreDaArea, cadeiaDoFluxo, montarFluxo, type BaseDaData, type RegraDePrazo, type ResponsabilidadeDoTipo, type TipoNaArvore } from "./fluxo-vios";
 
@@ -466,5 +469,62 @@ describe("prazo curto na insolvência (pedido de 18/11/2026, 4008806-15: 'puland
       protocolar: "2026-11-24",
       motivo: "adiada",
     });
+  });
+});
+
+describe("Trabalhista: INSERIR PAUTA do fluxo com a Manoela (pedido de 25/11/2026)", () => {
+  // AUD. INSTRUÇÃO (457) cria a INSERIR PAUTA (416) e o INFORMAR CLIENTE; a SESSÃO (406) cria a Ciência (340), que
+  // cria a INSERIR PAUTA. O VIOS não fixa ninguém na 416 (vios_tipos_tarefa: sem fixos e sem regras lidas).
+  const AUDIENCIA = new Map<number, TipoNaArvore>([
+    [457, tipo("AUD. INSTRUÇÃO", null, [[416, "atual"], [409, "atual"]])],
+    [416, tipo("INSERIR PAUTA + ATUALIZAR SISTEMA", uteis(1))],
+    [409, tipo("INFORMAR CLIENTE", uteis(1))],
+    [406, tipo("SESSÃO DE JULGAMENTO", null, [[340, "atual"]])],
+    [340, tipo("CIÊNCIA DA PUBLICACÃO E VIABILIDADE SUSTENTACÃO ORAL", uteis(1), [[416, "atual"]])],
+  ]);
+  const pessoas = { data: "2027-09-30", responsavel: "Pamela Klava Senna Patricio", revisor: null };
+  const ehDiaUtil = criarCalendario([]);
+
+  it("na árvore da Trabalhista a INSERIR PAUTA fica com a Manoela; nas outras áreas a árvore não muda", () => {
+    const trabalhista = arvoreComResponsavelDaArea(AUDIENCIA, "Trabalhista");
+    expect(trabalhista.get(416)?.responsabilidade).toEqual({ fixos: ["Manoela Brisighello Angotti"], regras: null, daArea: true });
+    expect(trabalhista.get(409)?.responsabilidade).toBeUndefined();
+    for (const area of ["Cível", "Recuperação de Crédito", null]) expect(arvoreComResponsavelDaArea(AUDIENCIA, area)).toBe(AUDIENCIA);
+    // O fixo do VIOS vale mais que o da área.
+    const comFixoNoVios = new Map(AUDIENCIA).set(416, { ...tipo("INSERIR PAUTA + ATUALIZAR SISTEMA", uteis(1)), responsabilidade: { fixos: ["Outra Pessoa"], regras: null } });
+    expect(arvoreComResponsavelDaArea(comFixoNoVios, "Trabalhista").get(416)?.responsabilidade?.fixos).toEqual(["Outra Pessoa"]);
+  });
+
+  it("o Fluxo das tarefas da audiência mostra a Manoela na INSERIR PAUTA, e não o advogado do processo", () => {
+    const naTrabalhista = fluxoPrevisto(pessoas, montarFluxo("457", arvoreComResponsavelDaArea(AUDIENCIA, "Trabalhista")), ehDiaUtil, { hoje: "2026-11-25" });
+    expect(naTrabalhista.map((tarefa) => [tarefa.nome, tarefa.responsaveis])).toEqual([
+      ["INSERIR PAUTA + ATUALIZAR SISTEMA", "Manoela Brisighello Angotti"],
+      ["INFORMAR CLIENTE", "Pamela Klava Senna Patricio"],
+    ]);
+    // Fora da Trabalhista, como antes: o responsável da vistagem.
+    expect(fluxoPrevisto(pessoas, montarFluxo("457", AUDIENCIA), ehDiaUtil, { hoje: "2026-11-25" })[0].responsaveis).toBe("Pamela Klava Senna Patricio");
+  });
+
+  it("vai ao robô como escolhida, também no 2º nível do fluxo; o que o jurídico escolheu vale mais", () => {
+    const arvore = arvoreComResponsavelDaArea(AUDIENCIA, "Trabalhista");
+    const audiencia = responsaveisFixosDoFluxo(montarFluxo("457", arvore));
+    expect(audiencia).toEqual([{ caminho: ["INSERIR PAUTA + ATUALIZAR SISTEMA"], responsaveis: ["Manoela Brisighello Angotti"] }]);
+    expect(responsaveisFixosDoFluxo(montarFluxo("406", arvore))).toEqual([
+      { caminho: ["CIÊNCIA DA PUBLICACÃO E VIABILIDADE SUSTENTACÃO ORAL", "INSERIR PAUTA + ATUALIZAR SISTEMA"], responsaveis: ["Manoela Brisighello Angotti"] },
+    ]);
+    expect(responsaveisFixosDoFluxo(montarFluxo("457", AUDIENCIA))).toEqual([]);
+
+    // Junta com o que já ia: data sem pessoa ganha a Manoela; pessoa escolhida fica; o resto entra no fim.
+    expect(comResponsaveisFixosNoFluxo([{ caminho: ["INSERIR PAUTA + ATUALIZAR SISTEMA"], data: "2026-11-26" }], audiencia)).toEqual([
+      { caminho: ["INSERIR PAUTA + ATUALIZAR SISTEMA"], data: "2026-11-26", responsaveis: ["Manoela Brisighello Angotti"] },
+    ]);
+    expect(comResponsaveisFixosNoFluxo([{ caminho: ["Inserir Pauta + Atualizar Sistema"], responsaveis: ["Lorena Lourenço Miranda"] }], audiencia)).toEqual([
+      { caminho: ["Inserir Pauta + Atualizar Sistema"], responsaveis: ["Lorena Lourenço Miranda"] },
+    ]);
+    expect(comResponsaveisFixosNoFluxo([{ caminho: ["INFORMAR CLIENTE"], data: "2026-11-27" }], audiencia)).toEqual([
+      { caminho: ["INFORMAR CLIENTE"], data: "2026-11-27" },
+      ...audiencia,
+    ]);
+    expect(comResponsaveisFixosNoFluxo([], [])).toEqual([]);
   });
 });

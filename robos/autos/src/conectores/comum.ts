@@ -1,4 +1,5 @@
-import { open, stat } from "node:fs/promises";
+import { open, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { PDFDocument } from "pdf-lib";
 import type { Page } from "playwright";
 import { comecaComoPdf } from "./esaj-urls.ts";
 import { FalhaDoConector, type Ambiente } from "./tipos.ts";
@@ -6,6 +7,8 @@ import { FalhaDoConector, type Ambiente } from "./tipos.ts";
 /** O que todo conector usa: CAPTCHA, cliques com diagnóstico e a conferência do PDF baixado. */
 
 const TAMANHO_MAXIMO = 200 * 1024 * 1024;
+/** Tamanho visado de cada parte quando o PDF passa do limite (folga para as fontes e imagens repetidas em cada parte). */
+const ALVO_DA_PARTE = 150 * 1024 * 1024;
 
 /** Desafio visível na tela (reCAPTCHA, hCaptcha, Turnstile ou imagem). O robô só detecta: quem resolve é a pessoa. */
 export async function temCaptcha(pagina: Page): Promise<boolean> {
@@ -83,4 +86,40 @@ export async function controlesDaTela(pagina: Page): Promise<Record<string, unkn
       };
     })
   );
+}
+
+/**
+ * PDF acima do limite do ORQESTRAI (ex.: 265 MB no e-SAJ, 24/11): divide por páginas em partes de até ~150 MB.
+ * A primeira parte fica no próprio `arquivo`; as outras em "<arquivo>-parteN.pdf". Devolve os caminhos, ou null se
+ * o arquivo já cabe.
+ */
+export async function dividirPdfGrande(arquivo: string, limite = TAMANHO_MAXIMO, alvo = ALVO_DA_PARTE): Promise<string[] | null> {
+  const { size } = await stat(arquivo);
+  if (size <= limite) return null;
+  const origem = await PDFDocument.load(await readFile(arquivo), { ignoreEncryption: true });
+  const total = origem.getPageCount();
+  const caminhoDa = (n: number) => (n === 0 ? arquivo.replace(/\.pdf$/i, "-parte1.tmp.pdf") : arquivo.replace(/\.pdf$/i, `-parte${n + 1}.pdf`));
+  for (let partes = Math.max(2, Math.ceil(size / alvo)); partes <= total; partes *= 2) {
+    const porParte = Math.ceil(total / partes);
+    const caminhos: string[] = [];
+    let coube = true;
+    for (let inicio = 0, n = 0; inicio < total; inicio += porParte, n += 1) {
+      const parte = await PDFDocument.create();
+      const indices = Array.from({ length: Math.min(porParte, total - inicio) }, (_, i) => inicio + i);
+      for (const pagina of await parte.copyPages(origem, indices)) parte.addPage(pagina);
+      const bytes = await parte.save();
+      if (bytes.length > limite) {
+        coube = false;
+        break;
+      }
+      await writeFile(caminhoDa(n), bytes);
+      caminhos.push(caminhoDa(n));
+    }
+    if (!coube) continue;
+    await rename(caminhos[0], arquivo);
+    caminhos[0] = arquivo;
+    for (const caminho of caminhos) await conferirPdf(caminho);
+    return caminhos;
+  }
+  throw new FalhaDoConector(`O PDF dos autos tem ${Math.round(size / (1024 * 1024))} MB e não deu para dividir em partes de até 200 MB. Baixe em partes e anexe à mão.`);
 }

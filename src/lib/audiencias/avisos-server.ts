@@ -3,10 +3,10 @@ import "server-only";
 import { evolutionFetch, getEvolutionConfig } from "@/lib/evolution-whatsapp";
 import { criarCalendario } from "@/lib/vistagem/dias-uteis";
 import { carregarFeriados } from "@/lib/vistagem/feriados";
-import { alertasDaAudiencia, hojeEmBrasilia, local, proximosDiasUteis, somarDias } from "./agenda";
+import { alertasDaAudiencia, geraAvisos, hojeEmBrasilia, local, proximosDiasUteis, somarDias } from "./agenda";
 import { lerConfig, modoWhatsapp } from "./config-server";
 import { respostasDasAudiencias } from "./convites-server";
-import { mensagemDaPauta, mensagemDeAlerta, mensagemDeMudanca, mensagemDeTroca, type Mensagem } from "./mensagens";
+import { mensagemDaPauta, mensagemDeAlertas, mensagemDeMudanca, mensagemDeTroca, type Mensagem } from "./mensagens";
 import { carregarAudiencias, carregarPessoas, db } from "./server";
 import type { Audiencia, Papel } from "./tipos";
 
@@ -61,14 +61,14 @@ function proxima(aud: Audiencia, dias = 30): boolean {
 }
 
 export async function avisarMudanca(aud: Audiencia): Promise<void> {
-  if (!proxima(aud) || (!aud.mudancas.length && aud.situacao !== "cancelada")) return;
+  if (!geraAvisos(aud) || !proxima(aud) || (!aud.mudancas.length && aud.situacao !== "cancelada")) return;
   const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
   const chave = `mudanca:${aud.id}:${[...aud.mudancas].sort().join(",")}:${aud.situacao}`;
   await enviarAviso(chave, mensagemDeMudanca(aud, pessoas), aud.id);
 }
 
 export async function avisarTroca(aud: Audiencia, papel: Papel, de: string | null, para: string, motivo: string | null): Promise<void> {
-  if (!proxima(aud, 60)) return;
+  if (!geraAvisos(aud) || !proxima(aud, 60)) return;
   const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
   await enviarAviso(`troca:${aud.id}:${papel}:${para}:${Date.now()}`, mensagemDeTroca(aud, papel, de, para, motivo, pessoas), aud.id);
 }
@@ -79,7 +79,7 @@ export async function avisarPautaDoDia(qual: "hoje" | "proximo", agora = new Dat
   const hoje = hojeEmBrasilia(agora);
   if (!util(hoje)) return "hoje não é dia útil";
   const dia = qual === "hoje" ? hoje : proximosDiasUteis(hoje, 1, util)[0]!;
-  const auds = await carregarAudiencias(`${dia}T00:00:00-03:00`, `${somarDias(dia, 1)}T00:00:00-03:00`);
+  const auds = (await carregarAudiencias(`${dia}T00:00:00-03:00`, `${somarDias(dia, 1)}T00:00:00-03:00`)).filter(geraAvisos);
   const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
   const titulo = qual === "hoje" ? "Pauta de hoje" : dia === somarDias(hoje, 1) ? "Pauta de amanhã" : "Pauta do próximo dia útil";
   const mensagem = mensagemDaPauta(titulo, dia, auds, pessoas);
@@ -87,27 +87,50 @@ export async function avisarPautaDoDia(qual: "hoje" | "proximo", agora = new Dat
   return enviarAviso(`pauta:${qual}:${dia}`, mensagem);
 }
 
-/** Sem titular, choque e deslocamento nos próximos dois dias úteis: marca a coordenação (uma vez por dia). */
+/**
+ * Alerta para a coordenação (régua do Samuel: "na hora"): sem titular, conflito de horário, sem tempo de deslocamento
+ * ou titular que recusou o convite, nas audiências de hoje e dos próximos dois dias úteis. Roda na rotina e logo
+ * depois do que muda a pauta (leitura do robô, troca, resposta ao convite). Só em dia útil, das 7h às 19h: fim de
+ * semana e noite não chamam ninguém. Cada alerta sai uma vez por dia (a linha dele em aud_avisos é a trava); os novos
+ * de uma vez vão juntos numa mensagem.
+ */
 export async function avisarAlertasGraves(agora = new Date()): Promise<number> {
   const util = await ehDiaUtil();
   const hoje = hojeEmBrasilia(agora);
-  const dias = [hoje, ...proximosDiasUteis(hoje, 2, util)].filter((d) => util(d));
-  if (!dias.length) return 0;
+  const hora = horaDeBrasilia(agora);
+  if (!util(hoje) || hora < 7 || hora >= 19) return 0;
+  const dias = [hoje, ...proximosDiasUteis(hoje, 2, util)];
   const auds = await carregarAudiencias(`${dias[0]}T00:00:00-03:00`, `${somarDias(dias[dias.length - 1]!, 1)}T00:00:00-03:00`);
   const lista = await carregarPessoas();
   const pessoas = new Map(lista.map((p) => [p.id, p]));
   const coordenacao = lista.filter((p) => p.coordenacao && p.ativo).map((p) => p.id);
   const respostas = await respostasDasAudiencias(auds);
-  let enviados = 0;
+  const itens: { chave: string; aud: Audiencia; texto: string }[] = [];
   for (const aud of auds) {
-    if (aud.situacao !== "designada" || new Date(aud.inicio).getTime() < agora.getTime()) continue;
+    if (aud.situacao !== "designada" || !geraAvisos(aud) || new Date(aud.inicio).getTime() < agora.getTime()) continue;
     for (const alerta of alertasDaAudiencia(aud, { pessoas, todas: auds, respostas })) {
-      if (!["sem_titular", "choque", "deslocamento", "recusou"].includes(alerta.tipo)) continue;
-      const r = await enviarAviso(`alerta:${aud.id}:${alerta.tipo}:${hoje}`, mensagemDeAlerta(aud, alerta.texto, coordenacao, pessoas), aud.id);
-      if (r !== "repetido") enviados += 1;
+      if (["sem_titular", "choque", "deslocamento", "recusou"].includes(alerta.tipo)) itens.push({ chave: `alerta:${aud.id}:${alerta.tipo}:${hoje}`, aud, texto: alerta.texto });
     }
   }
-  return enviados;
+  if (!itens.length) return 0;
+  // Uma linha por alerta: a chave única diz quais ainda não saíram hoje.
+  const { data, error } = await db()
+    .from("aud_avisos")
+    .upsert(
+      itens.map((i) => ({ dedupe_key: i.chave, audiencia_id: i.aud.id, texto: i.texto, mencoes: [], status: modoWhatsapp() === "off" ? "desligado" : "simulado" })),
+      { onConflict: "dedupe_key", ignoreDuplicates: true }
+    )
+    .select("dedupe_key");
+  if (error) {
+    console.error("[pauta] registrar alertas:", error.message);
+    return 0;
+  }
+  const novasChaves = new Set(((data ?? []) as { dedupe_key: string }[]).map((l) => l.dedupe_key));
+  const novos = itens.filter((i) => novasChaves.has(i.chave));
+  if (!novos.length) return 0;
+  const r = await enviarAviso(`alertas:${hoje}:${agora.getTime()}`, mensagemDeAlertas(novos, coordenacao, pessoas), novos.length === 1 ? novos[0]!.aud.id : null);
+  if (r === "enviado" || r === "erro") await db().from("aud_avisos").update({ status: r }).in("dedupe_key", novos.map((n) => n.chave));
+  return novos.length;
 }
 
 export function horaDeBrasilia(agora = new Date()): number {

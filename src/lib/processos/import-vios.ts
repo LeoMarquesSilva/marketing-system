@@ -34,13 +34,16 @@ export function limparCi(valor: unknown): string {
   return String(valor ?? "").replace(/[="\s]/g, "");
 }
 
-/** dd/mm/aaaa (com ou sem hora) ou aaaa-mm-dd → aaaa-mm-dd. */
+/** dd/mm/aaaa (com ou sem hora) ou aaaa-mm-dd → aaaa-mm-dd. Data que não existe (o "00/00/0000" do VIOS) é vazia. */
 export function lerData(valor: unknown): string | null {
   const texto = String(valor ?? "").trim();
   const br = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(texto);
-  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(texto);
-  return iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : null;
+  const [ano, mes, dia] = br ? [br[3], br[2], br[1]] : iso ? [iso[1], iso[2], iso[3]] : [];
+  if (!ano) return null;
+  const data = new Date(Date.UTC(Number(ano), Number(mes) - 1, Number(dia)));
+  const existe = Number(ano) > 0 && data.getUTCFullYear() === Number(ano) && data.getUTCMonth() === Number(mes) - 1 && data.getUTCDate() === Number(dia);
+  return existe ? `${ano}-${mes}-${dia}` : null;
 }
 
 const CNJ = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
@@ -95,31 +98,101 @@ export function lerPartes(celula: unknown, polo: PoloParte): ParteImportada[] {
   return partes;
 }
 
-/**
- * Separa "Carteira PST RC-Insolvência Crédito Ativo" usando as etiquetas conhecidas (as do SIOE, que vêm
- * separadas por " | "), sempre pela mais longa que casa. O que sobrar sem casar fica como uma etiqueta só.
- */
-export function separarEtiquetas(texto: unknown, catalogo: string[]): string[] {
-  let resto = String(texto ?? "").trim();
-  if (!resto) return [];
-  const conhecidas = [...new Set(catalogo.map((item) => item.trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
+/** Sem caixa nem espaço repetido, para comparar etiqueta com etiqueta. */
+function chaveEtiqueta(texto: string): string {
+  return texto.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Etiqueta conhecida já com a chave de comparação, para não recalcular a cada linha do relatório. */
+interface EtiquetaConhecida {
+  valor: string;
+  chave: string;
+}
+
+/** Sem repetição e da mais longa para a mais curta (a mais longa que casa é a que vale). */
+function prepararEtiquetas(lista: string[]): EtiquetaConhecida[] {
+  const porChave = new Map<string, EtiquetaConhecida>();
+  for (const item of lista) {
+    const valor = String(item ?? "").replace(/\s+/g, " ").trim();
+    const chave = chaveEtiqueta(valor);
+    if (valor && !porChave.has(chave)) porChave.set(chave, { valor, chave });
+  }
+  return [...porChave.values()].sort((a, b) => b.chave.length - a.chave.length);
+}
+
+/** Corta o texto nas etiquetas conhecidas; o trecho que não casa com nenhuma fica junto, como uma só. */
+function cortarEtiquetas(texto: string, conhecidas: EtiquetaConhecida[]): { etiquetas: string[]; semCasar: boolean } {
+  let resto = texto.replace(/\s+/g, " ").trim();
   const etiquetas: string[] = [];
-  let semCasar = "";
+  let pendente = "";
+  let semCasar = false;
+  const fecharPendente = () => {
+    if (pendente.trim()) {
+      etiquetas.push(pendente.trim());
+      semCasar = true;
+    }
+    pendente = "";
+  };
   while (resto) {
-    const achada = conhecidas.find((item) => resto === item || resto.startsWith(`${item} `));
+    const minusculo = resto.toLowerCase();
+    const achada = conhecidas.find((item) => minusculo === item.chave || minusculo.startsWith(`${item.chave} `));
     if (achada) {
-      if (semCasar.trim()) etiquetas.push(semCasar.trim());
-      semCasar = "";
-      etiquetas.push(achada);
-      resto = resto.slice(achada.length).trim();
+      fecharPendente();
+      etiquetas.push(achada.valor);
+      resto = resto.slice(achada.chave.length).trim();
     } else {
       const espaco = resto.indexOf(" ");
-      semCasar += ` ${espaco === -1 ? resto : resto.slice(0, espaco)}`;
+      pendente += ` ${espaco === -1 ? resto : resto.slice(0, espaco)}`;
       resto = espaco === -1 ? "" : resto.slice(espaco + 1).trim();
     }
   }
-  if (semCasar.trim()) etiquetas.push(semCasar.trim());
-  return [...new Set(etiquetas)];
+  fecharPendente();
+  return { etiquetas: [...new Set(etiquetas)], semCasar };
+}
+
+/**
+ * Catálogo pronto para a separação, a partir de uma ou mais fontes (o cadastro de etiquetas do
+ * ORQESTRAI, as etiquetas do SIOE). Sai sem as "etiquetas" que são só duas ou mais etiquetas do próprio
+ * catálogo coladas ("Carteira X Crédito Ativo" quando existem "Carteira X" e "Crédito Ativo"): uma
+ * carga sem catálogo já gravou etiquetas assim e, se elas entrassem aqui, a mais longa ganharia e o
+ * erro nunca mais se desfaria.
+ */
+export function catalogoDeEtiquetas(...fontes: string[][]): string[] {
+  const todas = prepararEtiquetas(fontes.flat());
+  return todas
+    .filter((item) => {
+      const corte = cortarEtiquetas(item.valor, todas.filter((outra) => outra !== item));
+      return corte.semCasar || corte.etiquetas.length < 2;
+    })
+    .map((item) => item.valor);
+}
+
+/**
+ * Separa "Carteira X RC-Insolvência Crédito Ativo" usando as etiquetas conhecidas, sempre pela mais
+ * longa que casa. O que sobrar sem casar fica como uma etiqueta só. Para muitas linhas, passe o
+ * catálogo já pronto de catalogoDeEtiquetas.
+ */
+export function separarEtiquetas(texto: unknown, catalogo: string[]): string[] {
+  return cortarEtiquetas(String(texto ?? ""), prepararEtiquetas(catalogo)).etiquetas;
+}
+
+/**
+ * Desfaz etiquetas que foram gravadas coladas: cada item que não é do catálogo e se divide por inteiro
+ * em etiquetas do catálogo vira essas etiquetas. Devolve null quando não há o que mudar.
+ */
+export function desgrudarEtiquetas(etiquetas: string[], catalogo: string[]): string[] | null {
+  const conhecidas = prepararEtiquetas(catalogoDeEtiquetas(catalogo));
+  const chaves = new Set(conhecidas.map((item) => item.chave));
+  let mudou = false;
+  const saida: string[] = [];
+  for (const item of etiquetas) {
+    const corte = chaves.has(chaveEtiqueta(item)) ? null : cortarEtiquetas(item, conhecidas);
+    if (corte && !corte.semCasar && corte.etiquetas.length > 1) {
+      saida.push(...corte.etiquetas);
+      mudou = true;
+    } else saida.push(item);
+  }
+  return mudou ? [...new Set(saida)] : null;
 }
 
 function lerLista(valor: unknown): string[] {
@@ -162,9 +235,15 @@ export interface LeituraCsv {
   /** Cabeçalhos que o importador não conhece (aparecem na tela de importação). */
   colunasIgnoradas: string[];
   linhasSemCi: number;
+  /** Linhas com etiqueta que ficaram sem etiqueta na leitura por falta de catálogo para separar. */
+  etiquetasSemCatalogo: number;
 }
 
-/** Lê o CSV do "Processos Lista". `etiquetasConhecidas` separa a coluna Etiquetas (ver separarEtiquetas). */
+/**
+ * Lê o CSV do "Processos Lista". `etiquetasConhecidas` separa a coluna Etiquetas, que vem com as
+ * etiquetas coladas por um espaço. Sem catálogo não há como saber onde uma termina e a outra começa:
+ * a linha fica sem o campo (o que já está gravado não é tocado) e entra em `etiquetasSemCatalogo`.
+ */
 export function lerCsvProcessos(texto: string, etiquetasConhecidas: string[] = []): LeituraCsv {
   const linhas = parse(texto.replace(/^﻿/, ""), {
     delimiter: ";",
@@ -173,7 +252,7 @@ export function lerCsvProcessos(texto: string, etiquetasConhecidas: string[] = [
     relax_column_count: true,
     skip_empty_lines: true,
   }) as Record<string, string>[];
-  if (!linhas.length) return { registros: [], colunasIgnoradas: [], linhasSemCi: 0 };
+  if (!linhas.length) return { registros: [], colunasIgnoradas: [], linhasSemCi: 0, etiquetasSemCatalogo: 0 };
   const cabecalhos = Object.keys(linhas[0]);
   const colunaCi = cabecalhos.find((cabecalho) => normalizarCabecalho(cabecalho) === "ci");
   if (!colunaCi) throw new Error("O arquivo não tem a coluna CI: não parece o relatório de processos do VIOS.");
@@ -193,6 +272,8 @@ export function lerCsvProcessos(texto: string, etiquetasConhecidas: string[] = [
 
   const registros = new Map<string, RegistroImportado>();
   let linhasSemCi = 0;
+  let etiquetasSemCatalogo = 0;
+  const catalogo = prepararEtiquetas(catalogoDeEtiquetas(etiquetasConhecidas));
   for (const linha of linhas) {
     const ci = limparCi(linha[colunaCi]);
     if (!/^\d+$/.test(ci)) {
@@ -210,7 +291,10 @@ export function lerCsvProcessos(texto: string, etiquetasConhecidas: string[] = [
         valores.cnj = cnj;
         valores.outros_numeros = outros;
       } else if (chave === COLUNA_ETIQUETAS) {
-        valores.etiquetas = separarEtiquetas(bruto, etiquetasConhecidas);
+        const coladas = limparExcel(bruto);
+        if (!coladas) valores.etiquetas = [];
+        else if (catalogo.length) valores.etiquetas = cortarEtiquetas(coladas, catalogo).etiquetas;
+        else etiquetasSemCatalogo += 1;
       } else if (chave === COLUNA_EDICAO) {
         valores.vios_editado_em = limparExcel(bruto) || null;
       } else if (chave in COLUNAS_PARTE) {
@@ -224,7 +308,7 @@ export function lerCsvProcessos(texto: string, etiquetasConhecidas: string[] = [
     }
     registros.set(ci, { ci, valores, partes });
   }
-  return { registros: [...registros.values()], colunasIgnoradas: ignoradas, linhasSemCi };
+  return { registros: [...registros.values()], colunasIgnoradas: ignoradas, linhasSemCi, etiquetasSemCatalogo };
 }
 
 /** Etiquetas do SIOE: "Carteira PST | Crédito Ativo". */

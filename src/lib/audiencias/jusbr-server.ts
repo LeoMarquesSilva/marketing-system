@@ -7,6 +7,7 @@ import { duplaDaPasta } from "./duplas";
 import { heranca, jusbrComPje, linhaDoJusbr, type LinhaDoJusbr } from "./jusbr";
 import { pastasPorCnj } from "./pastas-server";
 import { cnjComMascara } from "./pje";
+import { reservasComTribunal } from "./reserva";
 import { AudienciasError, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
 import type { Audiencia, Mudanca } from "./tipos";
 
@@ -88,11 +89,18 @@ export async function registrarLeituraJusbr(entrada: unknown): Promise<ResumoJus
             backup_id: dupla.backupId,
             lida_em: agora,
           })
-          .select("id")
+          .select(COLUNAS_AUDIENCIA)
           .single();
         if (error) falhou("gravar a audiência lida no Jus.br", error);
         resumo.novas += 1;
-        if (data) await registrarHistorico(String(data.id), "incluída pelo Jus.br", { para: `${l.inicio.slice(0, 16)} · ${l.tipo_descricao}`, feitoPor: "leitura do Jus.br" });
+        if (data) {
+          const nova = paraAudiencia(data as Linha);
+          await registrarHistorico(nova.id, "incluída pelo Jus.br", { para: `${l.inicio.slice(0, 16)} · ${l.tipo_descricao}`, feitoPor: "leitura do Jus.br" });
+          // A mesma audiência "a confirmar" (do VIOS ou da Vistagem): a do Jus.br passa a valer e herda a dupla.
+          const dia = local(nova.inicio).dia;
+          const reserva = existentes.find((a) => a.origem === "vios" && a.situacao === "designada" && a.tipo !== "pericia" && a.cnj === nova.cnj && local(a.inicio).dia === dia);
+          if (reserva) await passarParaOTribunal(reserva, nova, "leitura do Jus.br");
+        }
         continue;
       }
       if (antes.origem !== "jusbr") continue;
@@ -131,28 +139,68 @@ export async function registrarLeituraJusbr(entrada: unknown): Promise<ResumoJus
  */
 export async function substituirJusbrPeloPje(audiencias: Audiencia[]): Promise<number> {
   const pares = jusbrComPje(audiencias);
-  const agora = new Date().toISOString();
-  for (const { jusbr, pje } of pares) {
-    const campos = heranca(jusbr, pje);
-    if (Object.keys(campos).length) {
-      const { error } = await db().from("aud_audiencias").update(campos).eq("id", pje.id);
-      if (error) falhou("passar a audiência do Jus.br para a do PJe", error);
-    }
-    const { data: convitesDoPje, error: erroConvites } = await db().from("aud_convites").select("papel").eq("audiencia_id", pje.id);
-    if (erroConvites) falhou("ler os convites da audiência do PJe", erroConvites);
-    const jaTem = ((convitesDoPje ?? []) as { papel: string }[]).map((c) => c.papel);
-    const mover = ["titular", "backup"].filter((papel) => !jaTem.includes(papel));
-    if (mover.length) {
-      const { error: erroMover } = await db().from("aud_convites").update({ audiencia_id: pje.id }).eq("audiencia_id", jusbr.id).in("papel", mover);
-      if (erroMover) falhou("passar os convites do Jus.br para a audiência do PJe", erroMover);
-    }
-    const { error } = await db()
-      .from("aud_audiencias")
-      .update({ situacao: "cancelada", mudanca_conferida_em: agora, mudanca_conferida_por: "sistema: substituída pela audiência do PJe" })
-      .eq("id", jusbr.id);
-    if (error) falhou("tirar da pauta a audiência do Jus.br", error);
-    await registrarHistorico(pje.id, "substituiu a do Jus.br", { para: Object.keys(campos).join(", ") || null, feitoPor: "conferência com o VIOS" });
-    await registrarHistorico(jusbr.id, "substituída pela do PJe", { feitoPor: "conferência com o VIOS" });
-  }
+  for (const { jusbr, pje } of pares) await passarParaOTribunal(jusbr, pje, "conferência com o VIOS");
   return pares.length;
+}
+
+/**
+ * Logo depois de uma leitura do PJe: a audiência que estava na pauta pelo Jus.br ou "a confirmar" (VIOS/Vistagem) e
+ * que o PJe passou a mostrar sai na hora, e a do PJe herda a dupla. Antes a troca esperava a conferência com o VIOS, e
+ * nesse meio-tempo a mesma audiência ficava duas vezes na pauta (24/11/2026: alerta de conflito da pessoa com ela mesma).
+ */
+export async function passarParaOPje(cnjs: string[], feitoPor = "leitura do PJe"): Promise<number> {
+  const unicos = [...new Set(cnjs.filter(Boolean))];
+  if (!unicos.length) return 0;
+  const carregar = async () => {
+    const auds: Audiencia[] = [];
+    for (let i = 0; i < unicos.length; i += 200) {
+      const { data, error } = await db().from("aud_audiencias").select(COLUNAS_AUDIENCIA).in("cnj", unicos.slice(i, i + 200)).eq("situacao", "designada");
+      if (error) falhou("ler as audiências dos processos lidos", error);
+      for (const l of (data ?? []) as Linha[]) auds.push(paraAudiencia(l));
+    }
+    return auds;
+  };
+  let auds = await carregar();
+  const doJusbr = jusbrComPje(auds);
+  for (const { jusbr, pje } of doJusbr) await passarParaOTribunal(jusbr, pje, feitoPor);
+  if (doJusbr.length) auds = await carregar();
+  const aConfirmar = reservasComTribunal(auds, new Map());
+  for (const { reserva, tribunal } of aConfirmar) await passarParaOTribunal(reserva, tribunal, feitoPor);
+  return doJusbr.length + aConfirmar.length;
+}
+
+const NOME_DA_ORIGEM: Record<Audiencia["origem"], string> = { pje: "do PJe", jusbr: "do Jus.br", vios: "do VIOS", manual: "manual" };
+
+/**
+ * A audiência `nova` (do tribunal) passa a valer no lugar da `velha` (do Jus.br ou "a confirmar" do VIOS): herda o que
+ * a equipe completou e os convites do Outlook, e a velha sai da pauta (cancelada, já conferida). Da "a confirmar" vêm
+ * também titular e backup: a coordenação pode já ter distribuído (a do Jus.br só preenche o que a do PJe não tem).
+ */
+export async function passarParaOTribunal(velha: Audiencia, nova: Audiencia, feitoPor: string): Promise<void> {
+  const campos = heranca(velha, nova);
+  if (velha.origem === "vios") {
+    if (velha.titularId && velha.titularId !== nova.titularId) campos.titular_id = velha.titularId;
+    if (velha.backupId && velha.backupId !== nova.backupId) campos.backup_id = velha.backupId;
+  }
+  const de = NOME_DA_ORIGEM[velha.origem];
+  const para = NOME_DA_ORIGEM[nova.origem];
+  if (Object.keys(campos).length) {
+    const { error } = await db().from("aud_audiencias").update(campos).eq("id", nova.id);
+    if (error) falhou(`passar a audiência ${de} para a ${para}`, error);
+  }
+  const { data: convitesDaNova, error: erroConvites } = await db().from("aud_convites").select("papel").eq("audiencia_id", nova.id);
+  if (erroConvites) falhou(`ler os convites da audiência ${para}`, erroConvites);
+  const jaTem = ((convitesDaNova ?? []) as { papel: string }[]).map((c) => c.papel);
+  const mover = ["titular", "backup"].filter((papel) => !jaTem.includes(papel));
+  if (mover.length) {
+    const { error: erroMover } = await db().from("aud_convites").update({ audiencia_id: nova.id }).eq("audiencia_id", velha.id).in("papel", mover);
+    if (erroMover) falhou(`passar os convites ${de} para a audiência ${para}`, erroMover);
+  }
+  const { error } = await db()
+    .from("aud_audiencias")
+    .update({ situacao: "cancelada", mudanca_conferida_em: new Date().toISOString(), mudanca_conferida_por: `sistema: substituída pela audiência ${para}` })
+    .eq("id", velha.id);
+  if (error) falhou(`tirar da pauta a audiência ${de}`, error);
+  await registrarHistorico(nova.id, `substituiu a ${de}`, { para: Object.keys(campos).join(", ") || null, feitoPor });
+  await registrarHistorico(velha.id, `substituída pela ${para}`, { feitoPor });
 }

@@ -145,8 +145,16 @@ export interface DadosDoHistorico {
   /** Última transferência: `de` é a área de antes; a de destino é a de agora. */
   transferencia: (Marca & { de: string; motivo: string | null }) | null;
   vistagem: (Marca & { observacao: string | null }) | null;
-  /** Última devolução e quantas houve. */
-  devolucao: (Marca & { motivo: string | null; total: number }) | null;
+  /** Última devolução e quantas houve; `origem`: Conferência ou Check (migração 20261125180000). */
+  devolucao: (Marca & { motivo: string | null; total: number; origem?: "conferencia" | "check" | null }) | null;
+  /** Cada devolução do Check para a Vistagem: o que estava no VIOS e o cancelamento pelo robô. */
+  devolucoesDoCheck?: {
+    em: string;
+    por: string | null;
+    motivo: string;
+    tarefas: { tarefa: string; data: string | null; responsavel: string | null; cis: string[]; enviadoEm: string | null }[];
+    cancelamentos: { texto: string }[];
+  }[];
   revistagem: Marca | null;
   /** Quem vistou reabriu a vistagem para alterar antes da Conferência (a última vez). */
   reabertura?: Marca | null;
@@ -303,11 +311,26 @@ export function montarHistorico(dados: DadosDoHistorico): EventoHistorico[] {
       tarefas: dados.revistagem ? [] : tarefasNaVistagem,
     });
   }
-  if (dados.devolucao) {
+  // Devoluções do Check: cada uma com o que estava no VIOS e o cancelamento (a última devolução, se for do Check, sai aqui).
+  for (const devolvida of dados.devolucoesDoCheck ?? []) {
+    eventos.push({
+      tipo: "devolucao",
+      em: devolvida.em,
+      titulo: "Devolvida para a Vistagem pelo check da Operações Legais",
+      por: devolvida.por,
+      detalhes: linhas(
+        `Motivo: ${devolvida.motivo}`,
+        devolvida.tarefas.length > 0 &&
+          `Estavam no VIOS: ${devolvida.tarefas.map((tarefa) => `${tarefa.tarefa}${tarefa.cis.length ? ` (CI ${tarefa.cis.join(", ")})` : ""}`).join("; ")}.`,
+        ...devolvida.cancelamentos.map((cancelamento) => cancelamento.texto)
+      ),
+    });
+  }
+  if (dados.devolucao && !(dados.devolucao.origem === "check" && dados.devolucoesDoCheck?.length)) {
     eventos.push({
       tipo: "devolucao",
       em: dados.devolucao.em,
-      titulo: "Devolvida ao jurídico",
+      titulo: "Devolvida ao jurídico pela Conferência",
       por: dados.devolucao.por,
       detalhes: linhas(
         dados.devolucao.motivo && `Motivo: ${dados.devolucao.motivo}`,

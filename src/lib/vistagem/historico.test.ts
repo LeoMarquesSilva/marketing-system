@@ -200,3 +200,39 @@ describe("VERIFICAR RENÚNCIA da Operações Legais sem a Conferência (pedido d
     });
   });
 });
+
+describe("devolução do Check para a Vistagem (25/11/2026)", () => {
+  it("mostra o que estava no VIOS e o cancelamento, sem repetir a última devolução", () => {
+    const eventos = montarHistorico(
+      base({
+        devolucao: { por: "Samuel", em: "2026-11-25T18:40:00Z", motivo: "Check da Operações Legais: ANÁLISE: falta a sessão", total: 1, origem: "check" },
+        devolucoesDoCheck: [
+          {
+            em: "2026-11-25T18:40:00Z",
+            por: "Samuel",
+            motivo: "ANÁLISE (FORA DO FLUXO - (P/A)): falta a SESSÃO DE JULGAMENTO",
+            tarefas: [
+              { tarefa: "VERIFICAR DOCUMENTOS", data: "2026-11-25", responsavel: "Letícia", cis: ["947527"], enviadoEm: "2026-11-24T16:52:03Z" },
+              { tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-24", responsavel: "Letícia", cis: ["947528"], enviadoEm: "2026-11-24T16:52:03Z" },
+            ],
+            cancelamentos: [{ texto: "Cancelamento no VIOS: canceladas CI 947527, 947528." }],
+          },
+        ],
+      })
+    );
+    const devolucoes = eventos.filter((evento) => evento.tipo === "devolucao");
+    expect(devolucoes).toHaveLength(1);
+    expect(devolucoes[0].titulo).toBe("Devolvida para a Vistagem pelo check da Operações Legais");
+    expect(devolucoes[0].por).toBe("Samuel");
+    expect(devolucoes[0].detalhes).toEqual([
+      "Motivo: ANÁLISE (FORA DO FLUXO - (P/A)): falta a SESSÃO DE JULGAMENTO",
+      "Estavam no VIOS: VERIFICAR DOCUMENTOS (CI 947527); 1. CIÊNCIA DOS AGENDAMENTOS (CI 947528).",
+      "Cancelamento no VIOS: canceladas CI 947527, 947528.",
+    ]);
+  });
+
+  it("a devolução da Conferência continua com o título dela", () => {
+    const eventos = montarHistorico(base({ devolucao: { por: "Giovanna", em: "2026-11-25T10:00:00Z", motivo: "data errada", total: 1, origem: "conferencia" } }));
+    expect(eventos.find((evento) => evento.tipo === "devolucao")?.titulo).toBe("Devolvida ao jurídico pela Conferência");
+  });
+});

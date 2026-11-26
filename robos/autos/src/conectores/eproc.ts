@@ -17,6 +17,7 @@ import {
   mensagemDaPesquisa,
   ordenarDocumentos,
   pecasNovas,
+  perfilDoEproc,
   tipoDoArquivo,
   type DocumentoEproc,
   type InstanciaEproc,
@@ -43,10 +44,88 @@ import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type R
  *
  * O que o conector NÃO faz, por decisão do escritório:
  * - não contorna segundo fator nem CAPTCHA: para, avisa e espera a pessoa;
- * - não baixa processo em segredo de justiça sem a liberação registrada no pedido;
+ * - processo em segredo de justiça: desde 24/11/2026 o robô baixa sem esperar a liberação na ficha (o login é do
+ *   advogado; SEGREDO_JUSTICA=esperar volta a exigir a liberação registrada no pedido);
  * - não usa "Acesso à íntegra do processo": é a declaração de interesse do advogado (Res. CNJ 121/2010), com
  *   CAPTCHA. Se o advogado não representa uma das partes, o pedido volta com erro.
  */
+
+/**
+ * Tela do código de 2 fatores. O formulário do SSO conta para reconhecer a tela, mas não é onde se digita:
+ * ele vem antes do campo no HTML, e um seletor único com os dois fazia o robô "preencher" o formulário (24/11).
+ */
+export const CODIGO_2FA_EPROC = {
+  tela: "#txtAcessoCodigo, #otp, input[name=otp], input[name=totp], #kc-otp-login-form",
+  campo:
+    "#txtAcessoCodigo, #otp, input[name=otp], input[name=totp], #kc-otp-login-form input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button])",
+  // Tela do eproc: #btnValidar; SSO: o envio do formulário do código. Sem eles, Enter no campo.
+  validar: "#btnValidar, #kc-otp-login-form [type=submit]",
+} as const;
+
+/**
+ * Tela "Seleção de perfil" do eproc (advogado com mais de uma inscrição, ex.: SP e ES), depois do 2FA. O título da
+ * aba é o sinal firme: o texto também aparece escondido no menu, e o primeiro achado escondido fazia o robô não
+ * reconhecer a tela (24/11). No eproc do TJSP (24/11) cada perfil é um botão da lista #tblPerfis, com a sigla e o
+ * tipo em data-descricao ("SP… / ADVOGADO") e o clique em acaoLogar(…), sem tabela. Reservas, para outra versão da
+ * tela: linhas de tabela (só as de dentro) e, por último, o texto da sigla.
+ */
+export const PERFIL_EPROC = {
+  titulo: /Sele[çc][ãa]o de perfil/i,
+  perfis: "#tblPerfis [data-descricao], [onclick*='acaoLogar'][data-descricao]",
+  linhas: "tr:has(td):not(:has(tr))",
+} as const;
+
+export type EscolhaDoPerfil = "escolhido" | "sem_perfil" | "fora";
+
+async function naTelaDePerfil(pagina: Page): Promise<boolean> {
+  if (PERFIL_EPROC.titulo.test(await pagina.title().catch(() => ""))) return true;
+  for (const quadro of pagina.frames()) {
+    if ((await quadro.getByText(PERFIL_EPROC.titulo).filter({ visible: true }).count().catch(() => 0)) > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Escolhe o perfil cuja sigla começa pelo prefixo (padrão SP). Procura a tela na página do robô e nas outras abas do
+ * mesmo navegador, em cada quadro (iframe). "sem_perfil": está na tela, mas nada pôde ser escolhido.
+ */
+export async function escolherPerfilNaTela(pagina: Page, prefixo: string): Promise<EscolhaDoPerfil> {
+  const paginas = [pagina, ...pagina.context().pages().filter((outra) => outra !== pagina)];
+  let viuATela = false;
+  for (const aba of paginas) {
+    if (!(await naTelaDePerfil(aba))) continue;
+    viuATela = true;
+    for (const quadro of aba.frames()) {
+      const perfis = quadro.locator(PERFIL_EPROC.perfis).filter({ visible: true });
+      const descricoes = await perfis.evaluateAll((itens) => itens.map((item) => item.getAttribute("data-descricao") ?? "")).catch(() => [] as string[]);
+      const escolhido = perfilDoEproc(descricoes, prefixo);
+      if (escolhido >= 0) {
+        await perfis.nth(escolhido).click().catch(() => undefined);
+        return "escolhido";
+      }
+    }
+    for (const quadro of aba.frames()) {
+      const linhas = quadro.locator(PERFIL_EPROC.linhas).filter({ visible: true });
+      const indice = perfilDoEproc(await linhas.allInnerTexts().catch(() => [] as string[]), prefixo);
+      if (indice >= 0) {
+        const linha = linhas.nth(indice);
+        const link = linha.locator("a").first();
+        await ((await link.count().catch(() => 0)) ? link : linha.locator("td").first()).click().catch(() => undefined);
+        return "escolhido";
+      }
+    }
+    // Sem linhas de tabela: o texto da sigla (ex.: "SP000001"), visível, em qualquer quadro.
+    const sigla = new RegExp(`^\\s*${prefixo.replace(/[^a-z]/gi, "")}\\d+\\s*$`, "i");
+    for (const quadro of aba.frames()) {
+      const celula = quadro.getByText(sigla).filter({ visible: true }).first();
+      if (await celula.count().catch(() => 0)) {
+        await celula.click().catch(() => undefined);
+        return "escolhido";
+      }
+    }
+  }
+  return viuATela ? "sem_perfil" : "fora";
+}
 
 const TELA = {
   login: {
@@ -54,10 +133,10 @@ const TELA = {
     senha: "#password",
     entrar: "#kc-login",
     certificado: "#kc-login-certificate",
-    // Código do aplicativo de autenticação: no SSO (Keycloak) ou na tela do próprio eproc, depois do certificado.
-    codigo: "#txtAcessoCodigo, #otp, input[name=otp], input[name=totp], #kc-otp-login-form",
-    // Botão que confirma o código de 2 fatores (tela do eproc: #btnValidar; SSO: submit do formulário do código).
-    validar: "#btnValidar, #kc-otp-login-form button[type=submit], button[type=submit]",
+    // Tela do código do aplicativo de autenticação: no SSO (Keycloak) ou na tela do próprio eproc, depois do certificado.
+    codigo: CODIGO_2FA_EPROC.tela,
+    campoCodigo: CODIGO_2FA_EPROC.campo,
+    validar: CODIGO_2FA_EPROC.validar,
   },
   pesquisa: "#txtNumProcessoPesquisaRapida",
   /** Área da capa: o sigilo é lido só aqui, não no menu nem na tabela de eventos. */
@@ -124,7 +203,7 @@ function certificadoEmArquivo(config: Ambiente["config"]): boolean {
 }
 
 /** Login do advogado no eproc daquele tribunal: cada tribunal tem cadastro e senha próprios. */
-function credenciais(config: Ambiente["config"], sigla: string): Ambiente["config"]["eproc"] {
+function credenciais(config: Ambiente["config"], sigla: string): Ambiente["config"]["eprocTjrj"] {
   return sigla === "TJRJ" ? config.eprocTjrj : config.eproc;
 }
 
@@ -213,17 +292,48 @@ class ConectorEproc implements Conector {
   /** Digita o código na tela do 2FA e confirma. Devolve se o login entrou. */
   private async digitarCodigo(ambiente: Ambiente, codigo: string, dentro: () => Promise<boolean>): Promise<boolean> {
     const { pagina } = ambiente;
-    const campo = pagina.locator(TELA.login.codigo).first();
+    const campo = pagina.locator(TELA.login.campoCodigo).first();
     if (!(await campo.isVisible().catch(() => false))) return dentro();
     await campo.fill("").catch(() => undefined);
     await campo.fill(codigo).catch(() => undefined);
     const validar = pagina.locator(TELA.login.validar).first();
     if (await validar.isVisible().catch(() => false)) await validar.click().catch(() => undefined);
     else await campo.press("Enter").catch(() => undefined);
-    await pagina.waitForURL((url) => ehAreaLogada(url.toString()), { timeout: 20_000 }).catch(() => undefined);
+    await pagina
+      .waitForURL((url) => ehAreaLogada(url.toString()) || /externo_controlador\.php\?acao=entrar_sso/i.test(url.toString()), { timeout: 20_000 })
+      .catch(() => undefined);
     if (await dentro()) return true;
     // Código recusado: sai do campo, para não aparecer em captura de diagnóstico nem na tela remota.
     await campo.fill("").catch(() => undefined);
+    // Onde a tela ficou (título e endereço sem a consulta, nunca o código): separa "recusado" de "tela que o robô não conhece".
+    const onde = (() => {
+      try {
+        const url = new URL(pagina.url());
+        return `${url.host}${url.pathname}`;
+      } catch {
+        return "endereço desconhecido";
+      }
+    })();
+    ambiente.registrar(`Depois do código, o ${this.sistema} ficou em "${(await pagina.title().catch(() => "")).slice(0, 80)}" (${onde}).`);
+    return false;
+  }
+
+  /** Já avisou (com diagnóstico) que está na Seleção de perfil sem conseguir escolher: avisa uma vez por login. */
+  private perfilSemEscolhaAvisado = false;
+
+  /** Na tela "Seleção de perfil", escolhe o perfil configurado (EPROC_PERFIL, padrão SP). Devolve se escolheu. */
+  private async escolherPerfil(ambiente: Ambiente): Promise<boolean> {
+    const { pagina, config, registrar } = ambiente;
+    const escolha = await escolherPerfilNaTela(pagina, config.eproc.perfil);
+    if (escolha === "escolhido") {
+      registrar(`Perfil do ${this.sistema} escolhido: o da inscrição ${config.eproc.perfil}.`);
+      this.perfilSemEscolhaAvisado = false;
+      return true;
+    }
+    if (escolha === "sem_perfil" && !this.perfilSemEscolhaAvisado) {
+      this.perfilSemEscolhaAvisado = true;
+      registrar(`O ${this.sistema} está na Seleção de perfil, mas o robô não achou o perfil ${config.eproc.perfil} (diagnóstico em ${await ambiente.diagnostico(pagina, "perfil eproc")}).`);
+    }
     return false;
   }
 
@@ -232,7 +342,11 @@ class ConectorEproc implements Conector {
     const login = credenciais(config, this.tribunal.sigla);
     if (!ehAreaLogada(pagina.url()) || !pagina.url().startsWith(instancia.base)) await this.irPara(pagina, instancia);
     // Área logada do eproc deste tribunal (com dois tribunais no mesmo navegador, a do outro não conta).
-    const dentro = async () => ehAreaLogada(pagina.url()) && this.tribunal.instancias.some((item) => pagina.url().startsWith(item.base));
+    const dentro = async () => {
+      // Com mais de um perfil (ex.: inscrições SP e ES), o eproc para na "Seleção de perfil" depois do 2FA.
+      if (await this.escolherPerfil(ambiente)) await pagina.waitForURL((url) => ehAreaLogada(url.toString()), { timeout: 20_000 }).catch(() => undefined);
+      return ehAreaLogada(pagina.url()) && this.tribunal.instancias.some((item) => pagina.url().startsWith(item.base));
+    };
     if (await dentro()) return;
     // O certificado já passou e o eproc pede o código do aplicativo de autenticação (2FA): quem informa é a pessoa.
     if (await visivel(pagina, TELA.login.codigo)) {
@@ -302,6 +416,9 @@ class ConectorEproc implements Conector {
     if (!(await campo.isVisible().catch(() => false))) {
       // Depois do login o eproc pode pedir o perfil (advogado, procurador…): quem escolhe é a pessoa.
       await campo.waitFor({ state: "visible", timeout: 20_000 }).catch(() => undefined);
+      if (!(await campo.isVisible().catch(() => false)) && (await this.escolherPerfil(ambiente))) {
+        await campo.waitFor({ state: "visible", timeout: 20_000 }).catch(() => undefined);
+      }
       if (!(await campo.isVisible().catch(() => false))) {
         await ambiente.aguardarPessoa("login", `O ${this.sistema} (${instancia.rotulo}) não mostrou a pesquisa de processo: se pediu para escolher o perfil, escolha o de advogado na janela do robô.`, () => campo.isVisible());
       }

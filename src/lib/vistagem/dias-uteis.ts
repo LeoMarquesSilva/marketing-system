@@ -72,9 +72,42 @@ export function pascoa(ano: number): string {
  * a base ainda não tem.
  */
 export function feriadosNacionais(ano: number): string[] {
+  return Object.keys(nomesDosFeriadosNacionais(ano)).sort();
+}
+
+/** Os feriados de `feriadosNacionais` com o nome (para o informativo do calendário). */
+export function nomesDosFeriadosNacionais(ano: number): Record<string, string> {
   const p = pascoa(ano);
-  const fixos = ["01-01", "04-21", "05-01", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"].map((md) => `${ano}-${md}`);
-  return [...fixos, deslocar(p, -48), deslocar(p, -47), deslocar(p, -2), deslocar(p, 60)].sort();
+  return {
+    [`${ano}-01-01`]: "Confraternização Universal",
+    [deslocar(p, -48)]: "Carnaval",
+    [deslocar(p, -47)]: "Carnaval",
+    [deslocar(p, -2)]: "Sexta-feira Santa",
+    [`${ano}-04-21`]: "Tiradentes",
+    [`${ano}-05-01`]: "Dia do Trabalho",
+    [deslocar(p, 60)]: "Corpus Christi",
+    [`${ano}-09-07`]: "Independência",
+    [`${ano}-10-12`]: "Nossa Senhora Aparecida",
+    [`${ano}-11-02`]: "Finados",
+    [`${ano}-11-15`]: "Proclamação da República",
+    [`${ano}-11-20`]: "Consciência Negra",
+    [`${ano}-12-25`]: "Natal",
+  };
+}
+
+/**
+ * O que o dia é, para o informativo ao passar o mouse no calendário: o nome do feriado, "Sábado"/"Domingo" e, no
+ * calendário da data fatal (`recesso`), o recesso forense. Dia útil comum: null.
+ */
+export function criarNomeDoDia(nomes: Record<string, string> | null | undefined, opcoes: { recesso?: boolean } = {}): (iso: string) => string | null {
+  return (iso) => {
+    if (nomes?.[iso]) return nomes[iso];
+    const semana = new Date(`${iso}T12:00:00Z`).getUTCDay();
+    if (semana === 0) return "Domingo";
+    if (semana === 6) return "Sábado";
+    if (opcoes.recesso && noRecessoForense(iso)) return "Recesso forense (prazos suspensos)";
+    return null;
+  };
 }
 
 /** Anda n dias úteis para frente (n > 0) ou para trás (n < 0), sem contar o dia de partida. */

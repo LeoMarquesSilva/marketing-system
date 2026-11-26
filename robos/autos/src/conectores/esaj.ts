@@ -1,8 +1,8 @@
-import { writeFile } from "node:fs/promises";
+import { stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import type { Pedido } from "../fila.ts";
-import { clicar, conferirPdf, temCaptcha, visivel } from "./comum.ts";
+import { clicar, conferirPdf, dividirPdfGrande, temCaptcha, visivel } from "./comum.ts";
 import {
   TRIBUNAIS_ESAJ,
   chaveDoDocumentoEsaj,
@@ -355,7 +355,12 @@ class ConectorEsaj implements Conector {
       await baixar.waitFor({ state: "visible", timeout: config.geracaoPdfMs });
       await pasta.waitForTimeout(500);
       // O e-SAJ devolve o PDF como anexo na própria pasta digital.
-      const [arquivo] = await Promise.all([pasta.waitForEvent("download", { timeout: 120_000 }), baixar.click()]);
+      const download = pasta.waitForEvent("download", { timeout: 120_000 });
+      download.catch(() => undefined); // se o clique falhar antes, a espera não vira rejeição solta
+      // Às vezes a caixa "Gerando o documento" fica duplicada e a camada de cima segura o clique (24/11): sem o clique
+      // normal em 10 s, aciona o botão pela própria página.
+      await baixar.click({ timeout: 10_000 }).catch(() => baixar.evaluate((botao) => (botao as HTMLElement).click()));
+      const arquivo = await download;
       const falha = await arquivo.failure();
       if (falha) throw new FalhaDoConector(`O download do PDF foi interrompido (${falha}).`);
       await arquivo.saveAs(destino);
@@ -363,8 +368,20 @@ class ConectorEsaj implements Conector {
       await arquivo.delete().catch(() => undefined);
     } catch (erro) {
       if (erro instanceof FalhaDoConector) throw erro;
+      // O HTML da pasta digital traz todos os avisos escondidos; só a causa e o aviso visível dizem o que aconteceu.
+      const causa = erro instanceof Error ? erro.message.split("\n")[0].slice(0, 200) : String(erro);
+      const recusou = await pasta.getByText(/Não foi possível concluir a sua solicitação/i).first().isVisible().catch(() => false);
       const captura = await ambiente.diagnostico(pasta, "baixar o PDF");
-      throw new FalhaDoConector(`O download dos autos não terminou na pasta digital. Diagnóstico guardado em ${captura}.`);
+      throw new FalhaDoConector(
+        `O download dos autos não terminou na pasta digital${recusou ? " (o e-SAJ respondeu que não foi possível concluir a solicitação)" : ""}: ${causa}. Diagnóstico guardado em ${captura}.`
+      );
+    }
+    // Acima de 200 MB (o limite do ORQESTRAI), vai em partes: as peças ficam na primeira (o download seguinte traz só as novas).
+    const tamanho = (await stat(destino)).size;
+    const partes = await dividirPdfGrande(destino);
+    if (partes) {
+      ambiente.registrar(`PDF de ${Math.round(tamanho / (1024 * 1024))} MB dividido em ${partes.length} partes.`);
+      return { pecas, arquivos: partes.map((caminho, i) => ({ caminho, pecas: i === 0 ? (pecas ?? []) : [] })) };
     }
     await conferirPdf(destino);
     return { pecas };

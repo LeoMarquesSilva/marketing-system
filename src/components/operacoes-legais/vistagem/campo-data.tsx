@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState, type ComponentProps } from "react";
 import { format, isValid, parse } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarDays, Clock } from "lucide-react";
-import { Calendar } from "@/components/ui/calendar";
+import { Calendar, CalendarDayButton } from "@/components/ui/calendar";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { horaValida } from "@/lib/vistagem/agendamento";
 import { cn } from "@/lib/utils";
@@ -50,10 +50,41 @@ function paraDate(iso: string): Date | undefined {
   return new Date(ano, mes - 1, dia, 12);
 }
 
+/** O que o calendário de um campo sabe de cada dia: o nome (feriado, fim de semana) e se ele está barrado. */
+const DiasDoCampo = createContext<{ nome: (iso: string) => string | null; barrado: (iso: string) => boolean }>({
+  nome: () => null,
+  barrado: () => false,
+});
+
+/**
+ * Dia do calendário com o informativo ao passar o mouse (o nome do feriado) e, barrado, marcado como indisponível. Fica
+ * fora do campo (e lê o contexto) para não ser recriado a cada render, o que tiraria o foco do teclado no calendário.
+ */
+function DiaComNome(props: ComponentProps<typeof CalendarDayButton>) {
+  const { nome, barrado } = useContext(DiasDoCampo);
+  const iso = format(props.day.date, "yyyy-MM-dd");
+  const qual = nome(iso);
+  const naoPode = barrado(iso);
+  return (
+    <CalendarDayButton
+      {...props}
+      title={qual ? `${qual}${naoPode ? ": o VIOS não deixa tarefa nesse dia" : ""}` : undefined}
+      aria-disabled={naoPode || undefined}
+    />
+  );
+}
+
 /**
  * Data da Vistagem, no lugar do calendário do navegador: digita "05112026" (vira 05/11/2026) ou escolhe no
  * calendário do sistema, que mostra os dias não úteis (feriados, recesso) em cinza quando recebe `ehDiaUtil`.
  * Ao lado da data, o dia da semana. `compacto` é a versão baixa, para listas (datas do fluxo do VIOS).
+ *
+ * `bloquearNaoUtil` (datas de tarefa que vão ao VIOS): o dia que não é útil fica riscado e não se escolhe, nem
+ * clicando nem digitando. Digitado, o calendário abre nele com o motivo. O VIOS passaria a tarefa para o dia útil
+ * seguinte (0056354-65, 25/11/2026: 3. PROTOCOLAR em 08/02/2027, segunda de Carnaval, virou 10/02).
+ * `nomeDoDia` dá o informativo ao passar o mouse num dia do calendário (o nome do feriado), na dica do próprio dia.
+ * O rodapé não muda com o mouse: trocar o texto mudava o tamanho do calendário e, aberto para cima, os dias saíam de
+ * baixo do mouse e o texto voltava, num vai e volta sem fim (25/11/2026).
  */
 export function CampoData({
   valor,
@@ -61,6 +92,8 @@ export function CampoData({
   rotulo,
   min,
   ehDiaUtil,
+  bloquearNaoUtil = false,
+  nomeDoDia,
   compacto = false,
   destacado = false,
   invalido = false,
@@ -76,6 +109,10 @@ export function CampoData({
   /** AAAA-MM-DD: dias antes ficam bloqueados no calendário. */
   min?: string;
   ehDiaUtil?: (iso: string) => boolean;
+  /** Dia que não é útil (por `ehDiaUtil`) não se escolhe nem se digita. */
+  bloquearNaoUtil?: boolean;
+  /** Nome do dia para o informativo do calendário ("Carnaval", "Domingo"); dia comum: null. */
+  nomeDoDia?: (iso: string) => string | null;
   compacto?: boolean;
   /** Borda da marca (ex.: data alterada pelo jurídico). */
   destacado?: boolean;
@@ -89,6 +126,8 @@ export function CampoData({
 }) {
   const [aberto, setAberto] = useState(false);
   const [texto, setTexto] = useState(() => paraTela(valor));
+  // Data digitada ou clicada que não se pode escolher: o calendário abre nela, com o motivo no rodapé.
+  const [recusada, setRecusada] = useState<string | null>(null);
   // A data muda de fora (dias do prazo, sugestão da IA): o texto acompanha.
   const [anterior, setAnterior] = useState(valor);
   if (valor !== anterior) {
@@ -99,6 +138,18 @@ export function CampoData({
   const minimo = useMemo(() => (min ? paraDate(min) : undefined), [min]);
   const semana = selecionada ? DIAS[selecionada.getDay()] : null;
   const naoUtil = valor && ehDiaUtil ? !ehDiaUtil(valor) : false;
+  const dias = useMemo(
+    () => ({
+      nome: (iso: string) => nomeDoDia?.(iso) ?? (ehDiaUtil && !ehDiaUtil(iso) ? "Não é dia útil" : null),
+      barrado: (iso: string) => Boolean(bloquearNaoUtil && ehDiaUtil && !ehDiaUtil(iso)),
+    }),
+    [nomeDoDia, ehDiaUtil, bloquearNaoUtil]
+  );
+
+  function recusar(iso: string) {
+    setRecusada(iso);
+    setAberto(true);
+  }
 
   function confirmar(proximo: string) {
     if (!proximo.trim()) {
@@ -107,12 +158,27 @@ export function CampoData({
       return;
     }
     const iso = paraIso(proximo);
+    if (iso && dias.barrado(iso)) {
+      recusar(iso);
+      setTexto(paraTela(valor));
+      return;
+    }
     if (iso) onChange(iso);
     else setTexto(paraTela(valor));
   }
 
+  const motivoDaRecusa = recusada
+    ? `${paraTela(recusada)} é ${dias.nome(recusada) ?? "dia sem expediente"}: o VIOS não deixa tarefa nesse dia (passaria para o dia útil seguinte). Escolha outro dia.`
+    : null;
+
   return (
-    <Popover open={aberto} onOpenChange={setAberto}>
+    <Popover
+      open={aberto}
+      onOpenChange={(abrir) => {
+        setAberto(abrir);
+        if (!abrir) setRecusada(null);
+      }}
+    >
       <PopoverAnchor asChild>
         <div className={cn(moldura({ compacto, invalido, destacado }), className)} title={dica}>
           <PopoverTrigger asChild>
@@ -137,7 +203,13 @@ export function CampoData({
               const mascarada = mascaraData(evento.target.value);
               setTexto(mascarada);
               const iso = paraIso(mascarada);
-              if (iso) onChange(iso);
+              if (!iso) return;
+              if (dias.barrado(iso)) {
+                recusar(iso);
+                return;
+              }
+              setRecusada(null);
+              onChange(iso);
             }}
             onBlur={() => confirmar(texto)}
             onKeyDown={(evento) => {
@@ -155,30 +227,68 @@ export function CampoData({
             )}
           />
           {semana ? (
-            <span className={cn("shrink-0 pr-2.5 text-xs", naoUtil ? "font-medium text-amber-700" : "text-muted-foreground")} title={naoUtil ? "Não é dia útil" : undefined}>
+            <span
+              className={cn("shrink-0 pr-2.5 text-xs", naoUtil ? "font-medium text-amber-700" : "text-muted-foreground")}
+              title={naoUtil ? dias.nome(valor) ?? "Não é dia útil" : undefined}
+            >
               {semana}
             </span>
           ) : null}
         </div>
       </PopoverAnchor>
-      <PopoverContent align="start" sideOffset={6} className="w-auto overflow-hidden rounded-lg border-[#dce9eb] p-0 shadow-[0_16px_40px_-18px_rgba(3,32,47,0.35)]">
-        <Calendar
-          mode="single"
-          locale={ptBR}
-          selected={selecionada}
-          defaultMonth={selecionada ?? minimo}
-          disabled={minimo ? { before: minimo } : undefined}
-          onSelect={(data) => {
-            if (!data) return;
-            onChange(format(data, "yyyy-MM-dd"));
-            setAberto(false);
-          }}
-          modifiers={ehDiaUtil ? { naoUtil: (data: Date) => !ehDiaUtil(format(data, "yyyy-MM-dd")) } : undefined}
-          modifiersClassNames={{ naoUtil: "[&_button]:text-[#9fb8c2] [&_button]:font-normal" }}
-        />
-        {ehDiaUtil || (permitirVazio && valor) ? (
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-auto overflow-hidden rounded-lg border-[#dce9eb] p-0 shadow-[0_16px_40px_-18px_rgba(3,32,47,0.35)]"
+        // Aberto pela data digitada que não pode: o foco fica no campo, para a pessoa corrigir digitando.
+        onOpenAutoFocus={(evento) => {
+          if (recusada) evento.preventDefault();
+        }}
+      >
+        <DiasDoCampo.Provider value={dias}>
+          <Calendar
+            // Remonta na data recusada para abrir no mês dela.
+            key={recusada ?? "calendario"}
+            mode="single"
+            locale={ptBR}
+            selected={selecionada}
+            defaultMonth={(recusada ? paraDate(recusada) : undefined) ?? selecionada ?? minimo}
+            disabled={minimo ? { before: minimo } : undefined}
+            onSelect={(data) => {
+              if (!data) return;
+              const iso = format(data, "yyyy-MM-dd");
+              if (dias.barrado(iso)) {
+                setRecusada(iso);
+                return;
+              }
+              setRecusada(null);
+              onChange(iso);
+              setAberto(false);
+            }}
+            modifiers={
+              ehDiaUtil
+                ? {
+                    naoUtil: (data: Date) => !ehDiaUtil(format(data, "yyyy-MM-dd")),
+                    barrado: (data: Date) => dias.barrado(format(data, "yyyy-MM-dd")),
+                  }
+                : undefined
+            }
+            modifiersClassNames={{
+              naoUtil: "[&_button]:text-[#9fb8c2] [&_button]:font-normal",
+              barrado: "[&_button]:cursor-not-allowed [&_button]:line-through [&_button]:hover:bg-transparent [&_button]:hover:text-[#9fb8c2]",
+            }}
+            components={{ DayButton: DiaComNome }}
+          />
+        </DiasDoCampo.Provider>
+        {motivoDaRecusa || (permitirVazio && valor) ? (
           <div className="flex items-center justify-between gap-3 border-t border-[#e6eef0] bg-[#fafcfc] px-3 py-2 text-[11px] text-muted-foreground">
-            {ehDiaUtil ? <span>Em cinza: fim de semana, feriado e recesso.</span> : <span />}
+            {motivoDaRecusa ? (
+              <span role="alert" className="max-w-[16rem] font-medium text-red-700">
+                {motivoDaRecusa}
+              </span>
+            ) : (
+              <span />
+            )}
             {permitirVazio && valor ? (
               <button
                 type="button"

@@ -61,6 +61,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/operacoes-legais/planner", label: "Planner de Operações Legais", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
   { key: "/facilities", label: "Gestão de Fornecedores e Prestadores de Serviços (Facilities)", manualOnly: true },
+  { key: "/limpeza", label: "Limpeza de hoje · marcar os ambientes limpos (equipe da limpeza)", manualOnly: true },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
   { key: "/email-marketing", label: "E-mail marketing" },
   { key: "/certificados", label: "Certificados" },
@@ -96,6 +97,8 @@ export const OPS_PLANNER_KEY = "/operacoes-legais/planner";
 export const TEAM_SURVEYS_KEY = "/operacoes-legais/pesquisas";
 export const ICP_KEY = "/icp";
 export const FACILITIES_KEY = "/facilities";
+/** Facilities > Limpeza de hoje: quem faz a limpeza marca os ambientes no celular. */
+export const CLEANING_KEY = "/limpeza";
 export const PE27_KEY = "/pe27";
 /** Chave de permissão (não é rota): edição no PE27 para quem não é admin. */
 export const PE27_EDIT_KEY = "/pe27/editar";
@@ -504,6 +507,21 @@ export function isFacilitiesPath(pathname: string): boolean {
   return pathname === FACILITIES_KEY || pathname.startsWith(`${FACILITIES_KEY}/`);
 }
 
+/** Limpeza de hoje: a equipe da limpeza (chave /limpeza) e quem cuida de Facilities, que confere e pode marcar por ela. */
+export function hasCleaningAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  return hasFacilitiesAccess(profile) || Boolean(profile.permissions?.includes(CLEANING_KEY));
+}
+
+export function isCleaningPath(pathname: string): boolean {
+  return pathname === CLEANING_KEY || pathname.startsWith(`${CLEANING_KEY}/`);
+}
+
+/** Só da limpeza (sem Facilities): entra direto na lista do dia. */
+function isCleaningOnlyProfile(profile: AccessProfile | null | undefined): boolean {
+  return Boolean(profile?.permissions?.includes(CLEANING_KEY)) && !hasFacilitiesAccess(profile);
+}
+
 export function isManualOnlyKey(key: string): boolean {
   return MANUAL_ONLY_KEYS.includes(key);
 }
@@ -566,6 +584,10 @@ export function canAccessPath(
 
   if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return true;
+  }
+
+  if (isCleaningPath(pathname)) {
+    return hasCleaningAccess(profile);
   }
 
   if (isVistagemPath(pathname)) {
@@ -691,6 +713,8 @@ export function canSeeHome(profile: AccessProfile | null | undefined): boolean {
  */
 export function firstAllowedPath(profile: AccessProfile | null | undefined): string {
   if (isPe27OnlyProfile(profile)) return PE27_KEY;
+  // Equipe da limpeza: o trabalho dela é a lista do dia, aberta direto no celular.
+  if (isCleaningOnlyProfile(profile)) return CLEANING_KEY;
   if (canSeeHome(profile)) return HOME_PATH;
   const allowed = resolveAllowedSections(profile);
   if (!allowed || allowed.length === 0) return MARKETING_DASHBOARD_PATH;

@@ -3,6 +3,7 @@ import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { COLUNAS_PEDIDO, jaVeioDoEproc, paraPedido, pecasBaixadas, prepararUpload, registrarDocumento } from "./autos-server";
+import { lerRepasse } from "./autos-repasse";
 import { MOTIVOS_ESPERA, TAMANHO_MAXIMO_AUTOS, type DocumentoAutos, type PedidoAutos } from "./autos-types";
 import { completarCapaPeloJusbr } from "./capa-server";
 import { ProcessosError } from "./errors";
@@ -126,6 +127,11 @@ const esquemaAtualizacao = z.discriminatedUnion("acao", [
   /** A pessoa resolveu (ou o robô só está dando sinal de vida): segue em andamento. */
   z.object({ acao: z.literal("seguir") }),
   z.object({ acao: z.literal("erro"), mensagem: z.string().trim().min(1).max(1000) }),
+  /**
+   * O Jus.br não trouxe os autos e este robô não tem o conector do tribunal: o pedido volta à fila no sistema da
+   * reserva ("esaj:TJSP"), para o robô do tribunal.
+   */
+  z.object({ acao: z.literal("repassar"), reserva: z.string().trim().regex(/^[a-z]+:[A-Z0-9]+$/, "Reserva inválida.") }),
   z.object({ acao: z.literal("upload"), nome: z.string().trim().min(1).max(200), tamanho: z.number().int().positive().max(TAMANHO_MAXIMO_AUTOS) }),
   z.object({
     acao: z.literal("concluir"),
@@ -141,6 +147,8 @@ const esquemaAtualizacao = z.discriminatedUnion("acao", [
     /** O pedido acabou atendido por outro sistema: o DCP seguiu pelo eproc, ou o Jus.br pelo robô do tribunal. */
     sistema: z.enum(SISTEMAS_DE_ENTREGA).optional(),
     capa: esquemaCapaJusbr.optional(),
+    /** Processo enorme no Jus.br: documentos que ficaram fora deste lote. Vira um pedido novo no fim da fila. */
+    restantes: z.number().int().min(1).max(100_000).optional(),
   }),
   /** O robô conferiu os autos e não há peça nova desde o último download. */
   z.object({ acao: z.literal("sem_novidades"), sistema: z.enum(SISTEMAS_DE_ENTREGA).optional(), capa: esquemaCapaJusbr.optional() }),
@@ -172,6 +180,34 @@ async function mudar(pedido: PedidoAutos, patch: Record<string, unknown>): Promi
   return paraPedido(data[0] as Record<string, unknown>);
 }
 
+/**
+ * O resto de um processo enorme (o robô entregou um lote e sobraram `restantes` documentos): pedido novo no fim da
+ * fila, no mesmo sistema, em nome de quem pediu e com a mesma liberação de segredo. O próximo download pula as peças
+ * já entregues. Falha aqui não desfaz a entrega: fica no histórico para alguém pedir de novo.
+ */
+async function pedirOResto(pedido: PedidoAutos, restantes: number): Promise<void> {
+  const { data: origem } = await db()
+    .from("proc_autos_pedidos")
+    .select("segredo_liberado, segredo_liberado_por, segredo_liberado_por_nome, segredo_liberado_em, pedido_por, pedido_por_nome")
+    .eq("id", pedido.id)
+    .maybeSingle();
+  const { error } = await db()
+    .from("proc_autos_pedidos")
+    .insert({ processo_id: pedido.processoId, cnj: pedido.cnj, sistema: pedido.sistema, tribunal: pedido.tribunal, ...(origem ?? {}) });
+  // 23505: alguém já pediu de novo (há pedido em aberto); esse pedido traz o resto.
+  const pedidoOk = !error || (error as { code?: string }).code === "23505";
+  if (!pedidoOk) console.error("[robos/autos] pedido do resto:", error?.message);
+  await registrarNoHistorico(
+    pedido.processoId,
+    "autos",
+    null,
+    pedidoOk
+      ? `Processo grande: ${restantes} documentos ficaram para um novo pedido, no fim da fila do robô`
+      : `Processo grande: ${restantes} documentos não vieram neste download; peça os autos de novo para trazê-los`,
+    { authUserId: (origem?.pedido_por as string | null) as string, nome: (origem?.pedido_por_nome as string | null) ?? null }
+  );
+}
+
 /** Grava a capa e a linha do tempo lidas no Jus.br. Falha aqui não impede a entrega dos autos. */
 async function capaDoJusbr(processoId: string, capa: z.infer<typeof esquemaCapaJusbr>): Promise<void> {
   try {
@@ -196,6 +232,12 @@ export async function atualizarPedidoDoRobo(pedidoId: string, entrada: unknown):
       return { pedido: await mudar(pedido, { status: "em_andamento", motivo_espera: null }) };
     case "erro":
       return { pedido: await mudar(pedido, { status: "erro", motivo_espera: null, erro: dados.mensagem, concluido_em: new Date().toISOString() }) };
+    case "repassar": {
+      if (pedido.motivoEspera === "segredo_justica") throw new ProcessosError("O pedido espera a liberação de uma pessoa.", 409);
+      const destino = lerRepasse(pedido, dados.reserva);
+      if ("erro" in destino) throw new ProcessosError(destino.erro, 400);
+      return { pedido: await mudar(pedido, { status: "pendente", sistema: destino.sistema, motivo_espera: null, erro: null, robo: null }) };
+    }
     case "upload": {
       const upload = await prepararUpload(pedido.processoId, { nome: dados.nome, tamanho: dados.tamanho });
       return {
@@ -214,11 +256,10 @@ export async function atualizarPedidoDoRobo(pedidoId: string, entrada: unknown):
         }
         documentos.push(documento);
       }
-      return {
-        pedido: await mudar(pedido, { status: "concluido", motivo_espera: null, erro: null, concluido_em: new Date().toISOString(), ...(dados.sistema ? { sistema: dados.sistema } : {}) }),
-        documento: documentos[0],
-        documentos,
-      };
+      const concluido = await mudar(pedido, { status: "concluido", motivo_espera: null, erro: null, concluido_em: new Date().toISOString(), ...(dados.sistema ? { sistema: dados.sistema } : {}) });
+      // Só depois de concluir: o índice permite um pedido em aberto por processo.
+      if (dados.restantes) await pedirOResto(pedido, dados.restantes).catch((erro) => console.error("[robos/autos] pedido do resto:", erro instanceof Error ? erro.message : erro));
+      return { pedido: concluido, documento: documentos[0], documentos };
     }
     case "sem_novidades": {
       if (dados.capa) await capaDoJusbr(pedido.processoId, dados.capa);

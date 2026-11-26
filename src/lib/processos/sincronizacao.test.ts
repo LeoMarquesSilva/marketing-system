@@ -29,6 +29,13 @@ describe("mesclarComVios", () => {
     expect(resultado.confirmados).toEqual([]);
   });
 
+  it("na carga que só preenche vazios, não substitui o que já existe", () => {
+    const atual = { fase: "Execução", cidade: "", etiquetas: ["Carteira X"], sintese: "Resumo da leitura" };
+    const resultado = mesclarComVios(atual, { fase: "Conhecimento", cidade: "Campinas", etiquetas: ["Carteira Y"], sintese: null, vios_editado_em: "24/11/2026" }, new Map(), true);
+    expect(resultado.patch).toEqual({ cidade: "Campinas", vios_editado_em: "24/11/2026" });
+    expect(resultado.mudancas).toEqual([{ campo: "cidade", anterior: "", novo: "Campinas" }]);
+  });
+
   it("confirma o envio quando o VIOS passa a trazer o valor pedido", () => {
     const resultado = mesclarComVios({ fase: "Execução" }, { fase: "Execução" }, new Map([["fase", "Execução"]]));
     expect(resultado.confirmados).toEqual(["fase"]);
@@ -49,8 +56,9 @@ describe("mesclarComVios", () => {
 });
 
 describe("recorte da carga", () => {
-  it("o padrão é o piloto", () => {
-    expect(lerRecorte({})).toEqual({ areas: ["Recuperação de Crédito"], grupos: ["Grupo PST"] });
+  it("o padrão é a Recuperação de Crédito, todos os grupos", () => {
+    expect(lerRecorte({})).toEqual({ areas: ["Recuperação de Crédito"], grupos: null });
+    expect(lerRecorte({ PROCESSOS_GRUPOS: "Grupo PST" })).toEqual({ areas: ["Recuperação de Crédito"], grupos: ["Grupo PST"] });
   });
 
   it("aceita lista e asterisco", () => {
@@ -58,7 +66,7 @@ describe("recorte da carga", () => {
   });
 
   it("compara sem acento nem caixa", () => {
-    const recorte = lerRecorte({});
+    const recorte = lerRecorte({ PROCESSOS_GRUPOS: "Grupo PST" });
     expect(estaNoRecorte({ area: "RECUPERACAO DE CREDITO", grupo_cliente: "grupo pst" }, recorte)).toBe(true);
     expect(estaNoRecorte({ area: "Recuperação de Crédito", grupo_cliente: "Grupo Outro" }, recorte)).toBe(false);
     expect(estaNoRecorte({ area: null, grupo_cliente: "Grupo PST" }, recorte)).toBe(false);

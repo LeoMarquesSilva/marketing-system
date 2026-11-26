@@ -6,7 +6,8 @@ import { PROCESSOS_LISTA, SITE_CONTROLADORIA } from "@/lib/vistagem/pastas-vios"
 import { baixarArquivoPorCaminho } from "@/lib/vistagem/sharepoint";
 import { COLUNAS_PROCESSO, type ValorCampo, type Valores } from "./campos";
 import { ProcessosError } from "./errors";
-import { juntarFontes, lerCsvProcessos, lerEtiquetasSioe, registroDoSioe } from "./import-vios";
+import { catalogoDeEtiquetas, juntarFontes, lerCsvProcessos, lerEtiquetasSioe, registroDoSioe } from "./import-vios";
+import { opcoesDaLista } from "./opcoes-server";
 import { chaveNome } from "./pessoas";
 import { listarEnvios } from "./processos-server";
 import { db, emLotes, falhou, gravacaoSimulada, type Ator } from "./server";
@@ -60,24 +61,37 @@ function soGravaveis(valores: Valores): Valores {
 }
 
 
-async function incluirPartes(porProcesso: Map<string, { partes: ParteImportada[]; poloCliente: ValorCampo | undefined; cliente: ValorCampo | undefined }>): Promise<number> {
+type PartesDoProcesso = {
+  partes: ParteImportada[];
+  poloCliente: ValorCampo | undefined;
+  cliente: ValorCampo | undefined;
+  /** Só inclui se o processo ainda não tem nenhuma parte (carga que não substitui). */
+  soSeSemPartes?: boolean;
+};
+
+async function incluirPartes(porProcesso: Map<string, PartesDoProcesso>): Promise<number> {
   const ids = [...porProcesso.keys()];
   const existentes = new Map<string, Set<string>>();
   for (const lote of emLotes(ids, 100)) {
-    const { data, error } = await db().from("proc_partes").select("processo_id, polo, pessoa:proc_pessoas(nome)").in("processo_id", lote).limit(20000);
-    if (error) falhou("consultar as partes", error);
-    for (const linha of (data ?? []) as unknown as { processo_id: string; polo: string; pessoa: { nome: string } | { nome: string }[] | null }[]) {
-      const pessoa = Array.isArray(linha.pessoa) ? linha.pessoa[0] : linha.pessoa;
-      if (!pessoa) continue;
-      const chaves = existentes.get(linha.processo_id) ?? new Set<string>();
-      chaves.add(chaveDaParte(linha.polo, pessoa.nome));
-      existentes.set(linha.processo_id, chaves);
+    // Paginado: o PostgREST corta em 1.000 linhas, e parte que fica de fora seria incluída de novo.
+    for (let inicio = 0; ; inicio += 1000) {
+      const { data, error } = await db().from("proc_partes").select("id, processo_id, polo, pessoa:proc_pessoas(nome)").in("processo_id", lote).order("id").range(inicio, inicio + 999);
+      if (error) falhou("consultar as partes", error);
+      for (const linha of (data ?? []) as unknown as { processo_id: string; polo: string; pessoa: { nome: string } | { nome: string }[] | null }[]) {
+        const pessoa = Array.isArray(linha.pessoa) ? linha.pessoa[0] : linha.pessoa;
+        if (!pessoa) continue;
+        const chaves = existentes.get(linha.processo_id) ?? new Set<string>();
+        chaves.add(chaveDaParte(linha.polo, pessoa.nome));
+        existentes.set(linha.processo_id, chaves);
+      }
+      if (!data || data.length < 1000) break;
     }
   }
   const pessoas: Record<string, unknown>[] = [];
   const partes: Record<string, unknown>[] = [];
-  for (const [processoId, { partes: importadas, poloCliente, cliente }] of porProcesso) {
+  for (const [processoId, { partes: importadas, poloCliente, cliente, soSeSemPartes }] of porProcesso) {
     const chaves = existentes.get(processoId) ?? new Set<string>();
+    if (soSeSemPartes && chaves.size) continue;
     const devedor = poloDoDevedorDasPartes(importadas, cliente, poloCliente);
     importadas.forEach((parte, ordem) => {
       const chave = chaveDaParte(parte.polo, parte.nome);
@@ -100,7 +114,7 @@ async function incluirPartes(porProcesso: Map<string, { partes: ParteImportada[]
   return partes.length;
 }
 
-async function aplicar(registros: RegistroImportado[]): Promise<Pick<ResultadoSync, "criados" | "atualizados" | "confirmados" | "partesIncluidas">> {
+async function aplicar(registros: RegistroImportado[], soVazios = false): Promise<Pick<ResultadoSync, "criados" | "atualizados" | "confirmados" | "partesIncluidas">> {
   const banco = db();
   const agora = new Date().toISOString();
   const atuais = new Map<string, Record<string, unknown>>();
@@ -110,19 +124,30 @@ async function aplicar(registros: RegistroImportado[]): Promise<Pick<ResultadoSy
     for (const linha of (data ?? []) as unknown as Record<string, unknown>[]) atuais.set(String(linha.ci), linha);
   }
   const pendentes = new Map<string, Map<string, string>>();
+  // Paginado: o PostgREST devolve no máximo 1.000 linhas, e um envio que fica de fora deixa a edição daqui ser
+  // sobrescrita pelo VIOS (com o saneamento em curso, há bem mais que isso por lote de processos).
   for (const lote of emLotes([...atuais.values()].map((linha) => linha.id as string), 200)) {
-    const { data, error } = await banco.from("proc_vios_envios").select("processo_id, campo, valor_novo").in("processo_id", lote).in("status", ENVIOS_ABERTOS);
-    if (error) falhou("consultar a fila do VIOS", error);
-    for (const envio of data ?? []) {
-      const doProcesso = pendentes.get(envio.processo_id as string) ?? new Map<string, string>();
-      doProcesso.set(envio.campo as string, (envio.valor_novo as string | null) ?? "");
-      pendentes.set(envio.processo_id as string, doProcesso);
+    for (let inicio = 0; ; inicio += 1000) {
+      const { data, error } = await banco
+        .from("proc_vios_envios")
+        .select("id, processo_id, campo, valor_novo")
+        .in("processo_id", lote)
+        .in("status", ENVIOS_ABERTOS)
+        .order("id")
+        .range(inicio, inicio + 999);
+      if (error) falhou("consultar a fila do VIOS", error);
+      for (const envio of data ?? []) {
+        const doProcesso = pendentes.get(envio.processo_id as string) ?? new Map<string, string>();
+        doProcesso.set(envio.campo as string, (envio.valor_novo as string | null) ?? "");
+        pendentes.set(envio.processo_id as string, doProcesso);
+      }
+      if (!data || data.length < 1000) break;
     }
   }
 
   const novos: Record<string, unknown>[] = [];
   const historico: Record<string, unknown>[] = [];
-  const partesPorProcesso = new Map<string, { partes: ParteImportada[]; poloCliente: ValorCampo | undefined; cliente: ValorCampo | undefined }>();
+  const partesPorProcesso = new Map<string, PartesDoProcesso>();
   let atualizados = 0;
   let confirmados = 0;
 
@@ -139,7 +164,7 @@ async function aplicar(registros: RegistroImportado[]): Promise<Pick<ResultadoSy
       continue;
     }
     const id = atual.id as string;
-    const resultado = mesclarComVios(atual as Valores, importado, pendentes.get(id) ?? new Map());
+    const resultado = mesclarComVios(atual as Valores, importado, pendentes.get(id) ?? new Map(), soVazios);
     for (const lista of LISTAS) if (resultado.patch[lista] === null) resultado.patch[lista] = [];
     if (Object.keys(resultado.patch).length) {
       const { error } = await banco.from("proc_processos").update({ ...resultado.patch, sincronizado_em: agora }).eq("id", id);
@@ -159,7 +184,9 @@ async function aplicar(registros: RegistroImportado[]): Promise<Pick<ResultadoSy
       if (error) falhou("confirmar envios do VIOS", error);
       confirmados += resultado.confirmados.length;
     }
-    if (registro.partes.length) partesPorProcesso.set(id, { partes: registro.partes, poloCliente: registro.valores.polo_cliente, cliente: registro.valores.cliente });
+    // Carga que não substitui: as partes de quem já existe ficam como estão (podem ter sido saneadas aqui); só
+    // ganha as do VIOS o processo que ainda não tem nenhuma.
+    if (registro.partes.length) partesPorProcesso.set(id, { partes: registro.partes, poloCliente: registro.valores.polo_cliente, cliente: registro.valores.cliente, soSeSemPartes: soVazios });
   }
 
   // Todas as linhas do lote com as mesmas colunas (o PostgREST exige): o que a fonte não trouxe vai nulo.
@@ -193,7 +220,14 @@ async function registrarExecucao(dados: Record<string, unknown>): Promise<void> 
  * departamento, matéria, sistema e etiquetas e traz também os encerrados. Uma fonte fora do ar vira
  * aviso; sem nenhuma, erro.
  */
-export async function sincronizarProcessos(opcoes: { origem: "sharepoint" | "csv"; csv?: Uint8Array; arquivo?: string; ator?: Ator }): Promise<ResultadoSync> {
+export async function sincronizarProcessos(opcoes: {
+  origem: "sharepoint" | "csv";
+  csv?: Uint8Array;
+  arquivo?: string;
+  ator?: Ator;
+  /** Carga de uma base nova: cria os que faltam e, nos que já existem, só preenche campo vazio (partes só onde não há nenhuma). */
+  soVazios?: boolean;
+}): Promise<ResultadoSync> {
   const recorte = lerRecorte();
   const avisos: string[] = [];
   const iniciadoEm = new Date().toISOString();
@@ -213,7 +247,15 @@ export async function sincronizarProcessos(opcoes: { origem: "sharepoint" | "csv
       sioeOk = false;
       avisos.push(`SIOE fora do ar ou não configurado (${erro instanceof Error ? erro.message : "erro"}): fase, matéria e etiquetas podem ficar incompletas.`);
     }
-    const catalogoEtiquetas = [...new Set(linhasSioe.flatMap((linha) => lerEtiquetasSioe(linha.etiquetas)))];
+    // O catálogo que separa a coluna Etiquetas do relatório: o cadastro de etiquetas daqui (não depende
+    // de outra base) mais as que o SIOE trouxer, que podem incluir uma etiqueta recém-criada no VIOS.
+    let etiquetasDoCadastro: string[] = [];
+    try {
+      etiquetasDoCadastro = (await opcoesDaLista("etiquetas")).map((opcao) => opcao.valor);
+    } catch {
+      avisos.push("Não foi possível carregar o cadastro de etiquetas: a separação usou só as etiquetas do SIOE.");
+    }
+    const catalogoEtiquetas = catalogoDeEtiquetas(etiquetasDoCadastro, linhasSioe.flatMap((linha) => lerEtiquetasSioe(linha.etiquetas)));
 
     let bytes = opcoes.csv ?? null;
     if (!bytes && opcoes.origem === "sharepoint") {
@@ -225,13 +267,16 @@ export async function sincronizarProcessos(opcoes: { origem: "sharepoint" | "csv
     }
     if (!bytes && !sioeOk) throw new ProcessosError("Nenhuma fonte disponível: o SIOE e o SharePoint falharam.", 502);
 
-    let leitura: ReturnType<typeof lerCsvProcessos> = { registros: [], colunasIgnoradas: [], linhasSemCi: 0 };
+    let leitura: ReturnType<typeof lerCsvProcessos> = { registros: [], colunasIgnoradas: [], linhasSemCi: 0, etiquetasSemCatalogo: 0 };
     if (bytes) {
       try {
         leitura = lerCsvProcessos(decodificarCsv(bytes), catalogoEtiquetas);
       } catch (erro) {
         throw new ProcessosError(erro instanceof Error ? erro.message : "Arquivo inválido.", 400);
       }
+    }
+    if (leitura.etiquetasSemCatalogo) {
+      avisos.push(`Sem catálogo de etiquetas para separar a coluna Etiquetas: ${leitura.etiquetasSemCatalogo} linha(s) do relatório ficaram com as etiquetas que já tinham.`);
     }
     const doCsv = new Map(leitura.registros.map((registro) => [registro.ci, registro]));
     const doSioe = new Map<string, RegistroImportado>();
@@ -244,7 +289,7 @@ export async function sincronizarProcessos(opcoes: { origem: "sharepoint" | "csv
       const junto = juntarFontes(doCsv.get(ci), doSioe.get(ci));
       if (junto && estaNoRecorte(junto.valores, recorte)) registros.push(junto);
     }
-    const resultado = await aplicar(registros);
+    const resultado = await aplicar(registros, opcoes.soVazios ?? false);
     const lidos = leitura.registros.length + linhasSioe.length;
     await registrarExecucao({
       ...base,
@@ -259,7 +304,9 @@ export async function sincronizarProcessos(opcoes: { origem: "sharepoint" | "csv
     });
     return { lidos, noRecorte: registros.length, ...resultado, colunasIgnoradas: leitura.colunasIgnoradas, avisos };
   } catch (erro) {
-    await registrarExecucao({ ...base, status: "erro", erro: erro instanceof Error ? erro.message : "Erro desconhecido" });
+    // Na tela de importação (só admin) fica também o motivo que o banco deu, para a falha não ficar muda.
+    const detalhe = erro instanceof ProcessosError && erro.detalhe ? ` Motivo: ${erro.detalhe}` : "";
+    await registrarExecucao({ ...base, status: "erro", erro: `${erro instanceof Error ? erro.message : "Erro desconhecido"}${detalhe}` });
     throw erro;
   }
 }

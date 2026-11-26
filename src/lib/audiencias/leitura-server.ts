@@ -3,6 +3,7 @@ import "server-only";
 import { z } from "zod";
 import { duplaDaPasta } from "./duplas";
 import { avisarMudanca } from "./avisos-server";
+import { passarParaOPje } from "./jusbr-server";
 import { chaveDoLink, diferencas, ligarRedesignacoes, normalizarRegistroPje, type RegistroPjeBruto, type RegistroTribunal } from "./pje";
 import { pastasPorCnj } from "./pastas-server";
 import { AudienciasError, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
@@ -185,5 +186,10 @@ async function gravar(tribunal: string, brutos: RegistroPjeBruto[]): Promise<Res
     const { data } = await db().from("aud_audiencias").select(COLUNAS_AUDIENCIA).eq("id", id).single();
     if (data) await avisarMudanca(paraAudiencia(data as Linha));
   }
+
+  // A do Jus.br ou a "a confirmar" que o PJe agora mostra sai já (a conferência com o VIOS também faz, mas depois).
+  await passarParaOPje(registros.filter((r) => r.situacao === "designada").map((r) => r.cnj)).catch((erro) =>
+    console.error("[pauta] passar para a audiência do PJe:", erro instanceof Error ? erro.message : erro)
+  );
   return resumo;
 }
