@@ -79,6 +79,33 @@ export function StageBadge({ stage }: { stage: InviteStage }) {
   );
 }
 
+/** Pronto para enviar: já tem celular para o WhatsApp. */
+function isReady(invite: BoardInvite): boolean {
+  return invite.phone.kind === "celular";
+}
+
+/** Sem celular e sem nenhum movimento: fica fora da lista até os contatos serem atualizados. */
+function isWaitingData(invite: BoardInvite): boolean {
+  return !isReady(invite) && !invite.sentAt && invite.attending === null;
+}
+
+function ReadyBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-inset ring-emerald-200">
+      <Check className="size-3" aria-hidden />
+      Pronto para enviar
+    </span>
+  );
+}
+
+function WaitingBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+      Aguardando contato
+    </span>
+  );
+}
+
 /** Logo da empresa do cliente (quando temos); apagada quando está oculta no convite. Sem logo, as iniciais. */
 export function ClientFace({ invite, size = "md" }: { invite: BoardInvite; size?: "md" | "lg" }) {
   const box = size === "lg" ? "size-11" : "size-10";
@@ -295,6 +322,7 @@ export function ConvitesFestaClient() {
   const [picker, setPicker] = useState<{ title: string; inviteIds: string[]; current: string | null; returnTo?: string } | null>(null);
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [showWaiting, setShowWaiting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -354,11 +382,18 @@ export function ConvitesFestaClient() {
   };
 
   const invites = useMemo(() => board?.invites ?? [], [board]);
-  const scoped = useMemo(() => {
+  const bySender = useMemo(() => {
     if (senderFilter === ALL_SENDERS) return invites;
     if (senderFilter === NO_SENDER) return invites.filter((invite) => !invite.senderUserId);
     return invites.filter((invite) => invite.senderUserId === senderFilter);
   }, [invites, senderFilter]);
+  // Quem ainda não tem contato para envio sai da lista; só quem gerencia pode abrir esse grupo à parte.
+  const waitingCount = useMemo(() => bySender.filter(isWaitingData).length, [bySender]);
+  const showingWaiting = showWaiting && Boolean(board?.manager) && waitingCount > 0;
+  const scoped = useMemo(
+    () => bySender.filter((invite) => (showingWaiting ? isWaitingData(invite) : !isWaitingData(invite))),
+    [bySender, showingWaiting]
+  );
   const counts = useMemo(() => countBoard(scoped), [scoped]);
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -394,6 +429,7 @@ export function ConvitesFestaClient() {
   }
 
   const opened = openId ? (invites.find((invite) => invite.id === openId) ?? null) : null;
+  const poolTotal = invites.filter((invite) => (showingWaiting ? isWaitingData(invite) : !isWaitingData(invite))).length;
   const toSend = counts.total - counts.sent;
   const waiting = scoped.filter((invite) => invite.sentAt && invite.attending === null).length;
   const senderOptions = board.people.filter((person) => invites.some((invite) => invite.senderUserId === person.userId));
@@ -487,7 +523,7 @@ export function ConvitesFestaClient() {
       ) : (
         <>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <Stat icon={Send} label="A enviar" value={toSend} detail={counts.noSender ? `${counts.noSender} sem remetente` : undefined} tone="bg-slate-100 text-slate-600" active={filter === "a_enviar"} onClick={() => toggle("a_enviar")} />
+            <Stat icon={Send} label={showingWaiting ? "Aguardando contato" : "Prontos para enviar"} value={toSend} detail={counts.noSender ? `${counts.noSender} sem remetente` : undefined} tone="bg-slate-100 text-slate-600" active={filter === "a_enviar"} onClick={() => toggle("a_enviar")} />
             <Stat icon={Eye} label="Aguardando resposta" value={waiting} detail={`${counts.opened} abriram`} tone="bg-[#eaf2f5] text-[#285f7a]" active={filter === "aguardando"} onClick={() => toggle("aguardando")} />
             <Stat icon={CheckCheck} label="Confirmados" value={counts.confirmed} detail={counts.confirmed ? `${counts.headcount} pessoas com os convidados` : undefined} tone="bg-emerald-50 text-emerald-700" active={filter === "confirmado"} onClick={() => toggle("confirmado")} />
             <Stat icon={UserRoundX} label="Não vão" value={counts.declined} tone="bg-rose-50 text-rose-700" active={filter === "recusado"} onClick={() => toggle("recusado")} />
@@ -495,10 +531,34 @@ export function ConvitesFestaClient() {
 
           <Card className="gap-0 py-0">
             <div className="flex flex-wrap items-center gap-2 border-b border-[#e6eef0] px-4 py-3">
-              <h3 className="mr-auto text-sm font-semibold text-foreground">
-                {visible.length} {visible.length === 1 ? "cliente" : "clientes"}
-                {filter !== "todos" || senderFilter !== ALL_SENDERS || search ? ` de ${invites.length}` : ""}
-              </h3>
+              <div className="mr-auto min-w-0">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {visible.length} {visible.length === 1 ? "cliente" : "clientes"}
+                  {filter !== "todos" || senderFilter !== ALL_SENDERS || search ? ` de ${poolTotal}` : ""}
+                  {showingWaiting ? " aguardando contato" : ""}
+                </h3>
+                {!board.manager && waitingCount > 0 && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {waitingCount === 1
+                      ? "Mais 1 convite está com o contato em atualização e aparece aqui quando estiver pronto."
+                      : `Mais ${waitingCount} convites estão com o contato em atualização e aparecem aqui quando estiverem prontos.`}
+                  </p>
+                )}
+              </div>
+              {board.manager && waitingCount > 0 && (
+                <Button
+                  variant={showingWaiting ? "default" : "outline"}
+                  size="sm"
+                  aria-pressed={showingWaiting}
+                  onClick={() => {
+                    setShowWaiting((current) => !current);
+                    setFilter("todos");
+                  }}
+                  title="Clientes sem celular: ficam fora da lista dos sócios até os contatos serem atualizados"
+                >
+                  {showingWaiting ? "Voltar aos prontos" : `Aguardando contato · ${waitingCount}`}
+                </Button>
+              )}
               {board.manager && (
                 <select
                   aria-label="Filtrar por remetente"
@@ -522,7 +582,11 @@ export function ConvitesFestaClient() {
             </div>
 
             {visible.length === 0 ? (
-              <p className="px-4 py-10 text-center text-sm text-muted-foreground">Nenhum cliente nesta lista.</p>
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                {scoped.length === 0 && waitingCount > 0
+                  ? "Os seus convites estão com o contato em atualização. Eles aparecem aqui assim que estiverem prontos para enviar."
+                  : "Nenhum cliente nesta lista."}
+              </p>
             ) : (
               <ul className="divide-y divide-[#e6eef0]">
                 {visible.map((invite) => {
@@ -540,7 +604,13 @@ export function ConvitesFestaClient() {
                       >
                         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="text-sm font-medium text-foreground">{invite.name}</span>
-                          <StageBadge stage={stage} />
+                          {isWaitingData(invite) ? (
+                            <WaitingBadge />
+                          ) : stage === "a_enviar" && isReady(invite) ? (
+                            <ReadyBadge />
+                          ) : (
+                            <StageBadge stage={stage} />
+                          )}
                         </span>
                         <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                           {[invite.company, detail].filter(Boolean).join(" · ")}

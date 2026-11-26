@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 
 export const GOLD_TEXT = "text-[#9c7434]";
 export const EYEBROW = "text-[12px] font-semibold uppercase tracking-[0.32em] text-[#9c7434]";
+/** Rótulo curto antes de data, horário e local, para ninguém depender só do ícone. */
+const INFO_LABEL = "text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9c7434]";
 export const GOLD_BUTTON =
   "inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-b from-[#d9b877] to-[#bf9650] px-7 text-[15px] font-semibold tracking-wide text-white shadow-[0_10px_24px_-12px_rgba(120,86,30,0.75)] transition hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9c7434] disabled:cursor-not-allowed disabled:opacity-50";
 export const CALENDAR_BUTTON =
@@ -103,21 +105,24 @@ export function FestaShell({
               <div className="mt-6 max-w-md text-[15px] leading-7 text-[#3a3f45]">{intro}</div>
             </header>
 
-            <div className="mx-auto mt-7 flex max-w-md flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-full border border-[#dcc59a] bg-[#fdfbf7]/80 px-5 py-3 text-[15px] font-medium text-[#0d1e2e]">
-              <span className="inline-flex items-center gap-2">
+            <dl className="mx-auto mt-7 flex max-w-md flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-full border border-[#dcc59a] bg-[#fdfbf7]/80 px-5 py-3 text-[15px] font-medium text-[#0d1e2e]">
+              <div className="inline-flex items-center gap-2">
                 <CalendarDays className="size-[18px] text-[#c49a52]" aria-hidden />
-                17.12.2026
-              </span>
+                <dt className={INFO_LABEL}>Data</dt>
+                <dd>17.12.2026</dd>
+              </div>
               <span className="hidden h-5 w-px bg-[#dcc59a] sm:block" aria-hidden />
-              <span className="inline-flex items-center gap-2">
+              <div className="inline-flex items-center gap-2">
                 <Clock3 className="size-[18px] text-[#c49a52]" aria-hidden />
-                18h00
-              </span>
-            </div>
+                <dt className={INFO_LABEL}>Horário</dt>
+                <dd>18h00</dd>
+              </div>
+            </dl>
 
             <section aria-label="Local da festa" className="mx-auto mt-5 max-w-md rounded-[28px] bg-[#f1e6d3]/70 px-4 pb-5 pt-4 text-center">
               <p className="flex items-center justify-center gap-2 text-[16px] font-semibold text-[#0d1e2e]">
                 <MapPin className="size-[18px] text-[#c49a52]" aria-hidden />
+                <span className={INFO_LABEL}>Local</span>
                 Fazenda Santa Margarida
               </p>
               <p className="mt-1 text-[13px] text-[#5c6168]">{VENUE_ADDRESS}</p>

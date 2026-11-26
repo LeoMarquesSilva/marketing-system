@@ -287,7 +287,8 @@ async function buildBoard(db: SupabaseClient, viewer: RsvpViewer): Promise<Convi
     firstName: firstNameOf(row.name),
     company: row.company,
     area: areas.get(row.id) ?? null,
-    email: row.email?.trim() || null,
+    // E-mail provisório do cadastro ("preencherN@preencher.com.br") não é contato: não mostra.
+    email: row.email && !/@preencher\.com\.br$/i.test(row.email.trim()) ? row.email.trim() : null,
     phone: classifyPhone(row.phone),
     senderUserId: row.sender_user_id,
     token: row.invite_token as string,

@@ -70,10 +70,7 @@ function Nameplate({ name, logoUrl }: { name: string; logoUrl: string | null }) 
           <Ticket className="size-6" />
         </span>
       )}
-      <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#9c7434]">Convite para</p>
-        <p className="mt-1 text-[19px] font-semibold leading-tight text-[#0d1e2e]">{name}</p>
-      </div>
+      <p className="min-w-0 text-[19px] font-semibold leading-tight text-[#0d1e2e]">{name}</p>
     </div>
   );
 }
