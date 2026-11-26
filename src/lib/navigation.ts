@@ -53,6 +53,7 @@ import {
   Ticket,
   TrendingUp,
   Trophy,
+  SprayCan,
   Truck,
   User,
   Users,
@@ -77,6 +78,7 @@ import {
   isPe27Path,
   isPe27OnlyProfile,
   hasCafeCulturaAccess,
+  hasCleaningAccess,
   hasFacilitiesAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
@@ -95,6 +97,7 @@ import {
   isFeedbackPath,
   canSeeFeedback,
   canManageFeedback,
+  isCleaningPath,
   isFacilitiesPath,
   isVistagemPath,
   isCollaboratorPhotosManager,
@@ -596,6 +599,18 @@ export const NAV_FRONTS: NavFront[] = [
           { href: FACILITIES_CONTRACTS_PATH, label: "Contratos" },
         ],
       },
+      {
+        // Cronograma de limpeza (era a planilha "Checklist limpeza V2"): a equipe marca no
+        // celular; Facilities confere, assina o dia e acompanha os números.
+        id: "limpeza",
+        label: "Limpeza",
+        icon: SprayCan,
+        pages: [
+          { href: "/facilities/limpeza", label: "Acompanhamento" },
+          { href: "/facilities/limpeza/cronograma", label: "Cronograma" },
+          { href: "/limpeza", label: "Limpeza de hoje" },
+        ],
+      },
     ],
   },
   {
@@ -706,6 +721,7 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
       if (ALWAYS_VISIBLE.has(href)) return true;
       if (href === "/fotos-colaboradores") return isCollaboratorPhotosManager(profile);
       if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
+      if (isCleaningPath(href)) return hasCleaningAccess(profile);
       if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
       if (isPe27Path(href)) return hasPe27Access(profile);
@@ -729,6 +745,7 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
     return (href) => {
       if (href === HOME_PATH) return canSeeHome(profile);
       if (COLLABORATOR_PAGES.has(href)) return true;
+      if (isCleaningPath(href)) return hasCleaningAccess(profile);
       if (isPe27Path(href)) return hasPe27Access(profile);
       if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
       if (href === "/rh/ferias") return feriasView;
@@ -741,6 +758,7 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
   const isAdmin = isAdminRole(profile);
   return (href) => {
     if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
+    if (isCleaningPath(href)) return hasCleaningAccess(profile);
     if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
     if (isPe27Path(href)) return hasPe27Access(profile);
