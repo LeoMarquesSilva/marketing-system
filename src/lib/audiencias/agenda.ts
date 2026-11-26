@@ -74,9 +74,27 @@ export function geraAvisos(aud: Pick<Audiencia, "tipo">): boolean {
   return aud.tipo !== "sessao" && aud.tipo !== "pericia";
 }
 
-/** Prende a agenda da pessoa (entra em choque e deslocamento)? Sessão de 2º grau e compromisso sem horário não. */
+/**
+ * Perícia, sessão de julgamento e audiência de julgamento: o advogado não necessariamente vai. Ficam na pauta, mas não
+ * entram na distribuição: não prendem a agenda de ninguém (choque, deslocamento) nem pedem decisão (sem titular,
+ * cedo, link, modalidade). Pedido da equipe em 26/11/2026.
+ */
+export function entraNaDistribuicao(aud: Pick<Audiencia, "tipo">): boolean {
+  return aud.tipo !== "sessao" && aud.tipo !== "pericia" && aud.tipo !== "julgamento";
+}
+
+/** Prende a agenda da pessoa (entra em choque e deslocamento)? O que não entra na distribuição e compromisso sem horário não. */
 export function ocupaAgenda(aud: Pick<Audiencia, "tipo" | "inicio">): boolean {
-  return aud.tipo !== "sessao" && local(aud.inicio).hora !== "00:00";
+  return entraNaDistribuicao(aud) && local(aud.inicio).hora !== "00:00";
+}
+
+/**
+ * Audiência feita por correspondente (contratação externa, em geral presencial): o correspondente é o titular e a
+ * pessoa do escritório que era a titular (a do VIOS) passa a backup. No banco: `correspondente` com o nome, titular_id
+ * vazio e backup_id com a pessoa do escritório.
+ */
+export function temCorrespondente(aud: Pick<Audiencia, "correspondente">): boolean {
+  return Boolean(aud.correspondente?.trim());
 }
 
 function ativas(todas: Audiencia[]): Audiencia[] {
@@ -229,14 +247,17 @@ export function alertasDaAudiencia(aud: Audiencia, ctx: Contexto): AlertaAudienc
     return alertas;
   }
   if (aud.situacao !== "designada") return alertas;
-  if (!aud.titularId) alertas.push({ tipo: "sem_titular", grave: true, texto: "Sem titular." });
-  else {
+  const distribui = entraNaDistribuicao(aud);
+  const correspondente = temCorrespondente(aud);
+  if (distribui && !aud.titularId && !correspondente) alertas.push({ tipo: "sem_titular", grave: true, texto: "Sem titular." });
+  else if (distribui && aud.titularId) {
     const conflito = conflitoDaPessoa(aud.titularId, aud, ctx.todas, ctx.duracoes);
     if (conflito?.tipo === "choque") alertas.push({ tipo: "choque", grave: true, texto: `${nome(ctx, aud.titularId)} está na ${rotulo(conflito.com)} no mesmo horário.` });
     if (conflito?.tipo === "deslocamento")
       alertas.push({ tipo: "deslocamento", grave: true, texto: `${nome(ctx, aud.titularId)} tem a ${rotulo(conflito.com)}: sem tempo de deslocamento.` });
   }
-  if (aud.backupId && ocupaAgenda(aud)) {
+  // Com correspondente, a backup é a pessoa do escritório que acompanha de longe: não precisa estar livre.
+  if (distribui && !correspondente && aud.backupId && ocupaAgenda(aud)) {
     const ocupado = ativas(ctx.todas).find(
       (o) => o.id !== aud.id && o.titularId === aud.backupId && ocupaAgenda(o) && sobrepoe(intervalo(o, ctx.duracoes), intervalo(aud, ctx.duracoes))
     );
@@ -244,15 +265,16 @@ export function alertasDaAudiencia(aud: Audiencia, ctx: Contexto): AlertaAudienc
   }
   // Recusou o convite do Outlook: a titular vai para o vermelho (precisa de troca); a backup, só aviso.
   const respostas = ctx.respostas?.get(aud.id);
-  if (aud.titularId && respostas?.titular === "recusado")
+  if (distribui && aud.titularId && respostas?.titular === "recusado")
     alertas.push({ tipo: "recusou", grave: true, texto: `${nome(ctx, aud.titularId)} recusou o convite do Outlook: trocar a titular.` });
-  if (aud.backupId && respostas?.backup === "recusado")
+  if (distribui && aud.backupId && respostas?.backup === "recusado")
     alertas.push({ tipo: "backup_recusou", grave: false, texto: `A backup ${nome(ctx, aud.backupId)} recusou o convite do Outlook.` });
   if (aud.mudancas.length && !conferida) {
     alertas.push({ tipo: "mudou", grave: true, texto: `${aud.mudancas.map((m) => ROTULO_MUDANCA[m]).join(", ")} no PJe: conferir no VIOS.` });
   }
   const doVios = vistaDepois ? null : alertaDoVios(aud, estado);
   if (doVios) alertas.push(doVios);
+  if (!distribui) return alertas;
   const semHorario = local(aud.inicio).hora === "00:00";
   if (!semHorario && local(aud.inicio).minutos < HORA_CEDO * 60) alertas.push({ tipo: "cedo", grave: false, texto: `Antes das ${HORA_CEDO}h.` });
   if (aud.modalidadeTribunal === "video" && !aud.linkSala) alertas.push({ tipo: "sem_link", grave: false, texto: "Online e ainda sem link da sala." });

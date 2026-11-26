@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { hojeEmBrasilia, proximosDiasUteis, somarDias } from "./agenda";
-import { avisarTroca, ehDiaUtil } from "./avisos-server";
+import { avisarCorrespondente, avisarTroca, ehDiaUtil } from "./avisos-server";
 import { ORIGEM_AUTOMATICA, type ResumoConferenciaVios, type TarefaSoNoVios } from "./conferencia-server";
 import { lerConfig, modoOutlook, modoWhatsapp } from "./config-server";
 import { AudienciasError, carregarAudiencias, carregarPessoas, carregarPessoasComFotos, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico, type Ator } from "./server";
@@ -149,6 +149,8 @@ export async function trocarPessoa(id: string, entrada: unknown, ator: Ator): Pr
   const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
   const nova = pessoas.get(pessoaId);
   if (!nova || !nova.ativo) throw new AudienciasError("Pessoa não encontrada na equipe da pauta.", 404);
+  if (papel === "titular" && aud.correspondente?.trim())
+    throw new AudienciasError(`Esta audiência é do correspondente ${aud.correspondente.trim()}: tire o correspondente para pôr alguém do escritório como titular.`, 409);
   const de = papel === "titular" ? aud.titularId : aud.backupId;
   if (de === pessoaId) return aud;
   const campos: Record<string, unknown> = papel === "titular" ? { titular_id: pessoaId } : { backup_id: pessoaId };
@@ -180,16 +182,30 @@ export async function completarAudiencia(id: string, entrada: unknown, ator: Ato
   const lido = esquemaCampos.safeParse(entrada);
   if (!lido.success) throw new AudienciasError(lido.error.issues[0]?.message ?? "Dados inválidos.", 400);
   const d = lido.data;
+  const antes = await umaAudiencia(id);
   const campos: Record<string, unknown> = {};
   if (d.modalidadeEquipe !== undefined) campos.modalidade_equipe = d.modalidadeEquipe;
-  if (d.correspondente !== undefined) campos.correspondente = d.correspondente || null;
   if (d.observacao !== undefined) campos.observacao = d.observacao || null;
   if (d.linkSala !== undefined) Object.assign(campos, { link_sala: d.linkSala || null, link_fonte: d.linkSala ? "manual" : null, link_fonte_data: null });
-  if (!Object.keys(campos).length) return umaAudiencia(id);
+  // Correspondente (contratação externa): ele vira o titular e a titular do escritório passa a backup. Tirando o
+  // correspondente, a backup volta a titular (a backup anterior não volta sozinha: a coordenação escolhe de novo).
+  const correspondenteAntes = antes.correspondente?.trim() || null;
+  const correspondente = d.correspondente === undefined ? correspondenteAntes : d.correspondente?.trim() || null;
+  const mudouCorrespondente = correspondente !== correspondenteAntes;
+  if (mudouCorrespondente) {
+    campos.correspondente = correspondente;
+    if (correspondente && !correspondenteAntes && antes.titularId) Object.assign(campos, { titular_id: null, backup_id: antes.titularId });
+    if (!correspondente && !antes.titularId && antes.backupId) Object.assign(campos, { titular_id: antes.backupId, backup_id: null });
+  }
+  if (!Object.keys(campos).length) return antes;
   const { error } = await db().from("aud_audiencias").update(campos).eq("id", id);
   if (error) falhou("completar a audiência", error);
-  await registrarHistorico(id, "completada", { para: Object.keys(campos).join(", "), feitoPor: ator.nome });
-  return umaAudiencia(id);
+  const outros = Object.keys(campos).filter((c) => !["correspondente", "titular_id", "backup_id"].includes(c));
+  if (outros.length) await registrarHistorico(id, "completada", { para: outros.join(", "), feitoPor: ator.nome });
+  if (mudouCorrespondente) await registrarHistorico(id, "correspondente", { de: correspondenteAntes, para: correspondente, feitoPor: ator.nome });
+  const atualizada = await umaAudiencia(id);
+  if (mudouCorrespondente) await avisarCorrespondente(atualizada, correspondenteAntes);
+  return atualizada;
 }
 
 /** Marca como conferidas no VIOS as mudanças e cancelamentos vistos no tribunal. */

@@ -77,6 +77,8 @@ export function PautaClient() {
 
 function Pauta() {
   const [periodo, setPeriodo] = useState("7");
+  // Primeiro dia do período: hoje, ou um dia passado para ver pautas antigas (pedido da equipe, 26/11/2026).
+  const [inicio, setInicio] = useState(() => hojeEmBrasilia());
   const [dados, setDados] = useState<DadosDaPauta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -93,14 +95,15 @@ function Pauta() {
     setCarregando(true);
     setErro(null);
     try {
-      const de = hojeEmBrasilia();
-      setDados(await pautaApi.get<DadosDaPauta>(`?de=${de}&ate=${somarDias(de, dias)}`));
+      setDados(await pautaApi.get<DadosDaPauta>(`?de=${inicio}&ate=${somarDias(inicio, dias)}`));
     } catch (e) {
       setErro(mensagemDeErro(e));
     } finally {
       setCarregando(false);
     }
-  }, [dias]);
+  }, [inicio, dias]);
+  const hoje = hojeEmBrasilia();
+  const rotuloPeriodo = inicio === hoje ? `Próximos ${dias} dias` : `${dias} dias desde ${inicio.slice(8, 10)}/${inicio.slice(5, 7)}`;
 
   useEffect(() => {
     void carregar();
@@ -129,7 +132,9 @@ function Pauta() {
       if (tribunal && a.tribunal !== tribunal) return false;
       if (tipo && a.tipo !== tipo) return false;
       if (!termo) return true;
-      const texto = semAcento([a.cnj, cliente(a), a.orgao, a.viosTarefaCi, a.titularId && pessoas.get(a.titularId)?.nomeVios, a.backupId && pessoas.get(a.backupId)?.nomeVios].filter(Boolean).join(" "));
+      const texto = semAcento(
+        [a.cnj, cliente(a), a.orgao, a.viosTarefaCi, a.correspondente, a.titularId && pessoas.get(a.titularId)?.nomeVios, a.backupId && pessoas.get(a.backupId)?.nomeVios].filter(Boolean).join(" ")
+      );
       return texto.includes(termo);
     });
   }, [doPeriodo, busca, pessoa, tribunal, tipo, pessoas]);
@@ -191,7 +196,8 @@ function Pauta() {
       linhas.push([diaPorExtenso(dia).toUpperCase()]);
       linhas.push(["CLIENTE", "HORÁRIO", "EVENTO", "LOCAL", "MODALIDADE", "PROCESSO", "RECLAMANTE", "RESPONSÁVEL", "LINK", "OBSERVAÇÃO"]);
       for (const { aud: a } of itens) {
-        const dupla = [a.titularId && pessoas.get(a.titularId)?.nomeCurto.split(" ")[0], a.backupId && pessoas.get(a.backupId)?.nomeCurto.split(" ")[0]].filter(Boolean).join("-");
+        const titularTexto = a.correspondente?.trim() ? `${a.correspondente.trim()} (correspondente)` : a.titularId && pessoas.get(a.titularId)?.nomeCurto.split(" ")[0];
+        const dupla = [titularTexto, a.backupId && pessoas.get(a.backupId)?.nomeCurto.split(" ")[0]].filter(Boolean).join("-");
         linhas.push([
           cliente(a),
           hora(a.inicio),
@@ -218,6 +224,15 @@ function Pauta() {
       <BarraAba
         resumo={
           <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground" title="Escolha um dia passado para ver pautas antigas">
+              A partir de
+              <input type="date" className={cn(campoClasse, "h-9 w-[9.5rem] font-normal text-foreground")} value={inicio} max={somarDias(hoje, 365)} onChange={(e) => e.target.value && setInicio(e.target.value)} />
+            </label>
+            {inicio !== hoje ? (
+              <Button variant="ghost" size="sm" onClick={() => setInicio(hoje)}>
+                Hoje
+              </Button>
+            ) : null}
             <Segmented label="Período" value={periodo} options={PERIODOS} onChange={setPeriodo} />
             <Button variant="outline" onClick={() => void carregar()} disabled={carregando} title="Relê a pauta (as leituras do PJe e a conferência com o VIOS)">
               {carregando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
@@ -233,7 +248,7 @@ function Pauta() {
       </BarraAba>
 
       <Indicadores className="lg:grid-cols-5">
-        <Indicador icone={CalendarDays} rotulo={`Próximos ${dias} dias`} valor={dados ? numeros.total : "—"} ativo={!cartao} onClick={() => setCartao("")} dica="Todas as audiências do período" />
+        <Indicador icone={CalendarDays} rotulo={rotuloPeriodo} valor={dados ? numeros.total : "—"} ativo={!cartao} onClick={() => setCartao("")} dica="Todas as audiências do período" />
         <Indicador icone={Repeat} rotulo={ROTULO_CARTAO.mudaram} valor={dados ? numeros.mudaram : "—"} tom={numeros.mudaram ? "perigo" : "neutro"} ativo={cartao === "mudaram"} onClick={alternar("mudaram")} dica="Mostrar só as que mudaram no PJe e ainda não foram conferidas" />
         <Indicador icone={CircleSlash} rotulo={ROTULO_CARTAO.canceladas} valor={dados ? numeros.canceladas : "—"} tom={numeros.canceladas ? "perigo" : "neutro"} ativo={cartao === "canceladas"} onClick={alternar("canceladas")} dica="Mostrar só as canceladas no PJe que ainda pedem conferência no VIOS" />
         <Indicador icone={Video} rotulo={ROTULO_CARTAO.semLink} valor={dados ? numeros.semLink : "—"} tom={numeros.semLink ? "alerta" : "neutro"} ativo={cartao === "semLink"} onClick={alternar("semLink")} dica="Mostrar só as online ainda sem link da sala" />
@@ -486,8 +501,14 @@ function Detalhe({
             <div className="flex items-center justify-between gap-2">
               <Dupla aud={aud} pessoas={contexto.pessoas} respostas={contexto.respostas?.get(aud.id)} />
               <div className="flex flex-col gap-1.5">
-                <Button size="xs" variant="secondary" onClick={() => aoTrocar(aud, "titular")} disabled={aud.situacao !== "designada"}>
-                  {aud.titularId ? "Trocar titular" : "Definir titular"}
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  onClick={() => aoTrocar(aud, "titular")}
+                  disabled={aud.situacao !== "designada" || Boolean(aud.correspondente?.trim())}
+                  title={aud.correspondente?.trim() ? "O titular é o correspondente. Para pôr alguém do escritório, apague o correspondente e salve." : undefined}
+                >
+                  {aud.titularId || aud.correspondente?.trim() ? "Trocar titular" : "Definir titular"}
                 </Button>
                 <Button size="xs" variant="outline" onClick={() => aoTrocar(aud, "backup")} disabled={aud.situacao !== "designada"}>
                   {aud.backupId ? "Trocar backup" : "Definir backup"}
@@ -512,9 +533,14 @@ function Detalhe({
                 <input className={cn(campoClasse, "h-9 w-full")} value={campos.linkSala} onChange={(e) => setCampos({ ...campos, linkSala: e.target.value })} placeholder="https://" />
               </label>
             ) : null}
-            <label className="space-y-1.5">
-              <span className="text-xs font-semibold">Correspondente</span>
+            <label className="space-y-1.5 sm:col-span-2">
+              <span className="text-xs font-semibold">Correspondente (contratação externa)</span>
               <input className={cn(campoClasse, "h-9 w-full")} value={campos.correspondente} onChange={(e) => setCampos({ ...campos, correspondente: e.target.value })} placeholder="Nome ou escritório" />
+              <span className="block text-xs text-muted-foreground">
+                {aud.correspondente?.trim()
+                  ? "O correspondente é o titular e a pessoa do escritório é a backup. Apagando o nome, a backup volta a ser a titular."
+                  : "Ao salvar, o correspondente vira o titular e a titular atual passa a backup. Ela recebe o convite como opcional."}
+              </span>
             </label>
             <label className="space-y-1.5 sm:col-span-2">
               <span className="text-xs font-semibold">Observação</span>

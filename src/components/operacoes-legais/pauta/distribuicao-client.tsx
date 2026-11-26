@@ -295,9 +295,11 @@ function Distribuicao() {
                         <Dupla aud={aud} pessoas={pessoas} compacto respostas={contexto.respostas?.get(aud.id)} />
                       </div>
                       <div className="flex flex-col gap-1">
-                        <Button size="xs" variant="outline" onClick={() => setTroca({ aud, papel: "titular" })}>
-                          Trocar
-                        </Button>
+                        {aud.correspondente?.trim() ? null : (
+                          <Button size="xs" variant="outline" onClick={() => setTroca({ aud, papel: "titular" })}>
+                            Trocar
+                          </Button>
+                        )}
                         <Button size="xs" variant="ghost" onClick={() => setTroca({ aud, papel: "backup" })}>
                           Backup
                         </Button>

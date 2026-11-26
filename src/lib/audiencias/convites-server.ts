@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { tokenGraph } from "@/lib/vistagem/sharepoint";
-import { geraAvisos, respostasDosConvites, type RespostasDosConvites } from "./agenda";
+import { geraAvisos, respostasDosConvites, temCorrespondente, type RespostasDosConvites } from "./agenda";
 import { lerConfig, modoOutlook, type ConfigPauta } from "./config-server";
 import { eventoDoConvite, respostaDoGraph, versaoDoEvento } from "./outlook";
 import { AudienciasError, carregarAudiencias, carregarPessoas, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
@@ -10,7 +10,8 @@ import type { Audiencia, ConvitePauta, Papel, PessoaPauta } from "./tipos";
 
 /**
  * Convites do Outlook (Microsoft Graph, permissão de aplicação Calendars.ReadWrite na caixa organizadora).
- * Um convite por papel em cada audiência dos próximos 45 dias. Em modo teste (padrão), grava o convite que
+ * Convite para a titular de cada audiência dos próximos 45 dias (e para a backup, como opcional, quando a audiência
+ * é do correspondente). Em modo teste (padrão), grava o convite que
  * mandaria e não chama o Graph.
  *
  * Quando sai: na rotina (7h e 17h) e logo depois do que muda a audiência (troca de titular ou backup, o que a
@@ -156,7 +157,10 @@ async function sincronizarUm(
   ctx: { real: boolean; token: string; organizador: string; urlPauta?: string; duracoes: Partial<Record<Audiencia["tipo"], number>> }
 ): Promise<"criados" | "atualizados" | "cancelados" | null> {
   const base = `/users/${encodeURIComponent(ctx.organizador)}/events`;
-  const deveExistir = aud.situacao === "designada" && geraAvisos(aud) && Boolean(pessoa?.email) && Boolean(pessoa?.ativo);
+  // Convite só para a titular. A backup só recebe quando a audiência é do correspondente (externo, sem convite): aí
+  // a pessoa do escritório recebe como participante opcional (pedido da equipe, 26/11/2026).
+  const papelRecebe = papel === "titular" || temCorrespondente(aud);
+  const deveExistir = aud.situacao === "designada" && geraAvisos(aud) && papelRecebe && Boolean(pessoa?.email) && Boolean(pessoa?.ativo);
   const trocouPessoa = atual && atual.pessoa_id !== (pessoa?.id ?? null);
 
   if (atual && atual.status !== "cancelado" && (!deveExistir || trocouPessoa)) {

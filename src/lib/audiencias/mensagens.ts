@@ -58,9 +58,14 @@ const ESPACO = "\n\n";
  * Cada audiência num bloco, separado por uma linha em branco (a equipe achou a versão de uma linha por audiência muito
  * "grudada", 24/11/2026): horário e tipo em negrito, cliente e modalidade, titular e backup um embaixo do outro.
  */
+/** Quem é a titular no texto: a pessoa marcada ou, com correspondente, o nome dele (externo, sem WhatsApp). */
+function titular(aud: Audiencia, m: Marcador): string {
+  return aud.correspondente?.trim() ? `${aud.correspondente.trim()} (correspondente)` : m.pessoa(aud.titularId);
+}
+
 function bloco(aud: Audiencia, m: Marcador): string {
   const { hora } = local(aud.inicio);
-  const linhas = [`*${hora} · ${ROTULO_TIPO[aud.tipo]}*`, `${cliente(aud)} · ${onde(aud)}`, `Titular: ${m.pessoa(aud.titularId)}`, `Backup: ${m.pessoa(aud.backupId)}`];
+  const linhas = [`*${hora} · ${ROTULO_TIPO[aud.tipo]}*`, `${cliente(aud)} · ${onde(aud)}`, `Titular: ${titular(aud, m)}`, `Backup: ${m.pessoa(aud.backupId)}`];
   // Só no VIOS ou na Vistagem (o tribunal ainda não mostrou): vai com o aviso.
   if (aud.origem === "vios") linhas.push("_a confirmar no tribunal_");
   return linhas.join(LINHA);
@@ -97,7 +102,7 @@ export function mensagemDeTroca(
   const titulo = de ? (papel === "titular" ? "Troca de titular" : "Troca de backup") : papel === "titular" ? "Titular definido" : "Backup definido";
   const titularId = papel === "titular" ? para : aud.titularId;
   const backupId = papel === "backup" ? para : aud.backupId;
-  const linhas = [qual(aud), `Titular: ${m.pessoa(titularId)}`];
+  const linhas = [qual(aud), `Titular: ${aud.correspondente?.trim() && papel === "backup" ? titular(aud, m) : m.pessoa(titularId)}`];
   if (backupId) linhas.push(`Backup: ${m.pessoa(backupId)}`);
   if (de) linhas.push(`Sai: ${pessoas.get(de)?.nomeCurto ?? "—"}${motivo ? ` (${motivo.toLowerCase()})` : ""}`);
   return { texto: `🔁 *${titulo}*${ESPACO}${linhas.join(LINHA)}`, mencoes: [...m.mencoes] };
@@ -107,10 +112,38 @@ export function mensagemDeMudanca(aud: Audiencia, pessoas: Map<string, PessoaPau
   const m = new Marcador(pessoas);
   const oque = aud.situacao === "cancelada" ? "Cancelada no PJe" : aud.mudancas.map((x) => ROTULO_MUDANCA[x]).join(", ");
   const link = aud.mudancas.includes("link") && aud.linkSala ? `${LINHA}O convite do Outlook já tem a sala nova.` : "";
+  // Com correspondente, quem confere é a pessoa do escritório (a backup).
+  const quem = aud.correspondente?.trim() ? m.pessoa(aud.backupId) : `${m.pessoa(aud.titularId)} e ${m.pessoa(aud.backupId)}`;
   return {
-    texto: `⚠️ *${oque}*${ESPACO}${qual(aud)}${LINHA}${aud.cnj}${ESPACO}${m.pessoa(aud.titularId)} e ${m.pessoa(aud.backupId)}, conferir no VIOS.${link}`,
+    texto: `⚠️ *${oque}*${ESPACO}${qual(aud)}${LINHA}${aud.cnj}${ESPACO}${quem}, conferir no VIOS.${link}`,
     mencoes: [...m.mencoes],
   };
+}
+
+/** Correspondente definido ou retirado (na hora, como as trocas). */
+export function mensagemDeCorrespondente(aud: Audiencia, anterior: string | null, pessoas: Map<string, PessoaPauta>): Mensagem {
+  const m = new Marcador(pessoas);
+  const atual = aud.correspondente?.trim() || null;
+  const titulo = atual ? (anterior ? "Correspondente trocado" : "Correspondente definido") : "Correspondente retirado";
+  const linhas = [qual(aud), `Titular: ${titular(aud, m)}`];
+  if (aud.backupId) linhas.push(`Backup: ${m.pessoa(aud.backupId)}`);
+  if (anterior && anterior !== atual) linhas.push(`Sai: ${anterior} (correspondente)`);
+  return { texto: `🤝 *${titulo}*${ESPACO}${linhas.join(LINHA)}`, mencoes: [...m.mencoes] };
+}
+
+/**
+ * Lembrete 30 minutos antes, marcando a titular (régua do Samuel). Com correspondente, marca a backup, que é a pessoa
+ * do escritório. Na audiência online vai o link da sala.
+ */
+export function mensagemDeLembrete(aud: Audiencia, pessoas: Map<string, PessoaPauta>, minutos = 30): Mensagem {
+  const m = new Marcador(pessoas);
+  const { hora } = local(aud.inicio);
+  const linhas = [`${cliente(aud)} · ${onde(aud)}`];
+  if (aud.correspondente?.trim()) linhas.push(`Titular: ${titular(aud, m)}`, `Backup: ${m.pessoa(aud.backupId)}`);
+  else linhas.push(`Titular: ${m.pessoa(aud.titularId)}`);
+  const sala = aud.linkSala && modalidadeEfetiva(aud) === "video" ? aud.linkSala.match(/https?:\/\/\S+/)?.[0] : null;
+  if (sala) linhas.push(`Sala: ${sala}`);
+  return { texto: `⏰ *Daqui a ${minutos} min · ${hora} ${ROTULO_TIPO[aud.tipo]}*${ESPACO}${linhas.join(LINHA)}`, mencoes: [...m.mencoes] };
 }
 
 export function mensagemDeAlerta(aud: Audiencia, alerta: string, coordenacao: string[], pessoas: Map<string, PessoaPauta>): Mensagem {

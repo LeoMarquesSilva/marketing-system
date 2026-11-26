@@ -182,6 +182,10 @@ export async function passarParaOTribunal(velha: Audiencia, nova: Audiencia, fei
     if (velha.titularId && velha.titularId !== nova.titularId) campos.titular_id = velha.titularId;
     if (velha.backupId && velha.backupId !== nova.backupId) campos.backup_id = velha.backupId;
   }
+  // Audiência com correspondente: ele segue como titular e a pessoa do escritório segue como backup.
+  if (velha.correspondente?.trim() && !nova.correspondente?.trim()) {
+    Object.assign(campos, { correspondente: velha.correspondente.trim(), titular_id: null, backup_id: velha.backupId ?? nova.titularId ?? null });
+  }
   const de = NOME_DA_ORIGEM[velha.origem];
   const para = NOME_DA_ORIGEM[nova.origem];
   if (Object.keys(campos).length) {

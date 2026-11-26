@@ -3,8 +3,9 @@ import { duracaoMin, local, modalidadeEfetiva } from "./agenda";
 import { ROTULO_MODALIDADE, ROTULO_TIPO, type Audiencia, type Papel, type PessoaPauta, type TipoAudiencia } from "./tipos";
 
 /**
- * Convites do Outlook (Microsoft Graph, POST /users/{organizador}/events): um por papel. A titular recebe o
- * compromisso como "ocupado"; a backup, com "[BACKUP]" no título e como "livre", para não travar a agenda.
+ * Convites do Outlook (Microsoft Graph, POST /users/{organizador}/events). Desde 26/11/2026 só a titular recebe,
+ * com o compromisso "ocupado". A backup só recebe quando a audiência é do correspondente (externo): aí a pessoa do
+ * escritório recebe como participante opcional, com "[BACKUP]" no título e como "livre", para não travar a agenda.
  * A `versao` muda quando muda algo que a pessoa vê: só então o convite é atualizado.
  */
 
@@ -14,7 +15,7 @@ export interface EventoGraph {
   start: { dateTime: string; timeZone: "America/Sao_Paulo" };
   end: { dateTime: string; timeZone: "America/Sao_Paulo" };
   location: { displayName: string };
-  attendees: { emailAddress: { address: string; name: string }; type: "required" }[];
+  attendees: { emailAddress: { address: string; name: string }; type: "required" | "optional" }[];
   showAs: "busy" | "free";
   isReminderOn: true;
   reminderMinutesBeforeStart: number;
@@ -86,9 +87,11 @@ export function eventoDoConvite(
   ];
   if (aud.juizoDigital) linhas.push(["Juízo 100% Digital", "Sim"]);
   if (aud.reclamanteIniciais) linhas.push(["Reclamante", escapar(aud.reclamanteIniciais)]);
-  linhas.push([papel === "titular" ? "Backup" : "Titular", escapar((outra && pessoas.get(outra)?.nomeCurto) || "—")]);
-  if (papel === "backup") linhas.push(["Seu papel", "Assumir se a titular não puder"]);
-  if (aud.correspondente) linhas.push(["Correspondente", escapar(aud.correspondente)]);
+  const correspondente = aud.correspondente?.trim() || null;
+  const nomeDaOutra = papel === "backup" && correspondente ? `${correspondente} (correspondente)` : (outra && pessoas.get(outra)?.nomeCurto) || "—";
+  linhas.push([papel === "titular" ? "Backup" : "Titular", escapar(nomeDaOutra)]);
+  if (papel === "backup") linhas.push(["Seu papel", correspondente ? "Acompanhar o correspondente; presença opcional" : "Assumir se a titular não puder"]);
+  if (correspondente && papel === "titular") linhas.push(["Correspondente", escapar(correspondente)]);
   if (aud.observacao) linhas.push(["Observação", escapar(aud.observacao)]);
   if (aud.viosTarefaCi) linhas.push(["Tarefa no VIOS", linkHtml(linkTarefaVios(aud.viosTarefaCi), `CI ${aud.viosTarefaCi}`)]);
   if (aud.ciProcesso) linhas.push(["Pasta no VIOS", linkHtml(linkPastaVios(aud.ciProcesso), `CI ${aud.ciProcesso}`)]);
@@ -102,7 +105,9 @@ export function eventoDoConvite(
     : "";
   const papelTexto =
     papel === "backup"
-      ? "<p>Você é o backup desta audiência. Se a titular recusar ou for trocada, você é avisado aqui e no grupo.</p>"
+      ? correspondente
+        ? `<p>Esta audiência vai ser feita pelo correspondente ${escapar(correspondente)}. Você é o backup do escritório: sua presença é opcional.</p>`
+        : "<p>Você é o backup desta audiência. Se a titular recusar ou for trocada, você é avisado aqui e no grupo.</p>"
       : "<p>Não consegue ir? Recuse este convite com o motivo: a coordenação vê na hora.</p>";
   const rodape = opcoes.urlPauta ? `<p>${linkHtml(opcoes.urlPauta, "Abrir na Pauta de Audiências")}</p>` : "";
   return {
@@ -114,7 +119,7 @@ export function eventoDoConvite(
     start: { dateTime: horaLocal(inicio), timeZone: "America/Sao_Paulo" },
     end: { dateTime: horaLocal(fim), timeZone: "America/Sao_Paulo" },
     location: { displayName: localDoConvite(aud) },
-    attendees: [{ emailAddress: { address: pessoa.email, name: pessoa.nomeVios }, type: "required" }],
+    attendees: [{ emailAddress: { address: pessoa.email, name: pessoa.nomeVios }, type: papel === "backup" ? "optional" : "required" }],
     showAs: papel === "titular" ? "busy" : "free",
     isReminderOn: true,
     reminderMinutesBeforeStart: papel === "titular" ? 120 : 60,

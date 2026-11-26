@@ -153,14 +153,33 @@ export function Dupla({
 }) {
   const titular = aud.titularId ? pessoas.get(aud.titularId) : null;
   const backup = aud.backupId ? pessoas.get(aud.backupId) : null;
+  const correspondente = !titular && aud.correspondente?.trim() ? aud.correspondente.trim() : null;
   const nome = (p: PessoaPauta) => (compacto ? p.nomeCurto.split(" ")[0] : p.nomeCurto);
   return (
     <div className={cn("flex min-w-0 gap-x-4 gap-y-1", compacto ? "flex-row flex-wrap" : "flex-col")}>
       <span className="flex min-w-0 items-center gap-1.5 text-sm">
         <span className="w-3 text-[10px] font-semibold text-muted-foreground">T</span>
-        <Avatar pessoa={titular} />
-        {titular ? <span className="truncate">{nome(titular)}</span> : <span className="font-semibold text-red-700">Sem titular</span>}
-        {titular ? <IconeResposta resposta={respostas?.titular} /> : null}
+        {correspondente ? (
+          <>
+            <span
+              className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-[10px] font-semibold text-amber-800"
+              title="Correspondente: contratação externa"
+              aria-hidden
+            >
+              C
+            </span>
+            <span className="truncate" title={`Correspondente: ${correspondente}`}>
+              {compacto ? correspondente.split(" ")[0] : correspondente}
+            </span>
+            <span className="shrink-0 rounded-full bg-amber-50 px-1.5 text-[10px] font-semibold text-amber-800">Correspondente</span>
+          </>
+        ) : (
+          <>
+            <Avatar pessoa={titular} />
+            {titular ? <span className="truncate">{nome(titular)}</span> : <span className="font-semibold text-red-700">Sem titular</span>}
+            {titular ? <IconeResposta resposta={respostas?.titular} /> : null}
+          </>
+        )}
       </span>
       <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
         <span className="w-3 text-[10px] font-semibold">B</span>

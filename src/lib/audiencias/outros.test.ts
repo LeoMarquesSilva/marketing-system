@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { alertasDaAudiencia, respostasDosConvites } from "./agenda";
+import { alertasDaAudiencia, ocupaAgenda, respostasDosConvites } from "./agenda";
 import { duplaDaPasta, nomeCurto, pessoaPorSigla, siglaDoNome } from "./duplas";
-import { mensagemDaPauta, mensagemDeAlerta, mensagemDeAlertas, mensagemDeTroca, soDigitos } from "./mensagens";
+import { mensagemDaPauta, mensagemDeAlerta, mensagemDeAlertas, mensagemDeCorrespondente, mensagemDeLembrete, mensagemDeTroca, soDigitos } from "./mensagens";
 import { eventoDoConvite, localDoConvite, partesDoLink, respostaDoGraph, versaoDoEvento } from "./outlook";
 import type { Audiencia, ConvitePauta, PessoaPauta } from "./tipos";
 import { inicioDoVios, lerCsvDoVios } from "./vios-csv";
@@ -172,5 +172,51 @@ describe("relatório do VIOS", () => {
     ]);
     expect(lidas[1]!.cnj).toBe("0099992-22.2025.5.15.0002");
     expect(inicioDoVios("19/11/2026", "")).toBe("2026-11-19T03:00:00.000Z");
+  });
+});
+
+describe("correspondente, lembrete e o que não entra na distribuição (26/11/2026)", () => {
+  // Correspondente: titular vazio no banco, a pessoa do escritório (p1) passa a backup.
+  const comCorrespondente = () => aud({ correspondente: "Escritório Parceiro", titularId: null, backupId: "p1" });
+
+  it("correspondente é o titular nas mensagens e a pessoa do escritório é a backup marcada", () => {
+    const m = mensagemDaPauta("Pauta de amanhã", "2026-11-19", [comCorrespondente()], mapa)!;
+    expect(m.texto).toContain("Titular: Escritório Parceiro (correspondente)\nBackup: @5519999990001");
+    const c = mensagemDeCorrespondente(comCorrespondente(), null, mapa);
+    expect(c.texto.startsWith("🤝 *Correspondente definido*")).toBe(true);
+    expect(c.mencoes).toEqual(["5519999990001"]);
+  });
+
+  it("correspondente não pede titular nem confere a agenda de ninguém", () => {
+    const alertas = alertasDaAudiencia(comCorrespondente(), { pessoas: mapa, todas: [] });
+    expect(alertas.some((a) => a.tipo === "sem_titular")).toBe(false);
+  });
+
+  it("lembrete de 30 minutos marca a titular e leva o link da sala; com correspondente, marca a backup", () => {
+    const l = mensagemDeLembrete(aud(), mapa);
+    expect(l.texto).toBe("⏰ *Daqui a 30 min · 08:40 Inicial*\n\nExemplo · online\nTitular: @5519999990001\nSala: https://us02web.zoom.us/j/1111");
+    expect(l.mencoes).toEqual(["5519999990001"]);
+    const c = mensagemDeLembrete(comCorrespondente(), mapa);
+    expect(c.texto).toContain("Titular: Escritório Parceiro (correspondente)\nBackup: @5519999990001");
+  });
+
+  it("perícia, sessão e julgamento não prendem agenda nem pedem decisão", () => {
+    for (const tipo of ["pericia", "sessao", "julgamento"] as const) {
+      const a = aud({ id: `x-${tipo}`, tipo, titularId: null });
+      expect(ocupaAgenda(a)).toBe(false);
+      expect(alertasDaAudiencia(a, { pessoas: mapa, todas: [a] }).some((x) => ["sem_titular", "choque", "cedo"].includes(x.tipo))).toBe(false);
+    }
+    // A perícia no mesmo horário não dá conflito para a titular da audiência.
+    const pericia = aud({ id: "p", tipo: "pericia" });
+    const inicial = aud({ id: "i" });
+    expect(alertasDaAudiencia(inicial, { pessoas: mapa, todas: [pericia, inicial] }).some((x) => x.tipo === "choque")).toBe(false);
+  });
+
+  it("convite da backup só com correspondente, como participante opcional", () => {
+    const evento = eventoDoConvite(comCorrespondente(), "backup", equipe[0]!, mapa);
+    expect(evento.attendees[0]!.type).toBe("optional");
+    expect(evento.showAs).toBe("free");
+    expect(evento.body.content).toContain("Escritório Parceiro (correspondente)");
+    expect(eventoDoConvite(aud(), "titular", equipe[0]!, mapa).attendees[0]!.type).toBe("required");
   });
 });

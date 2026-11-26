@@ -159,6 +159,14 @@ describe("casamento da pauta com o VIOS", () => {
     expect(conferirPautaComVios([a], [cancelada, aberta], AGORA).tarefaDa.get(a.id)).toBe(aberta);
   });
 
+  it("tarefa concluída de outro dia é a audiência anterior: não casa (fica 'não está no VIOS')", () => {
+    const nova = aud({ inicio: "2026-12-09T11:40:00.000Z" });
+    const anterior = tarefa({ inicio: "2026-11-23T13:20:00.000Z", status: "concluida" });
+    expect(conferirPautaComVios([nova], [anterior], AGORA).tarefaDa.get(nova.id)).toBeNull();
+    const cedo = tarefa({ inicio: "2026-12-09T11:40:00.000Z", status: "concluida" });
+    expect(conferirPautaComVios([nova], [anterior, cedo], AGORA).tarefaDa.get(nova.id)).toBe(cedo);
+  });
+
   it("longe demais (mais de 120 dias) não casa; outro processo também não", () => {
     const a = aud();
     const r = conferirPautaComVios([a], [tarefa({ inicio: "2027-06-10T12:00:00.000Z" }), tarefa({ cnj: "0099999-11.2026.5.15.0001" })], AGORA);

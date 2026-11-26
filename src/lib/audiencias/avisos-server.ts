@@ -3,10 +3,10 @@ import "server-only";
 import { evolutionFetch, getEvolutionConfig } from "@/lib/evolution-whatsapp";
 import { criarCalendario } from "@/lib/vistagem/dias-uteis";
 import { carregarFeriados } from "@/lib/vistagem/feriados";
-import { alertasDaAudiencia, geraAvisos, hojeEmBrasilia, local, proximosDiasUteis, somarDias } from "./agenda";
+import { alertasDaAudiencia, geraAvisos, hojeEmBrasilia, local, ocupaAgenda, proximosDiasUteis, somarDias } from "./agenda";
 import { lerConfig, modoWhatsapp } from "./config-server";
 import { respostasDasAudiencias } from "./convites-server";
-import { mensagemDaPauta, mensagemDeAlertas, mensagemDeMudanca, mensagemDeTroca, type Mensagem } from "./mensagens";
+import { mensagemDaPauta, mensagemDeAlertas, mensagemDeCorrespondente, mensagemDeLembrete, mensagemDeMudanca, mensagemDeTroca, type Mensagem } from "./mensagens";
 import { carregarAudiencias, carregarPessoas, db } from "./server";
 import type { Audiencia, Papel } from "./tipos";
 
@@ -71,6 +71,39 @@ export async function avisarTroca(aud: Audiencia, papel: Papel, de: string | nul
   if (!geraAvisos(aud) || !proxima(aud, 60)) return;
   const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
   await enviarAviso(`troca:${aud.id}:${papel}:${para}:${Date.now()}`, mensagemDeTroca(aud, papel, de, para, motivo, pessoas), aud.id);
+}
+
+export async function avisarCorrespondente(aud: Audiencia, anterior: string | null): Promise<void> {
+  if (!geraAvisos(aud) || !proxima(aud, 60)) return;
+  const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
+  await enviarAviso(`correspondente:${aud.id}:${Date.now()}`, mensagemDeCorrespondente(aud, anterior, pessoas), aud.id);
+}
+
+/** Minutos antes da audiência em que sai o lembrete. O pg_cron chama de 5 em 5 minutos: vale a janela de 25 a 35. */
+export const LEMBRETE_MIN = 30;
+const JANELA_LEMBRETE_MIN = 5;
+
+/**
+ * Lembrete no grupo 30 minutos antes de cada audiência, marcando a titular (régua do Samuel). Só o que entra na
+ * distribuição (perícia, sessão e julgamento não: ninguém precisa ir) e com horário. Um lembrete por audiência e
+ * horário (redesignada, sai de novo no horário novo). Quem chama: o pg_cron do SAMA de 5 em 5 minutos, das 7h às 19h
+ * dos dias úteis (job "orquestra-pauta-lembretes", rota pauta-tick?lembretes).
+ */
+export async function avisarLembretes(agora = new Date()): Promise<number> {
+  const de = new Date(agora.getTime() + (LEMBRETE_MIN - JANELA_LEMBRETE_MIN) * 60_000);
+  const ate = new Date(agora.getTime() + (LEMBRETE_MIN + JANELA_LEMBRETE_MIN) * 60_000);
+  const auds = (await carregarAudiencias(de.toISOString(), ate.toISOString())).filter((a) => {
+    const ms = new Date(a.inicio).getTime();
+    return a.situacao === "designada" && geraAvisos(a) && ocupaAgenda(a) && ms >= de.getTime() && ms <= ate.getTime();
+  });
+  if (!auds.length) return 0;
+  const pessoas = new Map((await carregarPessoas()).map((p) => [p.id, p]));
+  let novos = 0;
+  for (const aud of auds) {
+    const r = await enviarAviso(`lembrete:${aud.id}:${aud.inicio}`, mensagemDeLembrete(aud, pessoas, LEMBRETE_MIN), aud.id);
+    if (r !== "repetido") novos += 1;
+  }
+  return novos;
 }
 
 /** "Pauta de hoje" (7h) ou "Pauta do próximo dia útil" (17h): uma vez por dia cada. */

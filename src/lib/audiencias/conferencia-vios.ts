@@ -12,6 +12,9 @@ import type { AudienciaNoVios } from "./vios-csv";
  * 2. tarefas abertas antes das concluídas e das canceladas;
  * 3. mesmo horário antes de horário diferente;
  * 4. a mais próxima.
+ * Tarefa concluída ou cancelada só casa com audiência do mesmo dia: em outro dia ela é a audiência anterior, que já
+ * aconteceu ou foi redesignada (26/11/2026: a instrução de 09/12 do 0012457-97 casava com a tarefa da de 23/11, já
+ * concluída, e mostrava "concluída no VIOS" em vez de "não está agendada no VIOS").
  */
 
 export const JANELA_DIAS = 120;
@@ -58,6 +61,7 @@ export function conferirPautaComVios(audiencias: Audiencia[], tarefas: Audiencia
     for (const t of porCnj.get(a.cnj) ?? []) {
       const distancia = Math.abs(new Date(a.inicio).getTime() - new Date(t.inicio).getTime());
       if (distancia > JANELA_DIAS * DIA_MS) continue;
+      if (t.status !== "aberta" && local(t.inicio).dia !== local(a.inicio).dia) continue;
       candidatos.push({ a, t, chave: [a.situacao === "designada" ? 0 : 1, PESO_STATUS[t.status], mesmoHorario(a.inicio, t.inicio) ? 0 : 1, distancia] });
     }
   }
