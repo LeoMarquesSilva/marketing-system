@@ -26,6 +26,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PersonFace } from "@/components/pesquisas/shared";
 import { getInitials } from "@/lib/ferias/filters";
 import { cn } from "@/lib/utils";
@@ -234,6 +235,59 @@ async function exportExcel(board: ConvitesBoard) {
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([header, ...rows]), "Convites");
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([["Nome", "Empresa", "Tipo"], ...entrance]), "Lista de entrada");
   XLSX.writeFile(book, "convites-clientes-festa-10-anos.xlsx");
+}
+
+/** Filtro por remetente (só para quem gerencia): foto, nome e quantos convites estão com cada um. */
+function SenderFilter({
+  value,
+  onChange,
+  people,
+  invites,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  people: BoardPerson[];
+  invites: BoardInvite[];
+}) {
+  const countOf = (senderId: string | null) => invites.filter((invite) => (senderId ? invite.senderUserId === senderId : !invite.senderUserId)).length;
+  const withoutSender = countOf(null);
+  const count = (n: number) => <span className="ml-auto pl-3 text-xs tabular-nums text-muted-foreground">{n}</span>;
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger size="sm" aria-label="Filtrar por remetente" className="w-full sm:w-64 [&>[data-slot=select-value]]:min-w-0 [&>[data-slot=select-value]]:flex-1">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent position="popper" align="end" className="max-h-80 min-w-64">
+        <SelectItem value={ALL_SENDERS}>
+          <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#eaf2f5] text-[#285f7a]" aria-hidden>
+            <UsersRound className="size-3.5 text-[#285f7a]" />
+          </span>
+          <span className="truncate">Todos os remetentes</span>
+          {count(invites.length)}
+        </SelectItem>
+        <SelectSeparator />
+        {people.filter((person) => person.userId === value || countOf(person.userId) > 0).map((person) => (
+          <SelectItem key={person.userId} value={person.userId}>
+            <PersonFace person={{ short_name: person.name, avatar_url: person.avatarUrl }} size="xs" />
+            <span className="truncate">{person.name}</span>
+            {count(countOf(person.userId))}
+          </SelectItem>
+        ))}
+        {withoutSender > 0 && (
+          <>
+            <SelectSeparator />
+            <SelectItem value={NO_SENDER}>
+              <span className="grid size-6 shrink-0 place-items-center rounded-full border border-dashed border-amber-300 text-amber-700" aria-hidden>
+                <UserRoundCog className="size-3.5 text-amber-700" />
+              </span>
+              <span className="truncate">Sem remetente</span>
+              {count(withoutSender)}
+            </SelectItem>
+          </>
+        )}
+      </SelectContent>
+    </Select>
+  );
 }
 
 /** Quem envia para cada área (só para quem gerencia): define o remetente de todos os clientes da área de uma vez. */
@@ -560,20 +614,12 @@ export function ConvitesFestaClient() {
                 </Button>
               )}
               {board.manager && (
-                <select
-                  aria-label="Filtrar por remetente"
+                <SenderFilter
                   value={senderFilter}
-                  onChange={(event) => setSenderFilter(event.target.value)}
-                  className="h-9 rounded-md border border-input bg-white px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/40"
-                >
-                  <option value={ALL_SENDERS}>Todos os remetentes</option>
-                  {senderOptions.map((person) => (
-                    <option key={person.userId} value={person.userId}>
-                      {person.name}
-                    </option>
-                  ))}
-                  {invites.some((invite) => !invite.senderUserId) && <option value={NO_SENDER}>Sem remetente</option>}
-                </select>
+                  onChange={setSenderFilter}
+                  people={senderOptions}
+                  invites={invites.filter((invite) => (showingWaiting ? isWaitingData(invite) : !isWaitingData(invite)))}
+                />
               )}
               <div className="relative w-full sm:w-60">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />

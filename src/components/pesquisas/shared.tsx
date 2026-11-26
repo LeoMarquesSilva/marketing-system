@@ -44,6 +44,7 @@ function facePhotoUrl(url: string | null, pixels: number): string | null {
 }
 
 const FACE_SIZES = {
+  xs: { className: "size-6 text-[10px]", pixels: 64 },
   sm: { className: "size-8 text-xs", pixels: 96 },
   md: { className: "size-11 text-sm", pixels: 128 },
 } as const;

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Input } from "@/components/ui/input";
 import { PersonFace } from "@/components/pesquisas/shared";
 import { cn } from "@/lib/utils";
@@ -411,7 +412,12 @@ export function DeadlineDialog({
           <label htmlFor="convites-prazo" className={LABEL}>
             Confirmar até
           </label>
-          <Input id="convites-prazo" type="date" value={date} min="2026-11-10" max="2026-12-17" onChange={(event) => setDate(event.target.value)} className="mt-1.5 w-48" />
+          <div className="mt-1.5 w-48">
+            <DatePickerField id="convites-prazo" value={date} onChange={setDate} startYear={2026} endYear={2026} />
+          </div>
+          {date && (date < "2026-11-10" || date > "2026-12-17") && (
+            <p className="mt-1.5 text-xs text-rose-700">Escolha uma data entre 10/11 e 17/12, o dia da festa.</p>
+          )}
         </div>
         <div className={FOOTER}>
           {closesAt && (
@@ -422,7 +428,7 @@ export function DeadlineDialog({
           <Button variant="outline" size="sm" onClick={onClose}>
             Cancelar
           </Button>
-          <Button size="sm" disabled={busy || !date} onClick={() => onSave(`${date}T23:59:59-03:00`)}>
+          <Button size="sm" disabled={busy || !date || date < "2026-11-10" || date > "2026-12-17"} onClick={() => onSave(`${date}T23:59:59-03:00`)}>
             Salvar
           </Button>
         </div>
