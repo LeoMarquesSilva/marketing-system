@@ -54,6 +54,7 @@ import {
 import { carregarFeriados, carregarNomesDosFeriados } from "./feriados";
 import { nomesDosDiasSemTarefaNoVios, ondeEstaOProcesso } from "./feriados-vios";
 import { carregarFeriadosVios } from "./feriados-vios-server";
+import { comOExpedienteDoTribunal } from "./dias-dos-tribunais";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import {
@@ -193,18 +194,23 @@ export type PublicacaoComArea = PublicacaoRow & {
 
 export const COLUNAS_PUBLICACAO_COM_AREA = `${COLUNAS_PUBLICACAO}, area_processo, devolucoes, sugestao_ia, djen_partes, estado`;
 
+type OndeEAPublicacao = { estado?: string | null; tribunal?: string | null; djen_orgao?: string | null };
+
 /**
- * Dias em que o VIOS não deixa uma tarefa deste processo (feriados do VIOS que valem para ele, pela UF e pelo tribunal
- * da publicação), além dos do SIOE. É o calendário da trava das datas: o VIOS passaria esses dias para o dia útil
- * seguinte (0056354-65, 25/11/2026).
+ * Dias em que a tarefa deste processo não pode ficar, além dos do SIOE. É o calendário da trava das datas.
+ * - Entram os feriados do VIOS que valem para o processo, pela UF e pelo tribunal da publicação. O VIOS passaria esses
+ *   dias para o dia útil seguinte (0056354-65, 25/11/2026).
+ * - Depois vale o expediente do tribunal (`dias-dos-tribunais.ts`): o dia em que o tribunal fecha entra, e o dia em que
+ *   ele funciona sai. Exemplo: o Dia da Justiça de 2026, pela planilha do Samuel.
  */
-async function diasSemTarefaDaPublicacao(publicacao: { estado?: string | null; tribunal?: string | null }): Promise<string[]> {
+async function diasSemTarefaDaPublicacao(publicacao: OndeEAPublicacao): Promise<string[]> {
   return Object.keys(await feriadosViosDaPublicacao(publicacao)).sort();
 }
 
-/** Os mesmos dias de `diasSemTarefaDaPublicacao`, com o nome do feriado no VIOS. */
-async function feriadosViosDaPublicacao(publicacao: { estado?: string | null; tribunal?: string | null }): Promise<Record<string, string>> {
-  return nomesDosDiasSemTarefaNoVios(await carregarFeriadosVios(), ondeEstaOProcesso(publicacao));
+/** Os mesmos dias de `diasSemTarefaDaPublicacao`, com o nome do feriado para o calendário. */
+async function feriadosViosDaPublicacao(publicacao: OndeEAPublicacao): Promise<Record<string, string>> {
+  const doVios = nomesDosDiasSemTarefaNoVios(await carregarFeriadosVios(), ondeEstaOProcesso(publicacao));
+  return comOExpedienteDoTribunal(doVios, publicacao);
 }
 
 export async function carregarPublicacao(id: string): Promise<PublicacaoComArea> {
