@@ -188,6 +188,40 @@ export function textoDaRepetida(caminho: string[]): string {
   return TEXTO_DA_REPETIDA[repetidaDoCaminho(caminho)];
 }
 
+/** O fluxo automático do VIOS cria junto (em qualquer nível) o tipo deste id ou uma tarefa com este nome? */
+function fluxoCriaTarefa(fluxo: FluxoDaTarefa | null | undefined, tarefaId: string | null, nome: string): boolean {
+  const chave = chaveNome(nome);
+  const cria = (tarefas: TarefaDoFluxo[]): boolean =>
+    tarefas.some((tarefa) => (tarefaId !== null && tarefa.id === tarefaId) || chaveNome(tarefa.nome) === chave || cria(tarefa.filhas));
+  return Boolean(fluxo && chave && cria(fluxo.criacao));
+}
+
+/**
+ * Tarefa pedida que o fluxo automático do VIOS de outra tarefa da mesma vistagem já cria junto (pedido de 26/11/2026:
+ * a AUDIÊNCIA UNA/INICIAL cria a CONTESTAÇÃO; a IA sugeria as duas e, com as duas, a CONTESTAÇÃO ficava duplicada no
+ * VIOS). Vale para qualquer par da árvore do VIOS (as audiências também criam a INFORMAR CLIENTE). Casa pelo id do tipo
+ * ou pelo nome: o fluxo da audiência cria a CONTESTAÇÃO 418, e a lista da área pode ter outra de mesmo nome. Devolve o
+ * nome da tarefa cujo fluxo já cria esta, ou null. Quando duas se criam uma à outra, fica a primeira. A Ciência dos
+ * Agendamentos e o Embargos de Declaração têm regra própria (`repetidasNaVistagem`: o robô cancela as do fluxo).
+ */
+export function criadaPeloFluxoDeOutra<T>(
+  tarefas: (TarefaComFluxo<T> & { tarefaId: string | null })[]
+): (chave: T) => string | null {
+  const criadaPor = new Map<T, string>();
+  tarefas.forEach((tarefa, indice) => {
+    if (ehCienciaDosAgendamentos(tarefa.nome) || ehEmbargosDeDeclaracao(tarefa.nome)) return;
+    const criadora = tarefas.find(
+      (outra, outroIndice) =>
+        outroIndice !== indice &&
+        fluxoCriaTarefa(outra.fluxo, tarefa.tarefaId, tarefa.nome) &&
+        // uma cria a outra e a outra cria esta: fica a primeira
+        !(outroIndice > indice && fluxoCriaTarefa(tarefa.fluxo, outra.tarefaId, outra.nome))
+    );
+    if (criadora) criadaPor.set(tarefa.chave, criadora.nome);
+  });
+  return (chave) => criadaPor.get(chave) ?? null;
+}
+
 export function ehReestruturacao(area: string | null | undefined): boolean {
   return escritorioDaArea(area) === "Reestruturação";
 }

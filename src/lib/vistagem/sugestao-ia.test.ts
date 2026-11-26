@@ -19,10 +19,12 @@ import {
   instrucoesDaSugestao,
   resultadoDaSugestao,
   sugestaoNaListaAtual,
+  sugestaoSemOQueOFluxoCria,
   tarefasDaResposta,
   type RespostaIa,
   type SugestaoIa,
 } from "./sugestao-ia";
+import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
 
 const LISTAS: Record<EtiquetaAgendamento, OpcaoTarefa[]> = {
   PRAZO: [
@@ -469,5 +471,64 @@ describe("sugestaoNaListaAtual (tipo recriado no VIOS)", () => {
     ]);
     expect(sugestaoNaListaAtual(comNumero, dois).tarefas[0].tarefaId).toBe("316");
     expect(sugestaoNaListaAtual(comNumero, lista([])).tarefas[0].tarefaId).toBe("316");
+  });
+});
+
+describe("sugestaoSemOQueOFluxoCria (pedido de 26/11/2026)", () => {
+  const doFluxo = (id: string, nome: string): TarefaDoFluxo => ({
+    id,
+    nome,
+    prazo: null,
+    papel: "responsavel",
+    tambemCria: [],
+    aoConcluir: [],
+    regra: null,
+    responsabilidade: null,
+    filhas: [],
+  });
+  // AUDIÊNCIA UNA/INICIAL (202) no VIOS: cria a CONTESTAÇÃO 418 e a INFORMAR CLIENTE, entre outras.
+  const FLUXOS: Record<string, FluxoDaTarefa> = {
+    "202": { criacao: [doFluxo("418", "CONTESTAÇÃO"), doFluxo("412", "INFORMAR CLIENTE")], conclusao: [] },
+  };
+  const fluxoDe = (id: string) => FLUXOS[id] ?? null;
+  const sugerida = (classe: EtiquetaAgendamento, tarefaId: string, tarefa: string, data: string | null = null) => ({
+    classe,
+    tarefaId,
+    tarefa,
+    dias: null,
+    contagem: null,
+    data,
+    hora: null,
+    motivo: "trecho",
+  });
+  // Como a 0011635-64.2026.5.15.0085 (05/11): a IA sugeriu a CONTESTAÇÃO e a AUDIÊNCIA no mesmo dia.
+  const comPar: SugestaoIa = {
+    resumo: "Audiência inicial designada.",
+    tarefas: [sugerida("PRAZO", "418", "CONTESTAÇÃO", "2027-04-22"), sugerida("COMPROMISSO", "202", "AUDIÊNCIA UNA/INICIAL", "2027-04-22")],
+    esocial: ESOCIAL_PADRAO,
+    confianca: "alta",
+    modelo: "teste",
+    geradaEm: "2026-11-05T10:00:00Z",
+    custoUS: 0,
+  };
+
+  it("tira a CONTESTAÇÃO que o fluxo da AUDIÊNCIA UNA/INICIAL já cria e diz por quê", () => {
+    const limpa = sugestaoSemOQueOFluxoCria(comPar, fluxoDe);
+    expect(limpa.tarefas.map((tarefa) => tarefa.tarefa)).toEqual(["AUDIÊNCIA UNA/INICIAL"]);
+    expect(limpa.tiradasPeloFluxo).toEqual([{ tarefa: "CONTESTAÇÃO", criadaPor: "AUDIÊNCIA UNA/INICIAL" }]);
+    expect(comPar.tarefas).toHaveLength(2);
+  });
+
+  it("sem par no fluxo, ou já limpa, devolve a mesma sugestão", () => {
+    const soAudiencia = { ...comPar, tarefas: [comPar.tarefas[1]] };
+    expect(sugestaoSemOQueOFluxoCria(soAudiencia, fluxoDe)).toBe(soAudiencia);
+    const limpa = sugestaoSemOQueOFluxoCria(comPar, fluxoDe);
+    expect(sugestaoSemOQueOFluxoCria(limpa, fluxoDe)).toBe(limpa);
+    expect(sugestaoSemOQueOFluxoCria(comPar, () => null)).toBe(comPar);
+  });
+
+  it("a INFORMAR CLIENTE sugerida com a audiência também sai", () => {
+    const comInformar = { ...comPar, tarefas: [comPar.tarefas[1], sugerida("PROVIDENCIA", "412", "INFORMAR CLIENTE")] };
+    expect(sugestaoSemOQueOFluxoCria(comInformar, fluxoDe).tarefas.map((tarefa) => tarefa.tarefaId)).toEqual(["202"]);
   });
 });

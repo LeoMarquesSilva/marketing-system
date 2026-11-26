@@ -1,6 +1,8 @@
 import { chaveNome, horaValida, type AgendamentoValidado, type EtiquetaAgendamento, type OpcaoTarefa } from "./agendamento";
+import { criadaPeloFluxoDeOutra } from "./ciencia-agendamentos";
 import { fatalPorContagem, type ContagemPrazo } from "./dias-uteis";
 import { CLASSIFICACOES_ESOCIAL, ESOCIAL_PADRAO, tarefaEsocialDaLista, type ClassificacaoEsocial } from "./esocial";
+import type { FluxoDaTarefa } from "./fluxo-vios";
 
 /**
  * Sugestão da IA para a vistagem: tarefas da lista do VIOS, dias do prazo, data do compromisso e
@@ -39,6 +41,37 @@ export interface SugestaoIa {
   modelo: string;
   geradaEm: string;
   custoUS: number;
+  /** Sugeridas que saíram porque o fluxo do VIOS de outra sugerida já as cria (`sugestaoSemOQueOFluxoCria`). */
+  tiradasPeloFluxo?: TiradaPeloFluxo[];
+}
+
+/** Uma tarefa que a IA sugeriu e saiu: o fluxo do VIOS de outra sugerida (`criadaPor`) já a cria. */
+export interface TiradaPeloFluxo {
+  tarefa: string;
+  criadaPor: string;
+}
+
+/**
+ * A sugestão sem a tarefa que o fluxo automático do VIOS de outra sugerida já cria (pedido de 26/11/2026: a IA sugeria
+ * a AUDIÊNCIA UNA/INICIAL e, à parte, a CONTESTAÇÃO, que o fluxo da audiência cria; de 03/11 a 26/11, 20 sugestões
+ * assim, e o jurídico tirava a CONTESTAÇÃO à mão). Vale para qualquer par da árvore (`criadaPeloFluxoDeOutra`). As que
+ * saem ficam em `tiradasPeloFluxo`, para a tela dizer por quê. Sem nada a tirar, devolve a mesma sugestão.
+ */
+export function sugestaoSemOQueOFluxoCria(
+  sugestao: SugestaoIa,
+  fluxoDe: (tarefaId: string) => FluxoDaTarefa | null | undefined
+): SugestaoIa {
+  const criadaPor = criadaPeloFluxoDeOutra(
+    sugestao.tarefas.map((tarefa, indice) => ({ chave: indice, tarefaId: tarefa.tarefaId, nome: tarefa.tarefa, fluxo: fluxoDe(tarefa.tarefaId) }))
+  );
+  const tiradas: TiradaPeloFluxo[] = [];
+  const tarefas = sugestao.tarefas.filter((tarefa, indice) => {
+    const por = criadaPor(indice);
+    if (por) tiradas.push({ tarefa: tarefa.tarefa, criadaPor: por });
+    return !por;
+  });
+  if (!tiradas.length) return sugestao;
+  return { ...sugestao, tarefas, tiradasPeloFluxo: [...(sugestao.tiradasPeloFluxo ?? []), ...tiradas] };
 }
 
 /** Ciência sem providência: o que se agenda quando o prazo é da parte contrária ou não há prazo nem providência. */

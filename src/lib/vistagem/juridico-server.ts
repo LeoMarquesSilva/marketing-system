@@ -42,7 +42,15 @@ import { alteracaoDaVistagem, inicioDaConferenciaSegura, reabertaParaAlterar } f
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
 import { registrarDecisaoDaIa } from "./ia-registro-server";
-import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaAtual, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
+import {
+  areaComSugestaoIa,
+  fatalSugerida,
+  resultadoDaSugestao,
+  sugestaoNaListaAtual,
+  sugestaoSemOQueOFluxoCria,
+  type ResultadoSugestao,
+  type SugestaoIa,
+} from "./sugestao-ia";
 import { carregarFeriados, carregarNomesDosFeriados } from "./feriados";
 import { nomesDosDiasSemTarefaNoVios, ondeEstaOProcesso } from "./feriados-vios";
 import { carregarFeriadosVios } from "./feriados-vios-server";
@@ -567,6 +575,7 @@ export async function obterVistagem(
       return { fotos: {}, areas: {}, rotulos: {} };
     }
   );
+  const fluxos = catalogo && arvore ? fluxosDoCatalogo(catalogo, arvoreDaPublicacao(arvore, areas, publicacao)) : {};
   return {
     publicacao: publicacaoResumo(publicacao, null),
     agendamentos: agendamentos.get(id) ?? [],
@@ -597,7 +606,7 @@ export async function obterVistagem(
       console.error("[vistagem] devolução da publicação", erro instanceof Error ? erro.message : erro);
       return null;
     }),
-    fluxos: catalogo && arvore ? fluxosDoCatalogo(catalogo, arvoreDaPublicacao(arvore, areas, publicacao)) : {},
+    fluxos,
     fluxosErro,
     estagiarios: catalogo ? catalogo.usuarios.filter((usuario) => estagiarios.has(String(usuario.id))).map((usuario) => usuario.nome) : [],
     esocial:
@@ -607,8 +616,12 @@ export async function obterVistagem(
             responsavelSugerido: responsavelSugerido(RESPONSAVEL_ESOCIAL, catalogo.usuarios)?.nome ?? null,
           }
         : null,
-    // Tipo recriado no VIOS depois da sugestão (CIÊNCIA NF 316 → 796): vale o de mesmo nome da lista atual.
-    sugestaoIa: publicacao.sugestao_ia && catalogo ? sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas) : publicacao.sugestao_ia,
+    // Tipo recriado no VIOS depois da sugestão (CIÊNCIA NF 316 → 796): vale o de mesmo nome da lista atual. Sem o que o
+    // fluxo de outra sugerida já cria (a CONTESTAÇÃO da AUDIÊNCIA UNA/INICIAL), também nas gravadas antes da regra.
+    sugestaoIa:
+      publicacao.sugestao_ia && catalogo
+        ? sugestaoSemOQueOFluxoCria(sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas), (tarefaId) => fluxos[tarefaId])
+        : publicacao.sugestao_ia,
     // Na prévia da controladoria a publicação ainda não está na fila do jurídico: a IA gera depois, se for o caso.
     sugestaoIaDisponivel:
       !previa &&
@@ -761,11 +774,15 @@ export async function salvarVistagem(
     ehDiaUtil: criarCalendario(feriados),
   });
   const itensParaGravar = ciencia ? [...itensVistados, ciencia] : itensVistados;
-  // Mede o acerto da IA: o jurídico usou a sugestão como veio, alterou ou não usou.
-  const resultadoIa = publicacao.sugestao_ia
+  // Mede o acerto da IA: o jurídico usou a sugestão como veio, alterou ou não usou. Vale a sugestão como a tela mostrou,
+  // sem o que o fluxo de outra sugerida já cria.
+  const sugestaoDaTela = publicacao.sugestao_ia
+    ? sugestaoSemOQueOFluxoCria(sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas), (tarefaId) => montarFluxo(tarefaId, arvore))
+    : null;
+  const resultadoIa = sugestaoDaTela
     ? resultadoDaSugestao({
         usou: entrada.sugestaoUsada === true,
-        sugestao: sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas),
+        sugestao: sugestaoDaTela,
         itens: itensVistados,
         esocial: esocial.valor,
         tarefaEsocialId: tarefaEsocialDaLista(catalogo.tarefas.PROVIDENCIA)?.id ?? null,
@@ -835,11 +852,11 @@ export async function salvarVistagem(
   if (error) falhou("enviar a vistagem para a controladoria", error);
   if (!atualizada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
   // Registro da IA: o que o advogado agendou × o que a IA sugeriu (base para a IA aprender).
-  if (publicacao.sugestao_ia && resultadoIa) {
+  if (sugestaoDaTela && resultadoIa) {
     await registrarDecisaoDaIa({
       publicacao,
       area: catalogo.area,
-      sugestao: sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas),
+      sugestao: sugestaoDaTela,
       resultado: resultadoIa,
       itens: itensVistados,
       autor: authUserId,

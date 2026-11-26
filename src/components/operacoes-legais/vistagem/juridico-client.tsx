@@ -76,7 +76,7 @@ import {
 } from "@/lib/vistagem/agendamento";
 import { comPrimeiraFatal, type MesDaRecorrencia } from "@/lib/vistagem/repeticao-mensal";
 import { reabertaParaAlterar } from "@/lib/vistagem/alterar-vistagem";
-import { cienciaDosAgendamentos, repetidasNaVistagem, textoDaRepetida } from "@/lib/vistagem/ciencia-agendamentos";
+import { cienciaDosAgendamentos, criadaPeloFluxoDeOutra, repetidasNaVistagem, textoDaRepetida } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
   ROTULO_CONTAGEM,
@@ -1161,18 +1161,27 @@ export function EditorVistagem({
    * (ela mesma, ou a mais perto dela no fluxo do VIOS); as outras o robô cancela no VIOS depois de lançar (tipo
    * Duplicidade), e o Embargos repetido sai com o que ele cria.
    */
-  const repetidaEm = useMemo(() => {
+  const tarefasComFluxo = useMemo(() => {
     const catalogo = detalhe?.catalogo;
-    if (!detalhe || !catalogo) return () => false;
-    return repetidasNaVistagem(
-      linhas
-        .filter((linha) => linha.tarefa)
-        .map((linha) => {
-          const opcao = catalogo.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
-          return { chave: linha.chave, nome: opcao?.nomeVios ?? linha.tarefa, fluxo: opcao ? detalhe.fluxos[opcao.id] ?? null : null };
-        })
-    );
+    if (!detalhe || !catalogo) return [];
+    return linhas
+      .filter((linha) => linha.tarefa)
+      .map((linha) => {
+        const opcao = catalogo.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
+        return {
+          chave: linha.chave,
+          tarefaId: opcao?.id ?? null,
+          nome: opcao?.nomeVios ?? linha.tarefa,
+          fluxo: opcao ? detalhe.fluxos[opcao.id] ?? null : null,
+        };
+      });
   }, [detalhe, linhas]);
+  const repetidaEm = useMemo(() => repetidasNaVistagem(tarefasComFluxo), [tarefasComFluxo]);
+  /**
+   * Tarefa que o fluxo do VIOS de outra desta vistagem já cria (a AUDIÊNCIA UNA/INICIAL cria a CONTESTAÇÃO): com as
+   * duas, fica duplicada no VIOS. A tela avisa no cartão da tarefa; quem decide é o jurídico.
+   */
+  const criadaPorOutra = useMemo(() => criadaPeloFluxoDeOutra(tarefasComFluxo), [tarefasComFluxo]);
   /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência e nas pastas RC-Insolvência, Úteis nas outras. */
   const contagemPadrao = contagemPadraoDaPublicacao(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area, detalhe?.publicacao.etiquetas);
   /** Área da publicação: nas audiências do Trabalhista o revisor fica na tarefa (`revisorFicaNaTarefa`). */
@@ -1830,6 +1839,7 @@ export function EditorVistagem({
                         )
                       : [];
                     const cienciaPedidaRepetida = repetidaEm(linha.chave, null);
+                    const criadaPor = criadaPorOutra(linha.chave);
                     const avisos = comFatal
                       ? linha.dataFatal
                         ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(
@@ -1940,6 +1950,29 @@ export function EditorVistagem({
                                 )}
                               </div>
                             </div>
+                            {criadaPor ? (
+                              <Aviso
+                                tom="alerta"
+                                titulo="Esta tarefa já vem no fluxo de outra"
+                                acao={
+                                  !linha.esocial ? (
+                                    <Button
+                                      type="button"
+                                      size="xs"
+                                      variant="outline"
+                                      className="shrink-0"
+                                      onClick={() => setLinhas((atuais) => atuais.filter((item) => item.chave !== linha.chave))}
+                                    >
+                                      <Trash2 />
+                                      Remover
+                                    </Button>
+                                  ) : null
+                                }
+                              >
+                                O fluxo da tarefa {criadaPor} já cria a {linha.tarefa} no VIOS. Com as duas, ela fica duplicada: remova esta, a não
+                                ser que precise mesmo de outra.
+                              </Aviso>
+                            ) : null}
                           </BlocoTarefa>
 
                           <BlocoTarefa titulo={comFatal ? "Prazo" : linha.etiqueta === "COMPROMISSO" ? "Data e horário" : "Data"} icone={CalendarDays}>
