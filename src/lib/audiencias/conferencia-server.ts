@@ -185,6 +185,8 @@ const MAX_LINHAS_SAMA = 30_000;
 const DIAS_A_FRENTE = 400;
 /** Sem leitura nova do PJe, a conferência roda de novo depois disto (o SAMA relê o VIOS às 2h e às 12h). */
 const INTERVALO_MAXIMO_MS = 6 * 60 * 60 * 1000;
+/** Uma rodada do robô (todos os tribunais) leva uns 15 minutos; as rodadas são às 6h45, 11h45 e 16h45. */
+const INTERVALO_RODADA_MS = 60 * 60 * 1000;
 
 /** O Tarefas.csv tem dezenas de megabytes; acima disto a conferência fica só com o SAMA, para não estourar a memória. */
 const TAMANHO_MAXIMO_RELATORIO = 200 * 1024 * 1024;
@@ -404,8 +406,12 @@ export async function conferirComVios(origem = ORIGEM_AUTOMATICA, agora = new Da
 /**
  * Para a rotina de 10 em 10 minutos: confere com o VIOS só quando chegou leitura nova do PJe depois da última
  * conferência, ou quando a última tem mais de 6 horas (pega a cópia das 2h e das 12h do SAMA).
+ *
+ * `semNovidade`: a leitura do PJe que chamou não trouxe nada novo. Com o robô lendo 21 tribunais seguidos (26/11/2026),
+ * cada tribunal é uma leitura: sem isto seriam 21 conferências por rodada, cada uma baixando o Tarefas.csv. Leitura sem
+ * novidade só confere se a última conferência tem mais de uma hora (a primeira da rodada); com novidade, confere sempre.
  */
-export async function conferirComViosSeDevido(agora = new Date()): Promise<ResumoConferenciaVios | "em dia"> {
+export async function conferirComViosSeDevido(agora = new Date(), opcoes: { semNovidade?: boolean } = {}): Promise<ResumoConferenciaVios | "em dia"> {
   const { data, error } = await db()
     .from("aud_leituras")
     .select("fonte, origem, iniciada_em, terminada_em, erro")
@@ -416,6 +422,7 @@ export async function conferirComViosSeDevido(agora = new Date()): Promise<Resum
   const linhas = (data ?? []) as { fonte: string; origem: string | null; iniciada_em: string; terminada_em: string | null; erro: string | null }[];
   const ultimaVios = linhas.find((l) => l.fonte === "vios" && l.origem === ORIGEM_AUTOMATICA);
   const ultimaPje = linhas.find((l) => l.fonte === "pje" && l.terminada_em && !l.erro);
+  if (opcoes.semNovidade && ultimaVios && agora.getTime() - Date.parse(ultimaVios.iniciada_em) < INTERVALO_RODADA_MS) return "em dia";
   const devida =
     !ultimaVios ||
     Boolean(ultimaPje?.terminada_em && Date.parse(ultimaPje.terminada_em) > Date.parse(ultimaVios.iniciada_em)) ||
