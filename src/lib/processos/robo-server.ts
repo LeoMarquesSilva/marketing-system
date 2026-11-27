@@ -11,17 +11,13 @@ import { registrarNoHistorico } from "./processos-server";
 import { db, falhou } from "./server";
 import { ROTULO_SISTEMA, roboPeloJusbr, type SistemaTribunal } from "./tribunais";
 import { resumirFila, type LinhaDaFila, type ResumoDaFila } from "./fila-resumo";
+import { decidirFila } from "./fila-escolha";
 
 /**
  * O lado do servidor da fila do robô de autos (robos/autos). O robô roda fora da Vercel e fala só com
  * estas rotas, com um token próprio (ROBO_AUTOS_TOKEN): ele não recebe a service role do banco. A
  * credencial do tribunal fica na máquina do robô e nunca passa por aqui.
  */
-
-/** Pedido "em andamento" sem notícia do robô há este tempo volta para a fila. */
-const PEDIDO_PARADO_MS = 20 * 60_000;
-/** Enquanto espera a pessoa (login, segundo fator, CAPTCHA), o robô dá sinal a cada minuto; sem sinal, o pedido volta a ser oferecido. */
-const ESPERA_PARADA_MS = 3 * 60_000;
 
 export function exigirRobo(request: Request): void {
   const esperado = process.env.ROBO_AUTOS_TOKEN?.trim() ?? "";
@@ -57,10 +53,12 @@ async function reservaDoPedido(pedido: PedidoAutos): Promise<string | null> {
   return robo.reserva;
 }
 
-/** Entrega ao robô o pedido mais antigo que ele sabe atender e o marca como "em andamento". */
+/**
+ * Entrega ao robô o próximo pedido que ele sabe atender e o marca como "em andamento". Pedido novo vem antes do que
+ * já parou esperando uma pessoa; o que parou vezes demais sai da fila como erro (fila-escolha.ts).
+ */
 export async function proximoPedido(entrada: unknown): Promise<PedidoParaRobo | null> {
   const dados = validar(esquemaProximo, entrada);
-  const aceitos = new Set(dados.conectores);
   const { data, error } = await db()
     .from("proc_autos_pedidos")
     .select(COLUNAS_PEDIDO)
@@ -68,32 +66,27 @@ export async function proximoPedido(entrada: unknown): Promise<PedidoParaRobo | 
     .order("criado_em", { ascending: true })
     .limit(100);
   if (error) falhou("consultar a fila de autos", error);
-  const agora = Date.now();
-  for (const linha of (data ?? []) as Record<string, unknown>[]) {
-    const pedido = paraPedido(linha);
-    // O Jus.br atende todos os tribunais: o robô o anuncia como "jusbr:BR".
-    if (!aceitos.has(pedido.sistema === "jusbr" ? "jusbr:BR" : `${pedido.sistema}:${pedido.tribunal}`)) continue;
-    const parado = agora - new Date(pedido.atualizadoEm).getTime();
-    const livre =
-      pedido.status === "pendente" ||
-      (pedido.status === "em_andamento" && parado > PEDIDO_PARADO_MS) ||
-      // Segredo de justiça sem liberação não volta para o robô: espera a decisão de uma pessoa na ficha.
-      (pedido.status === "aguardando_pessoa" && pedido.motivoEspera !== "segredo_justica" && parado > ESPERA_PARADA_MS);
-    if (!livre) continue;
+  const pedidos = ((data ?? []) as Record<string, unknown>[]).map(paraPedido);
+  for (const decisao of decidirFila(pedidos, new Set(dados.conectores), Date.now())) {
+    const { pedido } = decisao;
     const marca = new Date().toISOString();
-    const { data: tomado, error: erroTomar } = await db()
+    const patch =
+      decisao.tipo === "tirar"
+        ? { status: "erro", motivo_espera: null, erro: decisao.mensagem, concluido_em: marca, atualizado_em: marca }
+        : { status: "em_andamento", motivo_espera: null, erro: null, robo: dados.robo, tentativas: pedido.tentativas + 1, iniciado_em: marca, atualizado_em: marca };
+    // Só muda se ninguém mexeu no pedido desde a leitura (outro robô, a ficha, um sinal de vida).
+    const { data: mudado, error: erroMudar } = await db()
       .from("proc_autos_pedidos")
-      .update({ status: "em_andamento", motivo_espera: null, erro: null, robo: dados.robo, tentativas: pedido.tentativas + 1, iniciado_em: marca, atualizado_em: marca })
+      .update(patch)
       .eq("id", pedido.id)
       .eq("status", pedido.status)
       .eq("atualizado_em", pedido.atualizadoEm)
       .select(COLUNAS_PEDIDO);
-    if (erroTomar) falhou("reservar o pedido", erroTomar);
-    if (tomado?.length) {
-      const reservado = paraPedido(tomado[0] as Record<string, unknown>);
-      // Peças já baixadas do processo (eproc: "evento:nome"; e-SAJ: "esaj:texto do documento"): o robô traz só as novas.
-      return { ...reservado, pecasBaixadas: await pecasBaixadas(reservado.processoId), reserva: await reservaDoPedido(reservado) };
-    }
+    if (erroMudar) falhou(decisao.tipo === "tirar" ? "tirar da fila o pedido parado" : "reservar o pedido", erroMudar);
+    if (decisao.tipo === "tirar" || !mudado?.length) continue;
+    const reservado = paraPedido(mudado[0] as Record<string, unknown>);
+    // Peças já baixadas do processo (eproc: "evento:nome"; e-SAJ: "esaj:texto do documento"): o robô traz só as novas.
+    return { ...reservado, pecasBaixadas: await pecasBaixadas(reservado.processoId), reserva: await reservaDoPedido(reservado) };
   }
   return null;
 }
@@ -129,7 +122,8 @@ const esquemaAtualizacao = z.discriminatedUnion("acao", [
   z.object({ acao: z.literal("erro"), mensagem: z.string().trim().min(1).max(1000) }),
   /**
    * O Jus.br não trouxe os autos e este robô não tem o conector do tribunal: o pedido volta à fila no sistema da
-   * reserva ("esaj:TJSP"), para o robô do tribunal.
+   * reserva ("esaj:TJSP"), para o robô do tribunal. Também o processo que o PJe ou o DCP dizem ter migrado para o
+   * eproc, quando este robô não atende o eproc do tribunal (autos-repasse.ts).
    */
   z.object({ acao: z.literal("repassar"), reserva: z.string().trim().regex(/^[a-z]+:[A-Z0-9]+$/, "Reserva inválida.") }),
   z.object({ acao: z.literal("upload"), nome: z.string().trim().min(1).max(200), tamanho: z.number().int().positive().max(TAMANHO_MAXIMO_AUTOS) }),

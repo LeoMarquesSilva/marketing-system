@@ -295,6 +295,43 @@ Só depois de as rotas estarem em produção (ver [Rede](#rede-e-destino)). Nenh
 - **Memória:** cada serviço abre o seu Chromium (de 0,5 a 1 GB com janela). Confira a sobra da VPS antes de criar o segundo (`free -h` no servidor, ou a aba Monitor do Easypanel): com menos de ~1,5 GB livres, o segundo navegador pode derrubar os dois.
 - **Teste:** um pedido de processo do TJSP em segredo de justiça que o Jus.br não atenda deve aparecer no log do `robo-autos-jusbr` como repassado e, em seguida, no `robo-autos-eproc-tjsp`, baixado pelo e-SAJ ou pelo eproc.
 
+### PJe do TJRJ no robô do Jus.br, e a fila que não trava (27/11/2026)
+
+**O que acontecia.** Os pedidos do TJRJ vão primeiro ao Jus.br. Quando o Jus.br não traz os autos, a reserva é o
+conector do tribunal pelo cadastro: `pje:TJRJ` para os processos do PJe. O `robo-autos-jusbr` não tem esse conector e
+repassa o pedido, mas **nenhum robô em produção atende `pje:TJRJ`**: o `robo-autos-eproc-tjsp` tem `eproc,esaj`, o
+`robo-autos-tjrj` não subiu e o Mac (o único que já rodou o PJe, em 18/11) está desligado. O pedido fica na fila para
+sempre. E quando o PJe roda num robô sem o PJe Office (o Mac, no modo `comum`), o login do SSO da PDPJ cai na pessoa:
+o robô parava 15 min esperando, o pedido ficava "aguardando pessoa" e, 3 min depois, a fila o oferecia de novo **na
+frente de todos** (a fila andava do mais antigo para o mais novo). O robô entrava num laço com o mesmo pedido e os
+outros não andavam.
+
+**O que mudou no código.**
+- **Fila (ORQESTRAI, `src/lib/processos/fila-escolha.ts`):** pedido novo vem sempre antes do que já parou; o que parou
+  3 vezes esperando uma pessoa (ou 4 vezes sem notícia do robô no meio) sai da fila como erro, com a mensagem do que
+  faltou. Segredo de justiça sem liberação continua esperando a ficha, sem prazo.
+- **Robô:** depois de esperar a pessoa em vão, deixa aquele sistema de lado por `PAUSA_APOS_PESSOA_MINUTOS` e segue com
+  os outros; sem janela (ou com `ESPERA_PESSOA_MINUTOS=0`) não espera nada.
+- **PJe e DCP sem o eproc do TJRJ:** o robô que atende o PJe (ou o DCP) mas não o eproc do TJRJ devolve à fila, no
+  `eproc:TJRJ`, o processo que o tribunal diz ter migrado, em vez de abrir um segundo login do advogado no eproc.
+
+**O que falta no Easypanel (com o OK do usuário):** acrescentar o PJe ao robô do Jus.br. O PJe do TJRJ (1º grau) entra
+pelo **mesmo SSO da PDPJ** do Jus.br, que esse robô já faz sozinho (certificado pelo PJe Office do robô e código do
+segredo `pdpj` do painel); no mesmo navegador, a sessão da PDPJ já aberta vale para o PJe. Assim a reserva `pje:TJRJ`
+segue no mesmo pedido, sem repasse e sem pessoa.
+
+| Serviço | `ROBO_CONECTORES` hoje | Depois |
+|---|---|---|
+| `robo-autos-jusbr` | `jusbr` | `jusbr,pje` |
+| `robo-autos-eproc-tjsp` | `eproc,esaj` | sem mudança (atende o `eproc:TJRJ` dos processos migrados) |
+
+- O `pje` não pode ficar em dois robôs ao mesmo tempo (seriam dois logins do advogado): se o Mac voltar a rodar, tire o
+  `pje` do `.env` dele.
+- O 2º grau do PJe do TJRJ tem login próprio, fora do SSO, e continua precisando de uma pessoa; o robô só usa o 1º grau.
+- O `eproc:TJRJ` precisa do segredo `eproc-tjrj` no painel de robôs para entrar sozinho (em 24/11 ele pediu o código e
+  foi direto para a pessoa). Sem o segredo, os processos migrados param no login do eproc, mas a fila não trava mais.
+- Os pedidos `pje:TJRJ` já parados na fila são pegos pelo robô do Jus.br assim que o deploy subir.
+
 ### Três serviços no projeto `bibliotecaBP`
 
 Plano anterior (17 a 23/11/2026), mantido para a migração do Mac e para quando o TJRJ entrar no servidor; o que vale hoje para autos é a seção [acima](#dois-serviços-de-autos-jusbr-e-tribunal-24112026).
@@ -323,7 +360,7 @@ O Mac continua ligado e atendendo o que ainda não passou, e cada sistema muda d
 | 3 | `eproc:TJSP` | `eproc:TJRJ,dcp,pje` | parado | `esaj` |
 | 4 | `eproc:TJSP` | `eproc:TJRJ,dcp,pje` | `esaj` | robô desligado |
 
-Enquanto o DCP estiver no Mac (etapas 1 e 2), o eproc do TJRJ fica nos dois lados só para os processos que o DCP devolve ao eproc: o robô do Mac abre a sessão do eproc do TJRJ dele nesses casos.
+Enquanto o DCP estiver no Mac (etapas 1 e 2), o processo que o DCP diz ter migrado volta à fila no `eproc:TJRJ` (o Mac não atende o eproc do TJRJ) e o robô do servidor o baixa: um login só no eproc do TJRJ.
 
 **Para passar de uma etapa à seguinte:**
 
@@ -513,6 +550,8 @@ O robô lê logo ao subir e de novo em cada horário de `PAUTA_HORARIOS`, sem ma
 | Variável | Padrão | O que faz |
 |---|---|---|
 | `ROBO_CONECTORES` | todos | Conectores atendidos: `jusbr`, `eproc`, `esaj`, `esaj:TJCE`… Sem o conector da reserva, o robô repassa ao robô do tribunal o pedido que o Jus.br não atende. |
+| `ESPERA_PESSOA_MINUTOS` | 15 (0 sem janela) | Quanto o robô espera uma pessoa resolver login, código ou CAPTCHA. `0`: não espera, marca o pedido como "aguardando pessoa" e segue para o próximo. |
+| `PAUSA_APOS_PESSOA_MINUTOS` | 30 | Depois de esperar a pessoa em vão, o robô deixa de pedir aquele sistema à fila por este tempo e segue com os outros. `0` desliga. |
 | `NAVEGADOR_MODO` | `comum` (ou `playwright` com certificado em arquivo) | Quem abre o navegador. |
 | `NAVEGADOR_HEADLESS` | `nao` | Sem janela (só no modo `playwright`). |
 | `NAVEGADOR_ARGS` | — | Argumentos extras do navegador. |

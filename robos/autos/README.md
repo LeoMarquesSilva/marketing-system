@@ -90,7 +90,7 @@ O TJRJ tem três sistemas, e o mesmo número CNJ (`…8.19.…`) pode estar em q
 - **PJe** (`tjrj.pje.jus.br`, login pelo SSO nacional da PDPJ), usado nas varas cíveis e juizados de 2019 a 2026.
 - **eproc** (`eproc1g.tjrj.jus.br` e `eproc2g.tjrj.jus.br`, login em `eproc-sso.tjrj.jus.br`): desde maio de 2026 recebe todo processo cível novo, e o tribunal está migrando para ele o acervo do DCP e do PJe, com o mesmo número CNJ (1,3 milhão de processos migrados em 18/11/2026). Os juizados cíveis entram de 10/12/2026 a 2027.
 
-Por isso o ORQESTRAI manda o "Próprio" do TJRJ ao conector `dcp:TJRJ`, o PJe ao `pje:TJRJ` e o resto (eproc, sem sistema) ao `eproc:TJRJ`. O DCP e o PJe, quando o processo já migrou, seguem pelo eproc no mesmo pedido e avisam o ORQESTRAI, que manda as atualizações seguintes direto ao eproc.
+Por isso o ORQESTRAI manda o "Próprio" do TJRJ ao conector `dcp:TJRJ`, o PJe ao `pje:TJRJ` e o resto (eproc, sem sistema) ao `eproc:TJRJ`. O DCP e o PJe, quando o processo já migrou, seguem pelo eproc no mesmo pedido (se o robô também atende o `eproc:TJRJ`; se não, devolvem o pedido à fila no eproc, para o robô que tem esse login) e avisam o ORQESTRAI, que manda as atualizações seguintes direto ao eproc.
 
 - **Login:** o mesmo desenho do TJSP (SSO Keycloak com usuário e senha, ou "Certificado Digital"), com cadastro e senha próprios do advogado no TJRJ (`EPROC_TJRJ_*`). No caminho, o navegador passa pelo SSO nacional da PDPJ (`sso.cloud.pje.jus.br`), que redireciona sozinho para o SSO do TJRJ.
 - **2 fatores:** o eproc do TJRJ tem autenticação em dois fatores, como o do TJSP. O segredo do TOTP do TJRJ é outro: no painel de robôs ele fica no sistema `eproc-tjrj`, e no webhook o robô pede `?sistema=eproc-tjrj`. Sem nenhum dos dois, ou se falharem, a pessoa digita o código.
@@ -182,7 +182,7 @@ Na ficha do processo, o painel **Autos** mostra a situação do pedido: na fila,
 
 | O que aparece | O que fazer |
 |---|---|
-| "PRECISA DE UMA PESSOA" no terminal | Resolva o que a mensagem pede (login, código, CAPTCHA) na janela do Chrome do robô. Ele espera `ESPERA_PESSOA_MINUTOS` (15 por padrão); passado o tempo, o pedido continua "aguardando pessoa" e o robô tenta de novo mais tarde. |
+| "PRECISA DE UMA PESSOA" no terminal | Resolva o que a mensagem pede (login, código, CAPTCHA) na janela do Chrome do robô. Ele espera `ESPERA_PESSOA_MINUTOS` (15 por padrão; 0 não espera); passado o tempo, o pedido continua "aguardando pessoa", o robô deixa aquele sistema de lado por `PAUSA_APOS_PESSOA_MINUTOS` (30) e segue com os outros pedidos. Pedido novo passa sempre na frente do que parou, e o que parou 3 vezes esperando uma pessoa sai da fila como erro, com a mensagem do que faltou. |
 | "O e-SAJ pede a senha do processo" | O advogado do certificado não está habilitado naquele processo. Anexe o PDF à mão na ficha. |
 | "A tela do e-SAJ mudou ou não carregou" | O tribunal mudou a página. A mensagem aponta a captura guardada em `diagnostico/`; ajuste os seletores em `src/conectores/esaj.ts` (constante `TELA`). |
 | "não mostrou o processo" | Número de outro sistema (processos novos do TJSP estão no eproc; no TJRJ, processo que ainda não migrou do DCP ou do PJe), segredo de justiça sem acesso do advogado, ou número com mais de um processo. |

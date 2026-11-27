@@ -20,7 +20,7 @@ import {
   type PartesDoCnjTjrj,
 } from "./dcp-tjrj-urls.ts";
 import { Mapeamento, assentar, clicarPorTexto, entrarComAPessoa, preencherPrimeiro, type OpcoesDeLogin, type PassoDoMapa } from "./mapeamento.ts";
-import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./tipos.ts";
+import { FalhaDoConector, MigradoParaEproc, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./tipos.ts";
 
 /**
  * DCP do TJRJ (Portal de Serviços): o conector (ConectorDcpTjrj, no fim do arquivo) e o roteiro do
@@ -402,7 +402,7 @@ export class ConectorDcpTjrj implements Conector {
     const { portal, quadro } = await this.consulta(ambiente);
     const detalhes = await this.pesquisar(ambiente, portal, quadro, partes);
     if (migradoParaEproc(detalhes)) {
-      if (!this.eproc) throw new FalhaDoConector(`O processo ${partes.mascarado} foi migrado para o eproc: peça os autos pelo eproc do TJRJ.`);
+      if (!this.eproc) throw new MigradoParaEproc("eproc:TJRJ", `O processo ${partes.mascarado} foi migrado para o eproc: os autos vêm pelo eproc do TJRJ.`);
       ambiente.registrar(`O ${SISTEMA} diz que ${partes.mascarado} foi migrado para o eproc. Seguindo pelo eproc do TJRJ.`);
       const doEproc = await this.eproc.baixar(ambiente, pedido, destino);
       return { ...(doEproc ?? {}), sistema: "eproc" };

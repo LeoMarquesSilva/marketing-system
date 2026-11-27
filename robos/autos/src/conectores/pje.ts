@@ -20,7 +20,7 @@ import {
   type CamposCnjPje,
   type InstanciaPje,
 } from "./pje-urls.ts";
-import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./tipos.ts";
+import { FalhaDoConector, MigradoParaEproc, SegredoDeJustica, type Ambiente, type Conector, type ResultadoDoDownload } from "./tipos.ts";
 
 /**
  * PJe do TJRJ (1º grau): o conector (ConectorPjeTjrj, no fim do arquivo) e o roteiro do
@@ -388,7 +388,7 @@ export class ConectorPjeTjrj implements Conector {
     if (!campos) throw new FalhaDoConector(`Número de processo inválido para o PJe do TJRJ: ${pedido.cnj}.`);
     const { pagina, linha } = await this.pesquisar(ambiente, campos);
     if (migradoParaEproc(linha)) {
-      if (!this.eproc) throw new FalhaDoConector(`O processo ${campos.mascarado} foi migrado para o eproc: peça os autos pelo eproc do TJRJ.`);
+      if (!this.eproc) throw new MigradoParaEproc("eproc:TJRJ", `O processo ${campos.mascarado} foi migrado para o eproc: os autos vêm pelo eproc do TJRJ.`);
       ambiente.registrar(`O PJe diz que ${campos.mascarado} foi migrado para o eproc. Seguindo pelo eproc do TJRJ.`);
       const doEproc = await this.eproc.baixar(ambiente, pedido, destino);
       return { ...(doEproc ?? {}), sistema: "eproc" };

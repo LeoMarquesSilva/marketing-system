@@ -62,3 +62,17 @@ export class EsperaEsgotada extends Error {}
 
 /** Falha em que não adianta tentar de novo sozinho; a mensagem vai para a ficha do processo. */
 export class FalhaDoConector extends Error {}
+
+/**
+ * O PJe ou o DCP dizem que o processo migrou para o eproc (`reserva`, ex.: "eproc:TJRJ") e este robô não atende o
+ * eproc do tribunal: o pedido volta à fila no eproc, para o robô que já tem esse login. Sem o repasse, vira erro com
+ * a mensagem.
+ */
+export class MigradoParaEproc extends FalhaDoConector {
+  constructor(
+    readonly reserva: string,
+    mensagem: string
+  ) {
+    super(mensagem);
+  }
+}

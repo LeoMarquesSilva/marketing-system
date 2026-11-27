@@ -85,7 +85,17 @@ export interface Config {
   certificado: ConfigCertificado;
   intervaloMs: number;
   pausaEntrePedidosMs: number;
+  /**
+   * Quanto o robô espera uma pessoa resolver login, código ou CAPTCHA antes de largar o pedido (ESPERA_PESSOA_MINUTOS,
+   * padrão 15). 0 = não espera: marca o pedido como "aguardando pessoa" e segue para o próximo. Sem janela
+   * (NAVEGADOR_HEADLESS=sim) é sempre 0, porque ninguém consegue resolver.
+   */
   esperaPessoaMs: number;
+  /**
+   * Depois de esperar uma pessoa em vão, o robô deixa de pedir aquele conector à fila por este tempo e segue com os
+   * outros (PAUSA_APOS_PESSOA_MINUTOS, padrão 30; 0 desliga). Ver descanso.ts.
+   */
+  pausaAposPessoaMs: number;
   geracaoPdfMs: number;
   /** Com a fila de autos vazia, completa a capa dos processos pelo DataJud (CAPA_DATAJUD=nao desliga). */
   capaDataJud: boolean;
@@ -136,6 +146,13 @@ function texto(nome: string): string {
 function numero(nome: string, padrao: number): number {
   const valor = Number(texto(nome));
   return Number.isFinite(valor) && valor > 0 ? valor : padrao;
+}
+
+/** Como `numero`, mas aceita 0 (desligado). Vazio ou inválido: o padrão. */
+export function numeroOuZero(valor: string, padrao: number): number {
+  if (!valor.trim()) return padrao;
+  const lido = Number(valor);
+  return Number.isFinite(lido) && lido >= 0 ? lido : padrao;
 }
 
 /** Pastas de trabalho: dentro de robos/autos, ou dentro de PASTA_DADOS (o volume, no contêiner). */
@@ -203,7 +220,8 @@ export function lerConfig(): Config {
     certificado,
     intervaloMs: numero("INTERVALO_SEGUNDOS", 30) * 1000,
     pausaEntrePedidosMs: numero("PAUSA_ENTRE_PEDIDOS_SEGUNDOS", 20) * 1000,
-    esperaPessoaMs: numero("ESPERA_PESSOA_MINUTOS", 15) * 60_000,
+    esperaPessoaMs: navegadorHeadless ? 0 : numeroOuZero(texto("ESPERA_PESSOA_MINUTOS"), 15) * 60_000,
+    pausaAposPessoaMs: numeroOuZero(texto("PAUSA_APOS_PESSOA_MINUTOS"), 30) * 60_000,
     geracaoPdfMs: numero("GERACAO_PDF_MINUTOS", 20) * 60_000,
     capaDataJud: !/^(nao|não|0|false)$/i.test(texto("CAPA_DATAJUD")),
     pausaCapaMs: numero("PAUSA_CAPA_SEGUNDOS", 30) * 1000,
