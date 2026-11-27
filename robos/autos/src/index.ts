@@ -17,7 +17,8 @@ import { EsperaEsgotada, FalhaDoConector, SegredoDeJustica, type Ambiente, type 
 import { Fila, PedidoEncerrado, type Pedido } from "./fila.ts";
 import { abrirNavegador, guardarDiagnostico, type Navegador } from "./navegador.ts";
 import { navegadorParadoDemais } from "./navegador-parado.ts";
-import { planoDaReserva } from "./reserva.ts";
+import { planoDaReserva, repasseDoMigrado } from "./reserva.ts";
+import { Descansos } from "./descanso.ts";
 
 /**
  * Robô de autos do ORQESTRAI. Consome a fila proc_autos_pedidos (pelas rotas /api/robos/autos), baixa os
@@ -46,12 +47,17 @@ const TODOS_OS_CONECTORES: Conector[] = [...conectoresEsaj, ...conectoresEproc, 
 /**
  * Os conectores que este robô atende (ROBO_CONECTORES): a chave inteira ("esaj:TJCE") ou só o sistema ("eproc").
  * Serve para dividir o trabalho entre dois robôs, ex.: o eproc no servidor e o e-SAJ no Mac (Web Signer).
+ *
+ * O DCP e o PJe do TJRJ só seguem pelo eproc do TJRJ, no mesmo pedido, quando este robô também atende o eproc do TJRJ.
+ * Sem ele (ex.: o robô do Jus.br com o PJe, que entra pelo mesmo login da PDPJ), o processo migrado volta à fila no
+ * eproc, para o robô que já tem esse login: um advogado não abre dois logins no mesmo eproc.
  */
 function conectoresDoRobo(config: Config): Conector[] {
   if (!config.conectores.length) return TODOS_OS_CONECTORES;
   const escolhidos = TODOS_OS_CONECTORES.filter((conector) => config.conectores.some((item) => conector.chave.toLowerCase() === item || conector.chave.toLowerCase().startsWith(`${item}:`)));
   if (!escolhidos.length) throw new Error(`ROBO_CONECTORES não corresponde a nenhum conector. Existem: ${TODOS_OS_CONECTORES.map((item) => item.chave).join(", ")}.`);
-  return escolhidos;
+  if (escolhidos.some((conector) => conector.chave === "eproc:TJRJ")) return escolhidos;
+  return escolhidos.map((conector) => (conector.chave === "dcp:TJRJ" ? new ConectorDcpTjrj() : conector.chave === "pje:TJRJ" ? new ConectorPjeTjrj() : conector));
 }
 
 let CONECTORES: Conector[] = TODOS_OS_CONECTORES;
@@ -211,9 +217,15 @@ async function principal(): Promise<void> {
         }
       },
       async aguardarPessoa(motivo, instrucao, resolvido) {
+        if (config.esperaPessoaMs <= 0) {
+          // Ninguém vai resolver por aqui (sem janela, ou ESPERA_PESSOA_MINUTOS=0): marca o motivo e larga o pedido na
+          // hora, para a fila seguir. O ORQESTRAI tira o pedido da fila depois de algumas tentativas.
+          registrar(`Precisaria de uma pessoa (${motivo}): ${instrucao} Sem espera configurada: o pedido fica aguardando pessoa e o robô segue.`);
+          if (pedido) await fila.aguardarPessoa(pedido.id, motivo);
+          throw new EsperaEsgotada(`O ${motivo === "segundo_fator" ? "código de verificação" : motivo} precisa de uma pessoa e o robô não espera (ESPERA_PESSOA_MINUTOS=0 ou sem janela).`);
+        }
         registrar(`>>> PRECISA DE UMA PESSOA: ${instrucao}`);
         if (config.telaRemotaUrl) registrar(`Tela do robô: ${config.telaRemotaUrl}`);
-        if (config.navegadorHeadless) registrar("O navegador está sem janela (NAVEGADOR_HEADLESS=sim): ninguém consegue resolver por aqui. O pedido fica aguardando pessoa.");
         process.stdout.write("\u0007");
         if (pedido) await fila.aguardarPessoa(pedido.id, motivo);
         const limite = Date.now() + config.esperaPessoaMs;
@@ -288,6 +300,8 @@ async function principal(): Promise<void> {
   );
   // Desde quando a fila está vazia (null com pedido em curso): conta para fechar o navegador parado.
   let paradoDesde: number | null = null;
+  // Conectores que esperaram uma pessoa em vão: ficam fora da fila deste robô por um tempo (descanso.ts).
+  const descansos = new Descansos();
   // Com a fila de autos vazia, o robô completa a capa dos processos pelo DataJud, um por vez.
   let proximaCapa = 0;
   let capasFeitas = 0;
@@ -314,8 +328,9 @@ async function principal(): Promise<void> {
   while (!encerrando) {
     await conferirTrocaDoCertificado();
     let pedido: Pedido | null = null;
+    const pedir = descansos.ativos(CONECTORES.map((conector) => conector.chave), Date.now());
     try {
-      pedido = await fila.proximo(CONECTORES.map((conector) => conector.chave));
+      if (pedir.length) pedido = await fila.proximo(pedir);
     } catch (erro) {
       registrar(`Não consegui consultar a fila: ${mensagemLimpa(erro)}`);
     }
@@ -342,6 +357,8 @@ async function principal(): Promise<void> {
     const cnj = lerCnj(pedido.cnj);
     const destino = join(config.pastas.downloads, `${pedido.id}.pdf`);
     registrar(`Pedido ${pedido.cnj} (${pedido.tribunal}), tentativa ${pedido.tentativas}.`);
+    // O conector que está trabalhando agora (o do pedido ou o da reserva): é ele que descansa se a pessoa não vier.
+    let emUso = chave;
     try {
       if (!conector || !cnj) throw new FalhaDoConector(`Este robô não atende ${pedido.sistema} do ${pedido.tribunal}.`);
       // Fechado com a fila parada: reabre aqui, dentro do pedido (se não abrir, o pedido volta como erro).
@@ -353,7 +370,8 @@ async function principal(): Promise<void> {
       } catch (erro) {
         // O Jus.br não trouxe os autos (tribunal ainda não integrado, documentos incompletos, instabilidade): segue
         // pelo robô do tribunal no mesmo pedido, se este robô o tiver; se não (robô só do Jus.br), repassa o pedido.
-        const plano = planoDaReserva(pedido, erro, CONECTORES);
+        // Reserva em descanso (esperou a pessoa em vão há pouco): repassa em vez de cair na mesma espera.
+        const plano = planoDaReserva(pedido, erro, CONECTORES.filter((item) => descansos.ativos([item.chave], Date.now()).length));
         if (!plano) throw erro;
         const sistemaDaReserva = plano.reserva.split(":")[0];
         if (plano.tipo === "repassar") {
@@ -362,6 +380,7 @@ async function principal(): Promise<void> {
           repassado = true;
         } else {
           registrar(`${mensagemLimpa(erro)} Seguindo pelo ${plano.reserva}.`);
+          emUso = plano.reserva;
           const doTribunal = await plano.conector.baixar(ambientePara(pedido), { ...pedido, sistema: sistemaDaReserva }, destino);
           resultado = { ...(doTribunal ?? {}), sistema: doTribunal?.sistema ?? sistemaDaReserva };
         }
@@ -378,14 +397,29 @@ async function principal(): Promise<void> {
         if (resultado?.restantes) registrar(`Faltam ${resultado.restantes} documentos de ${pedido.cnj}: voltaram ao fim da fila num pedido novo.`);
       }
     } catch (erro) {
+      const migradoPara = repasseDoMigrado(erro);
       if (erro instanceof PedidoEncerrado) {
         registrar(`Pedido ${pedido.cnj} saiu da fila (cancelado ou encerrado na ficha).`);
+      } else if (migradoPara) {
+        // O PJe ou o DCP disseram que o processo migrou para o eproc, que este robô não atende: o robô do eproc o pega.
+        try {
+          await fila.repassar(pedido.id, migradoPara);
+          registrar(`${mensagemLimpa(erro)} Repassado ao robô do eproc (${migradoPara}).`);
+        } catch (falha) {
+          if (!(falha instanceof PedidoEncerrado)) {
+            registrar(`${pedido.cnj}: ${mensagemLimpa(erro)} O repasse ao ${migradoPara} falhou: ${mensagemLimpa(falha)}`);
+            await fila.erro(pedido.id, mensagemLimpa(erro)).catch(() => undefined);
+          }
+        }
       } else if (erro instanceof SegredoDeJustica) {
         registrar(`${pedido.cnj}: segredo de justiça sem liberação. O pedido espera a decisão de uma pessoa na ficha.`);
         await fila.aguardarPessoa(pedido.id, "segredo_justica").catch(() => undefined);
       } else if (erro instanceof EsperaEsgotada) {
-        registrar(`${erro.message} O pedido continua aguardando pessoa; o robô tenta de novo adiante.`);
-        await dormir(config.intervaloMs);
+        descansos.descansar(emUso, Date.now(), config.pausaAposPessoaMs);
+        const pausa = descansos.minutosRestantes(emUso, Date.now());
+        registrar(
+          `${erro.message} O pedido continua aguardando pessoa${pausa ? `; o robô deixa o ${emUso} de lado por ${pausa} min e segue com os outros pedidos` : "; o robô tenta de novo adiante"}.`
+        );
       } else {
         const mensagem = mensagemLimpa(erro);
         registrar(`${pedido.cnj}: ${mensagem}`);

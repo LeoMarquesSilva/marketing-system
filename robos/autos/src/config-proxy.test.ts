@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lerProxy } from "./config.ts";
+import { lerProxy, numeroOuZero } from "./config.ts";
 
 describe("proxy do navegador (NAVEGADOR_PROXY)", () => {
   it("vazio = conexão direta", () => {
@@ -22,5 +22,20 @@ describe("proxy do navegador (NAVEGADOR_PROXY)", () => {
     expect(() => lerProxy("socks5://warp")).toThrow(/porta/);
     expect(() => lerProxy("socks5://u:s@warp:1080")).toThrow(/socks5/);
     expect(() => lerProxy("ftp://warp:21")).toThrow(/protocolo/);
+  });
+});
+
+describe("números que aceitam 0 (ESPERA_PESSOA_MINUTOS, PAUSA_APOS_PESSOA_MINUTOS)", () => {
+  it("0 desliga", () => {
+    expect(numeroOuZero("0", 15)).toBe(0);
+  });
+  it("vazio ou inválido fica no padrão", () => {
+    expect(numeroOuZero("", 15)).toBe(15);
+    expect(numeroOuZero("  ", 15)).toBe(15);
+    expect(numeroOuZero("abc", 15)).toBe(15);
+    expect(numeroOuZero("-3", 15)).toBe(15);
+  });
+  it("valor informado vale", () => {
+    expect(numeroOuZero("5", 15)).toBe(5);
   });
 });

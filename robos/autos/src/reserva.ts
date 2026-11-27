@@ -1,4 +1,4 @@
-import { FalhaDoConector } from "./conectores/tipos.ts";
+import { FalhaDoConector, MigradoParaEproc } from "./conectores/tipos.ts";
 import type { Pedido } from "./fila.ts";
 
 /**
@@ -15,4 +15,12 @@ export function planoDaReserva<C extends { chave: string }>(pedido: Pick<Pedido,
   if (pedido.sistema !== "jusbr" || !pedido.reserva || !(erro instanceof FalhaDoConector)) return null;
   const conector = conectores.find((item) => item.chave === pedido.reserva);
   return conector ? { tipo: "seguir", reserva: pedido.reserva, conector } : { tipo: "repassar", reserva: pedido.reserva };
+}
+
+/**
+ * O PJe ou o DCP disseram que o processo migrou para o eproc e este robô não atende o eproc do tribunal: o conector
+ * ("eproc:TJRJ") a quem o pedido volta na fila. Nulo para qualquer outro erro.
+ */
+export function repasseDoMigrado(erro: unknown): string | null {
+  return erro instanceof MigradoParaEproc ? erro.reserva : null;
 }

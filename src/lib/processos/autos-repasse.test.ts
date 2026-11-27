@@ -26,7 +26,12 @@ describe("lerRepasse", () => {
     expect(lerRepasse(doJusbr, "eproc:TJRJ")).toHaveProperty("erro");
   });
 
-  it("só repassa pedido ao Jus.br", () => {
+  it("só repassa pedido ao Jus.br, ou o do PJe e do DCP ao eproc (processo migrado)", () => {
     expect(lerRepasse({ sistema: "esaj", tribunal: "TJSP" }, "eproc:TJSP")).toHaveProperty("erro");
+    expect(lerRepasse({ sistema: "eproc", tribunal: "TJRJ" }, "pje:TJRJ")).toHaveProperty("erro");
+    expect(lerRepasse({ sistema: "pje", tribunal: "TJRJ" }, "eproc:TJRJ")).toEqual({ sistema: "eproc", tribunal: "TJRJ" });
+    expect(lerRepasse({ sistema: "dcp", tribunal: "TJRJ" }, "eproc:TJRJ")).toEqual({ sistema: "eproc", tribunal: "TJRJ" });
+    expect(lerRepasse({ sistema: "pje", tribunal: "TJRJ" }, "dcp:TJRJ")).toHaveProperty("erro");
+    expect(lerRepasse({ sistema: "pje", tribunal: "TJRJ" }, "eproc:TJSP")).toHaveProperty("erro");
   });
 });
