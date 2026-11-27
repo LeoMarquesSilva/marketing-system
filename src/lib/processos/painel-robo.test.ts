@@ -171,3 +171,19 @@ describe("painel do robô", () => {
     expect(diaBr(Date.parse("2026-11-24T03:00:00Z"))).toBe("2026-11-24");
   });
 });
+
+describe("fila com o grupo do cliente", () => {
+  it("cada pedido aberto traz o grupo do cliente do processo", () => {
+    const painel = montarPainelDoRobo({
+      processos: [processo("a", { grupoCliente: "Grupo Exemplo" }), processo("b")],
+      pedidos: [pedido({ processo_id: "a", status: "pendente" }), pedido({ processo_id: "b", status: "pendente" })],
+      documentos: [],
+      sugestoes: semSugestoes,
+      agoraMs: AGORA,
+    });
+    expect(painel.abertos.map((item) => [item.processoId, item.grupoCliente])).toEqual([
+      ["a", "Grupo Exemplo"],
+      ["b", null],
+    ]);
+  });
+});

@@ -218,7 +218,7 @@ function GraficoPorDia({ dias }: { dias: RespostaDoPainel["porDia"] }) {
 
 /* ------------------------------------------------------------------- tela */
 
-const COLUNAS_FILA = "lg:grid lg:grid-cols-[3rem_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1.2fr)_8rem_8rem_5.5rem] lg:items-center lg:gap-4";
+const COLUNAS_FILA = "lg:grid lg:grid-cols-[3rem_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_8rem_8rem_5.5rem] lg:items-center lg:gap-4";
 const COLUNAS_PROCESSO = "lg:grid lg:grid-cols-[5rem_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,2fr)_9rem_6rem] lg:items-center lg:gap-4";
 const LIMITE_LISTA = 40;
 
@@ -432,6 +432,7 @@ function Robo() {
             <CabecalhoLista className={`hidden ${COLUNAS_FILA}`}>
               <span>Vez</span>
               <span>Processo</span>
+              <span>Grupo do cliente</span>
               <span>Tribunal</span>
               <span>Situação</span>
               <span>Pedido</span>
@@ -447,6 +448,9 @@ function Robo() {
                     <Link href={`/operacoes-legais/processos/${pedido.processoId}`} className="block truncate font-medium tabular-nums text-[#285f7a] underline-offset-2 hover:underline">
                       {pedido.cnj}
                     </Link>
+                    <span className="block truncate text-foreground" title={pedido.grupoCliente ?? undefined}>
+                      {pedido.grupoCliente ?? <span className="text-muted-foreground">—</span>}
+                    </span>
                     <span className="block truncate text-foreground">
                       {pedido.tribunal} · {sistemaDe(pedido.sistema)}
                     </span>
