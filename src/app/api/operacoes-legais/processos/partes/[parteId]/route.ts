@@ -7,10 +7,10 @@ type Contexto = { params: Promise<{ parteId: string }> };
 
 export async function PUT(request: Request, { params }: Contexto) {
   const { parteId } = await params;
-  return comAcesso(async (ator) => ({ processo: await salvarParte(parteId, await lerJson(request), ator) }));
+  return comAcesso(async (ator) => ({ processo: await salvarParte(parteId, await lerJson(request), ator) }), { item: "parte", id: parteId });
 }
 
 export async function DELETE(_request: Request, { params }: Contexto) {
   const { parteId } = await params;
-  return comAcesso(async (ator) => ({ processo: await excluirParte(parteId, ator) }));
+  return comAcesso(async (ator) => ({ processo: await excluirParte(parteId, ator) }), { item: "parte", id: parteId });
 }

@@ -57,6 +57,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
   { key: "/operacoes-legais/vistagem", label: "Vistagem de Publicações BP", manualOnly: true },
   { key: "/operacoes-legais/processos", label: "Processos e Pessoas (cadastro, autos, Rec. Crédito)", manualOnly: true },
+  { key: "/operacoes-legais/processos/trabalhista", label: "Carteira Trabalhista (só os processos trabalhistas: saneamento, autos e acordos)", manualOnly: true },
   { key: "/operacoes-legais/pauta", label: "Pauta de Audiências (distribuição, troca de titular e backup)", manualOnly: true },
   { key: "/operacoes-legais/planner", label: "Planner de Operações Legais", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
@@ -89,6 +90,8 @@ export const CAFE_CULTURA_KEY = "/cafe-cultura";
 export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
 export const VISTAGEM_KEY = "/operacoes-legais/vistagem";
 export const PROCESSOS_KEY = "/operacoes-legais/processos";
+/** Só a Carteira Trabalhista (carteira, acordos e a ficha dos processos trabalhistas), sem o resto de Processos. */
+export const TRABALHISTA_KEY = "/operacoes-legais/processos/trabalhista";
 /** Cadastro de pessoas: parte do módulo de Processos (mesma liberação). */
 export const PESSOAS_PATH = "/operacoes-legais/pessoas";
 /** Pauta de Audiências: advogados, coordenação e controladoria (liberação própria, fora do "só admin" de Operações Legais). */
@@ -409,6 +412,25 @@ export function hasProcessosAccess(profile: AccessProfile | null | undefined): b
   return Boolean(profile.permissions?.includes(PROCESSOS_KEY));
 }
 
+/** Carteira Trabalhista: quem tem Processos inteiro ou a liberação só da Trabalhista. */
+export function hasTrabalhistaAccess(profile: AccessProfile | null | undefined): boolean {
+  if (hasProcessosAccess(profile)) return true;
+  return Boolean(profile?.permissions?.includes(TRABALHISTA_KEY));
+}
+
+/** Telas que a liberação só da Trabalhista abre; na ficha, as rotas da API conferem se o processo é trabalhista. */
+export function isTelaDaTrabalhista(pathname: string): boolean {
+  if (pathname === TRABALHISTA_KEY || pathname.startsWith(`${TRABALHISTA_KEY}/`)) return true;
+  if (pathname === `${PROCESSOS_KEY}/acordos-trabalhistas`) return true;
+  return /^\/operacoes-legais\/processos\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pathname);
+}
+
+/** Uma tela de Processos e Pessoas: Processos inteiro abre todas; a liberação da Trabalhista, só as dela. */
+export function canSeeProcessosPath(profile: AccessProfile | null | undefined, pathname: string): boolean {
+  if (hasProcessosAccess(profile)) return true;
+  return isTelaDaTrabalhista(pathname) && hasTrabalhistaAccess(profile);
+}
+
 export function isProcessosPath(pathname: string): boolean {
   return [PROCESSOS_KEY, PESSOAS_PATH].some((base) => pathname === base || pathname.startsWith(`${base}/`));
 }
@@ -603,7 +625,7 @@ export function canAccessPath(
   }
 
   if (isProcessosPath(pathname)) {
-    return hasProcessosAccess(profile);
+    return canSeeProcessosPath(profile, pathname);
   }
 
   if (isPautaPath(pathname)) {

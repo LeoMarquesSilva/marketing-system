@@ -10,6 +10,7 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasProcessosAccess,
+  hasTrabalhistaAccess,
   canEditPe27,
   canEditDocumentario,
   canUploadDocumentarioAcervo,
@@ -331,6 +332,23 @@ describe("processos e pessoas", () => {
     }
     expect(canAccessPath(liberado, "/operacoes-legais")).toBe(false);
     expect(canAccessPath(liberado, "/operacoes-legais/pesquisas")).toBe(false);
+  });
+
+  it("a liberação só da Carteira Trabalhista abre a carteira, os acordos e a ficha, e nada mais de Processos", () => {
+    const trabalhista = { role: null, permissions: ["/operacoes-legais/vistagem", "/operacoes-legais/processos/trabalhista"] };
+    const ficha = "/operacoes-legais/processos/0b8f2c1e-1111-4222-8333-944445555666";
+    expect(hasProcessosAccess(trabalhista)).toBe(false);
+    expect(hasTrabalhistaAccess(trabalhista)).toBe(true);
+    expect(hasTrabalhistaAccess(liberado)).toBe(true);
+    expect(hasTrabalhistaAccess({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toBe(false);
+    for (const rota of ["/operacoes-legais/processos/trabalhista", "/operacoes-legais/processos/acordos-trabalhistas", ficha]) {
+      expect(canAccessPath(trabalhista, rota)).toBe(true);
+      expect(canAccessPath(liberado, rota)).toBe(true);
+    }
+    for (const rota of ["/operacoes-legais/processos", "/operacoes-legais/processos/carteira", "/operacoes-legais/processos/saneamento", "/operacoes-legais/processos/robo", "/operacoes-legais/processos/cadastros", "/operacoes-legais/processos/importacao", "/operacoes-legais/pessoas", "/operacoes-legais/pessoas/abc"]) {
+      expect(canAccessPath(trabalhista, rota)).toBe(false);
+    }
+    expect(normalizePermissionsInput(["/operacoes-legais/processos/trabalhista"])).toEqual(["/operacoes-legais/processos/trabalhista"]);
   });
 });
 

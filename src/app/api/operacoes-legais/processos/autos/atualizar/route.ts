@@ -1,5 +1,6 @@
 import { pedirAtualizacoes } from "@/lib/processos/autos-server";
 import { comAcesso, lerJson } from "@/lib/processos/http";
+import { conferirAlvoTrabalhista } from "@/lib/processos/server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -12,6 +13,7 @@ export async function POST(request: Request) {
   return comAcesso(async (ator) => {
     const corpo = await lerJson(request);
     const ids = Array.isArray(corpo.ids) ? corpo.ids.filter((id): id is string => typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id)).slice(0, 500) : [];
+    await conferirAlvoTrabalhista(ator, { processos: ids });
     return { resultado: await pedirAtualizacoes(ids, ator) };
-  });
+  }, "carteira");
 }

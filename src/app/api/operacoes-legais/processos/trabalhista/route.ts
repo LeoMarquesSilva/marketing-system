@@ -6,7 +6,7 @@ export const maxDuration = 60;
 
 /** Carteira Trabalhista: uma linha por processo da área, com saneamento, risco, autos e acordo. */
 export async function GET() {
-  return comAcesso(async () => ({ linhas: await carregarCarteiraTrabalhista() }));
+  return comAcesso(async () => ({ linhas: await carregarCarteiraTrabalhista() }), "carteira");
 }
 
 /** POST { ids?: string[] } — planilha da carteira filtrada na tela (sem ids, toda). */
@@ -23,5 +23,5 @@ export async function POST(request: Request) {
         "Cache-Control": "no-store",
       },
     });
-  });
+  }, "carteira");
 }

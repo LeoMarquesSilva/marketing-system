@@ -6,5 +6,5 @@ export const maxDuration = 60;
 
 /** Painel de acordos trabalhistas: cada processo da área, os advogados do reclamante, o risco e a negociação. */
 export async function GET() {
-  return comAcesso(async (ator) => carregarPainelDeNegociacao(ator));
+  return comAcesso(async (ator) => carregarPainelDeNegociacao(ator), "carteira");
 }

@@ -9,5 +9,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return comAcesso(async (ator) => {
     const corpo = await lerJson(request);
     return { processo: await marcarNaoAplicavel(id, String(corpo.chave ?? ""), corpo.naoSeAplica === true, ator) };
-  });
+  }, { processo: id });
 }

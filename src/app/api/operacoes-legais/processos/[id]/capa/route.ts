@@ -11,5 +11,5 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   return comAcesso(async () => {
     const capa = await completarCapa(id);
     return { capa, autos: await carregarAutos(id) };
-  });
+  }, { processo: id });
 }

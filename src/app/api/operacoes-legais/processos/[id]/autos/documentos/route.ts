@@ -9,5 +9,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return comAcesso(async (ator) => {
     const documento = await registrarDocumento(id, await lerJson(request), { origem: "manual", ator });
     return { documento, autos: await carregarAutos(id) };
-  });
+  }, { processo: id });
 }

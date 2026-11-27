@@ -19,10 +19,10 @@ export async function PUT(request: Request, { params }: Contexto) {
     const corpo = await lerJson(request);
     const dados = corpo.dados && typeof corpo.dados === "object" && !Array.isArray(corpo.dados) ? (corpo.dados as Record<string, unknown>) : {};
     return { trabalhista: await alterarItemTrabalhista(tipoDaRota(tipo), itemId, dados, ator) };
-  });
+  }, { item: tipoDaRota(tipo), id: itemId });
 }
 
 export async function DELETE(_request: Request, { params }: Contexto) {
   const { tipo, itemId } = await params;
-  return comAcesso(async (ator) => ({ trabalhista: await excluirItemTrabalhista(tipoDaRota(tipo), itemId, ator) }));
+  return comAcesso(async (ator) => ({ trabalhista: await excluirItemTrabalhista(tipoDaRota(tipo), itemId, ator) }), { item: tipoDaRota(tipo), id: itemId });
 }

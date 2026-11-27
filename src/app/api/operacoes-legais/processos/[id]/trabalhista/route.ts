@@ -10,7 +10,7 @@ type Contexto = { params: Promise<{ id: string }> };
 /** Afastamentos, pedidos e o cálculo do adicional do processo trabalhista. */
 export async function GET(_request: Request, { params }: Contexto) {
   const { id } = await params;
-  return comAcesso(async () => ({ trabalhista: await carregarTrabalhista(id) }));
+  return comAcesso(async () => ({ trabalhista: await carregarTrabalhista(id) }), { processo: id });
 }
 
 /**
@@ -25,5 +25,5 @@ export async function POST(request: Request, { params }: Contexto) {
     if (!ehTipoItemTrabalhista(corpo.tipo)) throw new ProcessosError("Tipo de item inválido.", 400);
     const dados = corpo.dados && typeof corpo.dados === "object" && !Array.isArray(corpo.dados) ? (corpo.dados as Record<string, unknown>) : {};
     return { trabalhista: await incluirItemTrabalhista(id, corpo.tipo, dados, ator) };
-  });
+  }, { processo: id });
 }

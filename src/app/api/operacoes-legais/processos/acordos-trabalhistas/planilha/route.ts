@@ -19,7 +19,7 @@ export async function POST(request: Request) {
         "Cache-Control": "no-store",
       },
     });
-  });
+  }, "carteira");
 }
 
 /** PUT (multipart, campo "arquivo") — a planilha devolvida pelo cliente, com o valor máximo de cada processo. */
@@ -29,5 +29,5 @@ export async function PUT(request: Request) {
     if (!(arquivo instanceof File)) throw new ProcessosError("Envie a planilha no campo \"arquivo\".", 400);
     if (arquivo.size > 10 * 1024 * 1024) throw new ProcessosError("Planilha grande demais (até 10 MB).", 400);
     return importarPlanilhaDeNegociacao(new Uint8Array(await arquivo.arrayBuffer()), ator);
-  });
+  }, "carteira");
 }

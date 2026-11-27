@@ -84,7 +84,7 @@ import {
   hasIcpAccess,
   hasOperacoesLegaisAccess,
   hasOpsPlannerAccess,
-  hasProcessosAccess,
+  canSeeProcessosPath,
   isProcessosPath,
   hasPautaAccess,
   isPautaPath,
@@ -745,7 +745,7 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
       if (isOpsPlannerPath(href)) return opsPlanner;
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
       if (isPe27Path(href)) return hasPe27Access(profile);
-      if (isProcessosPath(href)) return hasProcessosAccess(profile);
+      if (isProcessosPath(href)) return canSeeProcessosPath(profile, href);
       if (isPautaPath(href)) return hasPautaAccess(profile);
       if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
@@ -784,7 +784,7 @@ function createBaseNavVisibility(profile: NavProfile | null | undefined): (href:
     if (isOpsPlannerPath(href)) return opsPlanner;
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
     if (isPe27Path(href)) return hasPe27Access(profile);
-    if (isProcessosPath(href)) return hasProcessosAccess(profile);
+    if (isProcessosPath(href)) return canSeeProcessosPath(profile, href);
     if (isPautaPath(href)) return hasPautaAccess(profile);
     if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
