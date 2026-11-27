@@ -44,6 +44,8 @@ import { BarraPreenchimento } from "./preenchimento-ui";
 import { formatarDataHora, mensagemDeErro, processosApi } from "./processos-api";
 import { ValorAtualizado, identificacaoDoProcesso } from "./memoria-calculo";
 import { PainelRecCredito } from "./rec-credito-painel";
+import { PainelTrabalhista } from "./trabalhista-painel";
+import { ehTrabalhista } from "@/lib/processos/trabalhista";
 import { PainelSugestoes } from "./sugestoes-painel";
 import { VisualizadorAutos } from "./visualizador-autos";
 
@@ -60,7 +62,7 @@ const SELO_ENVIO: Record<EnvioVios["status"], { tom: TomSelo; rotulo: string }> 
 const ORIGEM: Record<string, string> = { manual: "na tela", vios: "sincronização do VIOS", ia: "sugestão da IA", datajud: "sugestão do DataJud", cnj: "sugestão pelo número CNJ" };
 /** Selo no histórico para o que veio de sugestão aprovada. */
 const SELO_ORIGEM: Record<string, string> = { ia: "IA", datajud: "DataJud", cnj: "CNJ" };
-const CAMPO_DO_HISTORICO: Record<string, string> = { partes: "Partes", saneamento: "Saneamento", autos: "Autos" };
+const CAMPO_DO_HISTORICO: Record<string, string> = { partes: "Partes", saneamento: "Saneamento", autos: "Autos", trabalhista: "Trabalhista", negociacao: "Negociação de acordo" };
 
 const ICONE_CONTATO = { celular: Phone, telefone: Phone, email: Mail, site: Globe } as const;
 
@@ -210,6 +212,7 @@ const ORIGENS = {
   processos: { rotulo: "Processos", href: "/operacoes-legais/processos" },
   saneamento: { rotulo: "Saneamento", href: "/operacoes-legais/processos/saneamento" },
   carteira: { rotulo: "Carteira Rec. Crédito", href: "/operacoes-legais/processos/carteira" },
+  acordos: { rotulo: "Acordos trabalhistas", href: "/operacoes-legais/processos/acordos-trabalhistas" },
 } as const;
 
 /**
@@ -355,7 +358,9 @@ function Ficha({ id, de }: { id: string; de: string | null }) {
   const etiquetas = Array.isArray(valores.etiquetas) ? valores.etiquetas : [];
   const risco = etiquetas.some((etiqueta) => /demanda de risco/i.test(etiqueta));
   const abertos = processo.envios.filter((envio) => ENVIO_ABERTO.has(envio.status));
-  const semDevedor = !partes.some((parte) => parte.devedor);
+  // Processo da área Trabalhista: o cliente é a reclamada; a ficha mostra o saneamento trabalhista no lugar da Rec. Crédito.
+  const trabalhista = ehTrabalhista(valores.area);
+  const semDevedor = !trabalhista && !partes.some((parte) => parte.devedor);
 
   return (
     <div className="space-y-4">
@@ -454,17 +459,38 @@ function Ficha({ id, de }: { id: string; de: string | null }) {
             )}
           </Painel>
 
-          <PainelRecCredito
-            processoId={processo.id}
-            atualizacao={versaoRec}
-            onErro={setErro}
-            onFeito={(mensagem) => {
-              setErro("");
-              setFeito(mensagem);
-              // O lançamento entra no histórico da ficha.
-              void carregar();
-            }}
-          />
+          {trabalhista ? (
+            <>
+              <PainelTrabalhista
+                processo={processo}
+                atualizacao={versaoRec}
+                onErro={setErro}
+                onProcesso={setProcesso}
+                onFeito={(mensagem) => {
+                  setErro("");
+                  setFeito(mensagem);
+                  // O lançamento entra no histórico e no saneamento da ficha.
+                  void carregar();
+                }}
+              />
+              {(["contrato", "decisoes", "risco"] as const).map((grupo) => {
+                const titulo = GRUPOS_CAMPO.find((item) => item.id === grupo)?.rotulo ?? grupo;
+                return <GrupoDeCampos key={grupo} grupo={grupo} titulo={titulo} processo={processo} onEditar={() => setDialogo({ tipo: "campos", grupos: [grupo], titulo })} />;
+              })}
+            </>
+          ) : (
+            <PainelRecCredito
+              processoId={processo.id}
+              atualizacao={versaoRec}
+              onErro={setErro}
+              onFeito={(mensagem) => {
+                setErro("");
+                setFeito(mensagem);
+                // O lançamento entra no histórico da ficha.
+                void carregar();
+              }}
+            />
+          )}
 
           <PainelAcordos
             processoId={processo.id}
@@ -479,7 +505,7 @@ function Ficha({ id, de }: { id: string; de: string | null }) {
             }}
           />
 
-          {(["credito", "valores"] as const).map((grupo) => {
+          {(trabalhista ? (["valores"] as const) : (["credito", "valores"] as const)).map((grupo) => {
             const titulo = GRUPOS_CAMPO.find((item) => item.id === grupo)?.rotulo ?? grupo;
             return <GrupoDeCampos key={grupo} grupo={grupo} titulo={titulo} processo={processo} onEditar={() => setDialogo({ tipo: "campos", grupos: [grupo], titulo })} />;
           })}
@@ -500,7 +526,7 @@ function Ficha({ id, de }: { id: string; de: string | null }) {
             />
           ) : null}
           <Painel>
-            <PainelTopo titulo="Saneamento" descricao="Lista de campos da equipe de Recuperação de Crédito.">
+            <PainelTopo titulo="Saneamento" descricao={trabalhista ? "Lista de campos da equipe trabalhista." : "Lista de campos da equipe de Recuperação de Crédito."}>
               <Button size="sm" variant="outline" disabled={Boolean(ocupado)} onClick={() => void completarCapa()} title="Consulta o DataJud e o número CNJ e sugere a capa que falta: justiça, jurisdição, cidade, vara, distribuição, último andamento">
                 {ocupado === "capa" ? <LoaderCircle className="animate-spin" /> : <Landmark />} Completar capa
               </Button>

@@ -25,6 +25,8 @@ export function falhou(contexto: string, erro: { message: string } | null): neve
 export interface Ator {
   authUserId: string;
   nome: string | null;
+  /** E-mail da sessão (a caixa do Microsoft 365 de quem está logado, para o envio pelo Outlook). */
+  email?: string | null;
 }
 
 /** Processos e Pessoas: admin ou quem tem a liberação de Processos em Usuários. */
@@ -32,7 +34,7 @@ export async function exigirAcessoProcessos(): Promise<Ator> {
   const user = await requireAuthenticatedUser();
   await requireProcessosAccess(user.id);
   const { data } = await db().from("users").select("name").eq("auth_id", user.id).maybeSingle();
-  return { authUserId: user.id, nome: (data?.name as string | null) ?? null };
+  return { authUserId: user.id, nome: (data?.name as string | null) ?? null, email: user.email ?? null };
 }
 
 /** PROCESSOS_VIOS_MODO=real liga a gravação de verdade; qualquer outro valor só simula. */

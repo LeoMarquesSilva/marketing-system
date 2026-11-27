@@ -9,6 +9,8 @@ import { criarParte, salvarParte } from "./partes-server";
 import { atualizarProcesso, detalharProcesso } from "./processos-server";
 import type { ItemSugerido } from "./rec-credito-leitura";
 import { incluirItem } from "./rec-credito-server";
+import type { ItemTrabalhistaSugerido } from "./trabalhista-leitura";
+import { alterarItemTrabalhista, incluirItemTrabalhista } from "./trabalhista-server";
 import { db, falhou, type Ator } from "./server";
 import { aplicarNaParte, entradaDaPessoa } from "./sugestoes";
 import { campoPorChave, textoDoValor } from "./campos";
@@ -56,6 +58,14 @@ async function gravar(sugestao: Sugestao & { processoId: string }, editado: { va
     if (proposto.item === "acordo") await criarAcordo(processoId, dados, ator, dosAutos);
     else if (proposto.item === "pagamento") await registrarPagamentoLido(processoId, dados, ator, dosAutos);
     else await registrarDescumprimentoLido(processoId, dados, ator);
+    return { processo: await detalharProcesso(processoId), gravado: dados };
+  }
+  if (sugestao.tipo === "trabalhista") {
+    const proposto = sugestao.valor as ItemTrabalhistaSugerido;
+    const dados = editado.valor && typeof editado.valor === "object" && !Array.isArray(editado.valor) ? (editado.valor as Record<string, unknown>) : proposto.dados;
+    // Pedido que já está na ficha: a sugestão completa o que faltava nele (valor, resultado de uma decisão).
+    if (proposto.item === "pedido" && proposto.existenteId) await alterarItemTrabalhista("pedido", proposto.existenteId, dados, ator);
+    else await incluirItemTrabalhista(processoId, proposto.item, dados, ator, { documentoId: sugestao.documentoId, pagina: sugestao.pagina });
     return { processo: await detalharProcesso(processoId), gravado: dados };
   }
   const atual = await detalharProcesso(processoId);

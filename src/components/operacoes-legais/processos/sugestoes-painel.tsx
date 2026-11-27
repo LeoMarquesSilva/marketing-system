@@ -5,6 +5,7 @@ import { Check, CheckCheck, ExternalLink, Landmark, LoaderCircle, MapPin, Pencil
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { AutosDoProcesso, Confianca, ContatoSugerido, EnderecoSugerido, PessoaSugerida, Sugestao, ValorDeCampo } from "@/lib/processos/autos-types";
+import { ehTrabalhista } from "@/lib/processos/trabalhista";
 import { GRUPOS_CAMPO, campoPorChave, estaPreenchido, formatarValor, rotuloDoCampo } from "@/lib/processos/campos";
 import { ITENS_SANEAMENTO } from "@/lib/processos/preenchimento";
 import { MEIOS_CITACAO, RESULTADOS_CITACAO, ROTULO_DO_ITEM, SITUACOES_PEDIDO, formatarData, formatarReal } from "@/lib/processos/rec-credito";
@@ -33,6 +34,8 @@ const ROTULO_ITEM = new Map([
   ["acordo_acordo", "Acordo"],
   ["acordo_pagamento", "Acordo: pagamento"],
   ["acordo_descumprimento", "Acordo: descumprimento"],
+  ["trabalhista_afastamento", "Afastamento INSS"],
+  ["trabalhista_pedido", "Pedido trabalhista"],
 ]);
 const ORDEM_ACORDO: Record<string, number> = { acordo: 0, pagamento: 1, descumprimento: 2 };
 const ROTULO_GRUPO = new Map<string, string>(GRUPOS_CAMPO.map((grupo) => [grupo.id, grupo.rotulo]));
@@ -83,7 +86,7 @@ function Proposta({ sugestao, processo }: { sugestao: Sugestao; processo: Proces
       </>
     );
   }
-  if (sugestao.tipo === "rec_credito") {
+  if (sugestao.tipo === "rec_credito" || sugestao.tipo === "trabalhista") {
     // O resumo já diz o item inteiro ("Título: Duplicata nº 10, R$ 1.000,00, vencimento 10/01/2024").
     const [rotulo, ...resto] = sugestao.resumo.split(": ");
     return (
@@ -444,6 +447,22 @@ export function PainelSugestoes({
     { chave: "guias", titulo: "Guias pagas", descricao: "Entram no valor atualizado, a cobrar do devedor.", lista: pegar((item) => item.tipo === "rec_credito" && item.campo === "lancamento" && dadoRec(item).tipo === "guia_paga"), lote: true, nome: "guias pagas", tabela: "guia" as const },
     { chave: "levantamentos", titulo: "Valores levantados", descricao: "Abatidos do valor atualizado.", lista: pegar((item) => item.tipo === "rec_credito" && item.campo === "lancamento"), lote: true, nome: "levantamentos", tabela: "levantamento" as const },
     {
+      chave: "trab_afastamentos",
+      titulo: "Afastamentos pelo INSS",
+      descricao: "Saem do período do adicional no cálculo do risco.",
+      lista: pegar((item) => item.tipo === "trabalhista" && item.campo === "afastamento"),
+      lote: true,
+      nome: "afastamentos",
+    },
+    {
+      chave: "trab_pedidos",
+      titulo: "Pedidos e decisões",
+      descricao: "Pedidos da inicial com o resultado na sentença, no acórdão e no recurso de revista.",
+      lista: pegar((item) => item.tipo === "trabalhista" && item.campo === "pedido"),
+      lote: true,
+      nome: "pedidos",
+    },
+    {
       chave: "acordos",
       titulo: "Acordos",
       descricao: "Acordo, pagamentos das parcelas e descumprimento lidos nos autos. O acordo entra antes dos pagamentos.",
@@ -452,7 +471,7 @@ export function PainelSugestoes({
       lote: true,
       nome: "acordos",
     },
-    { chave: "partes", titulo: "Partes e contatos", lista: pegar((item) => item.tipo !== "campo" && item.tipo !== "rec_credito" && item.tipo !== "acordo"), lote: false },
+    { chave: "partes", titulo: "Partes e contatos", lista: pegar((item) => item.tipo !== "campo" && item.tipo !== "rec_credito" && item.tipo !== "acordo" && item.tipo !== "trabalhista"), lote: false },
     { chave: "cadastro", titulo: "Cadastro", descricao: "Valores, datas e dados do processo lidos nos autos.", lista: pegar(() => true), lote: true, nome: "dados do cadastro" },
   ];
   const grupos = todosOsGrupos.filter((grupo) => grupo.lista.length > 0);
@@ -505,7 +524,7 @@ export function PainelSugestoes({
   };
 
   // Formulário de parte para conferir: a pessoa nova, ou a parte já cadastrada com o dado proposto.
-  const deParte = editando && editando.tipo !== "campo" && editando.tipo !== "rec_credito" && editando.tipo !== "acordo" ? editando : null;
+  const deParte = editando && editando.tipo !== "campo" && editando.tipo !== "rec_credito" && editando.tipo !== "acordo" && editando.tipo !== "trabalhista" ? editando : null;
   const parteEmEdicao = deParte ? (processo.partes.find((item) => item.id === deParte.parteId) ?? null) : null;
   const dadosDaParte: ParteEntrada | null = deParte
     ? deParte.tipo === "parte_nova"
@@ -516,11 +535,24 @@ export function PainelSugestoes({
     : null;
   const itemEmEdicao = editando?.tipo === "rec_credito" ? (editando.valor as ItemSugerido) : null;
 
+  // Na reclamação trabalhista, o "devedor" das regras de partes é o reclamante, e o advogado dele.
+  const trabalhista = ehTrabalhista(processo.valores.area);
+  const rotuloDoItem = (item: string) => {
+    if (trabalhista && item.startsWith("advogado_executado")) return item.endsWith("contatos") ? "Advogado do reclamante: contatos" : "Advogado do reclamante";
+    if (trabalhista && item.startsWith("executado_")) return "Reclamante";
+    return ROTULO_ITEM.get(item) ?? "Cadastro";
+  };
+
   function cartao(sugestao: Sugestao) {
     const aprovando = ocupado === `aprovar:${sugestao.id}`;
     const recusando = ocupado === `recusar:${sugestao.id}`;
     const parteSumiu =
-      sugestao.tipo !== "campo" && sugestao.tipo !== "parte_nova" && sugestao.tipo !== "rec_credito" && sugestao.tipo !== "acordo" && !processo.partes.some((item) => item.id === sugestao.parteId);
+      sugestao.tipo !== "campo" &&
+      sugestao.tipo !== "parte_nova" &&
+      sugestao.tipo !== "rec_credito" &&
+      sugestao.tipo !== "acordo" &&
+      sugestao.tipo !== "trabalhista" &&
+      !processo.partes.some((item) => item.id === sugestao.parteId);
     return (
       <li key={sugestao.id} className="grid gap-3 px-4 py-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="min-w-0 space-y-2">
@@ -530,7 +562,7 @@ export function PainelSugestoes({
                 {FONTE[sugestao.fonte]}
               </Selo>
             ) : null}
-            <Selo tom="ia">{sugestao.tipo === "campo" ? (ROTULO_GRUPO.get(campoPorChave(sugestao.campo ?? "")?.grupo ?? "") ?? "Cadastro") : (ROTULO_ITEM.get(sugestao.item) ?? "Cadastro")}</Selo>
+            <Selo tom="ia">{sugestao.tipo === "campo" ? (ROTULO_GRUPO.get(campoPorChave(sugestao.campo ?? "")?.grupo ?? "") ?? "Cadastro") : rotuloDoItem(sugestao.item)}</Selo>
             {ehRedigida(sugestao) || !sugestao.trecho ? <Selo tom="neutro">{ehRedigida(sugestao) ? "Redigida pela IA a partir dos autos" : "Calculada"}</Selo> : <Selo tom={CONFIANCA[sugestao.confianca].tom}>{CONFIANCA[sugestao.confianca].rotulo}</Selo>}
             {sugestao.trecho && !sugestao.trechoConferido ? (
               <Selo tom="alerta" icone={TriangleAlert}>
@@ -547,7 +579,7 @@ export function PainelSugestoes({
           <Button size="sm" disabled={Boolean(ocupado) || parteSumiu} onClick={() => void decidirNaLista(sugestao, "aprovar")}>
             {aprovando ? <LoaderCircle className="animate-spin" /> : <Check />} Aprovar
           </Button>
-          {sugestao.tipo === "acordo" ? null : (
+          {sugestao.tipo === "acordo" || sugestao.tipo === "trabalhista" ? null : (
             <Button size="sm" variant="outline" disabled={Boolean(ocupado) || parteSumiu} onClick={() => setEditando(sugestao)}>
               <PencilLine /> Editar
             </Button>

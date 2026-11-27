@@ -16,6 +16,10 @@ import { detalharProcesso } from "./processos-server";
 import { comoSugeridos, creditoDosTitulos, sugestoesDaRecCredito, sugestoesDoCreditoPelosTitulos, type ItemSugerido } from "./rec-credito-leitura";
 import { itensDoProcesso, tiposDeTitulo } from "./rec-credito-server";
 import { lerSistema } from "./tribunais";
+import { campoPorChave } from "./campos";
+import { ehTrabalhista } from "./trabalhista";
+import { ESQUEMA_LEITURA_TRABALHISTA, instrucoesDaLeituraTrabalhista, juntarLeiturasTrabalhistas, sugestoesTrabalhistas, type LeituraDosAutosTrabalhista } from "./trabalhista-leitura";
+import { itensTrabalhistasDoProcesso } from "./trabalhista-server";
 import { db, falhou } from "./server";
 import {
   ESQUEMA_LEITURA,
@@ -58,24 +62,28 @@ export interface ResultadoDaLeitura {
   aviso: string | null;
 }
 
-async function lerBloco(apiKey: string, modelo: string, contexto: ContextoDaLeitura, bloco: BlocoDeTexto, total: number): Promise<{ leitura: LeituraDosAutos; custoUS: number }> {
+type LeituraDoBloco = { tipo: "geral"; leitura: LeituraDosAutos } | { tipo: "trabalhista"; leitura: LeituraDosAutosTrabalhista };
+
+async function lerBloco(apiKey: string, modelo: string, contexto: ContextoDaLeitura, bloco: BlocoDeTexto, total: number, trabalhista: boolean): Promise<{ lido: LeituraDoBloco; custoUS: number }> {
   const raciocinio = isOpenAIReasoningModel(modelo);
-  const { object, usage } = await generateObject({
+  const comum = {
     model: createOpenAI({ apiKey })(modelo),
-    schema: ESQUEMA_LEITURA,
-    schemaName: "leitura_dos_autos",
-    system: instrucoesDaLeitura(),
-    prompt: entradaDaLeitura(contexto, bloco, total),
+    prompt: entradaDaLeitura(contexto, bloco, total, trabalhista),
     temperature: raciocinio ? undefined : 0,
     providerOptions: {
       // As instruções são iguais em todas as chamadas: a chave ajuda a OpenAI a usar o cache.
-      openai: { ...(raciocinio ? { reasoningEffort: "low" as const } : {}), promptCacheKey: "processos-autos", store: false },
+      openai: { ...(raciocinio ? { reasoningEffort: "low" as const } : {}), promptCacheKey: trabalhista ? "processos-autos-trabalhista" : "processos-autos", store: false },
     },
-  });
-  return {
-    leitura: object,
-    custoUS: custoDaChamada({ entrada: usage.inputTokens ?? 0, cache: usage.inputTokenDetails?.cacheReadTokens ?? 0, saida: usage.outputTokens ?? 0 }),
   };
+  const custo = (usage: { inputTokens?: number; inputTokenDetails?: { cacheReadTokens?: number }; outputTokens?: number }) =>
+    custoDaChamada({ entrada: usage.inputTokens ?? 0, cache: usage.inputTokenDetails?.cacheReadTokens ?? 0, saida: usage.outputTokens ?? 0 });
+  if (trabalhista) {
+    // Reclamação trabalhista: campos, afastamentos e pedidos próprios; nada de Rec. Crédito.
+    const { object, usage } = await generateObject({ ...comum, schema: ESQUEMA_LEITURA_TRABALHISTA, schemaName: "leitura_dos_autos_trabalhista", system: instrucoesDaLeituraTrabalhista() });
+    return { lido: { tipo: "trabalhista", leitura: object }, custoUS: custo(usage) };
+  }
+  const { object, usage } = await generateObject({ ...comum, schema: ESQUEMA_LEITURA, schemaName: "leitura_dos_autos", system: instrucoesDaLeitura() });
+  return { lido: { tipo: "geral", leitura: object }, custoUS: custo(usage) };
 }
 
 /** Segunda etapa da leitura: com os fatos de todos os pedaços, a IA redige a síntese do processo. */
@@ -85,17 +93,18 @@ export async function redigirSintese(
   contexto: ContextoDaLeitura,
   fatos: FatoDosAutos[],
   total: number,
-  anterior: string | null = null
+  anterior: string | null = null,
+  trabalhista = false
 ): Promise<{ sintese: SinteseDosAutos; custoUS: number }> {
   const raciocinio = isOpenAIReasoningModel(modelo);
   const { object, usage } = await generateObject({
     model: createOpenAI({ apiKey })(modelo),
     schema: ESQUEMA_SINTESE,
     schemaName: "sintese_do_processo",
-    system: instrucoesDaSintese(),
+    system: instrucoesDaSintese(trabalhista),
     prompt: entradaDaSintese(contexto, fatos, total, anterior),
     temperature: raciocinio ? undefined : 0,
-    providerOptions: { openai: { ...(raciocinio ? { reasoningEffort: "medium" as const } : {}), promptCacheKey: "processos-sintese", store: false } },
+    providerOptions: { openai: { ...(raciocinio ? { reasoningEffort: "medium" as const } : {}), promptCacheKey: trabalhista ? "processos-sintese-trabalhista" : "processos-sintese", store: false } },
   });
   return {
     sintese: object,
@@ -226,7 +235,8 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
     const processo = await detalharProcesso(documento.processoId);
     const contexto: ContextoDaLeitura = { valores: processo.valores, partes: processo.partes };
     const modelo = OPENAI_DEFAULT_MODEL;
-    const leituras: LeituraDosAutos[] = [];
+    const trabalhista = ehTrabalhista(processo.valores.area);
+    const leituras: LeituraDoBloco[] = [];
     let custoUS = 0;
     let falhas = 0;
     let paginasLidas = 0;
@@ -237,8 +247,8 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
         const bloco = blocos[proximo];
         proximo += 1;
         try {
-          const resultado = await lerBloco(apiKey as string, modelo, contexto, bloco, texto.total);
-          leituras.push(resultado.leitura);
+          const resultado = await lerBloco(apiKey as string, modelo, contexto, bloco, texto.total, trabalhista);
+          leituras.push(resultado.lido);
           custoUS += resultado.custoUS;
           paginasLidas += bloco.paginas;
         } catch (erro) {
@@ -250,19 +260,45 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
     await Promise.all(Array.from({ length: Math.min(EM_PARALELO, blocos.length) }, trabalhar));
     if (!leituras.length) throw new ProcessosError("A IA não respondeu à leitura dos autos. Tente de novo em alguns minutos.", 502);
 
-    const leitura = juntarLeituras(leituras);
-    const sugestoes = montarSugestoes(leitura, contexto, texto.paginas);
-    // Rec. Crédito: títulos, citações, pedidos e dinheiro, sem repetir o que a ficha já tem.
-    // Os de outros documentos também contam: autos do eproc repetem o histórico do e-SAJ que veio antes.
-    const [lancados, tipos, outros] = await Promise.all([
-      itensDoProcesso(documento.processoId),
-      tiposDeTitulo(),
-      db().from("proc_sugestoes").select("valor").eq("processo_id", documento.processoId).eq("tipo", "rec_credito").neq("documento_id", documentoId),
-    ]);
-    if (outros.error) falhou("carregar as sugestões anteriores", outros.error);
-    const jaSugeridos = (outros.data ?? []).map((linha) => linha.valor as ItemSugerido);
-    const daRecCredito = sugestoesDaRecCredito(leitura.rec_credito, lancados, tipos, criarConferidor(texto.paginas), jaSugeridos);
-    sugestoes.push(...daRecCredito);
+    const sugestoes: SugestaoNova[] = [];
+    let fatosLidos: FatoDosAutos[];
+    let lidoDosAcordos: LeituraDosAutos["acordos"];
+    if (trabalhista) {
+      const leitura = juntarLeiturasTrabalhistas(leituras.flatMap((item) => (item.tipo === "trabalhista" ? [item.leitura] : [])));
+      sugestoes.push(...montarSugestoes(leitura, contexto, texto.paginas));
+      // Afastamentos pelo INSS e pedidos com o resultado em cada decisão, sem repetir a ficha.
+      sugestoes.push(...sugestoesTrabalhistas(leitura.trabalhista, await itensTrabalhistasDoProcesso(documento.processoId), criarConferidor(texto.paginas)));
+      fatosLidos = leitura.fatos;
+      lidoDosAcordos = leitura.acordos;
+    } else {
+      const leitura = juntarLeituras(leituras.flatMap((item) => (item.tipo === "geral" ? [item.leitura] : [])));
+      sugestoes.push(...montarSugestoes(leitura, contexto, texto.paginas));
+      // Rec. Crédito: títulos, citações, pedidos e dinheiro, sem repetir o que a ficha já tem.
+      // Os de outros documentos também contam: autos do eproc repetem o histórico do e-SAJ que veio antes.
+      const [lancados, tipos, outros] = await Promise.all([
+        itensDoProcesso(documento.processoId),
+        tiposDeTitulo(),
+        db().from("proc_sugestoes").select("valor").eq("processo_id", documento.processoId).eq("tipo", "rec_credito").neq("documento_id", documentoId),
+      ]);
+      if (outros.error) falhou("carregar as sugestões anteriores", outros.error);
+      const jaSugeridos = (outros.data ?? []).map((linha) => linha.valor as ItemSugerido);
+      const daRecCredito = sugestoesDaRecCredito(leitura.rec_credito, lancados, tipos, criarConferidor(texto.paginas), jaSugeridos);
+      sugestoes.push(...daRecCredito);
+      // Com os títulos um a um (lidos agora, já lançados ou sugeridos antes), a descrição do "contrato relacionado
+      // ao crédito" só repetiria o mesmo (ex.: "Duplicatas 40123/1 a 40123/5"): não é proposta.
+      const temTitulos =
+        daRecCredito.some((item) => item.campo === "titulo") || lancados.titulos.length > 0 || jaSugeridos.some((item) => item.item === "titulo");
+      if (temTitulos) {
+        // Valor original e origem do débito saem dos títulos (soma dos valores de face e vencimento mais antigo),
+        // não de um número solto de petição ou planilha de cálculo.
+        const PELOS_TITULOS = new Set(["contrato_credito", "valor_original", "data_origem_debito"]);
+        for (let i = sugestoes.length - 1; i >= 0; i -= 1) if (sugestoes[i].tipo === "campo" && PELOS_TITULOS.has(sugestoes[i].campo ?? "")) sugestoes.splice(i, 1);
+        const credito = creditoDosTitulos([...comoSugeridos(lancados), ...jaSugeridos, ...daRecCredito.map((item) => item.valor as ItemSugerido)]);
+        if (credito) sugestoes.push(...sugestoesDoCreditoPelosTitulos(credito, processo.valores));
+      }
+      fatosLidos = leitura.fatos;
+      lidoDosAcordos = leitura.acordos;
+    }
     // Acordos, pagamentos de parcela e descumprimento, em qualquer processo, sem repetir a ficha nem outros documentos.
     const [acordosNaFicha, outrosAcordos] = await Promise.all([
       carregarAcordos(documento.processoId),
@@ -270,25 +306,13 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
     ]);
     if (outrosAcordos.error) falhou("carregar as sugestões anteriores de acordo", outrosAcordos.error);
     sugestoes.push(
-      ...sugestoesDosAcordos(leitura.acordos, acordosNaFicha, criarConferidor(texto.paginas), (outrosAcordos.data ?? []).map((linha) => linha.valor as AcordoSugerido))
+      ...sugestoesDosAcordos(lidoDosAcordos, acordosNaFicha, criarConferidor(texto.paginas), (outrosAcordos.data ?? []).map((linha) => linha.valor as AcordoSugerido))
     );
-    // Com os títulos um a um (lidos agora, já lançados ou sugeridos antes), a descrição do "contrato relacionado
-    // ao crédito" só repetiria o mesmo (ex.: "Duplicatas 40123/1 a 40123/5"): não é proposta.
-    const temTitulos =
-      daRecCredito.some((item) => item.campo === "titulo") || lancados.titulos.length > 0 || jaSugeridos.some((item) => item.item === "titulo");
-    if (temTitulos) {
-      // Valor original e origem do débito saem dos títulos (soma dos valores de face e vencimento mais antigo),
-      // não de um número solto de petição ou planilha de cálculo.
-      const PELOS_TITULOS = new Set(["contrato_credito", "valor_original", "data_origem_debito"]);
-      for (let i = sugestoes.length - 1; i >= 0; i -= 1) if (sugestoes[i].tipo === "campo" && PELOS_TITULOS.has(sugestoes[i].campo ?? "")) sugestoes.splice(i, 1);
-      const credito = creditoDosTitulos([...comoSugeridos(lancados), ...jaSugeridos, ...daRecCredito.map((item) => item.valor as ItemSugerido)]);
-      if (credito) sugestoes.push(...sugestoesDoCreditoPelosTitulos(credito, processo.valores));
-    }
 
     // A síntese do processo, redigida com os fatos de todos os pedaços. Falhar aqui não derruba o resto da leitura.
     const avisos: string[] = [];
     const camposRedigidos = new Set<string>();
-    const fatos = fatosParaSintese(leitura.fatos);
+    const fatos = fatosParaSintese(fatosLidos);
     if (!fatos.length) {
       avisos.push("A IA não encontrou fatos suficientes nos autos para redigir a síntese.");
     } else if (Date.now() - inicio > PRAZO_SINTESE_MS) {
@@ -298,7 +322,7 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
         // Síntese que a IA já escreveu (no cadastro, ou pendente de outro documento): a nova a consolida, para
         // o processo ter uma síntese só.
         const anterior = await sinteseAnterior(documento.processoId, documentoId, processo.valores.sintese);
-        const redigida = await redigirSintese(apiKey, modelo, contexto, fatos, texto.total, anterior);
+        const redigida = await redigirSintese(apiKey, modelo, contexto, fatos, texto.total, anterior, trabalhista);
         custoUS += redigida.custoUS;
         const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
         const daSintese = sugestoesDaSintese(redigida.sintese, contexto, documentoId, hoje, Boolean(anterior));
@@ -335,6 +359,10 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
         console.error("[processos] pedir os autos do eproc:", erro instanceof Error ? erro.message : erro);
         avisos.push(`O processo migrou para o eproc (p. ${migracao.pagina}), mas o pedido dos autos de lá falhou: peça na ficha.`);
       }
+    }
+    // Processo trabalhista não recebe proposta de campo da Rec. Crédito (próximos passos da carteira, crédito).
+    if (trabalhista) {
+      for (let i = sugestoes.length - 1; i >= 0; i -= 1) if (sugestoes[i].tipo === "campo" && campoPorChave(sugestoes[i].campo ?? "")?.tabela === "credito") sugestoes.splice(i, 1);
     }
     const gravadas = await gravarSugestoes(documento.processoId, documentoId, sugestoes);
     // Cada campo tem uma proposta só por processo: a desta leitura (síntese e parecer já consolidados com a
