@@ -7,7 +7,9 @@ import {
   colunasDoItemTrabalhista,
   descreverItemTrabalhista,
   ehTrabalhista,
+  marcoQuinquenal,
   parametrosDoAdicional,
+  prescricaoDoProcesso,
   resultadoFinal,
   salarioMinimoDoMes,
 } from "./trabalhista";
@@ -130,9 +132,42 @@ describe("parametrosDoAdicional", () => {
     expect(parametros).toMatchObject({ inicio: "2018-06-01", percentual: 20, reflexosPercentual: 10 });
   });
 
+  it("sem período da decisão, a prescrição quinquenal corta o início em 5 anos antes da distribuição", () => {
+    const parametros = parametrosDoAdicional({ data_admissao: "2015-03-02", data_termino: "2024-01-31", data_distribuicao: "2024-11-09", laudo_grau: "maximo" });
+    expect(parametros).toMatchObject({ inicio: "2019-11-09", limitadoPelaPrescricao: true });
+    expect(parametros.prescricao).toMatchObject({ marco: "2019-11-09", origemMarco: "ajuizamento", aplicaNoCalculo: true, bienalLimite: "2026-01-31", bienalVencida: false });
+  });
+
+  it("o marco da ficha vale sobre o calculado; prescrição rejeitada não corta", () => {
+    expect(parametrosDoAdicional({ data_admissao: "2015-03-02", data_distribuicao: "2024-11-09", prescricao_quinquenal_marco: "2019-12-01", laudo_grau: "medio" }).inicio).toBe("2019-12-01");
+    const rejeitada = parametrosDoAdicional({ data_admissao: "2015-03-02", data_distribuicao: "2024-11-09", prescricao_quinquenal: "rejeitada", laudo_grau: "medio" });
+    expect(rejeitada).toMatchObject({ inicio: "2015-03-02", limitadoPelaPrescricao: false });
+    expect(rejeitada.prescricao.avisos[0]).toMatch(/rejeitada/);
+  });
+
+  it("admissão depois do marco não muda o início", () => {
+    expect(parametrosDoAdicional({ data_admissao: "2022-01-10", data_distribuicao: "2024-11-09", laudo_grau: "medio" })).toMatchObject({ inicio: "2022-01-10", limitadoPelaPrescricao: false });
+  });
+
   it("diz o que falta", () => {
     expect(parametrosDoAdicional({}).faltando).toHaveLength(3);
     expect(calcularRiscoDoProcesso({}, []).resultado).toBeNull();
+  });
+});
+
+describe("prescrição", () => {
+  it("marco quinquenal: 5 anos antes do ajuizamento, com 29/02", () => {
+    expect(marcoQuinquenal("2026-11-09")).toBe("2021-11-09");
+    expect(marcoQuinquenal("2024-02-29")).toBe("2019-02-28");
+    expect(marcoQuinquenal(null)).toBeNull();
+  });
+
+  it("bienal: ação ajuizada mais de 2 anos depois do fim do contrato (na rescisão indireta, o último dia trabalhado)", () => {
+    const vencida = prescricaoDoProcesso({ data_termino: "2022-03-10", data_distribuicao: "2024-05-02" });
+    expect(vencida).toMatchObject({ bienalLimite: "2024-03-10", bienalVencida: true });
+    expect(vencida.avisos[0]).toMatch(/bienal/);
+    expect(prescricaoDoProcesso({ tipo_termino: "rescisao_indireta", ultimo_dia_trabalhado: "2023-01-15", data_termino: "2023-06-01", data_distribuicao: "2025-03-01" })).toMatchObject({ bienalLimite: "2025-01-15", bienalVencida: true });
+    expect(prescricaoDoProcesso({ tipo_termino: "em_vigor", data_distribuicao: "2025-03-01" }).bienalLimite).toBeNull();
   });
 });
 
@@ -145,7 +180,11 @@ describe("itens", () => {
       valor_pedido: 12345.67,
       resultado_sentenca: "deferido",
       resultado_acordao: null,
+      prescricao: null,
+      prescricao_marco: null,
     });
+    expect(colunasDoItemTrabalhista("pedido", { pedido: "Adicional de insalubridade", prescricao: "acolhida_em_parte", prescricao_marco: "2021-11-09" })).toMatchObject({ prescricao: "acolhida_em_parte", prescricao_marco: "2021-11-09" });
+    expect(() => colunasDoItemTrabalhista("pedido", { pedido: "x", prescricao: "talvez" })).toThrow();
     expect(() => colunasDoItemTrabalhista("pedido", { pedido: "x", resultado_rr: "talvez" })).toThrow();
   });
 
@@ -153,6 +192,9 @@ describe("itens", () => {
     expect(descreverItemTrabalhista("afastamento", { inicio: "2024-01-10", fim: null, especie: "acidentario" })).toBe("Auxílio-doença acidentário (B91): 10/01/2024 a em curso");
     expect(descreverItemTrabalhista("pedido", { pedido: "Horas extras", valor_pedido: null, resultado_sentenca: "indeferido", resultado_acordao: "em_parte" })).toBe(
       "Horas extras — sentença: indeferido; acórdão: deferido em parte"
+    );
+    expect(descreverItemTrabalhista("pedido", { pedido: "Adicional de insalubridade", valor_pedido: null, prescricao: "acolhida", prescricao_marco: "2021-11-09" })).toBe(
+      "Adicional de insalubridade — prescrição: acolhida (antes de 09/11/2021)"
     );
   });
 

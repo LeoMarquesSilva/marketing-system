@@ -50,3 +50,13 @@ export const ESPECIES_AFASTAMENTO: { valor: EspecieAfastamento; rotulo: string }
   { valor: "outro", rotulo: "Outro" },
 ];
 
+
+/** Prescrição (do processo e de cada pedido): se foi arguida e o que a decisão fez com ela. */
+export type SituacaoPrescricao = "nao_alegada" | "alegada" | "acolhida" | "acolhida_em_parte" | "rejeitada";
+export const SITUACOES_PRESCRICAO: { valor: SituacaoPrescricao; rotulo: string }[] = [
+  { valor: "nao_alegada", rotulo: "Não alegada" },
+  { valor: "alegada", rotulo: "Alegada, sem decisão" },
+  { valor: "acolhida", rotulo: "Acolhida" },
+  { valor: "acolhida_em_parte", rotulo: "Acolhida em parte" },
+  { valor: "rejeitada", rotulo: "Rejeitada" },
+];

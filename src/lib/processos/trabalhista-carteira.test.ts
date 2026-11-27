@@ -36,6 +36,8 @@ const pedido = (resultado: Partial<PedidoTrabalhista>): PedidoTrabalhista => ({
   resultadoAcordao: null,
   resultadoRr: null,
   detalhe: null,
+  prescricao: null,
+  prescricaoMarco: null,
   ...resultado,
 });
 

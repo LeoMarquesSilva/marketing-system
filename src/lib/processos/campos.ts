@@ -1,4 +1,4 @@
-import { AGENTES_LAUDO, BASES_ADICIONAL, DECISOES, GRAUS, TIPOS_TERMINO } from "./trabalhista-opcoes";
+import { AGENTES_LAUDO, BASES_ADICIONAL, DECISOES, GRAUS, SITUACOES_PRESCRICAO, TIPOS_TERMINO } from "./trabalhista-opcoes";
 
 /**
  * Catálogo dos campos do cadastro de processos. É a fonte única de: rótulo, tipo, de onde o campo vem
@@ -22,6 +22,7 @@ export const GRUPOS_CAMPO = [
   { id: "credito", rotulo: "Crédito" },
   { id: "contrato", rotulo: "Contrato de trabalho" },
   { id: "decisoes", rotulo: "Laudo e decisões" },
+  { id: "prescricao", rotulo: "Prescrição" },
   { id: "risco", rotulo: "Risco trabalhista" },
   { id: "andamento", rotulo: "Síntese e andamento" },
 ] as const;
@@ -189,6 +190,12 @@ export const CAMPOS: CampoProcesso[] = [
   campo("data_transito", "Trânsito em julgado", "decisoes", "data", "novo", { tabela: "trabalhista" }),
   campo("periodo_calculo_inicio", "Período de cálculo: início", "decisoes", "data", "novo", { tabela: "trabalhista" }),
   campo("periodo_calculo_fim", "Período de cálculo: fim", "decisoes", "data", "novo", { tabela: "trabalhista" }),
+  // Trabalhista: prescrição (quinquenal com o marco, bienal, intercorrente)
+  campo("prescricao_quinquenal", "Prescrição quinquenal", "prescricao", "opcao", "novo", { tabela: "trabalhista", opcoes: SITUACOES_PRESCRICAO }),
+  campo("prescricao_quinquenal_marco", "Marco da prescrição quinquenal", "prescricao", "data", "novo", { tabela: "trabalhista" }),
+  campo("prescricao_bienal", "Prescrição bienal", "prescricao", "opcao", "novo", { tabela: "trabalhista", opcoes: SITUACOES_PRESCRICAO }),
+  campo("prescricao_intercorrente", "Prescrição intercorrente", "prescricao", "opcao", "novo", { tabela: "trabalhista", opcoes: SITUACOES_PRESCRICAO }),
+  campo("prescricao_detalhe", "Prescrição: observações", "prescricao", "texto_longo", "novo", { tabela: "trabalhista" }),
   // Trabalhista: risco
   campo("risco_valor", "Risco: valor", "risco", "valor", "novo", { tabela: "trabalhista" }),
   campo("risco_reflexos_percentual", "Risco: reflexos (%)", "risco", "percentual", "novo", { tabela: "trabalhista" }),

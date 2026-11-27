@@ -21,7 +21,7 @@ export function ehTrabalhista(area: unknown): boolean {
 }
 
 export * from "./trabalhista-opcoes";
-import { ESPECIES_AFASTAMENTO, RESULTADOS_PEDIDO, type EspecieAfastamento, type ResultadoPedido } from "./trabalhista-opcoes";
+import { ESPECIES_AFASTAMENTO, RESULTADOS_PEDIDO, SITUACOES_PRESCRICAO, type EspecieAfastamento, type ResultadoPedido, type SituacaoPrescricao } from "./trabalhista-opcoes";
 
 /** Percentual de reflexos padrão sobre o adicional (13º, férias + 1/3, FGTS…), como a equipe usa. */
 export const REFLEXOS_PADRAO = 15;
@@ -53,6 +53,9 @@ export interface PedidoTrabalhista extends Comum {
   resultadoAcordao: ResultadoPedido | null;
   resultadoRr: ResultadoPedido | null;
   detalhe: string | null;
+  /** Prescrição do pedido (arguida? acolhida?) e o marco: parcelas anteriores estão prescritas. */
+  prescricao: SituacaoPrescricao | null;
+  prescricaoMarco: string | null;
 }
 
 export interface ItensTrabalhistas {
@@ -101,6 +104,8 @@ export function colunasDoItemTrabalhista(tipo: TipoItemTrabalhista, dados: Recor
     resultado_acordao: resultadoOpcional(dados.resultado_acordao, "o resultado no acórdão"),
     resultado_rr: resultadoOpcional(dados.resultado_rr, "o resultado no recurso de revista"),
     detalhe: textoOpcional(dados.detalhe, 1000),
+    prescricao: dados.prescricao === null || dados.prescricao === undefined || dados.prescricao === "" ? null : umaDas(dados.prescricao, SITUACOES_PRESCRICAO, "a prescrição do pedido"),
+    prescricao_marco: dataOpcional(dados.prescricao_marco, "o marco da prescrição do pedido"),
   };
 }
 
@@ -126,6 +131,9 @@ export function descreverItemTrabalhista(tipo: TipoItemTrabalhista, colunas: Rec
   )
     .filter(([, valor]) => valor)
     .map(([decisao, valor]) => `${decisao}: ${rotuloDe(RESULTADOS_PEDIDO, valor).toLowerCase()}`);
+  if (colunas.prescricao) {
+    resultados.push(`prescrição: ${rotuloDe(SITUACOES_PRESCRICAO, colunas.prescricao).toLowerCase()}${typeof colunas.prescricao_marco === "string" ? ` (antes de ${br(colunas.prescricao_marco)})` : ""}`);
+  }
   const valor = typeof colunas.valor_pedido === "number" ? ` (${formatarReais(colunas.valor_pedido)})` : "";
   return `${colunas.pedido}${valor}${resultados.length ? ` — ${resultados.join("; ")}` : ""}`;
 }
@@ -319,6 +327,57 @@ const PERCENTUAL_DO_GRAU: Record<string, number> = { minimo: 10, medio: 20, maxi
 const texto = (valor: unknown) => (typeof valor === "string" && valor ? valor : null);
 const numero = (valor: unknown) => (typeof valor === "number" && Number.isFinite(valor) ? valor : typeof valor === "string" && valor ? Number(valor) : null);
 
+/* ----------------------------------------------------------- prescrição */
+
+/** A mesma data `anos` antes (29/02 vira 28/02 em ano não bissexto). */
+function anosAntes(iso: string, anos: number): string {
+  const ano = Number(iso.slice(0, 4)) - anos;
+  const mes = Number(iso.slice(5, 7));
+  const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  return `${ano}-${iso.slice(5, 7)}-${String(Math.min(Number(iso.slice(8, 10)), ultimoDia)).padStart(2, "0")}`;
+}
+
+/** Marco da prescrição quinquenal (CF, art. 7º, XXIX; Súmula 308 do TST): 5 anos antes do ajuizamento. */
+export function marcoQuinquenal(ajuizamento: string | null): string | null {
+  return ajuizamento && /^\d{4}-\d{2}-\d{2}/.test(ajuizamento) ? anosAntes(ajuizamento.slice(0, 10), 5) : null;
+}
+
+export interface PrescricaoDoProcesso {
+  /** Parcelas anteriores a esta data estão prescritas. */
+  marco: string | null;
+  /** De onde veio o marco: o informado na ficha (lido na decisão) ou 5 anos antes do ajuizamento. */
+  origemMarco: "ficha" | "ajuizamento" | null;
+  /** O marco limita o início do período do adicional (não vale quando a prescrição foi rejeitada). */
+  aplicaNoCalculo: boolean;
+  /** Bienal: até quando dava para ajuizar (fim do contrato + 2 anos, sem projetar o aviso prévio). */
+  bienalLimite: string | null;
+  bienalVencida: boolean;
+  avisos: string[];
+}
+
+/**
+ * A prescrição pelos campos da ficha. Quinquenal: o marco informado ou, sem ele, 5 anos antes da distribuição; vale
+ * no cálculo enquanto não for rejeitada (a reclamada argui na defesa). Bienal: ação ajuizada mais de 2 anos depois do
+ * fim do contrato. Intercorrente: só o que a ficha diz.
+ */
+export function prescricaoDoProcesso(valores: Valores): PrescricaoDoProcesso {
+  const avisos: string[] = [];
+  const informado = texto(valores.prescricao_quinquenal_marco);
+  const calculado = marcoQuinquenal(texto(valores.data_distribuicao));
+  const marco = informado ?? calculado;
+  const situacao = texto(valores.prescricao_quinquenal);
+  const aplicaNoCalculo = Boolean(marco) && situacao !== "rejeitada";
+  if (situacao === "rejeitada") avisos.push("Prescrição quinquenal rejeitada: o cálculo não corta as parcelas antigas.");
+  const fimDoContrato = (valores.tipo_termino === "rescisao_indireta" ? texto(valores.ultimo_dia_trabalhado) : null) ?? texto(valores.data_termino);
+  const bienalLimite = fimDoContrato && valores.tipo_termino !== "em_vigor" ? anosAntes(fimDoContrato, -2) : null;
+  const ajuizamento = texto(valores.data_distribuicao);
+  const bienalVencida = Boolean(bienalLimite && ajuizamento && ajuizamento > bienalLimite);
+  if (bienalVencida) avisos.push(`Ação ajuizada depois de ${br(bienalLimite as string)} (2 anos do fim do contrato): cabe arguir a prescrição bienal (total).`);
+  if (valores.prescricao_bienal === "acolhida") avisos.push("Prescrição bienal acolhida: o processo inteiro está prescrito.");
+  if (valores.prescricao_intercorrente === "acolhida") avisos.push("Prescrição intercorrente acolhida na execução.");
+  return { marco, origemMarco: informado ? "ficha" : calculado ? "ajuizamento" : null, aplicaNoCalculo, bienalLimite, bienalVencida, avisos };
+}
+
 /** De onde o cálculo tira cada dado, para a tela mostrar e a pessoa ajustar o que faltar. */
 export interface ParametrosDoAdicional {
   inicio: string | null;
@@ -329,6 +388,9 @@ export interface ParametrosDoAdicional {
   reflexosPercentual: number;
   /** O que falta para calcular. */
   faltando: string[];
+  prescricao: PrescricaoDoProcesso;
+  /** O início do período foi puxado para o marco da prescrição quinquenal. */
+  limitadoPelaPrescricao: boolean;
 }
 
 /**
@@ -338,7 +400,12 @@ export interface ParametrosDoAdicional {
  */
 export function parametrosDoAdicional(valores: Valores): ParametrosDoAdicional {
   const faltando: string[] = [];
-  const inicio = texto(valores.periodo_calculo_inicio) ?? texto(valores.data_admissao);
+  const prescricao = prescricaoDoProcesso(valores);
+  // Sem o período da decisão: da admissão, cortado no marco da prescrição quinquenal (parcelas anteriores prescritas).
+  const admissao = texto(valores.data_admissao);
+  const daDecisao = texto(valores.periodo_calculo_inicio);
+  const limitadoPelaPrescricao = !daDecisao && Boolean(admissao && prescricao.aplicaNoCalculo && prescricao.marco && prescricao.marco > admissao);
+  const inicio = daDecisao ?? (limitadoPelaPrescricao ? prescricao.marco : admissao);
   const fimDoContrato = (valores.tipo_termino === "rescisao_indireta" ? texto(valores.ultimo_dia_trabalhado) : null) ?? texto(valores.data_termino) ?? texto(valores.ultimo_dia_trabalhado);
   const fim = texto(valores.periodo_calculo_fim) ?? fimDoContrato;
   if (!inicio) faltando.push("início do período (ou data de admissão)");
@@ -351,7 +418,7 @@ export function parametrosDoAdicional(valores: Valores): ParametrosDoAdicional {
   const salario = numero(valores.salario);
   if (base === "salario_contratual" && !(salario && salario > 0)) faltando.push("salário (base contratual)");
   const reflexos = numero(valores.risco_reflexos_percentual);
-  return { inicio, fim, percentual, base, salario, reflexosPercentual: reflexos !== null && reflexos >= 0 ? reflexos : REFLEXOS_PADRAO, faltando };
+  return { inicio, fim, percentual, base, salario, reflexosPercentual: reflexos !== null && reflexos >= 0 ? reflexos : REFLEXOS_PADRAO, faltando, prescricao, limitadoPelaPrescricao };
 }
 
 /** Risco pelo cálculo, ou o motivo de não dar para calcular. */
@@ -447,6 +514,7 @@ export const ITENS_TRABALHISTAS: ItemTrabalhista[] = [
     opcional: (valores) => valores.laudo_agente === "periculosidade" || valores.laudo_agente === "nenhum",
   },
   { chave: "decisao_prevalece", rotulo: "Decisão que prevalece", origem: "novo", ok: preenchido("decisao_prevalece") },
+  { chave: "prescricao_quinquenal", rotulo: "Prescrição quinquenal", origem: "novo", ok: preenchido("prescricao_quinquenal") },
   { chave: "data_transito", rotulo: "Trânsito em julgado", origem: "novo", ok: preenchido("data_transito"), opcional: semTransito },
   { chave: "periodo_calculo", rotulo: "Período de cálculo", origem: "novo", ok: (valores) => estaPreenchido(valores.periodo_calculo_inicio) && estaPreenchido(valores.periodo_calculo_fim) },
   { chave: "risco_total", rotulo: "Risco: valor, reflexos e total", origem: "novo", ok: preenchido("risco_total") },

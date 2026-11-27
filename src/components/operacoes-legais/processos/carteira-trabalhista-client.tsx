@@ -362,6 +362,7 @@ function Carteira() {
                     <td className="whitespace-nowrap px-3 py-2.5 text-xs">
                       {linha.decisao ?? <span className="text-muted-foreground">—</span>}
                       {linha.transito ? <p className="text-muted-foreground">trânsito {br(linha.transito)}</p> : null}
+                      {linha.prescricao ? <p className="max-w-[14rem] whitespace-normal text-muted-foreground">Prescrição: {linha.prescricao}</p> : null}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-xs tabular-nums">
                       {linha.pedidos ? (

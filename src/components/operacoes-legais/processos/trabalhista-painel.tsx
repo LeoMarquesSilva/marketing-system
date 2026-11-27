@@ -9,6 +9,7 @@ import {
   ESPECIES_AFASTAMENTO,
   RESULTADOS_PEDIDO,
   ROTULO_DO_ITEM_TRABALHISTA,
+  SITUACOES_PRESCRICAO,
   formatarReais,
   resultadoFinal,
   type Afastamento,
@@ -45,6 +46,8 @@ function formularioDoPedido(item?: PedidoTrabalhista): Formulario {
         resultado_acordao: item.resultadoAcordao ?? "",
         resultado_rr: item.resultadoRr ?? "",
         detalhe: item.detalhe ?? "",
+        prescricao: item.prescricao ?? "",
+        prescricao_marco: item.prescricaoMarco ?? "",
       }
     : {};
 }
@@ -87,7 +90,7 @@ export function PainelTrabalhista({
   }, [processo.id]);
 
   // Recarrega quando a ficha muda (um campo do contrato ou das decisões entra no cálculo) ou uma sugestão é aprovada.
-  const versaoDosValores = JSON.stringify([processo.valores.periodo_calculo_inicio, processo.valores.periodo_calculo_fim, processo.valores.data_admissao, processo.valores.data_termino, processo.valores.ultimo_dia_trabalhado, processo.valores.tipo_termino, processo.valores.laudo_agente, processo.valores.laudo_grau, processo.valores.adicional_grau, processo.valores.adicional_base, processo.valores.salario, processo.valores.risco_reflexos_percentual]);
+  const versaoDosValores = JSON.stringify([processo.valores.periodo_calculo_inicio, processo.valores.periodo_calculo_fim, processo.valores.data_admissao, processo.valores.data_termino, processo.valores.ultimo_dia_trabalhado, processo.valores.tipo_termino, processo.valores.laudo_agente, processo.valores.laudo_grau, processo.valores.adicional_grau, processo.valores.adicional_base, processo.valores.salario, processo.valores.risco_reflexos_percentual, processo.valores.data_distribuicao, processo.valores.prescricao_quinquenal, processo.valores.prescricao_quinquenal_marco, processo.valores.prescricao_bienal, processo.valores.prescricao_intercorrente]);
   useEffect(() => {
     void carregar();
   }, [carregar, atualizacao, versaoDosValores]);
@@ -186,6 +189,20 @@ export function PainelTrabalhista({
             <dd className="tabular-nums">{parametros.reflexosPercentual}%</dd>
           </div>
         </dl>
+        <div className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-2 text-xs">
+          <p className="font-medium text-[#285f7a]">Prescrição</p>
+          <p className="text-muted-foreground">
+            {parametros.prescricao.marco
+              ? `Quinquenal: parcelas anteriores a ${br(parametros.prescricao.marco)} ${parametros.prescricao.origemMarco === "ficha" ? "(marco da ficha)" : "(5 anos antes da distribuição)"}${parametros.limitadoPelaPrescricao ? ", e o cálculo começa nessa data" : parametros.prescricao.aplicaNoCalculo ? "" : ", sem efeito no cálculo"}.`
+              : "Sem data de distribuição: não dá para fixar o marco da prescrição quinquenal."}
+            {parametros.prescricao.bienalLimite ? ` Bienal: ação até ${br(parametros.prescricao.bienalLimite)}.` : ""}
+          </p>
+          {parametros.prescricao.avisos.map((aviso) => (
+            <p key={aviso} className="text-amber-800">
+              {aviso}
+            </p>
+          ))}
+        </div>
         {parametros.faltando.length ? (
           <Aviso tom="alerta" titulo="Falta para calcular">
             {parametros.faltando.join("; ")}. Preencha em Contrato de trabalho e em Laudo e decisões.
@@ -301,6 +318,7 @@ export function PainelTrabalhista({
                   <th className="px-3 py-2 font-medium">Sentença</th>
                   <th className="px-3 py-2 font-medium">Acórdão</th>
                   <th className="px-3 py-2 font-medium">RR</th>
+                  <th className="px-3 py-2 font-medium">Prescrição</th>
                   <th className="px-3 py-2">
                     <span className="sr-only">Ações</span>
                   </th>
@@ -335,6 +353,16 @@ export function PainelTrabalhista({
                           )}
                         </td>
                       ))}
+                      <td className="px-3 py-2 text-xs">
+                        {item.prescricao ? (
+                          <>
+                            <Selo tom={item.prescricao === "acolhida" || item.prescricao === "acolhida_em_parte" ? "sucesso" : item.prescricao === "rejeitada" ? "perigo" : "neutro"}>{rotulo(SITUACOES_PRESCRICAO, item.prescricao)}</Selo>
+                            {item.prescricaoMarco ? <p className="mt-0.5 text-muted-foreground">antes de {br(item.prescricaoMarco)}</p> : null}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2">
                         <AcoesDoItem onEditar={() => abrir("pedido", item)} onExcluir={() => setEdicao({ tipo: "pedido", id: item.id, excluir: true, descricao: item.pedido })} />
                       </td>
@@ -471,6 +499,12 @@ function FormularioTrabalhista({
           {resultado("resultado_sentenca", "Sentença")}
           {resultado("resultado_acordao", "Acórdão (TRT)")}
           {resultado("resultado_rr", "Recurso de revista (TST)")}
+          <Campo rotulo="Prescrição do pedido">
+            <Seletor valor={f.prescricao ?? ""} onChange={(valor) => onMudar("prescricao", valor)} opcoes={SITUACOES_PRESCRICAO} todos={{ rotulo: "Não informada" }} rotulo="Prescrição do pedido" />
+          </Campo>
+          <Campo rotulo="Prescritas as parcelas anteriores a">
+            <CampoData valor={f.prescricao_marco ?? ""} onChange={(valor) => onMudar("prescricao_marco", valor)} rotulo="Marco da prescrição do pedido" permitirVazio />
+          </Campo>
           <Campo rotulo="Limites da condenação" className="sm:col-span-2" dica="Período, grau, base de cálculo, reflexos deferidos.">
             <Textarea value={f.detalhe ?? ""} onChange={(evento) => onMudar("detalhe", evento.target.value)} rows={2} />
           </Campo>

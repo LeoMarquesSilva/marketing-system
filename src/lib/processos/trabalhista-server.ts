@@ -25,7 +25,7 @@ const ROTULO_HISTORICO = "trabalhista";
 const COMUNS = "id, processo_id, origem, documento_id, pagina, criado_por_nome, created_at";
 const SELECAO: Record<TipoItemTrabalhista, string> = {
   afastamento: `${COMUNS}, inicio, fim, especie, observacao`,
-  pedido: `${COMUNS}, pedido, valor_pedido, resultado_sentenca, resultado_acordao, resultado_rr, detalhe`,
+  pedido: `${COMUNS}, pedido, valor_pedido, resultado_sentenca, resultado_acordao, resultado_rr, detalhe, prescricao, prescricao_marco`,
 };
 
 const texto = (valor: unknown) => (typeof valor === "string" && valor ? valor : null);
@@ -57,6 +57,8 @@ const paraPedido = (linha: Linha): PedidoTrabalhista => ({
   resultadoAcordao: (texto(linha.resultado_acordao) as PedidoTrabalhista["resultadoAcordao"]) ?? null,
   resultadoRr: (texto(linha.resultado_rr) as PedidoTrabalhista["resultadoRr"]) ?? null,
   detalhe: texto(linha.detalhe),
+  prescricao: (texto(linha.prescricao) as PedidoTrabalhista["prescricao"]) ?? null,
+  prescricaoMarco: texto(linha.prescricao_marco),
 });
 
 async function lerTabela(tipo: TipoItemTrabalhista, processos: string[]): Promise<Linha[]> {

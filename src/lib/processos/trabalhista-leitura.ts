@@ -3,7 +3,19 @@ import { ESQUEMA_ACORDOS, instrucoesAcordos, juntarAcordos, leituraAcordosVazia 
 import type { Confianca, SugestaoNova } from "./autos-types";
 import type { ConferidorDeTrecho } from "./rec-credito-leitura";
 import { ESQUEMA_LEITURA } from "./sugestoes";
-import { AGENTES_LAUDO, BASES_ADICIONAL, DECISOES, ESPECIES_AFASTAMENTO, GRAUS, RESULTADOS_PEDIDO, TIPOS_TERMINO, type EspecieAfastamento, type ResultadoPedido } from "./trabalhista-opcoes";
+import {
+  AGENTES_LAUDO,
+  BASES_ADICIONAL,
+  DECISOES,
+  ESPECIES_AFASTAMENTO,
+  GRAUS,
+  RESULTADOS_PEDIDO,
+  SITUACOES_PRESCRICAO,
+  TIPOS_TERMINO,
+  type EspecieAfastamento,
+  type ResultadoPedido,
+  type SituacaoPrescricao,
+} from "./trabalhista-opcoes";
 import { formatarReais, type ItensTrabalhistas } from "./trabalhista";
 
 /**
@@ -29,6 +41,11 @@ export const CAMPOS_DA_LEITURA_TRABALHISTA = [
   "data_transito",
   "periodo_calculo_inicio",
   "periodo_calculo_fim",
+  "prescricao_quinquenal",
+  "prescricao_quinquenal_marco",
+  "prescricao_bienal",
+  "prescricao_intercorrente",
+  "prescricao_detalhe",
   "valor_acao",
   "data_distribuicao",
   "outros_numeros",
@@ -41,6 +58,7 @@ const origem = {
 };
 
 const RESULTADOS = RESULTADOS_PEDIDO.map((item) => item.valor) as [ResultadoPedido, ...ResultadoPedido[]];
+const PRESCRICOES = SITUACOES_PRESCRICAO.map((item) => item.valor) as [SituacaoPrescricao, ...SituacaoPrescricao[]];
 const ESPECIES = ESPECIES_AFASTAMENTO.map((item) => item.valor) as [EspecieAfastamento, ...EspecieAfastamento[]];
 
 export const ESQUEMA_TRABALHISTA = z.object({
@@ -59,6 +77,8 @@ export const ESQUEMA_TRABALHISTA = z.object({
       valor_pedido: z.number().nullable().describe("Só na inicial: valor atribuído ao pedido, em reais."),
       resultado: z.enum(RESULTADOS).nullable().describe("Nas decisões: deferido, em_parte, indeferido ou nao_julgado. Nulo na inicial."),
       detalhe: z.string().nullable().describe("Limites da condenação: período, grau, base de cálculo, reflexos deferidos. Até 300 caracteres."),
+      prescricao: z.enum(PRESCRICOES).nullable().describe("Prescrição deste pedido: alegada (arguida, sem decisão), acolhida, acolhida_em_parte ou rejeitada. Nulo se o trecho não fala de prescrição do pedido."),
+      prescricao_marco: z.string().nullable().describe("Parcelas do pedido anteriores a esta data estão prescritas, AAAA-MM-DD, quando o texto diz."),
       ...origem,
     })
   ),
@@ -121,6 +141,11 @@ export function instrucoesDaLeituraTrabalhista(): string {
     "- data_transito: data do trânsito em julgado (certidão de trânsito). Sem certidão, não devolva.",
     "- periodo_calculo_inicio e periodo_calculo_fim: os limites da condenação no adicional como a decisão fixa (prescrição quinquenal, período reconhecido pelo laudo). Só quando a decisão os declara.",
     "- valor_acao: o valor da causa da inicial. data_distribuicao: data do protocolo da inicial.",
+    `- Prescrição (procure na contestação, na sentença, no acórdão e na execução; situação: ${lista(SITUACOES_PRESCRICAO)}):`,
+    "  - prescricao_quinquenal: a reclamada arguiu a prescrição quinquenal (créditos dos 5 anos anteriores ao ajuizamento) e o que a decisão fez com ela. prescricao_quinquenal_marco: a data antes da qual as parcelas estão prescritas, como a decisão fixa (ex.: \"pronuncio a prescrição das parcelas anteriores a 09/11/2021\").",
+    "  - prescricao_bienal: prescrição total por ação ajuizada mais de 2 anos depois do fim do contrato, se arguida, e o que a decisão fez.",
+    "  - prescricao_intercorrente: prescrição intercorrente na execução (CLT, art. 11-A), se arguida ou declarada.",
+    "  - prescricao_detalhe: uma ou duas frases com o que mais os autos dizem de prescrição (FGTS, Súmula 362 do TST; marco interrompido por ação anterior/protesto; pedido de adicional de insalubridade alcançado pela prescrição).",
     "- outros_numeros: número de OUTRO processo ligado a este, no formato 0000000-00.0000.0.00.0000. Nunca o número deste próprio processo.",
     "",
     "pessoas:",
@@ -142,6 +167,7 @@ export function instrucoesDaLeituraTrabalhista(): string {
     "- Em cada sentença, acórdão do TRT ou decisão do TST em recurso de revista, o resultado de cada pedido julgado: decisao = sentenca, acordao ou rr; resultado = deferido, em_parte, indeferido ou nao_julgado; detalhe com os limites (período, grau, base, reflexos).",
     "- Use para o mesmo pedido o mesmo nome em todas as decisões (ex.: \"Adicional de insalubridade\", \"Horas extras\", \"Danos morais\", \"Multa do art. 477\").",
     "- Intimação, certidão ou despacho que só noticia o acórdão, sem o texto da decisão, não traz resultado: não devolva pedido dela.",
+    "- prescricao e prescricao_marco do pedido: quando a decisão pronuncia (ou rejeita) a prescrição de um pedido específico, inclusive do adicional de insalubridade (ex.: parcelas anteriores ao marco quinquenal). Na contestação, prescrição arguida e ainda não decidida é \"alegada\".",
     "",
     "fatos (matéria-prima da síntese do processo, redigida depois com os fatos de todos os pedaços):",
     "- Os atos que importam: o que a inicial pede e com que fundamento; a contestação; o laudo pericial e a conclusão; audiências e acordos tentados; a sentença e o que decidiu; recursos e o julgamento; trânsito em julgado; liquidação e execução; o que ficou pendente.",
@@ -242,13 +268,25 @@ export function sugestoesTrabalhistas(lido: LeituraTrabalhista, existentes: Iten
   }
 
   // Pedidos: junta inicial e decisões pelo nome.
-  type Acumulado = { pedido: string; valor: number | null; resultados: Partial<Record<"sentenca" | "acordao" | "rr", { resultado: ResultadoPedido; de: Origem }>>; detalhe: string | null; de: Origem };
+  type Acumulado = {
+    pedido: string;
+    valor: number | null;
+    resultados: Partial<Record<"sentenca" | "acordao" | "rr", { resultado: ResultadoPedido; de: Origem }>>;
+    detalhe: string | null;
+    prescricao: { situacao: SituacaoPrescricao; marco: string | null; peso: number } | null;
+    de: Origem;
+  };
   const pedidos = new Map<string, Acumulado>();
   for (const lido1 of lido.pedidos) {
     const nome = limitar(lido1.pedido, 300);
     const chave = nome ? chaveDoPedido(nome) : "";
     if (!nome || chave.length < 3) continue;
-    const atual = pedidos.get(chave) ?? { pedido: nome, valor: null, resultados: {}, detalhe: null, de: lido1 };
+    const atual = pedidos.get(chave) ?? { pedido: nome, valor: null, resultados: {}, detalhe: null, prescricao: null, de: lido1 };
+    // A prescrição do pedido: vale a decisão mais alta lida (a contestação só diz "alegada").
+    if (lido1.prescricao) {
+      const peso = { inicial: 0, sentenca: 1, acordao: 2, rr: 3 }[lido1.decisao] * 10 + (lido1.prescricao === "alegada" ? 0 : 5);
+      if (!atual.prescricao || peso >= atual.prescricao.peso) atual.prescricao = { situacao: lido1.prescricao, marco: data(lido1.prescricao_marco) ?? atual.prescricao?.marco ?? null, peso };
+    }
     if (lido1.decisao === "inicial") {
       if (lido1.valor_pedido !== null && lido1.valor_pedido > 0 && atual.valor === null) atual.valor = Math.round(lido1.valor_pedido * 100) / 100;
       // A inicial é a melhor origem para o nome do pedido.
@@ -273,13 +311,16 @@ export function sugestoesTrabalhistas(lido: LeituraTrabalhista, existentes: Iten
       resultado_acordao: existente?.resultadoAcordao ?? resultado("acordao"),
       resultado_rr: existente?.resultadoRr ?? resultado("rr"),
       detalhe: existente?.detalhe ?? item.detalhe,
+      prescricao: existente?.prescricao ?? item.prescricao?.situacao ?? null,
+      prescricao_marco: existente?.prescricaoMarco ?? item.prescricao?.marco ?? null,
     };
     if (existente) {
       const acrescenta =
         (existente.valorPedido === null && item.valor !== null) ||
         (!existente.resultadoSentenca && resultado("sentenca")) ||
         (!existente.resultadoAcordao && resultado("acordao")) ||
-        (!existente.resultadoRr && resultado("rr"));
+        (!existente.resultadoRr && resultado("rr")) ||
+        (!existente.prescricao && item.prescricao);
       if (!acrescenta) continue;
     }
     const partes = [
@@ -287,10 +328,11 @@ export function sugestoesTrabalhistas(lido: LeituraTrabalhista, existentes: Iten
       dados.resultado_sentenca ? `sentença: ${rotulo(RESULTADOS_PEDIDO, String(dados.resultado_sentenca)).toLowerCase()}` : null,
       dados.resultado_acordao ? `acórdão: ${rotulo(RESULTADOS_PEDIDO, String(dados.resultado_acordao)).toLowerCase()}` : null,
       dados.resultado_rr ? `RR: ${rotulo(RESULTADOS_PEDIDO, String(dados.resultado_rr)).toLowerCase()}` : null,
+      dados.prescricao ? `prescrição: ${rotulo(SITUACOES_PRESCRICAO, String(dados.prescricao)).toLowerCase()}${dados.prescricao_marco ? ` antes de ${br(String(dados.prescricao_marco))}` : ""}` : null,
     ].filter(Boolean);
     // A origem mostrada é a da decisão mais alta lida (é o que a pessoa vai querer conferir); sem decisão, a inicial.
     const de = item.resultados.rr?.de ?? item.resultados.acordao?.de ?? item.resultados.sentenca?.de ?? item.de;
-    const assinatura = [dados.valor_pedido ?? "", dados.resultado_sentenca ?? "", dados.resultado_acordao ?? "", dados.resultado_rr ?? ""].join("|");
+    const assinatura = [dados.valor_pedido ?? "", dados.resultado_sentenca ?? "", dados.resultado_acordao ?? "", dados.resultado_rr ?? "", dados.prescricao ?? "", dados.prescricao_marco ?? ""].join("|");
     sugestoes.push(
       nova(
         { item: "pedido", ...(existente ? { existenteId: existente.id } : {}), dados },

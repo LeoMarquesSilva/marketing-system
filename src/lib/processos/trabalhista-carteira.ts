@@ -1,7 +1,7 @@
 import type { Valores } from "./campos";
 import type { StatusNegociacao } from "./negociacao";
 import { processoEncerrado, type AtualizacaoDosAutos } from "./rec-credito";
-import { AGENTES_LAUDO, DECISOES, GRAUS, TIPOS_TERMINO } from "./trabalhista-opcoes";
+import { AGENTES_LAUDO, DECISOES, GRAUS, SITUACOES_PRESCRICAO, TIPOS_TERMINO } from "./trabalhista-opcoes";
 import { advogadosDoReclamante, emailsDaParte, poloDoReclamante, resultadoFinal, type ItensTrabalhistas } from "./trabalhista";
 import type { Parte, Preenchimento } from "./types";
 
@@ -29,6 +29,8 @@ export interface LinhaCarteiraTrabalhista {
   laudo: string | null;
   decisao: string | null;
   transito: string | null;
+  /** Resumo da prescrição: quinquenal (com o marco) e bienal/intercorrente acolhidas. */
+  prescricao: string | null;
   afastamentos: number;
   pedidos: number;
   /** Pedidos com condenação na última decisão que os julgou (deferido ou em parte). */
@@ -45,6 +47,21 @@ export interface LinhaCarteiraTrabalhista {
 const texto = (valor: unknown) => (typeof valor === "string" && valor ? valor : null);
 const numero = (valor: unknown) => (typeof valor === "number" && Number.isFinite(valor) ? valor : null);
 const rotulo = (lista: readonly { valor: string; rotulo: string }[], valor: unknown) => (typeof valor === "string" && valor ? (lista.find((item) => item.valor === valor)?.rotulo ?? valor) : null);
+
+const brData = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
+/** "Quinquenal acolhida (antes de 09/11/2021) · bienal acolhida": o que a ficha diz da prescrição. */
+export function resumoDaPrescricao(valores: Valores): string | null {
+  const partes: string[] = [];
+  const quinquenal = rotulo(SITUACOES_PRESCRICAO, valores.prescricao_quinquenal);
+  const marco = texto(valores.prescricao_quinquenal_marco);
+  if (quinquenal || marco) partes.push(`Quinquenal${quinquenal ? ` ${quinquenal.toLowerCase()}` : ""}${marco ? ` (antes de ${brData(marco)})` : ""}`);
+  const bienal = rotulo(SITUACOES_PRESCRICAO, valores.prescricao_bienal);
+  if (bienal && valores.prescricao_bienal !== "nao_alegada") partes.push(`bienal ${bienal.toLowerCase()}`);
+  const intercorrente = rotulo(SITUACOES_PRESCRICAO, valores.prescricao_intercorrente);
+  if (intercorrente && valores.prescricao_intercorrente !== "nao_alegada") partes.push(`intercorrente ${intercorrente.toLowerCase()}`);
+  return partes.length ? partes.join(" · ") : null;
+}
 
 export function linhaDaCarteiraTrabalhista(
   id: string,
@@ -78,6 +95,7 @@ export function linhaDaCarteiraTrabalhista(
     laudo: agente ? (grau && valores.laudo_agente !== "periculosidade" && valores.laudo_agente !== "nenhum" ? `${agente}, ${grau.replace(/ \(.*\)$/, "").toLowerCase()}` : agente) : null,
     decisao: rotulo(DECISOES, valores.decisao_prevalece),
     transito: texto(valores.data_transito),
+    prescricao: resumoDaPrescricao(valores),
     afastamentos: itens.afastamentos.length,
     pedidos: itens.pedidos.length,
     pedidosDeferidos: itens.pedidos.filter((pedido) => ["deferido", "em_parte"].includes(resultadoFinal(pedido) ?? "")).length,

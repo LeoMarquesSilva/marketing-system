@@ -24,6 +24,8 @@ function pedidoNaFicha(dados: Partial<PedidoTrabalhista>): PedidoTrabalhista {
     resultadoAcordao: null,
     resultadoRr: null,
     detalhe: null,
+    prescricao: null,
+    prescricaoMarco: null,
     ...dados,
   };
 }
@@ -50,7 +52,7 @@ describe("esquema e instruções", () => {
 
   it("junta os pedaços", () => {
     const a = { ...leituraTrabalhistaVazia(), trabalhista: { afastamentos: [{ inicio: "2024-01-01", fim: null, especie: "auxilio_doenca" as const, ...de }], pedidos: [] } };
-    const b = { ...leituraTrabalhistaVazia(), trabalhista: { afastamentos: [], pedidos: [{ pedido: "Horas extras", decisao: "inicial" as const, valor_pedido: 100, resultado: null, detalhe: null, ...de }] } };
+    const b = { ...leituraTrabalhistaVazia(), trabalhista: { afastamentos: [], pedidos: [{ pedido: "Horas extras", decisao: "inicial" as const, valor_pedido: 100, resultado: null, detalhe: null, prescricao: null, prescricao_marco: null, ...de }] } };
     const junto = juntarLeiturasTrabalhistas([a, b]);
     expect(junto.trabalhista.afastamentos).toHaveLength(1);
     expect(junto.trabalhista.pedidos).toHaveLength(1);
@@ -79,10 +81,10 @@ describe("sugestoesTrabalhistas", () => {
     const sugestoes = sugestoesTrabalhistas(
       lido({
         pedidos: [
-          { pedido: "Adicional de Insalubridade", decisao: "inicial", valor_pedido: 20000, resultado: null, detalhe: null, ...de },
-          { pedido: "adicional de insalubridade.", decisao: "sentenca", valor_pedido: null, resultado: "deferido", detalhe: "grau máximo, base salário-mínimo", ...de },
-          { pedido: "Adicional de insalubridade", decisao: "acordao", valor_pedido: null, resultado: "em_parte", detalhe: "grau médio", ...de, pagina: 90 },
-          { pedido: "Danos morais", decisao: "inicial", valor_pedido: 10000, resultado: null, detalhe: null, ...de },
+          { pedido: "Adicional de Insalubridade", decisao: "inicial", valor_pedido: 20000, resultado: null, detalhe: null, prescricao: null, prescricao_marco: null, ...de },
+          { pedido: "adicional de insalubridade.", decisao: "sentenca", valor_pedido: null, resultado: "deferido", detalhe: "grau máximo, base salário-mínimo", prescricao: "acolhida", prescricao_marco: "09/11/2021", ...de },
+          { pedido: "Adicional de insalubridade", decisao: "acordao", valor_pedido: null, resultado: "em_parte", detalhe: "grau médio", prescricao: null, prescricao_marco: null, ...de, pagina: 90 },
+          { pedido: "Danos morais", decisao: "inicial", valor_pedido: 10000, resultado: null, detalhe: null, prescricao: "alegada", prescricao_marco: null, ...de },
         ],
       }),
       vazio,
@@ -92,7 +94,16 @@ describe("sugestoesTrabalhistas", () => {
     const insalubridade = sugestoes.find((item) => item.resumo.toLowerCase().includes("insalubridade"));
     expect(insalubridade?.valor).toEqual({
       item: "pedido",
-      dados: { pedido: "Adicional de Insalubridade", valor_pedido: 20000, resultado_sentenca: "deferido", resultado_acordao: "em_parte", resultado_rr: null, detalhe: "grau médio" },
+      dados: {
+        pedido: "Adicional de Insalubridade",
+        valor_pedido: 20000,
+        resultado_sentenca: "deferido",
+        resultado_acordao: "em_parte",
+        resultado_rr: null,
+        detalhe: "grau médio",
+        prescricao: "acolhida",
+        prescricao_marco: "2021-11-09",
+      },
     });
     // A origem mostrada é a da decisão mais alta lida.
     expect(insalubridade?.pagina).toBe(90);
@@ -100,9 +111,9 @@ describe("sugestoesTrabalhistas", () => {
 
   it("pedido já na ficha só volta para completar o que falta", () => {
     const naFicha: ItensTrabalhistas = { afastamentos: [], pedidos: [pedidoNaFicha({ valorPedido: 20000, resultadoSentenca: "deferido" })] };
-    const igual = sugestoesTrabalhistas(lido({ pedidos: [{ pedido: "Adicional de insalubridade", decisao: "sentenca", valor_pedido: null, resultado: "deferido", detalhe: null, ...de }] }), naFicha, conferidor);
+    const igual = sugestoesTrabalhistas(lido({ pedidos: [{ pedido: "Adicional de insalubridade", decisao: "sentenca", valor_pedido: null, resultado: "deferido", detalhe: null, prescricao: null, prescricao_marco: null, ...de }] }), naFicha, conferidor);
     expect(igual).toHaveLength(0);
-    const completa = sugestoesTrabalhistas(lido({ pedidos: [{ pedido: "Adicional de insalubridade", decisao: "acordao", valor_pedido: null, resultado: "indeferido", detalhe: null, ...de }] }), naFicha, conferidor);
+    const completa = sugestoesTrabalhistas(lido({ pedidos: [{ pedido: "Adicional de insalubridade", decisao: "acordao", valor_pedido: null, resultado: "indeferido", detalhe: null, prescricao: null, prescricao_marco: null, ...de }] }), naFicha, conferidor);
     expect(completa).toHaveLength(1);
     expect(completa[0].valor).toMatchObject({ item: "pedido", existenteId: "ped-1", dados: { valor_pedido: 20000, resultado_sentenca: "deferido", resultado_acordao: "indeferido" } });
     expect(completa[0].resumo.startsWith("Completar pedido")).toBe(true);

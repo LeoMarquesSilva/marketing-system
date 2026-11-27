@@ -473,7 +473,7 @@ function Ficha({ id, de }: { id: string; de: string | null }) {
                   void carregar();
                 }}
               />
-              {(["contrato", "decisoes", "risco"] as const).map((grupo) => {
+              {(["contrato", "decisoes", "prescricao", "risco"] as const).map((grupo) => {
                 const titulo = GRUPOS_CAMPO.find((item) => item.id === grupo)?.rotulo ?? grupo;
                 return <GrupoDeCampos key={grupo} grupo={grupo} titulo={titulo} processo={processo} onEditar={() => setDialogo({ tipo: "campos", grupos: [grupo], titulo })} />;
               })}

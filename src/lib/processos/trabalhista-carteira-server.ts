@@ -62,6 +62,7 @@ const COLUNAS: { rotulo: string; largura: number; real?: boolean; percentual?: b
   { rotulo: "Laudo", largura: 22, valor: (linha) => linha.laudo },
   { rotulo: "Decisão que prevalece", largura: 18, valor: (linha) => linha.decisao },
   { rotulo: "Trânsito", largura: 12, valor: (linha) => data(linha.transito) },
+  { rotulo: "Prescrição", largura: 30, valor: (linha) => linha.prescricao },
   { rotulo: "Pedidos", largura: 9, valor: (linha) => linha.pedidos || null },
   { rotulo: "Pedidos deferidos", largura: 10, valor: (linha) => linha.pedidosDeferidos || null },
   { rotulo: "Risco: valor", largura: 15, real: true, valor: (linha) => linha.riscoValor },
