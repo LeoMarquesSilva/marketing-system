@@ -9,6 +9,7 @@ import { audienciaNasIntimacoes, type ComunicacaoDjen } from "./djen";
 import { chaveDoLink, horaLocalParaIso } from "./pje";
 import { AudienciasError, carregarAudiencias, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico } from "./server";
 import { substituirJusbrPeloPje } from "./jusbr-server";
+import { reservasParaOJusbr } from "./reserva";
 import { sincronizarReservas, type ResumoReservas } from "./reserva-server";
 import { deTarefaDoSama, lerCsvDoVios, type AudienciaNoVios, type TarefaDoSama } from "./vios-csv";
 
@@ -430,6 +431,28 @@ export async function conferirComViosSeDevido(agora = new Date(), opcoes: { semN
   return devida ? conferirComVios(ORIGEM_AUTOMATICA, agora) : "em dia";
 }
 
+/** Sem leitura do PJe há mais que isso, o tribunal conta como "o robô não lê". Das 16h45 às 6h45 são 14 horas. */
+const SEM_LEITURA_MS = 16 * 60 * 60 * 1000;
+
+/** "A confirmar" dos tribunais que o robô não leu nas últimas 16 horas, para ele conferir no Jus.br. */
+async function aConfirmarParaOJusbr(agora: Date): Promise<TarefaSoNoVios[]> {
+  const [lidas, reservas] = await Promise.all([
+    db()
+      .from("aud_leituras")
+      .select("tribunal")
+      .eq("fonte", "pje")
+      .is("erro", null)
+      .not("terminada_em", "is", null)
+      .gte("iniciada_em", new Date(agora.getTime() - SEM_LEITURA_MS).toISOString()),
+    db().from("aud_audiencias").select(COLUNAS_AUDIENCIA).eq("origem", "vios").eq("situacao", "designada").gte("inicio", agora.toISOString()),
+  ]);
+  if (lidas.error) falhou("ler as últimas leituras do PJe", lidas.error);
+  if (reservas.error) falhou("ler as audiências a confirmar", reservas.error);
+  const tribunaisLidos = new Set(((lidas.data ?? []) as { tribunal: string | null }[]).map((l) => l.tribunal ?? ""));
+  const auds = ((reservas.data ?? []) as Parameters<typeof paraAudiencia>[0][]).map(paraAudiencia);
+  return reservasParaOJusbr(auds, tribunaisLidos, agora).map((c) => ({ ...c, ciProcesso: null, responsaveis: [] }));
+}
+
 /**
  * As audiências "só no VIOS" da última conferência automática, para o robô procurar no Jus.br: o processo não está na
  * Minha Pauta do certificado, e a consulta do processo no PJe pede captcha. `tribunal` ("TRT15") filtra pelo CNJ.
@@ -457,5 +480,10 @@ export async function soNoViosParaORobo(tribunal?: string | null): Promise<{ con
     .limit(500);
   if (erroJusbr) falhou("ler as audiências do Jus.br", erroJusbr);
   const acompanhar = [...new Set(((doJusbr ?? []) as { cnj: string }[]).map((l) => l.cnj))].filter((cnj) => !tribunal || tribunalDoCnj(cnj) === tribunal);
-  return { conferidaEm: (data?.iniciada_em as string | undefined) ?? null, audiencias: lista, acompanhar };
+  // Mais as "a confirmar" dos tribunais que o robô não lê (TRT-5; TRT-17 quando nega o login), sem repetir processo e dia.
+  const jaNaLista = new Set(lista.map((t) => `${t.cnj}|${local(t.inicio).dia}`));
+  const extras = (await aConfirmarParaOJusbr(new Date())).filter(
+    (t) => (!tribunal || tribunalDoCnj(t.cnj) === tribunal) && !jaNaLista.has(`${t.cnj}|${local(t.inicio).dia}`)
+  );
+  return { conferidaEm: (data?.iniciada_em as string | undefined) ?? null, audiencias: [...lista, ...extras], acompanhar };
 }

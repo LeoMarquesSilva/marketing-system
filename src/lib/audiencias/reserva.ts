@@ -203,3 +203,28 @@ export function motivoParaSair(
   if (a.chave.startsWith("vistagem:")) return ctx.agendamentos.has(a.chave.slice("vistagem:".length)) ? null : "o agendamento saiu da Vistagem";
   return null;
 }
+
+/** O que vai ao Jus.br: o robô consulta o processo e lê os movimentos de audiência. */
+export interface ConsultaJusbr {
+  cnj: string;
+  inicio: string;
+  tarefaCi: string;
+  tarefa: string;
+}
+
+/**
+ * Audiências "a confirmar" de tribunal que o robô não consegue ler: sem leitura recente do PJe. Em 27/11/2026, o TRT-5
+ * barrava o servidor e o WARP, e o TRT-17 às vezes negava o login. Elas vão ao Jus.br, que é nacional e confirma a data;
+ * pelos movimentos do processo ele também pega remarcação e cancelamento. Sessão e perícia ficam de fora, porque os
+ * movimentos que o robô lê no Jus.br são de audiência.
+ */
+export function reservasParaOJusbr(
+  audiencias: Pick<Audiencia, "cnj" | "inicio" | "tipo" | "tipoDescricao" | "situacao" | "origem" | "viosTarefaCi">[],
+  tribunaisLidos: Set<string>,
+  agora: Date
+): ConsultaJusbr[] {
+  return audiencias
+    .filter((a) => a.origem === "vios" && a.situacao === "designada" && a.tipo !== "sessao" && a.tipo !== "pericia")
+    .filter((a) => Date.parse(a.inicio) >= agora.getTime() && !tribunaisLidos.has(tribunalDoCnj(a.cnj) ?? ""))
+    .map((a) => ({ cnj: a.cnj, inicio: a.inicio, tarefaCi: a.viosTarefaCi ?? "", tarefa: a.tipoDescricao || a.tipo }));
+}

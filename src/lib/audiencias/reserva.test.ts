@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { alertasDaAudiencia, conflitoDaPessoa, geraAvisos, ocupaAgenda } from "./agenda";
 import { lidoAtePorTribunal } from "./conferencia-vios";
-import { itemDaVistagem, itemDoVios, juntarReservas, motivoParaSair, noHorizonte, reservasComTribunal, reservasDoVios, type AgendamentoDeAudiencia } from "./reserva";
+import { itemDaVistagem, itemDoVios, juntarReservas, motivoParaSair, noHorizonte, reservasComTribunal, reservasDoVios, reservasParaOJusbr, type AgendamentoDeAudiencia } from "./reserva";
 import type { Audiencia } from "./tipos";
 import { lerCsvDoVios, type AudienciaNoVios } from "./vios-csv";
 
@@ -223,5 +223,25 @@ describe("sessão e perícia na agenda e nos avisos", () => {
     const tipos = alertasDaAudiencia(sessao, { pessoas: new Map(), todas: [sessao] }).map((x) => x.tipo);
     expect(tipos).not.toContain("a_completar");
     expect(tipos).not.toContain("cedo");
+  });
+});
+
+describe("Jus.br para o tribunal que o robô não lê", () => {
+  it("vai só a audiência a confirmar, futura, de tribunal sem leitura recente; sessão, perícia e o que já passou não", () => {
+    const TRT5 = "0001235-23.2026.5.05.0001";
+    const consultas = reservasParaOJusbr(
+      [
+        aud({ origem: "vios", cnj: TRT5, tipo: "una", tipoDescricao: "AUDIÊNCIA UNA/INICIAL", viosTarefaCi: "939255" }),
+        aud({ origem: "vios", cnj: TRT5, tipo: "pericia" }),
+        aud({ origem: "vios", cnj: TRT5, tipo: "sessao" }),
+        aud({ origem: "vios", cnj: TRT5, inicio: "2026-11-20T12:00:00.000Z" }),
+        aud({ origem: "vios", cnj: TRT5, situacao: "cancelada" }),
+        aud({ origem: "vios", cnj: CNJ }),
+        aud({ origem: "pje", cnj: TRT5 }),
+      ],
+      new Set(["TRT15", "TRT2"]),
+      AGORA
+    );
+    expect(consultas).toEqual([{ cnj: TRT5, inicio: "2026-12-10T12:00:00.000Z", tarefaCi: "939255", tarefa: "AUDIÊNCIA UNA/INICIAL" }]);
   });
 });
