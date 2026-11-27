@@ -102,6 +102,8 @@ export async function resolverCaixa(endereco: string, token: string): Promise<st
 export async function enviarEmailMicrosoft(params: {
   /** Um ou vários destinatários (todos em "Para"). */
   para: string | string[];
+  /** Em cópia (Cc). */
+  cc?: string[];
   assunto: string;
   html: string;
   /** Para onde vão as respostas (ex.: a pessoa do RH que enviou). Sem ele, voltam para o remetente. */
@@ -125,6 +127,7 @@ export async function enviarEmailMicrosoft(params: {
         subject: params.assunto,
         body: { contentType: "HTML", content: params.html },
         toRecipients: (Array.isArray(params.para) ? params.para : [params.para]).map((address) => ({ emailAddress: { address } })),
+        ...(params.cc?.length ? { ccRecipients: params.cc.map((address) => ({ emailAddress: { address } })) } : {}),
         ...(responderPara ? { replyTo: [{ emailAddress: { address: responderPara } }] } : {}),
       },
       saveToSentItems: params.salvarEmEnviados ?? false,
@@ -137,5 +140,126 @@ export async function enviarEmailMicrosoft(params: {
     const detalhe = corpo?.error ? `${corpo.error.code}: ${corpo.error.message}` : String(resposta.status);
     if (resposta.status === 401) tokenCache = null;
     throw new MicrosoftMailError(`O Microsoft 365 recusou o envio (${detalhe}).`, resposta.status, corpo?.error?.code);
+  }
+}
+
+/* ------------------------------------------------------------------ leitura da caixa */
+
+/** Uma mensagem da caixa, em texto simples (o que a conversa de uma negociação mostra). */
+export interface MensagemDaCaixa {
+  id: string;
+  conversaId: string;
+  assunto: string;
+  de: string | null;
+  para: string[];
+  cc: string[];
+  /** Quando saiu (enviada) ou chegou (recebida). */
+  em: string;
+  texto: string;
+}
+
+interface MensagemGraph {
+  id: string;
+  conversationId?: string;
+  subject?: string;
+  from?: { emailAddress?: { address?: string } };
+  toRecipients?: { emailAddress?: { address?: string } }[];
+  ccRecipients?: { emailAddress?: { address?: string } }[];
+  sentDateTime?: string;
+  receivedDateTime?: string;
+  isDraft?: boolean;
+  body?: { content?: string };
+}
+
+const enderecos = (lista: MensagemGraph["toRecipients"]) =>
+  (lista ?? []).map((item) => item.emailAddress?.address?.trim().toLowerCase() ?? "").filter(Boolean);
+
+function paraMensagem(item: MensagemGraph): MensagemDaCaixa {
+  return {
+    id: item.id,
+    conversaId: item.conversationId ?? "",
+    assunto: item.subject ?? "",
+    de: item.from?.emailAddress?.address?.trim().toLowerCase() ?? null,
+    para: enderecos(item.toRecipients),
+    cc: enderecos(item.ccRecipients),
+    em: item.receivedDateTime ?? item.sentDateTime ?? new Date().toISOString(),
+    texto: (item.body?.content ?? "").replace(/\r\n/g, "\n").trim(),
+  };
+}
+
+const CAMPOS_DA_MENSAGEM = "id,conversationId,subject,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,isDraft,body";
+
+async function lerDaCaixa(caminho: string): Promise<MensagemGraph[]> {
+  const token = await tokenGraphReaproveitado();
+  const resposta = await fetch(`${GRAPH}${caminho}`, {
+    // Corpo em texto simples: a conversa mostra o que foi escrito, sem o HTML do Outlook.
+    headers: { Authorization: `Bearer ${token}`, Prefer: 'outlook.body-content-type="text"' },
+    cache: "no-store",
+  });
+  if (!resposta.ok) {
+    const corpo = (await resposta.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
+    if (resposta.status === 401) tokenCache = null;
+    throw new MicrosoftMailError(
+      `O Microsoft 365 recusou a leitura da caixa (${corpo?.error ? `${corpo.error.code}: ${corpo.error.message}` : resposta.status}).`,
+      resposta.status,
+      corpo?.error?.code
+    );
+  }
+  return ((await resposta.json()) as { value: MensagemGraph[] }).value ?? [];
+}
+
+/**
+ * Mensagens dos Itens Enviados da caixa num intervalo (para achar a conversa de um e-mail mandado pelo sendMail,
+ * que não devolve o id). Precisa da permissão de aplicativo Mail.Read.
+ */
+export async function enviadosDaCaixa(caixa: string, desde: Date, ate: Date): Promise<MensagemDaCaixa[]> {
+  const token = await tokenGraphReaproveitado();
+  const upn = await resolverCaixa(caixa, token);
+  const filtro = `sentDateTime ge ${desde.toISOString()} and sentDateTime le ${ate.toISOString()}`;
+  const itens = await lerDaCaixa(
+    `/users/${encodeURIComponent(upn)}/mailFolders/sentitems/messages?$filter=${encodeURIComponent(filtro)}&$select=${CAMPOS_DA_MENSAGEM}&$top=50`
+  );
+  return itens.filter((item) => !item.isDraft).map(paraMensagem);
+}
+
+/** Todas as mensagens de uma conversa na caixa (enviadas e recebidas, em qualquer pasta), da mais antiga à mais nova. */
+export async function mensagensDaConversa(caixa: string, conversaId: string): Promise<MensagemDaCaixa[]> {
+  const token = await tokenGraphReaproveitado();
+  const upn = await resolverCaixa(caixa, token);
+  const filtro = `conversationId eq '${conversaId.replace(/'/g, "''")}'`;
+  const itens = await lerDaCaixa(`/users/${encodeURIComponent(upn)}/messages?$filter=${encodeURIComponent(filtro)}&$select=${CAMPOS_DA_MENSAGEM}&$top=100`);
+  return itens
+    .filter((item) => !item.isDraft)
+    .map(paraMensagem)
+    .sort((a, b) => a.em.localeCompare(b.em));
+}
+
+/**
+ * Responde uma mensagem da conversa pela caixa (fica na mesma conversa do Outlook, com o histórico citado abaixo do
+ * texto). Os destinatários informados substituem os da mensagem original.
+ */
+export async function responderMensagem(params: { caixa: string; mensagemId: string; para: string[]; cc?: string[]; html: string }): Promise<void> {
+  const token = await tokenGraphReaproveitado();
+  const upn = await resolverCaixa(params.caixa, token);
+  const resposta = await fetch(`${GRAPH}/users/${encodeURIComponent(upn)}/messages/${encodeURIComponent(params.mensagemId)}/reply`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: {
+        toRecipients: params.para.map((address) => ({ emailAddress: { address } })),
+        ccRecipients: (params.cc ?? []).map((address) => ({ emailAddress: { address } })),
+      },
+      comment: params.html,
+    }),
+    cache: "no-store",
+  });
+  if (resposta.status !== 202) {
+    const corpo = (await resposta.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
+    if (resposta.status === 401) tokenCache = null;
+    throw new MicrosoftMailError(
+      `O Microsoft 365 recusou a resposta (${corpo?.error ? `${corpo.error.code}: ${corpo.error.message}` : resposta.status}).`,
+      resposta.status,
+      corpo?.error?.code
+    );
   }
 }
