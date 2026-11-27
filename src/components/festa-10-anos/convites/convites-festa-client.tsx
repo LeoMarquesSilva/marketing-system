@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Briefcase,
+  Building2,
   CalendarClock,
   Check,
   CheckCheck,
@@ -9,6 +11,8 @@ import {
   Download,
   ExternalLink,
   Eye,
+  Handshake,
+  Heart,
   LoaderCircle,
   Mail,
   MessageCircle,
@@ -43,6 +47,8 @@ import {
   type BoardInvite,
   type BoardPerson,
   type ConvitesBoard,
+  type Headcount,
+  type HeadcountGroup,
   type InviteStage,
 } from "@/lib/festa-convite";
 import { DeadlineDialog, InviteDialog, SenderDialog } from "./convites-dialogs";
@@ -88,6 +94,109 @@ function isReady(invite: BoardInvite): boolean {
 /** Sem celular e sem nenhum movimento: fica fora da lista até os contatos serem atualizados. */
 function isWaitingData(invite: BoardInvite): boolean {
   return !isReady(invite) && !invite.sentAt && invite.attending === null;
+}
+
+export function ConsultantBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-800 ring-1 ring-inset ring-violet-200">
+      <Handshake className="size-3" aria-hidden />
+      Consultor
+    </span>
+  );
+}
+
+const GROUP_ICON: Record<HeadcountGroup["key"], LucideIcon> = {
+  colaborador: Briefcase,
+  cliente: Building2,
+  parceiro: Handshake,
+  outros: Heart,
+};
+
+/** Lugares da festa inteira (só para quem gerencia): previstos contra o contratado e quantos já confirmaram. */
+function HeadcountCard({ headcount }: { headcount: Headcount }) {
+  const { capacity, expected, confirmed, groups } = headcount;
+  const over = capacity ? expected - capacity : 0;
+  const scale = Math.max(expected, capacity ?? 0, 1);
+  const width = (value: number) => `${Math.min(100, (value / scale) * 100)}%`;
+  return (
+    <Card className="gap-0 py-0">
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-3 px-4 py-4 sm:px-5">
+        <span className="grid size-11 shrink-0 place-items-center rounded-md bg-[#eaf2f5] text-[#285f7a]" aria-hidden>
+          <UsersRound className="size-5" />
+        </span>
+        <div className="min-w-56 flex-1">
+          <h2 className="text-base font-semibold text-foreground">Lugares da festa</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Toda a festa: equipe, clientes, consultores e família. Quem ainda não respondeu entra com o acompanhante reservado.
+          </p>
+        </div>
+      </div>
+      <div className="grid gap-x-8 gap-y-4 border-t border-[#e6eef0] px-4 py-4 sm:grid-cols-[auto_auto_minmax(0,1fr)] sm:items-center sm:px-5">
+        <div>
+          <p className="text-xs font-semibold uppercase text-muted-foreground">Previstos</p>
+          <p className="mt-1 text-3xl font-semibold leading-none tabular-nums text-foreground">
+            {expected}
+            {capacity ? <span className="text-base font-medium text-muted-foreground"> de {capacity}</span> : null}
+          </p>
+          {capacity ? (
+            <p className={cn("mt-1.5 text-xs", over > 0 ? "font-medium text-rose-700" : "text-muted-foreground")}>
+              {over > 0 ? `${over} acima do contratado` : over === 0 ? "Exatamente o contratado" : `${-over} lugares livres`}
+            </p>
+          ) : null}
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase text-muted-foreground">Confirmados</p>
+          <p className="mt-1 text-3xl font-semibold leading-none tabular-nums text-emerald-700">{confirmed}</p>
+          <p className="mt-1.5 text-xs text-muted-foreground">{expected ? `${Math.round((confirmed / expected) * 100)}% dos previstos` : ""}</p>
+        </div>
+        <div className="min-w-0">
+          <div
+            className="relative h-3 rounded-full bg-slate-100"
+            role="img"
+            aria-label={`${confirmed} confirmados e ${expected} previstos${capacity ? ` para ${capacity} lugares` : ""}`}
+          >
+            <span className="absolute inset-y-0 left-0 rounded-full bg-[#bfdde8]" style={{ width: width(expected) }} />
+            <span className="absolute inset-y-0 left-0 rounded-full bg-emerald-500" style={{ width: width(confirmed) }} />
+            {capacity ? <span className="absolute -inset-y-1 w-0.5 rounded-full bg-[#0d1e2e]" style={{ left: width(capacity) }} aria-hidden /> : null}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-2.5 rounded-full bg-emerald-500" aria-hidden />
+              Confirmados
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-2.5 rounded-full bg-[#bfdde8]" aria-hidden />
+              Previstos
+            </span>
+            {capacity ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-0.5 rounded-full bg-[#0d1e2e]" aria-hidden />
+                Contratado ({capacity})
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <ul className="grid grid-cols-2 gap-px border-t border-[#e6eef0] bg-[#e6eef0] lg:grid-cols-4">
+        {groups.map((group) => {
+          const Icon = GROUP_ICON[group.key];
+          return (
+            <li key={group.key} className="flex items-center gap-3 bg-white px-4 py-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[#f3f6f7] text-[#3e84a8]" aria-hidden>
+                <Icon className="size-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-xs text-muted-foreground">{group.label}</span>
+                <span className="block text-sm font-semibold tabular-nums text-foreground">
+                  {group.confirmed} <span className="font-normal text-muted-foreground">confirmados de {group.expected}</span>
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
 }
 
 function ReadyBadge() {
@@ -211,9 +320,10 @@ function Stat({
 async function exportExcel(board: ConvitesBoard) {
   const XLSX = await import("xlsx");
   const senderName = (id: string | null) => board.people.find((person) => person.userId === id)?.name ?? "";
-  const header = ["Cliente", "Empresa", "Área", "Remetente", "Situação", "Enviado em", "Abriu em", "Convidado", "Restrição alimentar", "Celular", "E-mail"];
+  const header = ["Cliente", "Tipo", "Empresa", "Área", "Remetente", "Situação", "Enviado em", "Abriu em", "Convidado", "Restrição alimentar", "Celular", "E-mail"];
   const rows = board.invites.map((invite) => [
     invite.name,
+    invite.consultant ? "Consultor parceiro" : "Cliente",
     invite.company ?? "",
     invite.area ?? "",
     senderName(invite.senderUserId),
@@ -228,7 +338,7 @@ async function exportExcel(board: ConvitesBoard) {
   const entrance = board.invites
     .filter((invite) => invite.attending === true)
     .flatMap((invite) => [
-      [invite.name, invite.company ?? "", "Cliente"],
+      [invite.name, invite.company ?? "", invite.consultant ? "Consultor parceiro" : "Cliente"],
       ...(invite.plusOne && invite.plusOneName ? [[invite.plusOneName, invite.company ?? "", `Convidado de ${invite.name}`]] : []),
     ]);
   const book = XLSX.utils.book_new();
@@ -540,6 +650,8 @@ export function ConvitesFestaClient() {
         </div>
       </Card>
 
+      {board.headcount && <HeadcountCard headcount={board.headcount} />}
+
       {notice && (
         <p
           role={notice.tone === "erro" ? "alert" : "status"}
@@ -650,6 +762,7 @@ export function ConvitesFestaClient() {
                       >
                         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="text-sm font-medium text-foreground">{invite.name}</span>
+                          {invite.consultant && <ConsultantBadge />}
                           {isWaitingData(invite) ? (
                             <WaitingBadge />
                           ) : stage === "a_enviar" && isReady(invite) ? (

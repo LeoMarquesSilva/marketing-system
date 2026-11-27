@@ -11,6 +11,7 @@ import { carregarDocumento, descartarSeConcluido, pedirContinuacaoNoEproc } from
 import { BUCKET_AUTOS, type SugestaoNova } from "./autos-types";
 import { ProcessosError } from "./errors";
 import { extrairPaginas, type TextoDoPdf } from "./leitura-pdf";
+import { avisoDasRepetidas, impressoesDasPaginas, marcasLidas, paginasParaLer } from "./paginas-repetidas";
 import { migracaoParaEproc } from "./migracao-eproc";
 import { detalharProcesso } from "./processos-server";
 import { comoSugeridos, creditoDosTitulos, sugestoesDaRecCredito, sugestoesDoCreditoPelosTitulos, type ItemSugerido } from "./rec-credito-leitura";
@@ -67,7 +68,7 @@ export interface ResultadoDaLeitura {
 
 type LeituraDoBloco = { tipo: "geral"; leitura: LeituraDosAutos } | { tipo: "trabalhista"; leitura: LeituraDosAutosTrabalhista };
 
-async function lerBloco(apiKey: string, modelo: string, contexto: ContextoDaLeitura, bloco: BlocoDeTexto, total: number, trabalhista: boolean): Promise<{ lido: LeituraDoBloco; custoUS: number }> {
+async function lerBloco(apiKey: string, modelo: string, contexto: ContextoDaLeitura, bloco: BlocoDeTexto, total: number, trabalhista: boolean): Promise<{ lido: LeituraDoBloco; entrada: number; cache: number; custoUS: number }> {
   const raciocinio = isOpenAIReasoningModel(modelo);
   const comum = {
     model: createOpenAI({ apiKey })(modelo),
@@ -78,15 +79,37 @@ async function lerBloco(apiKey: string, modelo: string, contexto: ContextoDaLeit
       openai: { ...(raciocinio ? { reasoningEffort: "low" as const } : {}), promptCacheKey: trabalhista ? "processos-autos-trabalhista" : "processos-autos", store: false },
     },
   };
-  const custo = (usage: { inputTokens?: number; inputTokenDetails?: { cacheReadTokens?: number }; outputTokens?: number }) =>
-    custoDaChamada({ entrada: usage.inputTokens ?? 0, cache: usage.inputTokenDetails?.cacheReadTokens ?? 0, saida: usage.outputTokens ?? 0 });
+  const uso = (usage: { inputTokens?: number; inputTokenDetails?: { cacheReadTokens?: number }; outputTokens?: number }) => {
+    const entrada = usage.inputTokens ?? 0;
+    const cache = usage.inputTokenDetails?.cacheReadTokens ?? 0;
+    return { entrada, cache, custoUS: custoDaChamada({ entrada, cache, saida: usage.outputTokens ?? 0 }) };
+  };
   if (trabalhista) {
     // Reclamação trabalhista: campos, afastamentos e pedidos próprios; nada de Rec. Crédito.
     const { object, usage } = await generateObject({ ...comum, schema: ESQUEMA_LEITURA_TRABALHISTA, schemaName: "leitura_dos_autos_trabalhista", system: instrucoesDaLeituraTrabalhista() });
-    return { lido: { tipo: "trabalhista", leitura: object }, custoUS: custo(usage) };
+    return { lido: { tipo: "trabalhista", leitura: object }, ...uso(usage) };
   }
   const { object, usage } = await generateObject({ ...comum, schema: ESQUEMA_LEITURA, schemaName: "leitura_dos_autos", system: instrucoesDaLeitura() });
-  return { lido: { tipo: "geral", leitura: object }, custoUS: custo(usage) };
+  return { lido: { tipo: "geral", leitura: object }, ...uso(usage) };
+}
+
+/**
+ * Marcas das páginas já lidas nos outros PDFs do processo. Sem a coluna (migration ainda não aplicada), volta
+ * vazio: a leitura segue, só sem pular o que outro PDF já leu.
+ */
+async function marcasJaLidas(processoId: string, documentoId: string): Promise<Set<string>> {
+  const { data, error } = await db().from("proc_documentos").select("paginas_impressoes").eq("processo_id", processoId).neq("id", documentoId);
+  if (error) {
+    console.warn("[processos] marcas das páginas já lidas:", error.message);
+    return new Set();
+  }
+  return new Set((data ?? []).flatMap((linha) => (linha.paginas_impressoes as string[] | null) ?? []));
+}
+
+/** Guarda as marcas das páginas que a IA leu neste PDF. Falhar aqui só faz a próxima leitura ler de novo. */
+async function guardarMarcasLidas(documentoId: string, marcas: string[]): Promise<void> {
+  const { error } = await db().from("proc_documentos").update({ paginas_impressoes: marcas }).eq("id", documentoId);
+  if (error) console.warn("[processos] guardar as marcas das páginas lidas:", error.message);
 }
 
 /** Segunda etapa da leitura: com os fatos de todos os pedaços, a IA redige a síntese do processo. */
@@ -222,7 +245,25 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
       throw new ProcessosError("O arquivo não pôde ser lido como PDF (corrompido ou protegido por senha).", 422);
     }
     const semTexto = texto.paginas.filter((pagina) => pagina.trim().length < MINIMO_TEXTO_PAGINA).length;
-    const blocos = dividirEmBlocos(texto.paginas);
+    // Só vão para a IA as páginas que ela ainda não leu (em outro PDF do processo ou antes, neste mesmo).
+    const impressoes = impressoesDasPaginas(texto.paginas);
+    const paraLer = paginasParaLer(texto.paginas, impressoes, await marcasJaLidas(documento.processoId, documentoId));
+    const avisoDasRepetidasDoPdf = avisoDasRepetidas(paraLer);
+    const blocos = dividirEmBlocos(paraLer.paginas);
+    if (!blocos.length && paraLer.deOutroPdf + paraLer.noMesmoPdf > 0) {
+      // Nada de novo: tudo já foi lido em outro PDF deste processo.
+      await encerrar(documentoId, {
+        leitura_status: "lida",
+        leitura_erro: avisoDasRepetidasDoPdf,
+        paginas: texto.total,
+        paginas_lidas: 0,
+        paginas_sem_texto: semTexto,
+        leitura_custo_us: 0,
+        lido_em: new Date().toISOString(),
+      });
+      await descartarSeConcluido(documentoId);
+      return { situacao: "lida", paginas: texto.total, paginasLidas: 0, sugestoes: 0, aviso: avisoDasRepetidasDoPdf };
+    }
     if (!blocos.length) {
       await encerrar(documentoId, {
         leitura_status: "sem_texto",
@@ -240,6 +281,9 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
     const modelo = OPENAI_DEFAULT_MODEL;
     const trabalhista = ehTrabalhista(processo.valores.area);
     const leituras: LeituraDoBloco[] = [];
+    const blocosLidos: BlocoDeTexto[] = [];
+    let tokensDeEntrada = 0;
+    let tokensEmCache = 0;
     let custoUS = 0;
     let falhas = 0;
     let paginasLidas = 0;
@@ -252,7 +296,10 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
         try {
           const resultado = await lerBloco(apiKey as string, modelo, contexto, bloco, texto.total, trabalhista);
           leituras.push(resultado.lido);
+          blocosLidos.push(bloco);
           custoUS += resultado.custoUS;
+          tokensDeEntrada += resultado.entrada;
+          tokensEmCache += resultado.cache;
           paginasLidas += bloco.paginas;
         } catch (erro) {
           falhas += 1;
@@ -376,6 +423,12 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
     const naoLidos = blocos.length - leituras.length;
     if (naoLidos > 0) avisos.push(`Leitura parcial: ${naoLidos} de ${blocos.length} trechos ficaram sem ler (${falhas ? "falha da IA" : "tempo esgotado"}). Leia de novo para completar.`);
     if (texto.total > texto.paginas.length) avisos.push(`O arquivo tem ${texto.total} páginas; foram lidas as primeiras ${texto.paginas.length}.`);
+    if (avisoDasRepetidasDoPdf) avisos.push(avisoDasRepetidasDoPdf);
+    // A parte das instruções que a OpenAI reaproveita do cache (cobrada a 10%): para conferir no log da Vercel.
+    console.info(
+      `[processos] leitura dos autos: ${blocosLidos.length} trechos, ${paginasLidas} páginas, ${tokensDeEntrada} tokens de entrada (${tokensDeEntrada ? Math.round((100 * tokensEmCache) / tokensDeEntrada) : 0}% em cache), US$ ${custoUS.toFixed(4)}`
+    );
+    await guardarMarcasLidas(documentoId, marcasLidas(impressoes, blocosLidos));
     if (semTexto > 0) avisos.push(`${semTexto} página${semTexto === 1 ? "" : "s"} sem camada de texto (digitalizada${semTexto === 1 ? "" : "s"}) não ${semTexto === 1 ? "foi lida" : "foram lidas"}.`);
     const aviso = avisos.join(" ") || null;
 

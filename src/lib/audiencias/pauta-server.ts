@@ -5,6 +5,8 @@ import { hojeEmBrasilia, proximosDiasUteis, somarDias } from "./agenda";
 import { avisarCorrespondente, avisarTroca, ehDiaUtil } from "./avisos-server";
 import { ORIGEM_AUTOMATICA, type ResumoConferenciaVios, type TarefaSoNoVios } from "./conferencia-server";
 import { lerConfig, modoOutlook, modoWhatsapp } from "./config-server";
+import { duplaDaPasta } from "./duplas";
+import { pastasPorCnj } from "./pastas-server";
 import { AudienciasError, carregarAudiencias, carregarPessoas, carregarPessoasComFotos, COLUNAS_AUDIENCIA, db, falhou, paraAudiencia, registrarHistorico, type Ator } from "./server";
 import type { Audiencia, ConvitePauta, PessoaPauta } from "./tipos";
 
@@ -170,6 +172,18 @@ export async function trocarPessoa(id: string, entrada: unknown, ator: Ator): Pr
   return atualizada;
 }
 
+/** A backup da dupla da pasta (o auxiliar), quando não é a própria titular. Sem pasta ou sem auxiliar: null. */
+async function backupDaPasta(cnj: string, titularId: string): Promise<string | null> {
+  try {
+    const pasta = (await pastasPorCnj([cnj])).get(cnj);
+    if (!pasta) return null;
+    const dupla = duplaDaPasta(await carregarPessoas(), { advogadoResponsavel: pasta.advogadoResponsavel, auxiliarSigla: pasta.auxiliarSigla });
+    return dupla.backupId && dupla.backupId !== titularId ? dupla.backupId : null;
+  } catch {
+    return null;
+  }
+}
+
 const esquemaCampos = z.object({
   modalidadeEquipe: z.enum(["presencial", "video"]).nullable().optional(),
   correspondente: z.string().trim().max(160).nullable().optional(),
@@ -188,14 +202,14 @@ export async function completarAudiencia(id: string, entrada: unknown, ator: Ato
   if (d.observacao !== undefined) campos.observacao = d.observacao || null;
   if (d.linkSala !== undefined) Object.assign(campos, { link_sala: d.linkSala || null, link_fonte: d.linkSala ? "manual" : null, link_fonte_data: null });
   // Correspondente (contratação externa): ele vira o titular e a titular do escritório passa a backup. Tirando o
-  // correspondente, a backup volta a titular (a backup anterior não volta sozinha: a coordenação escolhe de novo).
+  // correspondente, a backup volta a titular e a backup volta a ser a da dupla da pasta (o auxiliar), se houver.
   const correspondenteAntes = antes.correspondente?.trim() || null;
   const correspondente = d.correspondente === undefined ? correspondenteAntes : d.correspondente?.trim() || null;
   const mudouCorrespondente = correspondente !== correspondenteAntes;
   if (mudouCorrespondente) {
     campos.correspondente = correspondente;
     if (correspondente && !correspondenteAntes && antes.titularId) Object.assign(campos, { titular_id: null, backup_id: antes.titularId });
-    if (!correspondente && !antes.titularId && antes.backupId) Object.assign(campos, { titular_id: antes.backupId, backup_id: null });
+    if (!correspondente && !antes.titularId && antes.backupId) Object.assign(campos, { titular_id: antes.backupId, backup_id: await backupDaPasta(antes.cnj, antes.backupId) });
   }
   if (!Object.keys(campos).length) return antes;
   const { error } = await db().from("aud_audiencias").update(campos).eq("id", id);

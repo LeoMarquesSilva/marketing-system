@@ -538,7 +538,7 @@ function Detalhe({
               <input className={cn(campoClasse, "h-9 w-full")} value={campos.correspondente} onChange={(e) => setCampos({ ...campos, correspondente: e.target.value })} placeholder="Nome ou escritório" />
               <span className="block text-xs text-muted-foreground">
                 {aud.correspondente?.trim()
-                  ? "O correspondente é o titular e a pessoa do escritório é a backup. Apagando o nome, a backup volta a ser a titular."
+                  ? "O correspondente é o titular e a pessoa do escritório é a backup. Apagando o nome, ela volta a ser a titular e a backup volta a ser a da dupla da pasta."
                   : "Ao salvar, o correspondente vira o titular e a titular atual passa a backup. Ela recebe o convite como opcional."}
               </span>
             </label>

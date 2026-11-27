@@ -10,6 +10,7 @@ import { RhHttpError } from "@/lib/rh/qualifications/server";
 import {
   CONVITE_SAMPLE_TOKEN,
   classifyPhone,
+  computeHeadcount,
   dietarySummary,
   isInviteToken,
   parseDietaryChoice,
@@ -20,18 +21,22 @@ import {
   type DietaryChoice,
   type GuestAnswer,
   type GuestInviteView,
+  type Headcount,
   type SentChannel,
 } from "@/lib/festa-convite";
 
 const LOG = "festa-convite";
 const EVENT_ID = FESTA_10_ANOS_EVENT_ID;
 const SENT_CHANNELS: SentChannel[] = ["whatsapp", "copia", "manual"];
+/** Quem recebe o convite pelo link pessoal: clientes e consultores parceiros. */
+const INVITE_GUEST_TYPES = ["cliente", "parceiro"];
 const INVITE_SELECT =
-  "id, name, email, phone, company, notes, invite_token, sender_user_id, sent_at, sent_channel, opened_at, open_count, confirmation_status, plus_one, plus_one_name, dietary_restrictions, dietary_info, show_company_logo, responded_at";
+  "id, name, guest_type, email, phone, company, notes, invite_token, sender_user_id, sent_at, sent_channel, opened_at, open_count, confirmation_status, plus_one, plus_one_name, dietary_restrictions, dietary_info, show_company_logo, responded_at";
 
 interface InviteRow {
   id: string;
   name: string;
+  guest_type: string;
   email: string | null;
   phone: string | null;
   company: string | null;
@@ -112,7 +117,7 @@ async function findByToken(db: SupabaseClient, token: string): Promise<InviteRow
     .from("event_invites")
     .select(INVITE_SELECT)
     .eq("event_id", EVENT_ID)
-    .eq("guest_type", "cliente")
+    .in("guest_type", INVITE_GUEST_TYPES)
     .eq("invite_token", token)
     .maybeSingle();
   if (error) {
@@ -208,7 +213,7 @@ async function loadInvites(db: SupabaseClient): Promise<InviteRow[]> {
     .from("event_invites")
     .select(INVITE_SELECT)
     .eq("event_id", EVENT_ID)
-    .eq("guest_type", "cliente")
+    .in("guest_type", INVITE_GUEST_TYPES)
     .order("name");
   if (error) {
     console.error(`[${LOG}] lista:`, error);
@@ -258,12 +263,51 @@ async function loadAreas(db: SupabaseClient, rows: InviteRow[]): Promise<Map<str
     const area = group ? areaOfGroup.get(group) : undefined;
     if (area) areas.set(inviteId, area);
   }
+  // Incluído à mão (sem origem no cadastro): a área vem do grupo com o mesmo nome; consultor parceiro tem grupo próprio.
+  const missing = rows.filter((row) => !areas.has(row.id));
+  const companies = [...new Set(missing.map((row) => row.company?.trim()).filter(Boolean) as string[])];
+  const areaOfCompany = new Map<string, string>();
+  if (companies.length) {
+    const { data, error } = await db.from("email_client_groups").select("name, responsible_area").in("name", companies);
+    if (error) console.error(`[${LOG}] grupos por nome:`, error);
+    for (const group of data ?? []) if (group.responsible_area) areaOfCompany.set(group.name as string, group.responsible_area as string);
+  }
+  for (const row of missing) {
+    const area = row.guest_type === "parceiro" ? CONSULTANT_AREA : areaOfCompany.get(row.company?.trim() ?? "");
+    if (area) areas.set(row.id, area);
+  }
   return areas;
+}
+
+const CONSULTANT_AREA = "Consultores parceiros";
+
+/** Lugares da festa inteira (equipe, clientes, consultores e família) contra o contratado no evento. */
+async function loadHeadcount(db: SupabaseClient): Promise<Headcount | null> {
+  const [invites, event] = await Promise.all([
+    db.from("event_invites").select("guest_type, confirmation_status, plus_one, plus_one_allowed").eq("event_id", EVENT_ID),
+    db.from("events").select("participants_expected").eq("id", EVENT_ID).maybeSingle(),
+  ]);
+  if (invites.error) {
+    console.error(`[${LOG}] lugares:`, invites.error);
+    return null;
+  }
+  const rows = (invites.data ?? []).map((row) => ({
+    guestType: row.guest_type as string,
+    status: row.confirmation_status as string,
+    plusOne: row.plus_one as boolean | null,
+    plusOneAllowed: row.plus_one_allowed === true,
+  }));
+  return computeHeadcount(rows, (event.data?.participants_expected as number | null) ?? null);
 }
 
 async function buildBoard(db: SupabaseClient, viewer: RsvpViewer): Promise<ConvitesBoard> {
   const manager = isManager(viewer);
-  const [rows, closesAt, directory] = await Promise.all([loadInvites(db), loadDeadline(db), loadPeopleDirectory(db, LOG)]);
+  const [rows, closesAt, directory, headcount] = await Promise.all([
+    loadInvites(db),
+    loadDeadline(db),
+    loadPeopleDirectory(db, LOG),
+    manager ? loadHeadcount(db) : Promise.resolve(null),
+  ]);
   const visible = manager ? rows : rows.filter((row) => row.sender_user_id === viewer.profileId);
   const [areas, logos] = await Promise.all([loadAreas(db, visible), loadLogos(db, visible.map((row) => row.company))]);
 
@@ -302,6 +346,7 @@ async function buildBoard(db: SupabaseClient, viewer: RsvpViewer): Promise<Convi
     plusOneName: row.plus_one_name,
     dietary: row.dietary_restrictions,
     respondedAt: row.responded_at,
+    consultant: row.guest_type === "parceiro",
   }));
 
   return {
@@ -310,6 +355,7 @@ async function buildBoard(db: SupabaseClient, viewer: RsvpViewer): Promise<Convi
     closesAt,
     invites,
     people,
+    headcount,
   };
 }
 
@@ -324,7 +370,7 @@ async function ownInvite(db: SupabaseClient, viewer: RsvpViewer, inviteId: strin
     .select("id, sender_user_id")
     .eq("id", inviteId)
     .eq("event_id", EVENT_ID)
-    .eq("guest_type", "cliente")
+    .in("guest_type", INVITE_GUEST_TYPES)
     .maybeSingle();
   if (error || !data) fail("Convite não encontrado.", 404, "NOT_FOUND");
   if (!isManager(viewer) && data.sender_user_id !== viewer.profileId) fail("Este convite não está com você.", 403, "FORBIDDEN");
@@ -403,7 +449,7 @@ export async function applyBoardAction(action: BoardAction): Promise<ConvitesBoa
       .from("event_invites")
       .update({ sender_user_id: action.senderUserId, updated_at: now })
       .eq("event_id", EVENT_ID)
-      .eq("guest_type", "cliente")
+      .in("guest_type", INVITE_GUEST_TYPES)
       .in("id", action.inviteIds));
   } else {
     if (!isManager(viewer)) fail("Só quem gerencia os convites define o prazo.", 403, "FORBIDDEN");

@@ -35,7 +35,7 @@ import {
   type BoardPerson,
   type ConvitesBoard,
 } from "@/lib/festa-convite";
-import { ClientFace, StageBadge, copyText, formatDay, messageFor } from "./convites-festa-client";
+import { ClientFace, ConsultantBadge, StageBadge, copyText, formatDay, messageFor } from "./convites-festa-client";
 
 const DIALOG = "flex max-h-[90dvh] flex-col gap-0 p-0";
 const HEADER = "border-b border-[#e6eef0] px-5 py-4 pr-12";
@@ -117,6 +117,7 @@ export function InviteDialog({
           <div className="min-w-0">
             <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
               {invite.name}
+              {invite.consultant && <ConsultantBadge />}
               <StageBadge stage={stageOf(invite)} />
             </DialogTitle>
             <DialogDescription className="truncate text-sm">

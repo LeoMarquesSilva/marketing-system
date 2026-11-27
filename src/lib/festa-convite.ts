@@ -225,6 +225,68 @@ export interface BoardInvite {
   plusOneName: string | null;
   dietary: string | null;
   respondedAt: string | null;
+  /** Consultor parceiro (não é cliente): aparece com a etiqueta "Consultor". */
+  consultant: boolean;
+}
+
+/** Linha da lista do evento usada na conta de lugares (todos os tipos de convidado). */
+export interface HeadcountRow {
+  guestType: string;
+  status: string;
+  plusOne: boolean | null;
+  plusOneAllowed: boolean;
+}
+
+export interface HeadcountGroup {
+  key: "colaborador" | "cliente" | "parceiro" | "outros";
+  label: string;
+  expected: number;
+  confirmed: number;
+}
+
+/** Lugares da festa: previstos (quem não respondeu já reserva o acompanhante) e confirmados. */
+export interface Headcount {
+  capacity: number | null;
+  expected: number;
+  confirmed: number;
+  groups: HeadcountGroup[];
+}
+
+const HEADCOUNT_GROUPS: { key: HeadcountGroup["key"]; label: string }[] = [
+  { key: "colaborador", label: "Equipe" },
+  { key: "cliente", label: "Clientes" },
+  { key: "parceiro", label: "Consultores parceiros" },
+  { key: "outros", label: "Família e convidados" },
+];
+
+/**
+ * Lugares de um convite. Quem não vai não ocupa nada; quem confirmou ocupa 1 + o convidado que
+ * informou. Sem resposta, cliente e consultor parceiro reservam o acompanhante (o convite permite 1);
+ * os demais só quando o convite libera.
+ */
+export function seatsOf(row: HeadcountRow): { expected: number; confirmed: number } {
+  if (row.status === "recusado") return { expected: 0, confirmed: 0 };
+  const companion = row.plusOne === true ? 1 : 0;
+  if (row.status === "confirmado") return { expected: 1 + companion, confirmed: 1 + companion };
+  const reserves = row.guestType === "cliente" || row.guestType === "parceiro" || row.plusOneAllowed;
+  return { expected: 1 + (reserves ? 1 : companion), confirmed: 0 };
+}
+
+export function computeHeadcount(rows: HeadcountRow[], capacity: number | null): Headcount {
+  const groups: HeadcountGroup[] = HEADCOUNT_GROUPS.map((group) => ({ ...group, expected: 0, confirmed: 0 }));
+  for (const row of rows) {
+    const key = row.guestType === "colaborador" || row.guestType === "cliente" || row.guestType === "parceiro" ? row.guestType : "outros";
+    const group = groups.find((item) => item.key === key) as HeadcountGroup;
+    const seats = seatsOf(row);
+    group.expected += seats.expected;
+    group.confirmed += seats.confirmed;
+  }
+  return {
+    capacity,
+    expected: groups.reduce((sum, group) => sum + group.expected, 0),
+    confirmed: groups.reduce((sum, group) => sum + group.confirmed, 0),
+    groups: groups.filter((group) => group.expected > 0 || group.confirmed > 0),
+  };
 }
 
 export interface BoardPerson {
@@ -246,6 +308,8 @@ export interface ConvitesBoard {
   invites: BoardInvite[];
   /** Pessoas que podem ser remetentes (só para quem gerencia) e as que já são. */
   people: BoardPerson[];
+  /** Lugares da festa inteira (só para quem gerencia). */
+  headcount: Headcount | null;
 }
 
 export function stageOf(invite: BoardInvite): InviteStage {

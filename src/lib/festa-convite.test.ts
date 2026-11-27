@@ -3,10 +3,12 @@ import {
   DIETARY_NO_RESTRICTION,
   buildInviteMessage,
   classifyPhone,
+  computeHeadcount,
   countBoard,
   dietarySummary,
   isInviteToken,
   parseGuestAnswer,
+  seatsOf,
   stageOf,
   toggleDietary,
   type BoardInvite,
@@ -33,6 +35,7 @@ function invite(patch: Partial<BoardInvite> = {}): BoardInvite {
     plusOneName: null,
     dietary: null,
     respondedAt: null,
+    consultant: false,
     ...patch,
   };
 }
@@ -155,5 +158,41 @@ describe("isInviteToken", () => {
     expect(isInviteToken("AbC-_123xyzQWE45")).toBe(true);
     expect(isInviteToken("exemplo")).toBe(false);
     expect(isInviteToken("abc/../etc/passwd")).toBe(false);
+  });
+});
+
+describe("lugares da festa", () => {
+  const row = (guestType: string, status: string, plusOne: boolean | null = null, plusOneAllowed = false) => ({ guestType, status, plusOne, plusOneAllowed });
+
+  it("cliente e consultor sem resposta reservam o acompanhante; quem não vai não ocupa", () => {
+    expect(seatsOf(row("cliente", "sem_resposta"))).toEqual({ expected: 2, confirmed: 0 });
+    expect(seatsOf(row("parceiro", "sem_resposta"))).toEqual({ expected: 2, confirmed: 0 });
+    expect(seatsOf(row("cliente", "recusado"))).toEqual({ expected: 0, confirmed: 0 });
+  });
+
+  it("quem confirmou ocupa 1 mais o convidado que informou", () => {
+    expect(seatsOf(row("cliente", "confirmado", false))).toEqual({ expected: 1, confirmed: 1 });
+    expect(seatsOf(row("cliente", "confirmado", true))).toEqual({ expected: 2, confirmed: 2 });
+    expect(seatsOf(row("colaborador", "confirmado", true))).toEqual({ expected: 2, confirmed: 2 });
+  });
+
+  it("equipe e família sem resposta só reservam acompanhante quando o convite permite", () => {
+    expect(seatsOf(row("colaborador", "sem_resposta"))).toEqual({ expected: 1, confirmed: 0 });
+    expect(seatsOf(row("colaborador", "sem_resposta", null, true))).toEqual({ expected: 2, confirmed: 0 });
+    expect(seatsOf(row("convidado_externo", "sem_resposta"))).toEqual({ expected: 1, confirmed: 0 });
+  });
+
+  it("soma por grupo e no total, contra o contratado", () => {
+    const headcount = computeHeadcount(
+      [row("colaborador", "confirmado", true), row("cliente", "sem_resposta"), row("parceiro", "confirmado", false), row("convidado_externo", "sem_resposta"), row("colaborador", "recusado")],
+      200
+    );
+    expect(headcount).toMatchObject({ capacity: 200, expected: 6, confirmed: 3 });
+    expect(headcount.groups.map((group) => [group.key, group.expected, group.confirmed])).toEqual([
+      ["colaborador", 2, 2],
+      ["cliente", 2, 0],
+      ["parceiro", 1, 1],
+      ["outros", 1, 0],
+    ]);
   });
 });
