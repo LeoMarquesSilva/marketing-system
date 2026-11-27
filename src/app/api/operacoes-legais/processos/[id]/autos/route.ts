@@ -11,5 +11,5 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     // O cadastro pode ter recebido o mesmo valor por outra via (importação do VIOS): essas sugestões saem da fila.
     await limparSugestoesJaNoCadastro(id).catch((erro: unknown) => console.error("[processos] limpar sugestões:", erro instanceof Error ? erro.message : erro));
     return { autos: await carregarAutos(id) };
-  });
+  }, { processo: id });
 }

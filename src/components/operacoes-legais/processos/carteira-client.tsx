@@ -473,7 +473,7 @@ function Carteira() {
 const TOM_ROBO_AGORA: Record<NonNullable<AtualizacaoDosAutos["roboAgora"]>, TomSelo> = { na_fila: "alerta", baixando: "marca", aguardando_pessoa: "alerta", erro: "perigo" };
 
 /** Quando o robô conferiu o tribunal e quando a IA leu: verde se foi hoje, cinza se antes, âmbar se nunca. */
-function AtualizacaoDosAutosNaLinha({ autos, hoje }: { autos: AtualizacaoDosAutos; hoje: string }) {
+export function AtualizacaoDosAutosNaLinha({ autos, hoje }: { autos: AtualizacaoDosAutos; hoje: string }) {
   const cor = (iso: string | null) => (!iso ? "text-amber-700" : diaEmBrasilia(iso) === hoje ? "text-emerald-700" : "text-muted-foreground");
   const ia = autos.iaEm ? formatarMomento(autos.iaEm) : autos.documentos ? "não lida" : "sem autos";
   const extras = [autos.iaPendentes ? `${autos.iaPendentes} por ler` : "", autos.iaErros ? `${autos.iaErros} com erro` : "", autos.iaSemTexto ? `${autos.iaSemTexto} sem texto` : ""].filter(Boolean);

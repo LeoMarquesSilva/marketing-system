@@ -1,3 +1,5 @@
+import { AGENTES_LAUDO, BASES_ADICIONAL, DECISOES, GRAUS, SITUACOES_PRESCRICAO, TIPOS_TERMINO } from "./trabalhista-opcoes";
+
 /**
  * Catálogo dos campos do cadastro de processos. É a fonte única de: rótulo, tipo, de onde o campo vem
  * (VIOS ou só do ORQESTRAI), se pode ser editado, de que coluna do VIOS/SIOE é lido e se está na lista
@@ -5,7 +7,7 @@
  */
 
 export type TipoCampo = "texto" | "texto_longo" | "data" | "valor" | "percentual" | "lista" | "booleano" | "opcao";
-export type TabelaCampo = "processo" | "credito";
+export type TabelaCampo = "processo" | "credito" | "trabalhista";
 export type OrigemCampo = "vios" | "novo";
 export type ValorCampo = string | number | boolean | string[] | null;
 export type Valores = Record<string, ValorCampo>;
@@ -18,6 +20,10 @@ export const GRUPOS_CAMPO = [
   { id: "datas", rotulo: "Datas" },
   { id: "valores", rotulo: "Valores e risco" },
   { id: "credito", rotulo: "Crédito" },
+  { id: "contrato", rotulo: "Contrato de trabalho" },
+  { id: "decisoes", rotulo: "Laudo e decisões" },
+  { id: "prescricao", rotulo: "Prescrição" },
+  { id: "risco", rotulo: "Risco trabalhista" },
   { id: "andamento", rotulo: "Síntese e andamento" },
 ] as const;
 
@@ -167,6 +173,36 @@ export const CAMPOS: CampoProcesso[] = [
   campo("honorarios_percentual", "Honorários da execução (%)", "credito", "percentual", "novo", { tabela: "credito" }),
   campo("multa_percentual", "Multa do art. 523 (%)", "credito", "percentual", "novo", { tabela: "credito" }),
 
+  // Trabalhista: contrato de trabalho
+  campo("data_admissao", "Data de admissão", "contrato", "data", "novo", { tabela: "trabalhista" }),
+  campo("data_termino", "Data do término", "contrato", "data", "novo", { tabela: "trabalhista" }),
+  campo("tipo_termino", "Tipo de término", "contrato", "opcao", "novo", { tabela: "trabalhista", opcoes: TIPOS_TERMINO }),
+  campo("ultimo_dia_trabalhado", "Último dia trabalhado", "contrato", "data", "novo", { tabela: "trabalhista" }),
+  campo("cargo", "Cargo", "contrato", "texto", "novo", { tabela: "trabalhista" }),
+  campo("salario", "Salário", "contrato", "valor", "novo", { tabela: "trabalhista" }),
+  // Trabalhista: laudo e decisões
+  campo("laudo_agente", "Laudo: agente", "decisoes", "opcao", "novo", { tabela: "trabalhista", opcoes: AGENTES_LAUDO }),
+  campo("laudo_grau", "Laudo: grau", "decisoes", "opcao", "novo", { tabela: "trabalhista", opcoes: GRAUS }),
+  campo("laudo_conclusao", "Laudo: conclusão", "decisoes", "texto_longo", "novo", { tabela: "trabalhista" }),
+  campo("decisao_prevalece", "Decisão que prevalece", "decisoes", "opcao", "novo", { tabela: "trabalhista", opcoes: DECISOES }),
+  campo("adicional_grau", "Grau deferido", "decisoes", "opcao", "novo", { tabela: "trabalhista", opcoes: GRAUS }),
+  campo("adicional_base", "Base do adicional", "decisoes", "opcao", "novo", { tabela: "trabalhista", opcoes: BASES_ADICIONAL }),
+  campo("data_transito", "Trânsito em julgado", "decisoes", "data", "novo", { tabela: "trabalhista" }),
+  campo("periodo_calculo_inicio", "Período de cálculo: início", "decisoes", "data", "novo", { tabela: "trabalhista" }),
+  campo("periodo_calculo_fim", "Período de cálculo: fim", "decisoes", "data", "novo", { tabela: "trabalhista" }),
+  // Trabalhista: prescrição (quinquenal com o marco, bienal, intercorrente)
+  campo("prescricao_quinquenal", "Prescrição quinquenal", "prescricao", "opcao", "novo", { tabela: "trabalhista", opcoes: SITUACOES_PRESCRICAO }),
+  campo("prescricao_quinquenal_marco", "Marco da prescrição quinquenal", "prescricao", "data", "novo", { tabela: "trabalhista" }),
+  campo("prescricao_bienal", "Prescrição bienal", "prescricao", "opcao", "novo", { tabela: "trabalhista", opcoes: SITUACOES_PRESCRICAO }),
+  campo("prescricao_intercorrente", "Prescrição intercorrente", "prescricao", "opcao", "novo", { tabela: "trabalhista", opcoes: SITUACOES_PRESCRICAO }),
+  campo("prescricao_detalhe", "Prescrição: observações", "prescricao", "texto_longo", "novo", { tabela: "trabalhista" }),
+  // Trabalhista: risco
+  campo("risco_valor", "Risco: valor", "risco", "valor", "novo", { tabela: "trabalhista" }),
+  campo("risco_reflexos_percentual", "Risco: reflexos (%)", "risco", "percentual", "novo", { tabela: "trabalhista" }),
+  campo("risco_reflexos", "Risco: reflexos", "risco", "valor", "novo", { tabela: "trabalhista" }),
+  campo("risco_total", "Risco: total", "risco", "valor", "novo", { tabela: "trabalhista" }),
+  campo("observacoes_trabalhista", "Observações (trabalhista)", "risco", "texto_longo", "novo", { tabela: "trabalhista" }),
+
   // Síntese e andamento
   campo("objeto", "Objeto", "andamento", "texto_longo", "vios", { colunasVios: ["Objeto"] }),
   campo("sintese", "Observações (síntese do processo)", "andamento", "texto_longo", "vios", {
@@ -195,6 +231,7 @@ export function camposDoGrupo(grupo: GrupoCampo): CampoProcesso[] {
 /** Colunas de cada tabela, para montar o select e separar o que vai para proc_credito. */
 export const COLUNAS_PROCESSO = CAMPOS.filter((item) => item.tabela === "processo").map((item) => item.chave);
 export const COLUNAS_CREDITO = CAMPOS.filter((item) => item.tabela === "credito").map((item) => item.chave);
+export const COLUNAS_TRABALHISTA = CAMPOS.filter((item) => item.tabela === "trabalhista").map((item) => item.chave);
 
 /* ------------------------------------------------------------ valores */
 

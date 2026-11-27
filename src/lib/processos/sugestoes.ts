@@ -451,18 +451,20 @@ export interface ContextoDaLeitura {
 }
 
 /** O que o modelo recebe: quem é quem no processo e o bloco de páginas. */
-export function entradaDaLeitura(contexto: ContextoDaLeitura, bloco: BlocoDeTexto, totalDePaginas: number): string {
+export function entradaDaLeitura(contexto: ContextoDaLeitura, bloco: BlocoDeTexto, totalDePaginas: number, trabalhista = false): string {
   const { valores, partes } = contexto;
   const devedores = new Set(devedoresDoProcesso(partes, valores.polo_cliente).map((parte) => parte.id));
   const linhasDePartes = partes.map((parte) => {
     const papel = parte.papel === "parte" ? `polo ${parte.polo}` : `${rotuloDoPapel(parte.papel).toLowerCase()}, polo ${parte.polo}`;
-    return `- ${parte.nome} (${papel}${devedores.has(parte.id) ? ", DEVEDOR" : ""})`;
+    return `- ${parte.nome} (${papel}${!trabalhista && devedores.has(parte.id) ? ", DEVEDOR" : ""})`;
   });
   const texto = (chave: string) => (typeof valores[chave] === "string" && valores[chave] ? (valores[chave] as string) : "não informado");
   return [
     `Processo: ${texto("cnj")}`,
     `Ação: ${texto("acao")}`,
-    `Cliente do escritório (credor): ${texto("cliente")}; polo do cliente: ${texto("polo_cliente")}`,
+    trabalhista
+      ? `Cliente do escritório (reclamada): ${texto("cliente")}; polo do cliente: ${texto("polo_cliente")}`
+      : `Cliente do escritório (credor): ${texto("cliente")}; polo do cliente: ${texto("polo_cliente")}`,
     "Partes já cadastradas:",
     linhasDePartes.length ? linhasDePartes.join("\n") : "- nenhuma",
     "",
@@ -511,7 +513,25 @@ export function fatosParaSintese(fatos: FatoDosAutos[], limite = 60_000): FatoDo
   return cabem;
 }
 
-export function instrucoesDaSintese(): string {
+/**
+ * Na reclamação trabalhista o cliente é a reclamada: o resumo, os pontos de atenção e o parecer olham o risco da
+ * empresa (pedidos deferidos, laudo, trânsito), não a cobrança.
+ */
+export function instrucoesDaSintese(trabalhista = false): string {
+  const linhas = instrucoesDaSinteseDeCredito();
+  if (!trabalhista) return linhas.join("\n");
+  const troca: [RegExp, string][] = [
+    [/^Você redige a síntese.*$/, "Você redige a síntese de uma reclamação trabalhista para a ficha de um escritório de advocacia que representa a empresa reclamada."],
+    [/^Duas a quatro frases: quem move.*$/, "Duas a quatro frases: quem reclama contra quem, a função e o período do contrato, o que se pede e o valor da causa."],
+    [/^Só se os fatos trouxerem: citação frustrada.*$/, "Só se os fatos trouxerem: laudo pericial favorável ao reclamante, pedidos deferidos, condenação mantida em recurso, trânsito em julgado, execução em curso, acordo descumprido. Sem nada disso, omita o bloco."],
+    [/^- `objeto`:.*$/, "- `objeto`: uma frase com o que a reclamação pede (ex.: \"Adicional de insalubridade em grau máximo e reflexos\"). Nulo se não der para afirmar."],
+    [/^- `proximos_passos`:.*$/, "- `proximos_passos`: uma a três frases com o que está pendente segundo os últimos fatos (perícia, audiência, julgamento de recurso, liquidação, pagamento). Descreva a pendência como está nos autos; não invente providência nem prazo. Nulo se os fatos não permitem afirmar."],
+    [/^- `parecer_risco`:.*$/, "- `parecer_risco`: três a seis frases, em texto simples, com os fatores que os autos mostram a favor e contra a reclamada: conclusão do laudo, pedidos deferidos ou indeferidos em cada instância, limites da condenação, afastamentos, provas. Descreva os fatores; não classifique a probabilidade, não dê percentual, nota nem valor de provisão. Nulo se os fatos forem insuficientes."],
+  ];
+  return linhas.map((linha) => troca.find(([padrao]) => padrao.test(linha))?.[1] ?? linha).join("\n");
+}
+
+function instrucoesDaSinteseDeCredito(): string[] {
   return [
     "Você redige a síntese de um processo judicial para a ficha de um escritório de advocacia que representa o credor.",
     "Recebe a lista dos fatos extraídos dos autos, cada um com a página e, quando há, a data. Quem lê é um advogado que não conhece o caso e precisa entendê-lo em um minuto.",
@@ -537,7 +557,7 @@ export function instrucoesDaSintese(): string {
     "- `fase`: Conhecimento (ainda sem sentença), Recursal (há recurso pendente de julgamento), Execução (execução de título ou cumprimento de sentença em curso) ou Suspenso (o processo está suspenso por decisão). Vale a situação dos últimos fatos. Nulo se não der para afirmar.",
     "- `proximos_passos`: uma a três frases com o que está pendente no processo segundo os últimos fatos: o que a última decisão determinou e ainda não foi cumprido, o que se aguarda (retorno de AR ou de mandado, resposta de SISBAJUD ou RENAJUD, manifestação do credor, julgamento de recurso). Descreva a pendência como está nos autos; não invente providência nem prazo. Nulo se os fatos não permitem afirmar.",
     "- `parecer_risco`: três a seis frases, em texto simples, com os fatores que os autos mostram a favor e contra o interesse do cliente do escritório: garantias, bens localizados ou não, bloqueios com ou sem resultado, recuperação judicial ou falência do devedor, decisões favoráveis e desfavoráveis, acordo cumprido ou descumprido. Descreva os fatores; não classifique a probabilidade, não dê percentual, nota nem valor de provisão. Nulo se os fatos forem insuficientes.",
-  ].join("\n");
+  ];
 }
 
 /** O que o modelo recebe para redigir: quem é quem no processo e os fatos em ordem de página. */
@@ -735,7 +755,12 @@ type Origem = { pagina: number; trecho: string; confianca: Confianca };
  * Transforma o que a IA leu em sugestões para o que falta no cadastro. Nada aqui grava: o resultado vai
  * para proc_sugestoes como "pendente".
  */
-export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLeitura, paginas: string[]): SugestaoNova[] {
+/** O que montarSugestoes usa da leitura: vale para a geral e para a trabalhista (que tem outros campos). */
+export type LeituraBasica = Pick<LeituraDosAutos, "pessoas" | "enderecos" | "contatos"> & {
+  campos: (Omit<LeituraDosAutos["campos"][number], "campo"> & { campo: string })[];
+};
+
+export function montarSugestoes(leitura: LeituraBasica, contexto: ContextoDaLeitura, paginas: string[]): SugestaoNova[] {
   const { valores, partes } = contexto;
   const conferidor = criarConferidor(paginas);
   const credor = poloDoCredor(partes, valores.polo_cliente);

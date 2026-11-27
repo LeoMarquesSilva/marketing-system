@@ -1,4 +1,5 @@
 import { CAMPOS, estaPreenchido, type Valores } from "./campos";
+import { ehTrabalhista, itensDoSaneamentoTrabalhista, type ContagensTrabalhistas } from "./trabalhista";
 import type { ItemSaneamento, Parte, Preenchimento } from "./types";
 
 /**
@@ -61,7 +62,12 @@ function dispensado(chave: string, valores: Valores): boolean {
   return SO_ENCERRADO.has(chave) && /^ativo/i.test(String(valores.situacao ?? ""));
 }
 
-export function calcularPreenchimento(valores: Valores, partes: Parte[], naoAplicaveis: string[] = []): Preenchimento {
+/**
+ * Processo da área Trabalhista usa a lista própria (contrato, pedidos, laudo, decisões, risco e advogado do
+ * reclamante); os demais, a lista da Rec. Crédito.
+ */
+export function calcularPreenchimento(valores: Valores, partes: Parte[], naoAplicaveis: string[] = [], contagens: ContagensTrabalhistas = { pedidos: 0 }): Preenchimento {
+  if (ehTrabalhista(valores.area)) return resumir(itensDoSaneamentoTrabalhista(valores, partes, naoAplicaveis, contagens));
   const fora = new Set(naoAplicaveis);
   const itens: ItemSaneamento[] = ITENS_SANEAMENTO.map((item) => {
     if (fora.has(item.chave)) return { chave: item.chave, rotulo: item.rotulo, origem: item.origem, estado: "nao_se_aplica" };
@@ -69,6 +75,10 @@ export function calcularPreenchimento(valores: Valores, partes: Parte[], naoApli
     if (!ok && dispensado(item.chave, valores)) return { chave: item.chave, rotulo: item.rotulo, origem: item.origem, estado: "nao_se_aplica", automatico: true };
     return { chave: item.chave, rotulo: item.rotulo, origem: item.origem, estado: ok ? "ok" : "falta" };
   });
+  return resumir(itens);
+}
+
+function resumir(itens: ItemSaneamento[]): Preenchimento {
   const contam = itens.filter((item) => item.estado !== "nao_se_aplica");
   const feitos = contam.filter((item) => item.estado === "ok").length;
   return { itens, feitos, total: contam.length, percentual: contam.length ? Math.round((feitos / contam.length) * 100) : 100 };

@@ -6,6 +6,7 @@ import {
   hasOperacoesLegaisAccess,
   hasPautaAccess,
   hasProcessosAccess,
+  hasTrabalhistaAccess,
   isAdminRole,
   papelVistagem,
   type PapelVistagem,
@@ -134,15 +135,20 @@ export async function requireOperacoesLegaisAccess(authUserId: string) {
   }
 }
 
-/** Processos e Pessoas: admin ou liberação manual (chave /operacoes-legais/processos em Usuários). */
-export async function requireProcessosAccess(authUserId: string) {
+/**
+ * Processos e Pessoas: admin ou liberação manual (chave /operacoes-legais/processos em Usuários) dá "completo".
+ * Com `trabalhista`, a rota aceita também a liberação só da Carteira Trabalhista ("trabalhista"), e quem chama
+ * confere se o processo é da área.
+ */
+export async function requireProcessosAccess(authUserId: string, opcoes: { trabalhista?: boolean } = {}): Promise<"completo" | "trabalhista"> {
   const supabase = getAdminClient();
   const { data, error } = await supabase.from("users").select("role, permissions, is_active").eq("auth_id", authUserId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data || data.is_active === false) throw new Error("Usuário inativo.");
-  if (!hasProcessosAccess({ role: data.role, permissions: (data.permissions as string[] | null) ?? null })) {
-    throw new Error("Sem permissão para Processos.");
-  }
+  const perfil = { role: data.role, permissions: (data.permissions as string[] | null) ?? null };
+  if (hasProcessosAccess(perfil)) return "completo";
+  if (opcoes.trabalhista && hasTrabalhistaAccess(perfil)) return "trabalhista";
+  throw new Error("Sem permissão para Processos.");
 }
 
 /** Pauta de Audiências: admin ou liberação da Pauta. Devolve se é admin (configurações). */

@@ -12,5 +12,5 @@ export async function POST(_request: Request, { params }: { params: Promise<{ do
     const documento = await carregarDocumento(documentoId);
     const leitura = await lerDocumento(documentoId);
     return { leitura, autos: await carregarAutos(documento.processoId) };
-  });
+  }, { item: "documento", id: documentoId });
 }

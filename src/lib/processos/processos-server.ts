@@ -1,6 +1,6 @@
 import "server-only";
 
-import { COLUNAS_CREDITO, COLUNAS_PROCESSO, campoPorChave, coagirValor, textoDoValor, type ValorCampo, type Valores } from "./campos";
+import { COLUNAS_CREDITO, COLUNAS_PROCESSO, COLUNAS_TRABALHISTA, campoPorChave, coagirValor, textoDoValor, type ValorCampo, type Valores } from "./campos";
 import { ProcessosError } from "./errors";
 import { chaveNome, usuarioPorSigla } from "@/lib/vistagem/agendamento";
 import { pessoasPorNome } from "@/lib/vistagem/pessoas-server";
@@ -8,6 +8,7 @@ import { carregarCatalogoProcessos } from "@/lib/vistagem/sama";
 import { conferirEscolhas } from "./opcoes-server";
 import { tabelaTjspEmCache } from "./indices-server";
 import { ITENS_SANEAMENTO, calcularPreenchimento } from "./preenchimento";
+import { CHAVES_TRABALHISTAS, ITENS_TRABALHISTAS } from "./trabalhista";
 import { levantamentosDosAcordos } from "./acordos";
 import { carregarAcordos } from "./acordos-dados";
 import { encargosDoProcesso, memoriaDoValorDaAcao } from "./rec-credito";
@@ -19,7 +20,7 @@ const ENVIOS_ABERTOS: StatusEnvio[] = ["pendente", "enviado", "erro"];
 const SELECAO_PARTES =
   "id, polo, papel, vinculo, devedor, referente_a, origem, ordem, created_at, pessoa:proc_pessoas(id, nome, documento, oab, observacao, enderecos:proc_pessoa_enderecos(id, endereco, cidade, uf, cep, observacao, origem, created_at), contatos:proc_pessoa_contatos(id, tipo, valor, whatsapp, observacao, origem, created_at))";
 
-const SELECAO_PROCESSO = `id, ${COLUNAS_PROCESSO.join(", ")}, itens_nao_aplicaveis, sincronizado_em, vios_editado_em, credito:proc_credito(${COLUNAS_CREDITO.join(", ")}), partes:proc_partes(${SELECAO_PARTES})`;
+const SELECAO_PROCESSO = `id, ${COLUNAS_PROCESSO.join(", ")}, itens_nao_aplicaveis, sincronizado_em, vios_editado_em, credito:proc_credito(${COLUNAS_CREDITO.join(", ")}), trabalhista:proc_trabalhista(${COLUNAS_TRABALHISTA.join(", ")}), trab_pedidos:proc_trab_pedidos(count), partes:proc_partes(${SELECAO_PARTES})`;
 
 type Linha = Record<string, unknown>;
 
@@ -87,7 +88,15 @@ function valoresDaLinha(linha: Linha): Valores {
   for (const coluna of COLUNAS_PROCESSO) valores[coluna] = (linha[coluna] as ValorCampo | undefined) ?? null;
   const credito = um(linha.credito as Linha | Linha[] | null);
   for (const coluna of COLUNAS_CREDITO) valores[coluna] = (credito?.[coluna] as ValorCampo | undefined) ?? null;
+  const trabalhista = um(linha.trabalhista as Linha | Linha[] | null);
+  for (const coluna of COLUNAS_TRABALHISTA) valores[coluna] = (trabalhista?.[coluna] as ValorCampo | undefined) ?? null;
   return valores;
+}
+
+/** Quantos pedidos trabalhistas o processo tem (para o saneamento da área). */
+function contagensDaLinha(linha: Linha): { pedidos: number } {
+  const contagem = um(linha.trab_pedidos as Linha | Linha[] | null);
+  return { pedidos: Number(contagem?.count ?? 0) || 0 };
 }
 
 function texto(valor: ValorCampo | undefined): string | null {
@@ -111,7 +120,7 @@ export async function listarProcessos(): Promise<ProcessoResumo[]> {
   return linhas.map((linha) => {
     const valores = valoresDaLinha(linha);
     const partes = partesDaLinha(linha);
-    const preenchimento = calcularPreenchimento(valores, partes, (linha.itens_nao_aplicaveis as string[] | null) ?? []);
+    const preenchimento = calcularPreenchimento(valores, partes, (linha.itens_nao_aplicaveis as string[] | null) ?? [], contagensDaLinha(linha));
     // As partes ficam em proc_partes; os campos de texto do processo só vêm preenchidos de algumas cargas.
     const nomesDoPolo = (polo: Parte["polo"]) => partes.filter((parte) => parte.papel === "parte" && parte.polo === polo).map((parte) => parte.nome).join("; ") || null;
     return {
@@ -257,7 +266,7 @@ export async function detalharProcesso(id: string): Promise<ProcessoDetalhe> {
       })
     ),
     envios: ((envios.data ?? []) as Linha[]).map(paraEnvio),
-    preenchimento: calcularPreenchimento(valores, partes, naoAplicaveis),
+    preenchimento: calcularPreenchimento(valores, partes, naoAplicaveis, contagensDaLinha(linha)),
     naoAplicaveis,
     sincronizadoEm: (linha.sincronizado_em as string | null) ?? null,
     viosEditadoEm: (linha.vios_editado_em as string | null) ?? null,
@@ -266,7 +275,7 @@ export async function detalharProcesso(id: string): Promise<ProcessoDetalhe> {
 }
 
 /** Processos com partes, para a planilha. */
-export async function carregarParaPlanilha(ids: string[] | null): Promise<{ valores: Valores; partes: Parte[] }[]> {
+export async function carregarParaPlanilha(ids: string[] | null): Promise<{ id: string; valores: Valores; partes: Parte[]; naoAplicaveis: string[] }[]> {
   const linhas: Linha[] = [];
   if (ids) {
     for (const lote of emLotes(ids, 100)) {
@@ -282,7 +291,12 @@ export async function carregarParaPlanilha(ids: string[] | null): Promise<{ valo
       if (!data || data.length < 500) break;
     }
   }
-  return linhas.map((linha) => ({ valores: valoresDaLinha(linha), partes: partesDaLinha(linha) }));
+  return linhas.map((linha) => ({
+    id: linha.id as string,
+    valores: valoresDaLinha(linha),
+    partes: partesDaLinha(linha),
+    naoAplicaveis: (linha.itens_nao_aplicaveis as string[] | null) ?? [],
+  }));
 }
 
 /**
@@ -306,6 +320,7 @@ export async function atualizarProcesso(id: string, entrada: Record<string, unkn
   const atuais = valoresDaLinha(linha);
   const patchProcesso: Valores = {};
   const patchCredito: Valores = {};
+  const patchTrabalhista: Valores = {};
   const mudancas: { campo: string; anterior: string; novo: string; vios: boolean }[] = [];
 
   const alterados: Record<string, ValorCampo> = {};
@@ -324,7 +339,7 @@ export async function atualizarProcesso(id: string, entrada: Record<string, unkn
     const anterior = textoDoValor(item, atuais[chave]);
     const novo = textoDoValor(item, valor);
     if (anterior === novo) continue;
-    (item.tabela === "credito" ? patchCredito : patchProcesso)[chave] = valor;
+    (item.tabela === "credito" ? patchCredito : item.tabela === "trabalhista" ? patchTrabalhista : patchProcesso)[chave] = valor;
     mudancas.push({ campo: chave, anterior, novo, vios: item.origem === "vios" });
   }
   if (!mudancas.length) return detalharProcesso(id);
@@ -336,6 +351,10 @@ export async function atualizarProcesso(id: string, entrada: Record<string, unkn
   if (Object.keys(patchCredito).length) {
     const { error } = await db().from("proc_credito").upsert({ processo_id: id, ...patchCredito }, { onConflict: "processo_id" });
     if (error) falhou("salvar os dados do crédito", error);
+  }
+  if (Object.keys(patchTrabalhista).length) {
+    const { error } = await db().from("proc_trabalhista").upsert({ processo_id: id, ...patchTrabalhista }, { onConflict: "processo_id" });
+    if (error) falhou("salvar os dados trabalhistas", error);
   }
   const { error: erroHistorico } = await db()
     .from("proc_alteracoes")
@@ -395,7 +414,7 @@ export async function atualizarProcesso(id: string, entrada: Record<string, unkn
   return detalharProcesso(id);
 }
 
-const CHAVES_SANEAMENTO = new Set(ITENS_SANEAMENTO.map((item) => item.chave));
+const CHAVES_SANEAMENTO = new Set([...ITENS_SANEAMENTO.map((item) => item.chave), ...CHAVES_TRABALHISTAS]);
 
 /** Marca (ou desmarca) um item do saneamento como "não se aplica" neste processo. */
 export async function marcarNaoAplicavel(id: string, chave: string, naoSeAplica: boolean, ator: Ator): Promise<ProcessoDetalhe> {
@@ -407,7 +426,7 @@ export async function marcarNaoAplicavel(id: string, chave: string, naoSeAplica:
   else atuais.delete(chave);
   const { error } = await db().from("proc_processos").update({ itens_nao_aplicaveis: [...atuais] }).eq("id", id);
   if (error) falhou("salvar o saneamento", error);
-  const rotulo = ITENS_SANEAMENTO.find((item) => item.chave === chave)?.rotulo ?? chave;
+  const rotulo = [...ITENS_SANEAMENTO, ...ITENS_TRABALHISTAS].find((item) => item.chave === chave)?.rotulo ?? chave;
   await registrarNoHistorico(id, "saneamento", null, `${rotulo}: ${naoSeAplica ? "não se aplica" : "volta a contar"}`, ator);
   return detalharProcesso(id);
 }

@@ -18,6 +18,7 @@ export interface ProcessoDoPainel {
   sistema: string | null;
   /** Há robô para este tribunal e sistema (ou o Jus.br atende). */
   temRobo: boolean;
+  grupoCliente?: string | null;
 }
 
 export interface PedidoDoPainel {
@@ -81,6 +82,8 @@ export interface PedidoAberto {
   id: string;
   processoId: string;
   cnj: string;
+  /** Grupo do cliente do processo (para saber de quem é cada pedido na fila). */
+  grupoCliente: string | null;
   tribunal: string;
   sistema: string;
   status: string;
@@ -225,6 +228,7 @@ export function montarPainelDoRobo(entrada: {
   for (const pedido of pedidos) pedidosPorProcesso.set(pedido.processo_id, [...(pedidosPorProcesso.get(pedido.processo_id) ?? []), pedido]);
   const documentosPorProcesso = new Map<string, DocumentoDoPainel[]>();
   for (const documento of documentos) documentosPorProcesso.set(documento.processo_id, [...(documentosPorProcesso.get(documento.processo_id) ?? []), documento]);
+  const grupoPorProcesso = new Map(processos.map((processo) => [processo.id, processo.grupoCliente ?? null]));
   const pendentesPorProcesso = new Map<string, number>();
   for (const id of sugestoes.pendentesPorProcesso) pendentesPorProcesso.set(id, (pendentesPorProcesso.get(id) ?? 0) + 1);
 
@@ -310,6 +314,7 @@ export function montarPainelDoRobo(entrada: {
       id: pedido.id,
       processoId: pedido.processo_id,
       cnj: pedido.cnj,
+      grupoCliente: grupoPorProcesso.get(pedido.processo_id) ?? null,
       tribunal: pedido.tribunal,
       sistema: pedido.sistema,
       status: pedido.status,

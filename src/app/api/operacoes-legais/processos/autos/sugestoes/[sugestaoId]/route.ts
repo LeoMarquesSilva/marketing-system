@@ -9,5 +9,5 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: Request, { params }: { params: Promise<{ sugestaoId: string }> }) {
   const { sugestaoId } = await params;
-  return comAcesso(async (ator) => decidirSugestao(sugestaoId, await lerJson(request), ator));
+  return comAcesso(async (ator) => decidirSugestao(sugestaoId, await lerJson(request), ator), { item: "sugestao", id: sugestaoId });
 }

@@ -100,7 +100,8 @@ export async function resolverCaixa(endereco: string, token: string): Promise<st
 }
 
 export async function enviarEmailMicrosoft(params: {
-  para: string;
+  /** Um ou vários destinatários (todos em "Para"). */
+  para: string | string[];
   assunto: string;
   html: string;
   /** Para onde vão as respostas (ex.: a pessoa do RH que enviou). Sem ele, voltam para o remetente. */
@@ -123,7 +124,7 @@ export async function enviarEmailMicrosoft(params: {
       message: {
         subject: params.assunto,
         body: { contentType: "HTML", content: params.html },
-        toRecipients: [{ emailAddress: { address: params.para } }],
+        toRecipients: (Array.isArray(params.para) ? params.para : [params.para]).map((address) => ({ emailAddress: { address } })),
         ...(responderPara ? { replyTo: [{ emailAddress: { address: responderPara } }] } : {}),
       },
       saveToSentItems: params.salvarEmEnviados ?? false,

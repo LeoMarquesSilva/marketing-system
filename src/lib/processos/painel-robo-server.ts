@@ -35,9 +35,9 @@ export interface RespostaDoPainel extends PainelDoRobo {
 /** Gestão do robô de autos: fila, projeção, downloads, leitura pela IA e o estado dos autos de cada processo. */
 export async function painelDoRobo(agoraMs = Date.now()): Promise<RespostaDoPainel> {
   const [processos, pedidos, documentos, pendentes, aprovadas, recusadas, comPendentes] = await Promise.all([
-    todas<{ id: string; ci: string | null; cnj: string | null; situacao: string | null; data_encerramento: string | null; sistema_tribunal: string | null }>(
+    todas<{ id: string; ci: string | null; cnj: string | null; situacao: string | null; data_encerramento: string | null; sistema_tribunal: string | null; grupo_cliente: string | null }>(
       "proc_processos",
-      "id, ci, cnj, situacao, data_encerramento, sistema_tribunal",
+      "id, ci, cnj, situacao, data_encerramento, sistema_tribunal, grupo_cliente",
       "ci"
     ),
     todas<PedidoDoPainel>(
@@ -63,6 +63,7 @@ export async function painelDoRobo(agoraMs = Date.now()): Promise<RespostaDoPain
       tribunal: robo.tribunal,
       sistema: robo.sistema,
       temRobo: robo.disponivel,
+      grupoCliente: processo.grupo_cliente,
     };
   });
 

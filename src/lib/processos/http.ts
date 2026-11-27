@@ -2,7 +2,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import { ProcessosError } from "./errors";
-import { exigirAcessoProcessos, type Ator } from "./server";
+import { conferirAlvoTrabalhista, exigirAcessoProcessos, type AlvoTrabalhista, type Ator } from "./server";
 
 /** Erro → resposta JSON com o status certo (usada também pelas rotas do robô, que não têm sessão). */
 export function respostaDeErro(error: unknown): NextResponse {
@@ -14,20 +14,30 @@ export function respostaDeErro(error: unknown): NextResponse {
   return NextResponse.json({ error: "Não foi possível concluir a operação." }, { status: 500 });
 }
 
+/**
+ * Sem `alvo`, só quem tem Processos inteiro. Com `alvo`, entra também a liberação só da Carteira Trabalhista,
+ * desde que o alvo seja de processo trabalhista.
+ */
+async function ator(alvo?: AlvoTrabalhista): Promise<Ator> {
+  if (!alvo) return exigirAcessoProcessos();
+  const quem = await exigirAcessoProcessos({ trabalhista: true });
+  await conferirAlvoTrabalhista(quem, alvo);
+  return quem;
+}
+
 /** Confere o acesso, roda a ação e devolve JSON; erro vira a resposta com o status certo. */
-export async function comAcesso<T>(acao: (ator: Ator) => Promise<T>): Promise<NextResponse> {
+export async function comAcesso<T>(acao: (ator: Ator) => Promise<T>, alvo?: AlvoTrabalhista): Promise<NextResponse> {
   try {
-    const ator = await exigirAcessoProcessos();
-    return NextResponse.json(await acao(ator));
+    return NextResponse.json(await acao(await ator(alvo)));
   } catch (error) {
     return respostaDeErro(error);
   }
 }
 
 /** Como comAcesso, para rota que devolve arquivo. */
-export async function comAcessoBruto(acao: (ator: Ator) => Promise<Response>): Promise<Response> {
+export async function comAcessoBruto(acao: (ator: Ator) => Promise<Response>, alvo?: AlvoTrabalhista): Promise<Response> {
   try {
-    return await acao(await exigirAcessoProcessos());
+    return await acao(await ator(alvo));
   } catch (error) {
     return respostaDeErro(error);
   }
