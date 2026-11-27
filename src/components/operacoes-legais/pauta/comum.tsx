@@ -158,7 +158,7 @@ export function Dupla({
   return (
     <div className={cn("flex min-w-0 gap-x-4 gap-y-1", compacto ? "flex-row flex-wrap" : "flex-col")}>
       <span className="flex min-w-0 items-center gap-1.5 text-sm">
-        <span className="w-3 text-[10px] font-semibold text-muted-foreground">T</span>
+        <span className={cn("shrink-0 text-[11px] font-semibold text-muted-foreground", compacto ? undefined : "w-12")}>Titular</span>
         {correspondente ? (
           <>
             <span
@@ -182,7 +182,7 @@ export function Dupla({
         )}
       </span>
       <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-        <span className="w-3 text-[10px] font-semibold">B</span>
+        <span className={cn("shrink-0 text-[11px] font-semibold", compacto ? undefined : "w-12")}>Backup</span>
         <Avatar pessoa={backup} className={backup ? undefined : "border-slate-300 text-slate-400"} />
         <span className="truncate">{backup ? nome(backup) : "—"}</span>
         {backup ? <IconeResposta resposta={respostas?.backup} /> : null}

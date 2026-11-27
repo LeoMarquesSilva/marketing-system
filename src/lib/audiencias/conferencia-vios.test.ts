@@ -167,6 +167,12 @@ describe("casamento da pauta com o VIOS", () => {
     expect(conferirPautaComVios([nova], [anterior, cedo], AGORA).tarefaDa.get(nova.id)).toBe(cedo);
   });
 
+  it("perícia só casa com perícia: a instrução não toma a tarefa de perícia do mesmo processo", () => {
+    const instrucao = aud({ inicio: "2026-12-11T19:21:00.000Z", tipo: "instrucao" });
+    const pericia = tarefa({ inicio: "2026-12-04T08:00:00.000Z", tipo: "pericia", tarefa: "PERÍCIA" });
+    expect(conferirPautaComVios([instrucao], [pericia], AGORA).tarefaDa.get(instrucao.id)).toBeNull();
+  });
+
   it("longe demais (mais de 120 dias) não casa; outro processo também não", () => {
     const a = aud();
     const r = conferirPautaComVios([a], [tarefa({ inicio: "2027-06-10T12:00:00.000Z" }), tarefa({ cnj: "0099999-11.2026.5.15.0001" })], AGORA);

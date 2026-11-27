@@ -15,11 +15,17 @@ import type { AudienciaNoVios } from "./vios-csv";
  * Tarefa concluída ou cancelada só casa com audiência do mesmo dia: em outro dia ela é a audiência anterior, que já
  * aconteceu ou foi redesignada (26/11/2026: a instrução de 09/12 do 0012457-97 casava com a tarefa da de 23/11, já
  * concluída, e mostrava "concluída no VIOS" em vez de "não está agendada no VIOS").
+ * Perícia só casa com perícia e sessão só com sessão (27/11/2026: a instrução de 11/12 do 1001581-71 tomava a tarefa
+ * PERÍCIA de 04/12, e a perícia não entrava na pauta como "a confirmar").
  */
 
 export const JANELA_DIAS = 120;
 const DIA_MS = 24 * 60 * 60 * 1000;
 const PESO_STATUS: Record<AudienciaNoVios["status"], number> = { aberta: 0, concluida: 1, cancelada: 2 };
+
+function grupoDoTipo(tipo: Audiencia["tipo"]): string {
+  return tipo === "sessao" || tipo === "pericia" ? tipo : "audiencia";
+}
 
 export interface ResultadoDaConferencia {
   /** Para cada audiência conferida, a tarefa do VIOS que corresponde a ela (null = nenhuma). */
@@ -62,6 +68,7 @@ export function conferirPautaComVios(audiencias: Audiencia[], tarefas: Audiencia
       const distancia = Math.abs(new Date(a.inicio).getTime() - new Date(t.inicio).getTime());
       if (distancia > JANELA_DIAS * DIA_MS) continue;
       if (t.status !== "aberta" && local(t.inicio).dia !== local(a.inicio).dia) continue;
+      if (grupoDoTipo(t.tipo) !== grupoDoTipo(a.tipo)) continue;
       candidatos.push({ a, t, chave: [a.situacao === "designada" ? 0 : 1, PESO_STATUS[t.status], mesmoHorario(a.inicio, t.inicio) ? 0 : 1, distancia] });
     }
   }
