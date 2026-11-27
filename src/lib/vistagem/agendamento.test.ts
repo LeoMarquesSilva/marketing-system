@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { criarCalendario } from "./dias-uteis";
+import { avisoDaFatal, expedienteDoTribunal } from "./dias-dos-tribunais";
+import { criarCalendario, criarCalendarioDePrazo } from "./dias-uteis";
 import { CADEIA_PADRAO } from "./fluxo-vios";
 import {
   areaDoCatalogo,
@@ -471,6 +472,36 @@ describe("validarAgendamentos", () => {
     const comVios = validarAgendamentos(entrada, { ...contexto, ehDiaDoVios: criarCalendario(["2027-12-08"]) });
     expect(comVios.ok).toBe(false);
     if (!comVios.ok) expect(comVios.erros[0]).toMatch(/^Tarefa 1: 2\. REVISAR em 08\/12\/2027: não é dia útil .* passaria para 09\/12\/2027/);
+  });
+
+  it("fatal num dia sem expediente do tribunal não grava; o REVISAR e o PROTOCOLAR nesses dias, com a fatal em 09/12, gravam", () => {
+    const sem = expedienteDoTribunal({ tribunal: "TJSP" }).semExpediente;
+    const ehDiaDePrazo = criarCalendarioDePrazo([]);
+    const comTribunal = {
+      ...contexto,
+      problemaDaFatal: (fatal: string) => {
+        const aviso = avisoDaFatal(fatal, sem, ehDiaDePrazo);
+        return aviso?.bloqueia ? aviso.texto : null;
+      },
+    };
+    const prazo = (dataFatal: string, fluxoDatas: { caminho: string[]; data: string }[] = []) => [
+      { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal, responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", fluxoDatas },
+    ];
+    const naoGrava = validarAgendamentos(prazo("2026-12-07"), comTribunal);
+    expect(naoGrava.ok).toBe(false);
+    if (!naoGrava.ok) {
+      expect(naoGrava.erros).toContain(
+        "Tarefa 1: A data fatal 07/12/2026 não pode ficar nesse dia (Dia da Justiça: sem expediente no TJSP). Use 09/12/2026."
+      );
+    }
+    const grava = validarAgendamentos(
+      prazo("2026-12-09", [
+        { caminho: ["2. REVISAR"], data: "2026-12-07" },
+        { caminho: ["3. PROTOCOLAR"], data: "2026-12-08" },
+      ]),
+      comTribunal
+    );
+    expect(grava.ok).toBe(true);
   });
 
   it("tarefa de Prazo sem prazo próprio vai com a data dela, sem fatal; o revisor continua obrigatório", () => {

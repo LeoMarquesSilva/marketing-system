@@ -555,6 +555,11 @@ export function validarAgendamentos(
      */
     ehDiaDoVios?: (iso: string) => boolean;
     /**
+     * Problema da data fatal no tribunal do processo: num dia sem expediente (07 ou 08/12/2026 no TJSP), a fatal não
+     * grava e o texto diz a data que vale (`avisoDaFatal`, regra de 27/11/2026). Null: a fatal pode ficar.
+     */
+    problemaDaFatal?: (fatal: string) => string | null;
+    /**
      * Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). Recebe o prazo marcado: a regra
      * da insolvência antecipa o Enviar com 10 dias ou mais e o adia no prazo curto, com menos de 10 (`fluxoDoPrazo`).
      */
@@ -620,6 +625,8 @@ export function validarAgendamentos(
           : ""
         : entrada.data;
     if (prazo && !semFatal && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
+    const problemaDaFatal = fatal ? contexto.problemaDaFatal?.(fatal) ?? null : null;
+    if (problemaDaFatal) erros.push(`${n}: ${problemaDaFatal}`);
     if ((!prazo || semFatal) && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
     // Depois das 18h, a data escolhida não fica para hoje (o Enviar do Prazo já vem do `hoje`, que é o dia seguinte).
     const depois = contexto.depoisDoHorario;

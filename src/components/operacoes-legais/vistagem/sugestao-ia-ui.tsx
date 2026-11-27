@@ -99,6 +99,7 @@ export function CartaoSugestaoIa({
   nomeDaTarefa,
   dataPublicacao,
   contaPrazo,
+  fatalNoExpediente = (iso) => iso,
   comEsocial,
   onUsar,
   onIgnorar,
@@ -112,6 +113,8 @@ export function CartaoSugestaoIa({
   nomeDaTarefa: (tarefa: TarefaSugerida) => string;
   dataPublicacao: string | null;
   contaPrazo: (iso: string) => boolean;
+  /** A fatal que vale no tribunal (num dia sem expediente, o próximo com expediente), como ao usar a sugestão. */
+  fatalNoExpediente?: (iso: string) => string;
   /** A pasta pede a classificação eSocial. */
   comEsocial: boolean;
   onUsar: () => void;
@@ -171,7 +174,10 @@ export function CartaoSugestaoIa({
       ) : null}
       <ListaSugerida
         tarefas={sugestao.tarefas}
-        fatais={sugestao.tarefas.map((tarefa) => fatalSugerida(tarefa, dataPublicacao, contaPrazo))}
+        fatais={sugestao.tarefas.map((tarefa) => {
+          const fatal = fatalSugerida(tarefa, dataPublicacao, contaPrazo);
+          return fatal ? fatalNoExpediente(fatal) : fatal;
+        })}
         nomeDaTarefa={nomeDaTarefa}
         className="mt-2 border-t border-[#eef3f5]"
       />

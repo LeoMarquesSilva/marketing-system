@@ -456,6 +456,11 @@ export interface VistagemDetalhe {
   feriadosVios?: string[];
   /** Nome de cada feriado de `feriados` e `feriadosVios` (AAAA-MM-DD → nome): o informativo do calendário. */
   nomesDosFeriados?: Record<string, string>;
+  /**
+   * Dias sem expediente no tribunal da publicação (AAAA-MM-DD → motivo), pela planilha do Samuel. Só mexem na data
+   * fatal: a fatal num deles vai para o próximo dia com expediente (07 ou 08/12/2026 no TJSP → 09/12).
+   */
+  diasSemExpediente?: Record<string, string>;
   /** Devolvida e ainda não vistada de novo: de onde veio, por quê e, no Check, o que acontece no VIOS. */
   devolucao?: DevolucaoNaVistagem | null;
   /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */

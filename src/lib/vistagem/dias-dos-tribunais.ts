@@ -4,12 +4,16 @@
  * expediente.
  *
  * Fonte: levantamento do Samuel, de 25/11/2026 (planilha "Dia da Justiça 2026 – expediente 7 e 8/12 por tribunal").
- * Decisão do usuário (26/11/2026): na seleção das datas da vistagem, vale o tribunal da publicação.
- * - Sem expediente: o dia fica travado, mesmo sem feriado no VIOS ou no SIOE.
- * - Com expediente: o dia fica livre, mesmo que o VIOS tenha feriado para o estado. Exemplos: o TRF-3 funciona em 7/12
- *   e o TRT-2 em 8/12, embora o feriado do VIOS valha para todo SP.
- * - Tribunal sem linha para o dia (o STM, que não foi confirmado): seguem o VIOS e o SIOE.
- * A contagem da data fatal não muda: segue SIOE + nacionais, sem o local (lado seguro).
+ *
+ * Regra (decisão do usuário, 27/11/2026): só a data fatal muda.
+ * - A fatal num dia sem expediente do tribunal passa para o próximo dia com expediente: 07 ou 08/12 no TJSP → 09/12.
+ *   No TRT-2, que fecha só em 07/12, vai para 08/12. No TRF-3, que funciona em 07/12, a fatal de 07/12 fica.
+ * - As outras datas (Enviar, 2. REVISAR, 3. PROTOCOLAR antes da fatal, Providência, Compromisso) podem cair nesses
+ *   dias. A trava delas é a de antes: fim de semana, SIOE e os feriados do VIOS.
+ * - A contagem dos dias do prazo não muda: os dias sem expediente no meio continuam contando (lado seguro, a fatal
+ *   fica mais cedo). Só o vencimento passa para frente.
+ * - Tribunal sem linha para o dia (o STM, que não foi confirmado) não muda nada.
+ * A regra de 26/11 (travar todas as tarefas nos dias sem expediente) foi substituída por esta.
  */
 
 export interface DiaDoTribunal {
@@ -145,17 +149,57 @@ export function expedienteDoTribunal(
   return { semExpediente, comExpediente: comExpediente.sort() };
 }
 
+function diaSeguinte(iso: string): string {
+  const data = new Date(`${iso}T12:00:00Z`);
+  data.setUTCDate(data.getUTCDate() + 1);
+  return data.toISOString().slice(0, 10);
+}
+
+function dataBr(iso: string): string {
+  const [ano, mes, dia] = iso.split("-");
+  return `${dia}/${mes}/${ano}`;
+}
+
 /**
- * Os dias em que o VIOS não deixa a tarefa (`nomesDosDiasSemTarefaNoVios`), acertados pelo expediente do tribunal da
- * publicação. O dia com expediente sai, e o dia sem expediente entra, com o nome.
+ * A data fatal que vale para o tribunal. Num dia sem expediente (`semExpediente`, de `expedienteDoTribunal`), passa
+ * para o próximo dia que tem expediente e é dia de prazo (`ehDiaDePrazo`: dia útil fora do recesso). Exemplo: 07/12/2026
+ * no TJSP → 09/12/2026. Fora desses dias, a fatal fica como está. Data vazia ou inválida volta como veio.
  */
-export function comOExpedienteDoTribunal(
-  nomesDoVios: Record<string, string>,
-  publicacao: { tribunal?: string | null; djen_orgao?: string | null },
-  dias: readonly DiaDoTribunal[] = DIAS_DOS_TRIBUNAIS
-): Record<string, string> {
-  const { semExpediente, comExpediente } = expedienteDoTribunal(publicacao, dias);
-  const nomes = { ...nomesDoVios };
-  for (const dia of comExpediente) delete nomes[dia];
-  return { ...nomes, ...semExpediente };
+export function fatalComExpediente(fatal: string, semExpediente: Record<string, string>, ehDiaDePrazo: (iso: string) => boolean): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fatal) || !semExpediente[fatal]) return fatal;
+  let dia = fatal;
+  for (let i = 0; i < 400; i += 1) {
+    dia = diaSeguinte(dia);
+    if (!semExpediente[dia] && ehDiaDePrazo(dia)) return dia;
+  }
+  return fatal;
+}
+
+/**
+ * O que a tela diz da data fatal perto de um dia sem expediente do tribunal.
+ * - Fatal num dia sem expediente: `bloqueia`, com a data que vale. Acontece numa vistagem gravada antes da regra; na
+ *   tela, a contagem e o calendário já levam a fatal para o dia certo.
+ * - Fatal no dia para onde esses dias vão (09/12 no TJSP): aviso de que ela já é a data certa.
+ */
+export function avisoDaFatal(
+  fatal: string | null | undefined,
+  semExpediente: Record<string, string>,
+  ehDiaDePrazo: (iso: string) => boolean
+): { texto: string; bloqueia: boolean } | null {
+  if (!fatal || !/^\d{4}-\d{2}-\d{2}$/.test(fatal)) return null;
+  if (semExpediente[fatal]) {
+    return {
+      bloqueia: true,
+      texto: `A data fatal ${dataBr(fatal)} não pode ficar nesse dia (${semExpediente[fatal]}). Use ${dataBr(fatalComExpediente(fatal, semExpediente, ehDiaDePrazo))}.`,
+    };
+  }
+  const levados = Object.keys(semExpediente)
+    .filter((dia) => dia < fatal && fatalComExpediente(dia, semExpediente, ehDiaDePrazo) === fatal)
+    .sort();
+  if (!levados.length) return null;
+  const motivos = [...new Set(levados.map((dia) => semExpediente[dia]))].join("; ");
+  return {
+    bloqueia: false,
+    texto: `Em ${levados.map(dataBr).join(" e ")}, ${motivos}. A fatal desses dias passa para ${dataBr(fatal)}.`,
+  };
 }

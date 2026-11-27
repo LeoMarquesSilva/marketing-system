@@ -54,7 +54,7 @@ import {
 import { carregarFeriados, carregarNomesDosFeriados } from "./feriados";
 import { nomesDosDiasSemTarefaNoVios, ondeEstaOProcesso } from "./feriados-vios";
 import { carregarFeriadosVios } from "./feriados-vios-server";
-import { comOExpedienteDoTribunal } from "./dias-dos-tribunais";
+import { avisoDaFatal, expedienteDoTribunal } from "./dias-dos-tribunais";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import {
@@ -197,20 +197,36 @@ export const COLUNAS_PUBLICACAO_COM_AREA = `${COLUNAS_PUBLICACAO}, area_processo
 type OndeEAPublicacao = { estado?: string | null; tribunal?: string | null; djen_orgao?: string | null };
 
 /**
- * Dias em que a tarefa deste processo não pode ficar, além dos do SIOE. É o calendário da trava das datas.
- * - Entram os feriados do VIOS que valem para o processo, pela UF e pelo tribunal da publicação. O VIOS passaria esses
- *   dias para o dia útil seguinte (0056354-65, 25/11/2026).
- * - Depois vale o expediente do tribunal (`dias-dos-tribunais.ts`): o dia em que o tribunal fecha entra, e o dia em que
- *   ele funciona sai. Exemplo: o Dia da Justiça de 2026, pela planilha do Samuel.
+ * Dias em que o VIOS não deixa uma tarefa deste processo (feriados do VIOS que valem para ele, pela UF e pelo tribunal
+ * da publicação), além dos do SIOE. É o calendário da trava das datas: o VIOS passaria esses dias para o dia útil
+ * seguinte (0056354-65, 25/11/2026). O expediente do tribunal não entra aqui: ele só muda a data fatal
+ * (`diasSemExpedienteDaPublicacao`, regra de 27/11/2026).
  */
 async function diasSemTarefaDaPublicacao(publicacao: OndeEAPublicacao): Promise<string[]> {
   return Object.keys(await feriadosViosDaPublicacao(publicacao)).sort();
 }
 
-/** Os mesmos dias de `diasSemTarefaDaPublicacao`, com o nome do feriado para o calendário. */
+/** Os mesmos dias de `diasSemTarefaDaPublicacao`, com o nome do feriado no VIOS. */
 async function feriadosViosDaPublicacao(publicacao: OndeEAPublicacao): Promise<Record<string, string>> {
-  const doVios = nomesDosDiasSemTarefaNoVios(await carregarFeriadosVios(), ondeEstaOProcesso(publicacao));
-  return comOExpedienteDoTribunal(doVios, publicacao);
+  return nomesDosDiasSemTarefaNoVios(await carregarFeriadosVios(), ondeEstaOProcesso(publicacao));
+}
+
+/**
+ * Dias sem expediente no tribunal da publicação (`dias-dos-tribunais.ts`), com o motivo. A data fatal não fica num
+ * deles: passa para o próximo dia com expediente (07 ou 08/12/2026 no TJSP → 09/12).
+ */
+function diasSemExpedienteDaPublicacao(publicacao: OndeEAPublicacao): Record<string, string> {
+  return expedienteDoTribunal(publicacao).semExpediente;
+}
+
+/** A trava da data fatal no servidor: a fatal num dia sem expediente do tribunal não grava, e o erro diz a data certa. */
+function problemaDaFatalNoTribunal(publicacao: OndeEAPublicacao, feriados: string[]): (fatal: string) => string | null {
+  const semExpediente = diasSemExpedienteDaPublicacao(publicacao);
+  const ehDiaDePrazo = criarCalendarioDePrazo(feriados);
+  return (fatal) => {
+    const aviso = avisoDaFatal(fatal, semExpediente, ehDiaDePrazo);
+    return aviso?.bloqueia ? aviso.texto : null;
+  };
 }
 
 export async function carregarPublicacao(id: string): Promise<PublicacaoComArea> {
@@ -608,6 +624,7 @@ export async function obterVistagem(
     feriados,
     feriadosVios,
     nomesDosFeriados: { ...nomesSioe, ...nomesVios },
+    diasSemExpediente: diasSemExpedienteDaPublicacao(publicacao),
     devolucao: previa ? null : await devolucaoNaVistagem(publicacao).catch((erro: unknown) => {
       console.error("[vistagem] devolução da publicação", erro instanceof Error ? erro.message : erro);
       return null;
@@ -750,6 +767,7 @@ export async function salvarVistagem(
     usuarios: catalogo.usuarios,
     ehDiaUtil: criarCalendario(feriados),
     ehDiaDoVios: criarCalendario([...feriados, ...diasVios]),
+    problemaDaFatal: problemaDaFatalNoTribunal(publicacao, feriados),
     cadeiaDaTarefa: (tarefaId, prazo) => cadeiaDoFluxo(fluxoDoPrazo(montarFluxo(tarefaId, arvore), prazo, daPublicacao)),
     caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
     semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
@@ -1436,17 +1454,28 @@ async function fotosDosItens(itens: ConferenciaItem[], tela: string): Promise<Re
  * sem pasta. `authUserId` null: foi direto, sem a Conferência (`vaiDiretoAoRobo`), e conferido_por fica vazio.
  */
 /**
- * Trava do Validar e do Rodar novamente: data do fluxo que o VIOS não guardaria assim (dia não útil) ou 2. REVISAR /
- * 3. PROTOCOLAR depois da fatal. A tela já barra ao gravar; esta pega as vistagens gravadas antes da trava (25/11/2026),
- * que se ajustam no lápis. Sem os feriados do SIOE, confere ao menos o fim de semana.
+ * Trava do Validar e do Rodar novamente: data do fluxo que o VIOS não guardaria assim (dia não útil), 2. REVISAR /
+ * 3. PROTOCOLAR depois da fatal, ou data fatal num dia sem expediente do tribunal (regra de 27/11/2026). A tela já barra
+ * ao gravar; esta pega as vistagens gravadas antes das travas, que se ajustam no lápis. Sem os feriados do SIOE,
+ * confere ao menos o fim de semana.
  */
 async function conferirDatasDoFluxo(publicacao: PublicacaoComArea, agendamentos: AgendamentoRow[]): Promise<void> {
-  if (!agendamentos.some((item) => item.fluxo_datas?.length)) return;
+  const comFatal = agendamentos.filter((item) => item.etiqueta === "PRAZO" && item.data_fatal);
+  const semExpediente = diasSemExpedienteDaPublicacao(publicacao);
+  const fatalSemExpediente = comFatal.some((item) => semExpediente[String(item.data_fatal)]);
+  if (!fatalSemExpediente && !agendamentos.some((item) => item.fluxo_datas?.length)) return;
   const [feriados, diasVios] = await Promise.all([carregarFeriados().catch(() => [] as string[]), diasSemTarefaDaPublicacao(publicacao)]);
   const ehDiaUtil = criarCalendario([...feriados, ...diasVios]);
-  const problemas = agendamentos.flatMap((item) =>
-    problemasDasDatasDoFluxo(item.fluxo_datas ?? [], { ehDiaUtil, dataFatal: item.data_fatal }).map((problema) => `${item.tarefa}, ${problema.texto}`)
-  );
+  const problemaDaFatal = problemaDaFatalNoTribunal(publicacao, feriados);
+  const problemas = [
+    ...comFatal.flatMap((item) => {
+      const problema = problemaDaFatal(String(item.data_fatal));
+      return problema ? [`${item.tarefa}: ${problema}`] : [];
+    }),
+    ...agendamentos.flatMap((item) =>
+      problemasDasDatasDoFluxo(item.fluxo_datas ?? [], { ehDiaUtil, dataFatal: item.data_fatal }).map((problema) => `${item.tarefa}, ${problema.texto}`)
+    ),
+  ];
   if (problemas.length) throw new VistagemError(`Ajuste no lápis antes de mandar ao robô. ${problemas.join(" ")}`, 422);
 }
 
@@ -1580,6 +1609,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       usuarios: catalogo.usuarios,
       ehDiaUtil: criarCalendario(feriados),
       ehDiaDoVios,
+      problemaDaFatal: problemaDaFatalNoTribunal(publicacao, feriados),
       // A Conferência não manda os dias do prazo: valem os da vistagem enquanto a fatal for a mesma (como ao gravar).
       cadeiaDaTarefa: (tarefaId, prazo) =>
         cadeiaDoFluxo(

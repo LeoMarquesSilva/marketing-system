@@ -15,6 +15,7 @@ import {
   revisorFicaNaTarefa,
 } from "@/lib/vistagem/agendamento";
 import { mudancasNaTarefa, type CamposDaTarefa } from "@/lib/vistagem/ajuste-conferencia";
+import { avisoDaFatal, fatalComExpediente } from "@/lib/vistagem/dias-dos-tribunais";
 import { ROTULO_CONTAGEM, criarCalendario, criarCalendarioDePrazo, criarNomeDoDia, datasDoPrazo, noRecessoForense } from "@/lib/vistagem/dias-uteis";
 import { caminhosDoFluxo, fluxoDoPrazo, fluxoPrevisto, prazoApertado } from "@/lib/vistagem/fluxo-previsto";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
@@ -137,10 +138,19 @@ function FormularioDaTarefa({
   const ehDiaUtil = useMemo(() => criarCalendario(dados.feriados), [dados.feriados]);
   // Com os feriados do VIOS que valem para o processo: trava as datas que o VIOS passaria para o dia útil seguinte.
   const ehDiaDoVios = useMemo(() => criarCalendario([...dados.feriados, ...(dados.feriadosVios ?? [])]), [dados.feriados, dados.feriadosVios]);
-  // O informativo do calendário: o nome do feriado (do VIOS ou da Controladoria) e, na data fatal, o recesso.
+  // A fatal num dia sem expediente do tribunal (07 ou 08/12/2026 no TJSP) vai para o próximo dia com expediente; as
+  // outras datas podem cair nesses dias (regra de 27/11/2026).
+  const semExpediente = useMemo(() => dados.diasSemExpediente ?? {}, [dados.diasSemExpediente]);
+  // O informativo do calendário: o nome do feriado (do VIOS ou da Controladoria) e, na data fatal, o recesso e o dia
+  // sem expediente do tribunal.
   const nomeDoDia = useMemo(() => criarNomeDoDia(dados.nomesDosFeriados), [dados.nomesDosFeriados]);
-  const nomeDoDiaDoPrazo = useMemo(() => criarNomeDoDia(dados.nomesDosFeriados, { recesso: true }), [dados.nomesDosFeriados]);
+  const nomeDoDiaDoPrazo = useMemo(
+    () => criarNomeDoDia({ ...(dados.nomesDosFeriados ?? {}), ...semExpediente }, { recesso: true }),
+    [dados.nomesDosFeriados, semExpediente]
+  );
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(dados.feriados), [dados.feriados]);
+  const contaPrazoDaFatal = useMemo(() => (iso: string) => contaPrazo(iso) && !semExpediente[iso], [contaPrazo, semExpediente]);
+  const fatalNoExpediente = (iso: string) => fatalComExpediente(iso, semExpediente, contaPrazo);
   const pessoas = useMemo(() => pessoasDoDetalhe(dados), [dados]);
   const classeDe = useMemo(() => classeNoCatalogo(dados.catalogo), [dados.catalogo]);
 
@@ -218,7 +228,9 @@ function FormularioDaTarefa({
   // Revisar/Protocolar depois da fatal e Enviar em dia não útil.
   const problemasDoFluxo = problemasDasDatasDoFluxo(campos(form).fluxoDatas, { ehDiaUtil: ehDiaDoVios, dataFatal: comFatal ? form.dataFatal || null : null });
   const enviarNaoUtil = enviarAMao && Boolean(form.data) && !ehDiaDoVios(form.data);
+  const avisoDoExpediente = comFatal ? avisoDaFatal(form.dataFatal, semExpediente, contaPrazo) : null;
   const completo =
+    !avisoDoExpediente?.bloqueia &&
     limiteOk &&
     Boolean(form.responsavel.trim()) &&
     (comFatal ? Boolean(form.dataFatal && form.data) : Boolean(form.data)) &&
@@ -237,6 +249,7 @@ function FormularioDaTarefa({
       ? [
           ...avisosDaData(form.dataFatal, hoje).map((texto) => `Data fatal: ${texto.toLowerCase()}`),
           ...(contaPrazo(form.dataFatal) ? [] : [noRecessoForense(form.dataFatal) ? "A data fatal cai no recesso forense (20/12 a 20/01)." : "A data fatal não é dia útil."]),
+          ...(avisoDoExpediente ? [avisoDoExpediente.texto] : []),
         ]
       : []),
     ...(form.data ? avisosDaData(form.data, hoje, ehDiaDoVios).map((texto) => `${comFatal ? "Enviar" : "Data"}: ${texto.toLowerCase()}`) : []),
@@ -320,11 +333,15 @@ function FormularioDaTarefa({
               <CampoData
                 rotulo="Data fatal"
                 valor={form.dataFatal}
-                ehDiaUtil={contaPrazo}
+                ehDiaUtil={contaPrazoDaFatal}
                 nomeDoDia={nomeDoDiaDoPrazo}
-                invalido={!form.dataFatal}
-                // O Enviar segue a conta do fluxo da tarefa, como na vistagem.
-                onChange={(dataFatal) => alterar({ dataFatal, ...(dataFatal ? { data: enviarPelaFatal(dataFatal) } : {}) })}
+                invalido={!form.dataFatal || Boolean(avisoDoExpediente?.bloqueia)}
+                // O Enviar segue a conta do fluxo da tarefa, como na vistagem. Num dia sem expediente do tribunal, a
+                // fatal vai para o próximo dia com expediente.
+                onChange={(escolhida) => {
+                  const dataFatal = fatalNoExpediente(escolhida);
+                  alterar({ dataFatal, ...(dataFatal ? { data: enviarPelaFatal(dataFatal) } : {}) });
+                }}
               />
             </div>
           ) : null}
@@ -439,7 +456,7 @@ function FormularioDaTarefa({
               : prazo
                 ? fataisDoFluxo(fluxo, dados.publicacao.dataPublicacao, dados.catalogo?.area, contagemDaArea, contaPrazo).map((fatal) => ({
                     rotulo: `Data fatal · ${fatal.nome}`,
-                    data: fatal.data,
+                    data: fatalNoExpediente(fatal.data),
                     dica: `${fatal.dias} ${ROTULO_CONTAGEM[contagemDaArea]} após a publicação (prazo legal). Só para conferir: não vai para o VIOS.`,
                   }))
                 : []

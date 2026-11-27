@@ -98,6 +98,7 @@ import {
   pedeTarefaEsocial,
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
+import { avisoDaFatal, fatalComExpediente } from "@/lib/vistagem/dias-dos-tribunais";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
 import { ROTULO_AJUSTE, emOrdemDeArvore, fluxoDoPrazo, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
 import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
@@ -1142,9 +1143,9 @@ export function EditorVistagem({
     () => criarCalendario([...(detalhe?.feriados ?? []), ...(detalhe?.feriadosVios ?? [])]),
     [detalhe?.feriados, detalhe?.feriadosVios]
   );
-  // O informativo do calendário: o nome do feriado (do VIOS ou da Controladoria) e, na data fatal, o recesso.
+  // O informativo do calendário: o nome do feriado (do VIOS ou da Controladoria). Na data fatal, também o recesso e o
+  // dia sem expediente do tribunal (`nomeDoDiaDaFatal`, abaixo).
   const nomeDoDiaDaTarefa = useMemo(() => criarNomeDoDia(detalhe?.nomesDosFeriados), [detalhe?.nomesDosFeriados]);
-  const nomeDoDiaDoPrazo = useMemo(() => criarNomeDoDia(detalhe?.nomesDosFeriados, { recesso: true }), [detalhe?.nomesDosFeriados]);
   // Depois das 18h nada fica para hoje: as datas vão a partir do dia útil seguinte (pedido de 13/11/2026). A hora é
   // relida a cada minuto, para a trava valer mesmo com a tela aberta desde antes das 18h.
   const [hora, setHora] = useState(() => horaEmSaoPaulo());
@@ -1156,6 +1157,15 @@ export function EditorVistagem({
   const depoisDoHorario = Boolean(detalhe && primeiroDia > detalhe.hoje);
   // A fatal conta só dias úteis fora do recesso forense; Enviar/Revisar/Protocolar seguem o expediente.
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(detalhe?.feriados ?? []), [detalhe?.feriados]);
+  // A fatal num dia sem expediente do tribunal (07 ou 08/12/2026 no TJSP) vai para o próximo dia com expediente; as
+  // outras datas podem cair nesses dias (regra de 27/11/2026). No calendário da fatal, esses dias ficam em cinza.
+  const semExpediente = useMemo(() => detalhe?.diasSemExpediente ?? {}, [detalhe?.diasSemExpediente]);
+  const fatalNoExpediente = useCallback((iso: string) => fatalComExpediente(iso, semExpediente, contaPrazo), [semExpediente, contaPrazo]);
+  const contaPrazoDaFatal = useCallback((iso: string) => contaPrazo(iso) && !semExpediente[iso], [contaPrazo, semExpediente]);
+  const nomeDoDiaDaFatal = useMemo(
+    () => criarNomeDoDia({ ...(detalhe?.nomesDosFeriados ?? {}), ...semExpediente }, { recesso: true }),
+    [detalhe?.nomesDosFeriados, semExpediente]
+  );
   /**
    * Uma Ciência dos Agendamentos e um Embargos de Declaração só por vistagem: fica a da primeira tarefa incluída
    * (ela mesma, ou a mais perto dela no fluxo do VIOS); as outras o robô cancela no VIOS depois de lançar (tipo
@@ -1312,7 +1322,13 @@ export function EditorVistagem({
     if (!vazio && !daTarefaAnterior) return saindo;
     if (novo === null) return daTarefaAnterior ? { ...saindo, diasPrazo: null, dataFatal: "", origemPrazo: null } : saindo;
     const contagemPrazo = linha.contagemPrazo ?? contagemPadrao;
-    return { ...saindo, diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo), origemPrazo: "tarefa" };
+    return {
+      ...saindo,
+      diasPrazo: novo,
+      contagemPrazo,
+      dataFatal: fatalNoExpediente(fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo)),
+      origemPrazo: "tarefa",
+    };
   }
 
   /** Data que o tipo já traz (CIÊNCIA NF: dia útil seguinte), pelo nome como está no VIOS. */
@@ -1395,7 +1411,7 @@ export function EditorVistagem({
         novaLinha({
           etiqueta: tarefa.classe,
           tarefa: opcao.nome,
-          dataFatal: prazo && !semPrazo ? fatalSugerida(tarefa, publicacao.dataPublicacao, contaPrazo) ?? "" : "",
+          dataFatal: prazo && !semPrazo ? fatalNoExpediente(fatalSugerida(tarefa, publicacao.dataPublicacao, contaPrazo) ?? "") : "",
           diasPrazo: prazo && !semPrazo ? tarefa.dias : null,
           contagemPrazo: prazo && !semPrazo && tarefa.dias ? tarefa.contagem : null,
           origemPrazo: prazo && !semPrazo ? "sugestao_ia" : null,
@@ -1430,7 +1446,12 @@ export function EditorVistagem({
     setLinhas((atuais) => {
       const alvo = atuais.find((linha) => linha.etiqueta === "PRAZO" && !linha.esocial && !semFatal(linha));
       const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? contagemPadrao;
-      const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo), origemPrazo: "publicacao" as const };
+      const mudanca = {
+        diasPrazo: dias,
+        contagemPrazo,
+        dataFatal: fatalNoExpediente(fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo)),
+        origemPrazo: "publicacao" as const,
+      };
       if (alvo) return atuais.map((linha) => (linha === alvo ? { ...linha, ...mudanca } : linha));
       if (totalDeTarefas(atuais) >= MAX_AGENDAMENTOS) return atuais;
       return [...atuais, novaLinha({ ...mudanca, responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "" })];
@@ -1520,7 +1541,9 @@ export function EditorVistagem({
       problemasDasDatasDoFluxo(Object.values(linha.fluxoDatas), { ehDiaUtil: ehDiaDoVios, dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal || null : null })
         .length > 0
   );
-  const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial && !passaDoLimite && !dataDoFluxoErrada;
+  // Fatal num dia sem expediente do tribunal (vistagem gravada antes da regra de 27/11/2026): só grava com a data certa.
+  const fatalSemExpediente = linhas.some((linha) => linha.etiqueta === "PRAZO" && Boolean(linha.dataFatal && semExpediente[linha.dataFatal]));
+  const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial && !passaDoLimite && !dataDoFluxoErrada && !fatalSemExpediente;
   const incompletas = linhas.filter((linha) => !linhaPronta(linha)).length;
   const faltaObservacao = linhas.some((linha) => pedeObservacao(linha) && !linha.observacao.trim());
   const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
@@ -1716,6 +1739,7 @@ export function EditorVistagem({
               nomeDaTarefa={(tarefa) => catalogo.tarefas[tarefa.classe].find((item) => item.id === tarefa.tarefaId)?.nome ?? tarefa.tarefa}
               dataPublicacao={publicacao.dataPublicacao}
               contaPrazo={contaPrazo}
+              fatalNoExpediente={fatalNoExpediente}
               comEsocial={Boolean(detalhe.esocial)}
               onUsar={usarSugestao}
               onIgnorar={() => setEstadoSugestao("ignorada")}
@@ -1840,13 +1864,16 @@ export function EditorVistagem({
                       : [];
                     const cienciaPedidaRepetida = repetidaEm(linha.chave, null);
                     const criadaPor = criadaPorOutra(linha.chave);
+                    const avisoDoExpediente = comFatal ? avisoDaFatal(linha.dataFatal, semExpediente, contaPrazo) : null;
                     const avisos = comFatal
                       ? linha.dataFatal
-                        ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(
-                            contaPrazo(linha.dataFatal)
-                              ? []
-                              : [noRecessoForense(linha.dataFatal) ? "A data fatal cai no recesso forense (20/12 a 20/01)." : "A data fatal não é dia útil."]
-                          )
+                        ? avisosDaData(linha.dataFatal, detalhe.hoje)
+                            .concat(
+                              contaPrazo(linha.dataFatal)
+                                ? []
+                                : [noRecessoForense(linha.dataFatal) ? "A data fatal cai no recesso forense (20/12 a 20/01)." : "A data fatal não é dia útil."]
+                            )
+                            .concat(avisoDoExpediente ? [avisoDoExpediente.texto] : [])
                         : []
                       : linha.data
                         ? depoisDoHorario && linha.data < primeiroDia
@@ -2006,7 +2033,9 @@ export function EditorVistagem({
                                               : {
                                                   diasPrazo: dias,
                                                   origemPrazo: "atalho",
-                                                  dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? contagemPadrao, contaPrazo),
+                                                  dataFatal: fatalNoExpediente(
+                                                    fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? contagemPadrao, contaPrazo)
+                                                  ),
                                                 }
                                           )
                                         }
@@ -2027,7 +2056,7 @@ export function EditorVistagem({
                                         alterar(linha.chave, {
                                           contagemPrazo: contagem,
                                           ...(linha.diasPrazo && publicacao.dataPublicacao
-                                            ? { dataFatal: fatalPorContagem(publicacao.dataPublicacao, linha.diasPrazo, contagem, contaPrazo) }
+                                            ? { dataFatal: fatalNoExpediente(fatalPorContagem(publicacao.dataPublicacao, linha.diasPrazo, contagem, contaPrazo)) }
                                             : {}),
                                         })
                                       }
@@ -2038,9 +2067,11 @@ export function EditorVistagem({
                                       <CampoData
                                         rotulo={`Data fatal da tarefa ${indice + 1}`}
                                         valor={linha.dataFatal}
-                                        ehDiaUtil={contaPrazo}
-                                        nomeDoDia={nomeDoDiaDoPrazo}
-                                        onChange={(data) => alterar(linha.chave, { dataFatal: data, diasPrazo: null, origemPrazo: data ? "calendario" : null })}
+                                        ehDiaUtil={contaPrazoDaFatal}
+                                        nomeDoDia={nomeDoDiaDaFatal}
+                                        onChange={(data) =>
+                                          alterar(linha.chave, { dataFatal: fatalNoExpediente(data), diasPrazo: null, origemPrazo: data ? "calendario" : null })
+                                        }
                                       />
                                     </div>
                                   </div>
@@ -2280,7 +2311,7 @@ export function EditorVistagem({
                                   : prazo
                                     ? fataisDoFluxo(fluxo, detalhe.publicacao.dataPublicacao, catalogo.area, contagemPadrao, contaPrazo).map((fatal) => ({
                                         rotulo: `Data fatal · ${fatal.nome}`,
-                                        data: fatal.data,
+                                        data: fatalNoExpediente(fatal.data),
                                         dica: `${fatal.dias} ${ROTULO_CONTAGEM[contagemPadrao]} após a publicação (prazo legal). Só para conferir: não vai para o VIOS.`,
                                       }))
                                     : []
