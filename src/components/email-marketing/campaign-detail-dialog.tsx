@@ -35,7 +35,16 @@ import {
   type EmailContact,
   type EmailRecipientStatus,
 } from "@/lib/email-marketing";
-import { unsupportedBroadcastTags } from "@/lib/email-marketing-merge-tags";
+import { SAMPLE_MERGE_CONTEXT, unsupportedBroadcastTags } from "@/lib/email-marketing-merge-tags";
+
+/** Variáveis que o envio pela caixa do remetente preenche: as do contato, o destinatário (links) e o descadastro. */
+const MAILBOX_TAGS = new Set([...Object.keys(SAMPLE_MERGE_CONTEXT), "destinatario", "unsubscribe_url"]);
+
+/** No envio pela caixa, só fica sem dado o que não é variável conhecida nem campo do RD (rd_…) do contato. */
+function unsupportedMailboxTags(...textos: string[]): string[] {
+  const tags = textos.flatMap((texto) => [...texto.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)].map((m) => m[1]));
+  return [...new Set(tags.filter((tag) => !MAILBOX_TAGS.has(tag.toLowerCase()) && !tag.toLowerCase().startsWith("rd_")))];
+}
 import { CampaignStatusPill, useCampaignSender, type CampaignAudience } from "./campaigns-tab";
 import { isOfficeMailbox, MAILBOX_SECONDS_PER_EMAIL, mailboxDuration, MicrosoftMark, SendModeBadge } from "./send-mode";
 import { useCampaignPreviewDoc } from "./campaign-thumbnail";
@@ -323,10 +332,12 @@ export function CampaignDetailDialog({
   }, [open, campaign?.id]);
 
   const previewDoc = useCampaignPreviewDoc(campaign?.htmlBody ?? "", campaign?.previewText ?? null);
-  const unsupported = useMemo(
-    () => (campaign ? unsupportedBroadcastTags(campaign.subject, campaign.previewText ?? "", campaign.htmlBody) : []),
-    [campaign]
-  );
+  const unsupported = useMemo(() => {
+    if (!campaign) return [];
+    const textos = [campaign.subject, campaign.previewText ?? "", campaign.htmlBody];
+    // Pela caixa do remetente o ORQESTRAI monta cada e-mail (inclusive {{destinatario}}); o Resend só conhece algumas.
+    return campaign.sendMode === "mailbox" ? unsupportedMailboxTags(...textos) : unsupportedBroadcastTags(...textos);
+  }, [campaign]);
 
   if (!campaign) return null;
 
@@ -432,9 +443,11 @@ export function CampaignDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_380px]">
+        {/* Abaixo de 1024 px vira uma coluna só, que rola inteira (prévia com altura fixa e os blocos embaixo);
+            no computador, prévia e blocos lado a lado, cada um com a própria rolagem. */}
+        <div className="min-h-0 flex-1 overflow-y-auto lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:overflow-hidden">
           {/* Prévia do e-mail */}
-          <div className="flex min-h-0 flex-col border-b bg-[#f4f6f8] lg:border-b-0 lg:border-r">
+          <div className="flex flex-col border-b bg-[#f4f6f8] lg:min-h-0 lg:border-b-0 lg:border-r">
             <div className="flex shrink-0 items-center justify-between gap-2 border-b bg-white/70 px-4 py-2">
               <p className="text-xs text-muted-foreground">Prévia com dados de exemplo</p>
               <div className="flex gap-1" role="group" aria-label="Tamanho da prévia">
@@ -458,7 +471,7 @@ export function CampaignDetailDialog({
                 </Button>
               </div>
             </div>
-            <div className="min-h-[320px] flex-1 overflow-y-auto p-4 sm:p-6">
+            <div className="h-[460px] overflow-y-auto p-4 sm:p-6 lg:h-auto lg:min-h-0 lg:flex-1">
               <div
                 className="mx-auto h-full min-h-[560px] overflow-hidden rounded-md border bg-white shadow-sm transition-[max-width]"
                 style={{ maxWidth: device === "desktop" ? 680 : 390 }}
@@ -468,8 +481,8 @@ export function CampaignDetailDialog({
             </div>
           </div>
 
-          {/* Painel lateral do modal (dentro do Dialog centralizado) */}
-          <div className="flex min-h-0 flex-col overflow-y-auto">
+          {/* Blocos do envio (dentro do Dialog centralizado) */}
+          <div className="flex flex-col lg:min-h-0 lg:overflow-y-auto">
             <Section title="Quem assina">
               <div className="flex items-center gap-3">
                 <PersonPhoto name={sender?.name ?? campaign.fromName} photo={sender?.photo} size="lg" />
@@ -559,7 +572,7 @@ export function CampaignDetailDialog({
                       <ChecklistItem ok={unsupported.length === 0} warn>
                         {unsupported.length === 0
                           ? "Personalização compatível com o envio"
-                          : `Saem em branco: ${unsupported.map((t) => `{{${t}}}`).join(", ")}`}
+                          : `${isMailbox ? "Sem dado para preencher" : "Saem em branco"}: ${unsupported.map((t) => `{{${t}}}`).join(", ")}`}
                       </ChecklistItem>
                       <ChecklistItem ok>Link de descadastro incluído no rodapé</ChecklistItem>
                     </ul>
