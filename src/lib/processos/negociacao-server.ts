@@ -53,7 +53,7 @@ function paraNegociacao(linha: Linha): Negociacao {
 }
 
 /** Ids dos processos da área Trabalhista (o filtro do banco é largo; ehTrabalhista confere). */
-async function idsTrabalhistas(): Promise<string[]> {
+export async function idsTrabalhistas(): Promise<string[]> {
   const ids: string[] = [];
   for (let inicio = 0; ; inicio += 1000) {
     const { data, error } = await db().from("proc_processos").select("id, area").ilike("area", "%trabalhist%").range(inicio, inicio + 999);
@@ -64,7 +64,7 @@ async function idsTrabalhistas(): Promise<string[]> {
   return ids;
 }
 
-async function negociacoesPorProcesso(ids: string[]): Promise<Map<string, Negociacao>> {
+export async function negociacoesPorProcesso(ids: string[]): Promise<Map<string, Negociacao>> {
   const mapa = new Map<string, Negociacao>();
   for (const lote of emLotes(ids, 200)) {
     const { data, error } = await db().from("proc_negociacoes").select(COLUNAS_NEGOCIACAO).in("processo_id", lote);

@@ -212,7 +212,7 @@ const ORIGENS = {
   processos: { rotulo: "Processos", href: "/operacoes-legais/processos" },
   saneamento: { rotulo: "Saneamento", href: "/operacoes-legais/processos/saneamento" },
   carteira: { rotulo: "Carteira Rec. Crédito", href: "/operacoes-legais/processos/carteira" },
-  acordos: { rotulo: "Acordos trabalhistas", href: "/operacoes-legais/processos/acordos-trabalhistas" },
+  trabalhista: { rotulo: "Carteira Trabalhista", href: "/operacoes-legais/processos/trabalhista" },
 } as const;
 
 /**

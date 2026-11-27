@@ -201,7 +201,7 @@ export async function carregarCarteira(ids: string[] | null = null): Promise<{ l
 }
 
 /** Pedidos ao robô e leituras da IA de cada processo, para a carteira mostrar quem foi atualizado e quando. */
-async function autosPorProcesso(processos: string[]): Promise<Map<string, AtualizacaoDosAutos>> {
+export async function autosPorProcesso(processos: string[]): Promise<Map<string, AtualizacaoDosAutos>> {
   const ler = async (tabela: string, colunas: string) => {
     const linhas: Linha[] = [];
     for (const lote of emLotes(processos, 200)) {

@@ -36,6 +36,8 @@ export const processosApi = {
   baixarPlanilha: async (ids: string[] | null) => baixar(`${BASE}/exportar`, ids, "processos.xlsx"),
   /** Baixa a planilha da carteira de Rec. Crédito (os processos filtrados na tela). */
   baixarCarteira: async (ids: string[] | null) => baixar(`${BASE}/carteira`, ids, "carteira-rec-credito.xlsx"),
+  /** Baixa a planilha da Carteira Trabalhista (os processos filtrados na tela). */
+  baixarCarteiraTrabalhista: async (ids: string[] | null) => baixar(`${BASE}/trabalhista`, ids, "carteira-trabalhista.xlsx"),
   /** Baixa a planilha dos acordos trabalhistas (os processos filtrados na tela), para o cliente indicar o valor máximo. */
   baixarAcordosTrabalhistas: async (ids: string[] | null) => baixar(`${BASE}/acordos-trabalhistas/planilha`, ids, "acordos-trabalhistas.xlsx"),
   /** Sobe a planilha devolvida pelo cliente (valor máximo para acordo por processo). */

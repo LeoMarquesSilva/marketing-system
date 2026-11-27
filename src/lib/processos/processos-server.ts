@@ -275,7 +275,7 @@ export async function detalharProcesso(id: string): Promise<ProcessoDetalhe> {
 }
 
 /** Processos com partes, para a planilha. */
-export async function carregarParaPlanilha(ids: string[] | null): Promise<{ id: string; valores: Valores; partes: Parte[] }[]> {
+export async function carregarParaPlanilha(ids: string[] | null): Promise<{ id: string; valores: Valores; partes: Parte[]; naoAplicaveis: string[] }[]> {
   const linhas: Linha[] = [];
   if (ids) {
     for (const lote of emLotes(ids, 100)) {
@@ -291,7 +291,12 @@ export async function carregarParaPlanilha(ids: string[] | null): Promise<{ id: 
       if (!data || data.length < 500) break;
     }
   }
-  return linhas.map((linha) => ({ id: linha.id as string, valores: valoresDaLinha(linha), partes: partesDaLinha(linha) }));
+  return linhas.map((linha) => ({
+    id: linha.id as string,
+    valores: valoresDaLinha(linha),
+    partes: partesDaLinha(linha),
+    naoAplicaveis: (linha.itens_nao_aplicaveis as string[] | null) ?? [],
+  }));
 }
 
 /**

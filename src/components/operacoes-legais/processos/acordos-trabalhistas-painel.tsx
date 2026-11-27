@@ -26,7 +26,6 @@ import { CampoData } from "../vistagem/campo-data";
 import { DialogoAcao } from "../vistagem/dialogo-acao";
 import { Seletor, type OpcaoSeletor } from "../vistagem/seletor";
 import { Aviso, Busca, Campo, Carregando, Indicador, Indicadores, Painel, PainelTopo, Selo, Vazio, type TomSelo } from "../vistagem/ui";
-import { AcessoProcessos } from "./acesso-processos";
 import { formatarDataHora, mensagemDeErro, processosApi } from "./processos-api";
 
 const BASE = "/acordos-trabalhistas";
@@ -44,18 +43,13 @@ const TOM_STATUS: Record<StatusNegociacao, TomSelo> = {
 const real = (valor: number | null) => (valor === null ? "—" : formatarReais(valor));
 const dia = (iso: string | null) => (iso ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(iso)) : "");
 
-export function AcordosTrabalhistasClient() {
-  return (
-    <AcessoProcessos>
-      <Acordos />
-    </AcessoProcessos>
-  );
-}
-
 type Dialogo = { tipo: "email"; grupo: GrupoDeAdvogado } | { tipo: "negociacao"; linha: LinhaNegociacao } | null;
 
-/** Painel de acordos trabalhistas: a tentativa de acordo de cada processo, agrupada pelo advogado do reclamante. */
-function Acordos() {
+/**
+ * Aba Acordos da Carteira Trabalhista: a tentativa de acordo de cada processo, agrupada pelo advogado do reclamante.
+ * `atualizacao` muda quando a carteira recarrega (o painel acompanha).
+ */
+export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
   const [dados, setDados] = useState<PainelDeNegociacao | null>(null);
   const [erro, setErro] = useState("");
   const [feito, setFeito] = useState("");
@@ -83,7 +77,7 @@ function Acordos() {
     return () => {
       ativo = false;
     };
-  }, [tentativa]);
+  }, [tentativa, atualizacao]);
 
   const todas = useMemo(() => dados?.linhas ?? [], [dados]);
   const filtradas = useMemo(() => {
@@ -297,7 +291,7 @@ function GrupoNaLista({ grupo, onEmail, onAbrir }: { grupo: GrupoDeAdvogado; onE
               return (
                 <tr key={linha.processoId} className="align-top">
                   <td className="px-4 py-2">
-                    <Link href={`/operacoes-legais/processos/${linha.processoId}?de=acordos`} className="font-medium tabular-nums text-[#285f7a] underline-offset-4 hover:underline">
+                    <Link href={`/operacoes-legais/processos/${linha.processoId}?de=trabalhista`} className="font-medium tabular-nums text-[#285f7a] underline-offset-4 hover:underline">
                       {linha.cnj ?? linha.ci ?? "sem número"}
                     </Link>
                     <p className="text-xs text-muted-foreground">{linha.reclamante ?? "Reclamante não cadastrado"}</p>
