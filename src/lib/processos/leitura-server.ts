@@ -47,10 +47,13 @@ import {
 const MAXIMO_DE_PAGINAS = Number(process.env.PROCESSOS_LEITURA_MAX_PAGINAS) || 800;
 /** Blocos lidos ao mesmo tempo. */
 const EM_PARALELO = 4;
-/** A rota tem 300 s: depois deste tempo não começa bloco novo e fecha com o que já leu. */
-const PRAZO_MS = 230_000;
+/**
+ * A rota tem 300 s: depois deste tempo não começa bloco novo e fecha com o que já leu. PROCESSOS_LEITURA_PRAZO_MS
+ * troca o prazo numa leitura fora da rota (um script que relê autos longos de uma vez).
+ */
+const PRAZO_MS = Number(process.env.PROCESSOS_LEITURA_PRAZO_MS) || 230_000;
 /** A síntese é a última chamada: só começa se ainda couber no tempo da rota. */
-const PRAZO_SINTESE_MS = 255_000;
+const PRAZO_SINTESE_MS = PRAZO_MS + 25_000;
 /** Leitura "lendo" há mais que isso é de uma execução que morreu: pode recomeçar. */
 const LEITURA_TRAVADA_MS = 6 * 60_000;
 
