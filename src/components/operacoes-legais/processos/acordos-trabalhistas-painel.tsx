@@ -283,7 +283,7 @@ export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
           ) : null}
         </div>
         {grupos.length ? (
-          <ul className="divide-y divide-[#e6eef0]">
+          <ul className="space-y-4 bg-[#f3f7f8] p-4">
             {grupos.map((grupo) => (
               <GrupoNaLista
                 key={`${grupo.empresa}|${grupo.chave}`}
@@ -340,6 +340,21 @@ export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
   );
 }
 
+/** Quantos advogados aparecem no grupo antes de "ver os outros". */
+const ADVOGADOS_VISIVEIS = 6;
+
+const MINUSCULAS = new Set(["de", "da", "do", "das", "dos", "e"]);
+
+/** Nome em caixa alta (como vem da peça) fica em caixa de título; o resto fica como está. */
+function nomeLegivel(nome: string): string {
+  if (nome !== nome.toLocaleUpperCase("pt-BR")) return nome;
+  return nome
+    .toLocaleLowerCase("pt-BR")
+    .split(/\s+/)
+    .map((parte, indice) => (indice && MINUSCULAS.has(parte) ? parte : parte.charAt(0).toLocaleUpperCase("pt-BR") + parte.slice(1)))
+    .join(" ");
+}
+
 function GrupoNaLista({
   grupo,
   confirmando,
@@ -355,53 +370,104 @@ function GrupoNaLista({
 }) {
   const aEnviar = grupo.linhas.filter((linha) => linha.negociacao.status === "a_enviar").length;
   const aConfirmar = grupo.advogados.filter((item) => item.sugestaoIds?.length).length;
+  const todosAConfirmar = aConfirmar > 0 && aConfirmar === grupo.advogados.length;
+  // Primeiro quem tem e-mail (é para quem o e-mail vai); os demais ficam atrás de "ver todos".
+  const advogados = [...grupo.advogados].sort((a, b) => Number(b.emails.length > 0) - Number(a.emails.length > 0));
+  const [aberto, setAberto] = useState(false);
+  const visiveis = aberto ? advogados : advogados.slice(0, ADVOGADOS_VISIVEIS);
+  const escondidos = advogados.length - visiveis.length;
+  const comEmail = grupo.advogados.filter((item) => item.emails.length).length;
   return (
-    <li>
-      <header className="flex flex-wrap items-start gap-3 bg-[#f7fbfc] px-4 py-2.5">
-        <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-sm font-semibold text-[#10293a]">
-            {grupo.advogados.length
-              ? grupo.advogados.map((item, indice) => (
-                  <span key={`${item.nome}|${item.oab ?? ""}`}>
-                    {indice ? " · " : ""}
-                    {item.nome}
-                    {item.oab ? ` (OAB ${item.oab})` : ""}
-                    {item.sugestaoIds?.length ? (
-                      <Selo tom="ia" icone={Sparkles} className="ml-1 align-middle" titulo="Achado pela leitura dos autos; ainda não está nas partes do processo">
-                        a confirmar
-                      </Selo>
-                    ) : null}
-                  </span>
-                ))
-              : "Sem advogado do reclamante no cadastro"}
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
-              {grupo.linhas.length} processo{grupo.linhas.length === 1 ? "" : "s"} · {grupo.empresa || "sem cliente no cadastro"}
-            </span>
-          </p>
-          <div className="flex flex-wrap gap-1">
-            {grupo.emails.length ? (
-              grupo.emails.map((email) => (
-                <Selo key={email} tom="marca" icone={Mail}>
-                  {email}
-                </Selo>
-              ))
-            ) : (
-              <Selo tom="alerta" icone={TriangleAlert}>
-                Sem e-mail
-              </Selo>
-            )}
+    <li className="overflow-hidden rounded-xl border border-[#cfe0e4] bg-white shadow-sm">
+      <header className="space-y-2.5 border-b border-[#dce9eb] bg-[#f7fbfc] px-4 py-3">
+        <div className="flex flex-wrap items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-[#10293a]">
+              <Scale className="size-4 shrink-0 text-[#285f7a]" aria-hidden />
+              {advogados.length
+                ? `${nomeLegivel(advogados[0].nome)}${advogados.length > 1 ? ` e mais ${advogados.length - 1}` : ""}`
+                : "Sem advogado do reclamante"}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Cliente: {grupo.empresa || "sem cliente no cadastro"} · {grupo.linhas.length} processo{grupo.linhas.length === 1 ? "" : "s"}
+              {grupo.advogados.length
+                ? ` · ${comEmail ? `${grupo.emails.length} e-mail${grupo.emails.length === 1 ? "" : "s"} para envio` : "nenhum advogado com e-mail"}`
+                : ""}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {aConfirmar ? (
+              <Button size="sm" variant="outline" onClick={onConfirmar} disabled={confirmando} title="Aprova as sugestões da leitura: os advogados entram nas partes de cada processo do grupo">
+                {confirmando ? <LoaderCircle className="animate-spin" /> : <UserCheck />} Confirmar no cadastro
+              </Button>
+            ) : null}
+            <Button size="sm" variant={aEnviar ? "default" : "outline"} onClick={onEmail}>
+              <Send /> {aEnviar ? `Escrever e-mail (${aEnviar} a enviar)` : "Escrever e-mail"}
+            </Button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {aConfirmar ? (
-            <Button size="sm" variant="outline" onClick={onConfirmar} disabled={confirmando} title="Aprova as sugestões da leitura: o advogado entra nas partes de cada processo do grupo">
-              {confirmando ? <LoaderCircle className="animate-spin" /> : <UserCheck />} Confirmar no cadastro
-            </Button>
-          ) : null}
-          <Button size="sm" variant={aEnviar ? "default" : "outline"} onClick={onEmail}>
-            <Send /> E-mail {aEnviar ? `(${aEnviar} a enviar)` : ""}
-          </Button>
-        </div>
+
+        {grupo.advogados.length ? (
+          <div className="rounded-lg border border-[#dce9eb] bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#eef3f5] px-3 py-1.5">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-[#10293a]">
+                <Users className="size-3.5 text-muted-foreground" aria-hidden /> Advogados do reclamante
+              </p>
+              {aConfirmar ? (
+                <Selo tom="ia" icone={Sparkles} titulo="Achados pela leitura dos autos; ainda não estão nas partes do processo. Confira e use Confirmar no cadastro.">
+                  {todosAConfirmar ? "Achados pela leitura · a confirmar" : `${aConfirmar} achado${aConfirmar === 1 ? "" : "s"} pela leitura · a confirmar`}
+                </Selo>
+              ) : null}
+            </div>
+            <ul className="grid gap-x-4 gap-y-1.5 px-3 py-2 sm:grid-cols-2 xl:grid-cols-3">
+              {visiveis.map((item) => (
+                <li key={`${item.nome}|${item.oab ?? ""}`} className="min-w-0 text-sm">
+                  <p className="flex items-center gap-1 truncate font-medium text-[#10293a]" title={item.nome}>
+                    <span className="truncate">{nomeLegivel(item.nome)}</span>
+                    {item.sugestaoIds?.length && !todosAConfirmar ? (
+                      <Sparkles className="size-3 shrink-0 text-[#48466e]" aria-label="a confirmar" />
+                    ) : null}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground" title={item.emails.join(", ") || undefined}>
+                    {item.oab ? `OAB ${item.oab}` : "OAB não informada"}
+                    {item.emails.length ? (
+                      <>
+                        {" · "}
+                        <span className="text-[#285f7a]">{item.emails.join(", ")}</span>
+                      </>
+                    ) : (
+                      " · sem e-mail"
+                    )}
+                  </p>
+                </li>
+              ))}
+            </ul>
+            {advogados.length > ADVOGADOS_VISIVEIS ? (
+              <button
+                type="button"
+                onClick={() => setAberto((valor) => !valor)}
+                className="flex w-full items-center justify-center gap-1 border-t border-[#eef3f5] py-1 text-xs font-medium text-[#285f7a] hover:bg-[#f7fbfc]"
+              >
+                {aberto ? (
+                  <>
+                    <ChevronUp className="size-3.5" /> Mostrar menos
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="size-3.5" /> Ver os outros {escondidos} advogado{escondidos === 1 ? "" : "s"}
+                  </>
+                )}
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <Aviso tom="alerta">Nenhum advogado do reclamante no cadastro nem na leitura dos autos. Dá para escrever o e-mail e digitar o destinatário.</Aviso>
+        )}
+        {grupo.advogados.length && !comEmail ? (
+          <p className="flex items-center gap-1.5 text-xs text-amber-800">
+            <TriangleAlert className="size-3.5" aria-hidden /> Nenhum advogado com e-mail: digite o destinatário ao escrever o e-mail.
+          </p>
+        ) : null}
       </header>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[52rem] text-sm">
@@ -491,6 +557,8 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
   const [confirmando, setConfirmando] = useState(false);
   const [rascunhoBaixado, setRascunhoBaixado] = useState(false);
 
+  // A assinatura configurada em Envio (a do Outlook não vem pelo Graph); sem ela, o nome de quem está logado.
+  const assinatura = painel.configuracao.assinatura || painel.remetenteNome;
   const linhasEscolhidas = grupo.linhas.filter((linha) => escolhidos.includes(linha.processoId));
   const numeros = linhasEscolhidas.map((linha) => linha.cnj ?? linha.ci ?? "").filter(Boolean);
   const chaveDosNumeros = numeros.join("|");
@@ -499,14 +567,14 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
   useEffect(() => {
     if (editado) return;
     try {
-      const email = montarEmailDeAcordo({ empresa: grupo.empresa, processos: chaveDosNumeros ? chaveDosNumeros.split("|") : [], saudacao: saudacaoPelaHora(), assinatura: painel.remetenteNome });
+      const email = montarEmailDeAcordo({ empresa: grupo.empresa, processos: chaveDosNumeros ? chaveDosNumeros.split("|") : [], saudacao: saudacaoPelaHora(), assinatura });
       setAssunto(email.assunto);
       setTexto(email.texto);
       setErro("");
     } catch (falha) {
       setErro(mensagemDeErro(falha));
     }
-  }, [chaveDosNumeros, editado, grupo.empresa, painel.remetenteNome]);
+  }, [chaveDosNumeros, editado, grupo.empresa, assinatura]);
 
   const destinatarios = listaDeEmails(para);
   const copias = listaDeEmails(cc).filter((item) => !destinatarios.includes(item));
@@ -590,7 +658,11 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
       ocupado={Boolean(ocupado)}
       icone={Mail}
       titulo="Pretensão para acordo"
-      descricao={grupo.advogados.map((item) => item.nome).join(" · ")}
+      descricao={
+        grupo.advogados.length
+          ? `${nomeLegivel(grupo.advogados[0].nome)}${grupo.advogados.length > 1 ? ` e mais ${grupo.advogados.length - 1}` : ""} · ${grupo.empresa || "sem cliente no cadastro"}`
+          : grupo.empresa || undefined
+      }
       className="sm:max-w-3xl"
       aviso={!destinatarios.length ? "Sem destinatário: digite o e-mail do advogado em Para (ou complete nas partes da ficha)." : undefined}
       rodape={
@@ -603,11 +675,13 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
               {ocupado === "marcar" ? <LoaderCircle className="animate-spin" /> : <CheckCheck />} Marcar como enviado
             </Button>
           ) : null}
-          {painel.envioPeloOutlook ? (
-            <Button onClick={() => setConfirmando(true)} disabled={!pronto || Boolean(ocupado)}>
-              <Send /> Enviar pelo Outlook…
-            </Button>
-          ) : null}
+          <Button
+            onClick={() => setConfirmando(true)}
+            disabled={!pronto || Boolean(ocupado) || !painel.envioPeloOutlook}
+            title={painel.envioPeloOutlook ? `Sai da caixa ${painel.remetente ?? ""}` : "O envio pelo Microsoft 365 não está ligado neste ambiente: baixe o rascunho"}
+          >
+            <Send /> Enviar
+          </Button>
         </>
       }
     >
@@ -628,7 +702,7 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
           setEditado(true);
           setTexto(valor);
         }}
-        dicaDoTexto={editado ? "Editado à mão: trocar os processos não refaz o texto." : "O nome da empresa vem do cliente do processo; a assinatura, do seu cadastro."}
+        dicaDoTexto={editado ? "Editado à mão: trocar os processos não refaz o texto." : painel.configuracao.assinatura ? "O nome da empresa vem do cliente do processo; a assinatura, de Envio." : "O nome da empresa vem do cliente do processo. A assinatura é o seu nome: cadastre a assinatura completa em Envio."}
         antesDoTexto={
           <fieldset className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-2">
             <legend className="sr-only">Processos no e-mail</legend>
@@ -767,6 +841,7 @@ function DialogoNegociacao({ linha, painel, onFechar, onSalvo }: { linha: LinhaN
         processoId={linha.processoId}
         eventos={eventos}
         ccPadrao={painel.configuracao.cc}
+        assinatura={painel.configuracao.assinatura || painel.remetenteNome}
         envioPeloOutlook={painel.envioPeloOutlook}
         onAtualizar={() => setVersaoEventos((atual) => atual + 1)}
       />
