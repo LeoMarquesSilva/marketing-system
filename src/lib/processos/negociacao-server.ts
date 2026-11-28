@@ -9,6 +9,7 @@ import {
   conferirDestinatarios,
   digitosDoCnj,
   ehStatusNegociacao,
+  juntarAdvogados,
   lerPlanilhaDeValores,
   negociacaoNova,
   rotuloDoStatus,
@@ -18,6 +19,7 @@ import {
   type LinhaNegociacao,
   type Negociacao,
   type StatusNegociacao,
+  type SugestaoDeAdvogado,
 } from "./negociacao";
 import { carregarParaPlanilha, registrarNoHistorico } from "./processos-server";
 import { lerValor, textoOpcional } from "./rec-credito";
@@ -74,12 +76,37 @@ export async function negociacoesPorProcesso(ids: string[]): Promise<Map<string,
   return mapa;
 }
 
+/**
+ * Advogados que a leitura dos autos achou e ainda esperam aprovação (sugestão "parte nova" de papel advogado). Entram
+ * no painel marcados como sugeridos, para o e-mail não esperar a revisão das sugestões.
+ */
+async function advogadosSugeridos(ids: string[]): Promise<Map<string, SugestaoDeAdvogado[]>> {
+  const mapa = new Map<string, SugestaoDeAdvogado[]>();
+  for (const lote of emLotes(ids, 200)) {
+    const { data, error } = await db().from("proc_sugestoes").select("id, processo_id, valor").eq("tipo", "parte_nova").eq("situacao", "pendente").in("processo_id", lote);
+    if (error) falhou("carregar os advogados sugeridos pela leitura", error);
+    for (const linha of (data ?? []) as Linha[]) {
+      const valor = (linha.valor ?? {}) as Record<string, unknown>;
+      const nome = texto(valor.nome)?.trim();
+      if (valor.papel !== "advogado" || !nome) continue;
+      const contatos = Array.isArray(valor.contatos) ? (valor.contatos as Record<string, unknown>[]) : [];
+      const emails = [...new Set(contatos.filter((item) => item.tipo === "email" && typeof item.valor === "string").map((item) => (item.valor as string).trim().toLowerCase()).filter(Boolean))];
+      const polo = valor.polo === "ativo" || valor.polo === "passivo" ? valor.polo : null;
+      const lista = mapa.get(linha.processo_id as string) ?? [];
+      lista.push({ sugestaoId: linha.id as string, polo, advogado: { nome, oab: texto(valor.oab), emails, sugestaoIds: [linha.id as string] } });
+      mapa.set(linha.processo_id as string, lista);
+    }
+  }
+  return mapa;
+}
+
 async function linhasDoPainel(ids: string[]): Promise<LinhaNegociacao[]> {
   if (!ids.length) return [];
-  const [processos, negociacoes] = await Promise.all([carregarParaPlanilha(ids), negociacoesPorProcesso(ids)]);
+  const [processos, negociacoes, sugeridos] = await Promise.all([carregarParaPlanilha(ids), negociacoesPorProcesso(ids), advogadosSugeridos(ids)]);
   return processos.map(({ id, valores, partes }) => {
     const polo = poloDoReclamante(valores.polo_cliente);
     const reclamante = partes.filter((parte) => parte.papel === "parte" && parte.polo === polo).map((parte) => parte.nome).join("; ") || null;
+    const doCadastro = advogadosDoReclamante(partes, valores.polo_cliente).map((parte) => ({ nome: parte.nome, oab: parte.oab, emails: emailsDaParte(parte) }));
     return {
       processoId: id,
       ci: texto(valores.ci),
@@ -89,7 +116,7 @@ async function linhasDoPainel(ids: string[]): Promise<LinhaNegociacao[]> {
       reclamante,
       advogadoResponsavel: texto(valores.advogado_responsavel),
       fase: texto(valores.fase),
-      advogados: advogadosDoReclamante(partes, valores.polo_cliente).map((parte) => ({ nome: parte.nome, oab: parte.oab, emails: emailsDaParte(parte) })),
+      advogados: juntarAdvogados(doCadastro, sugeridos.get(id) ?? [], polo),
       riscoValor: numero(valores.risco_valor),
       riscoReflexos: numero(valores.risco_reflexos),
       riscoTotal: numero(valores.risco_total),
@@ -98,44 +125,114 @@ async function linhasDoPainel(ids: string[]): Promise<LinhaNegociacao[]> {
   });
 }
 
+/* ------------------------------------------------------------ configuração do envio */
+
+const CHAVE_CONFIGURACAO = "acordos_trabalhistas";
+
+export interface ConfiguracaoDosAcordos {
+  /** Caixa do Microsoft 365 de onde saem os e-mails de acordo; vazia: a de quem está logado. */
+  remetente: string | null;
+  /** Em cópia em todo e-mail de acordo (ex.: a caixa da equipe trabalhista). */
+  cc: string[];
+  /** A tabela de configurações existe (sem a migration, a tela avisa e usa o padrão). */
+  disponivel: boolean;
+  atualizadoPorNome: string | null;
+  atualizadoEm: string | null;
+}
+
+/** Erro do PostgREST de tabela ou coluna que ainda não existe (migration não aplicada). */
+export function faltaMigration(erro: { code?: string; message?: string } | null): boolean {
+  if (!erro) return false;
+  return ["42P01", "42703", "PGRST204", "PGRST205"].includes(erro.code ?? "") || /does not exist|could not find/i.test(erro.message ?? "");
+}
+
+export async function configuracaoDosAcordos(): Promise<ConfiguracaoDosAcordos> {
+  const { data, error } = await db().from("proc_configuracoes").select("valor, atualizado_por_nome, updated_at").eq("chave", CHAVE_CONFIGURACAO).maybeSingle();
+  if (error) {
+    if (faltaMigration(error)) return { remetente: null, cc: [], disponivel: false, atualizadoPorNome: null, atualizadoEm: null };
+    falhou("carregar a configuração do envio", error);
+  }
+  const valor = ((data?.valor ?? {}) as Record<string, unknown>) ?? {};
+  return {
+    remetente: texto(valor.remetente)?.trim().toLowerCase() ?? null,
+    cc: Array.isArray(valor.cc) ? (valor.cc as unknown[]).filter((item): item is string => typeof item === "string") : [],
+    disponivel: true,
+    atualizadoPorNome: texto(data?.atualizado_por_nome),
+    atualizadoEm: texto(data?.updated_at),
+  };
+}
+
+/** PUT { remetente?, cc? } — a caixa que envia (vazia: quem está logado) e a cópia padrão. */
+export async function salvarConfiguracaoDosAcordos(entrada: Record<string, unknown>, ator: Ator): Promise<ConfiguracaoDosAcordos> {
+  const remetente = conferirDestinatarios(entrada.remetente ?? "", { opcional: true, rotulo: "Caixa que envia" });
+  if (remetente.length > 1) throw new ProcessosError("Informe uma caixa só para enviar.", 400);
+  const cc = conferirDestinatarios(entrada.cc ?? [], { opcional: true, rotulo: "Cópia" });
+  const { error } = await db()
+    .from("proc_configuracoes")
+    .upsert({ chave: CHAVE_CONFIGURACAO, valor: { remetente: remetente[0] ?? null, cc }, atualizado_por_nome: ator.nome, updated_at: new Date().toISOString() }, { onConflict: "chave" });
+  if (error) {
+    if (faltaMigration(error)) throw new ProcessosError("Falta aplicar a migration das conversas dos acordos (20261127210000) para guardar a configuração.", 409);
+    falhou("salvar a configuração do envio", error);
+  }
+  return configuracaoDosAcordos();
+}
+
+/** A caixa que envia: a configurada ou, sem ela, a de quem está logado. */
+export function caixaQueEnvia(configuracao: ConfiguracaoDosAcordos, ator: Ator): string | null {
+  return configuracao.remetente ?? ator.email?.trim().toLowerCase() ?? null;
+}
+
 export interface PainelDeNegociacao {
   linhas: LinhaNegociacao[];
-  /** O envio pelo Outlook está ligado (credenciais do Graph) e quem está logado tem e-mail. */
+  /** O envio pelo Outlook está ligado (credenciais do Graph) e há uma caixa para enviar. */
   envioPeloOutlook: boolean;
+  /** A caixa de onde os e-mails saem (a configurada ou a de quem está logado). */
   remetente: string | null;
+  configuracao: ConfiguracaoDosAcordos;
   /** Nome de quem está logado, para a assinatura do e-mail. */
   remetenteNome: string | null;
 }
 
 /** Todos os processos trabalhistas com a negociação de cada um. */
 export async function carregarPainelDeNegociacao(ator: Ator): Promise<PainelDeNegociacao> {
-  const linhas = await linhasDoPainel(await idsTrabalhistas());
-  return { linhas, envioPeloOutlook: microsoftMailConfigurado() && Boolean(ator.email), remetente: ator.email ?? null, remetenteNome: ator.nome };
+  const [linhas, configuracao] = await Promise.all([idsTrabalhistas().then(linhasDoPainel), configuracaoDosAcordos()]);
+  const remetente = caixaQueEnvia(configuracao, ator);
+  return { linhas, envioPeloOutlook: microsoftMailConfigurado() && Boolean(remetente), remetente, configuracao, remetenteNome: ator.nome };
 }
 
-export async function eventosDaNegociacao(processoId: string): Promise<EventoNegociacao[]> {
-  if (!/^[0-9a-f-]{36}$/i.test(processoId)) throw new ProcessosError("Processo não encontrado.", 404);
-  const { data, error } = await db()
-    .from("proc_negociacao_eventos")
-    .select("id, tipo, descricao, valor, para, remetente, assunto, autor_nome, criado_em")
-    .eq("processo_id", processoId)
-    .order("criado_em", { ascending: false })
-    .limit(200);
-  if (error) falhou("carregar o histórico da negociação", error);
-  return ((data ?? []) as Linha[]).map((linha) => ({
+const COLUNAS_EVENTO = "id, tipo, descricao, valor, para, remetente, assunto, corpo, autor_nome, criado_em";
+const COLUNAS_EVENTO_CONVERSA = `${COLUNAS_EVENTO}, cc, caixa, mensagem_id, mensagem_em`;
+
+function paraEvento(linha: Linha): EventoNegociacao {
+  return {
     id: linha.id as string,
     tipo: linha.tipo as string,
     descricao: linha.descricao as string,
     valor: numero(linha.valor),
     para: (linha.para as string[] | null) ?? [],
+    cc: (linha.cc as string[] | null) ?? [],
     remetente: texto(linha.remetente),
     assunto: texto(linha.assunto),
+    corpo: texto(linha.corpo),
     autor: texto(linha.autor_nome),
     quando: linha.criado_em as string,
-  }));
+    caixa: texto(linha.caixa),
+    mensagemId: texto(linha.mensagem_id),
+    mensagemEm: texto(linha.mensagem_em),
+  };
 }
 
-async function exigirTrabalhistas(processoIds: string[]): Promise<Map<string, { cnj: string | null; cliente: string | null }>> {
+export async function eventosDaNegociacao(processoId: string): Promise<EventoNegociacao[]> {
+  if (!/^[0-9a-f-]{36}$/i.test(processoId)) throw new ProcessosError("Processo não encontrado.", 404);
+  const consulta = (colunas: string) => db().from("proc_negociacao_eventos").select(colunas).eq("processo_id", processoId).order("criado_em", { ascending: false }).limit(300);
+  let { data, error } = await consulta(COLUNAS_EVENTO_CONVERSA);
+  // Sem a migration das conversas: o histórico de antes, sem cópia nem mensagens.
+  if (error && faltaMigration(error)) ({ data, error } = await consulta(COLUNAS_EVENTO));
+  if (error) falhou("carregar o histórico da negociação", error);
+  return ((data ?? []) as unknown as Linha[]).map(paraEvento);
+}
+
+export async function exigirTrabalhistas(processoIds: string[]): Promise<Map<string, { cnj: string | null; cliente: string | null }>> {
   const ids = [...new Set(processoIds)].filter((id) => /^[0-9a-f-]{36}$/i.test(id));
   if (!ids.length || ids.length !== new Set(processoIds).size) throw new ProcessosError("Processo não encontrado.", 404);
   const { data, error } = await db().from("proc_processos").select("id, area, cnj, cliente").in("id", ids);
@@ -146,13 +243,13 @@ async function exigirTrabalhistas(processoIds: string[]): Promise<Map<string, { 
   return new Map((data ?? []).map((linha) => [linha.id as string, { cnj: texto(linha.cnj), cliente: texto(linha.cliente) }]));
 }
 
-async function negociacaoDoProcesso(processoId: string): Promise<Negociacao> {
+export async function negociacaoDoProcesso(processoId: string): Promise<Negociacao> {
   const { data, error } = await db().from("proc_negociacoes").select(COLUNAS_NEGOCIACAO).eq("processo_id", processoId).maybeSingle();
   if (error) falhou("carregar a negociação", error);
   return data ? paraNegociacao(data as Linha) : negociacaoNova();
 }
 
-async function gravarNegociacao(processoId: string, patch: Record<string, unknown>, ator: Ator): Promise<string> {
+export async function gravarNegociacao(processoId: string, patch: Record<string, unknown>, ator: Ator): Promise<string> {
   const { data, error } = await db()
     .from("proc_negociacoes")
     .upsert({ processo_id: processoId, ...patch, atualizado_por_nome: ator.nome }, { onConflict: "processo_id" })
@@ -162,11 +259,19 @@ async function gravarNegociacao(processoId: string, patch: Record<string, unknow
   return data.id as string;
 }
 
-async function registrarEventos(eventos: Record<string, unknown>[], ator: Ator): Promise<void> {
+/** Colunas que só existem depois da migration das conversas (20261127210000). */
+const COLUNAS_DA_CONVERSA = ["cc", "envio_id", "caixa", "conversa_id", "mensagem_id", "mensagem_em"];
+
+export async function registrarEventos(eventos: Record<string, unknown>[], ator: Ator | null): Promise<void> {
   if (!eventos.length) return;
-  const { error } = await db()
-    .from("proc_negociacao_eventos")
-    .insert(eventos.map((evento) => ({ ...evento, autor_id: ator.authUserId, autor_nome: ator.nome })));
+  const linhas = eventos.map((evento) => ({ ...evento, autor_id: ator?.authUserId ?? null, autor_nome: ator?.nome ?? null }));
+  let { error } = await db().from("proc_negociacao_eventos").insert(linhas);
+  // Sem a migration: grava o que a tabela antiga tem (o e-mail sai igual; só não dá para acompanhar a conversa).
+  if (error && faltaMigration(error)) {
+    ({ error } = await db()
+      .from("proc_negociacao_eventos")
+      .insert(linhas.map((linha) => Object.fromEntries(Object.entries(linha).filter(([chave]) => !COLUNAS_DA_CONVERSA.includes(chave))))));
+  }
   if (error) falhou("registrar o histórico da negociação", error);
 }
 
@@ -266,6 +371,7 @@ export async function salvarNegociacao(processoId: string, entrada: Record<strin
 export interface EnvioDeEmail {
   processoIds: string[];
   para: string[];
+  cc: string[];
   assunto: string;
   texto: string;
 }
@@ -275,14 +381,18 @@ function lerEnvio(entrada: Record<string, unknown>): EnvioDeEmail {
   if (!processoIds.length || processoIds.length > 50) throw new ProcessosError("Escolha de 1 a 50 processos para o e-mail.", 400);
   const assunto = textoOpcional(entrada.assunto, 300);
   const corpo = textoOpcional(entrada.texto, 20000);
-  if (!assunto) throw new ProcessosError("Informe o título do e-mail.", 400);
+  if (!assunto) throw new ProcessosError("Informe o assunto do e-mail.", 400);
   if (!corpo) throw new ProcessosError("Informe o texto do e-mail.", 400);
-  return { processoIds, para: conferirDestinatarios(entrada.para), assunto, texto: corpo };
+  const para = conferirDestinatarios(entrada.para, { rotulo: "Para" });
+  const cc = conferirDestinatarios(entrada.cc ?? [], { opcional: true, rotulo: "Cc" }).filter((item) => !para.includes(item));
+  return { processoIds, para, cc, assunto, texto: corpo };
 }
 
 /** Depois do envio (ou do rascunho marcado como enviado): status, data e o e-mail no histórico de cada processo. */
 async function registrarEnvio(envio: EnvioDeEmail, ator: Ator, comoFoi: "outlook" | "rascunho", remetente: string | null): Promise<void> {
   const agora = new Date().toISOString();
+  // Um id por e-mail: as linhas dos vários processos dele acham juntas a conversa no Outlook.
+  const envioId = crypto.randomUUID();
   for (const processoId of envio.processoIds) {
     const atual = await negociacaoDoProcesso(processoId);
     const negociacaoId = await gravarNegociacao(processoId, { status: statusAposEnvio(atual.status), enviado_em: agora }, ator);
@@ -294,9 +404,13 @@ async function registrarEnvio(envio: EnvioDeEmail, ator: Ator, comoFoi: "outlook
           tipo: comoFoi === "outlook" ? "email_enviado" : "email_rascunho",
           descricao: comoFoi === "outlook" ? `E-mail enviado pelo Outlook de ${remetente} para ${envio.para.join(", ")}` : `Rascunho (.eml) marcado como enviado, para ${envio.para.join(", ")}`,
           para: envio.para,
+          cc: envio.cc,
           remetente,
           assunto: envio.assunto,
           corpo: envio.texto,
+          envio_id: envioId,
+          caixa: comoFoi === "outlook" ? remetente : null,
+          mensagem_em: agora,
         },
       ],
       ator
@@ -306,22 +420,23 @@ async function registrarEnvio(envio: EnvioDeEmail, ator: Ator, comoFoi: "outlook
 }
 
 /**
- * Envia o e-mail de pretensão para acordo pela caixa do Microsoft 365 de quem está logado (cópia nos Itens
- * Enviados dela). Só é chamado pelo botão de confirmação da tela, que mostra destinatários, título e texto.
+ * Envia o e-mail de pretensão para acordo pela caixa configurada (ou, sem ela, a de quem está logado), com cópia nos
+ * Itens Enviados dela. Só é chamado pelo botão de confirmação da tela, que mostra remetente, destinatários, cópia,
+ * assunto e texto.
  */
 export async function enviarEmailDeAcordo(entrada: Record<string, unknown>, ator: Ator): Promise<{ enviados: number; remetente: string }> {
   if (entrada.confirmado !== true) throw new ProcessosError("Confirme o envio na tela antes de enviar.", 400);
   const envio = lerEnvio(entrada);
   await exigirTrabalhistas(envio.processoIds);
   if (!microsoftMailConfigurado()) throw new ProcessosError("O envio pelo Outlook não está configurado. Baixe o rascunho (.eml) e marque como enviado.", 503);
-  const remetente = ator.email?.trim();
-  if (!remetente) throw new ProcessosError("A sua sessão não tem e-mail: baixe o rascunho (.eml) e envie pelo seu Outlook.", 400);
+  const remetente = caixaQueEnvia(await configuracaoDosAcordos(), ator);
+  if (!remetente) throw new ProcessosError("Sem caixa para enviar: configure a caixa que envia ou baixe o rascunho (.eml).", 400);
   try {
-    await enviarEmailMicrosoft({ para: envio.para, assunto: envio.assunto, html: textoParaHtml(envio.texto), remetente, salvarEmEnviados: true });
+    await enviarEmailMicrosoft({ para: envio.para, cc: envio.cc, assunto: envio.assunto, html: textoParaHtml(envio.texto), remetente, salvarEmEnviados: true });
   } catch (erro) {
     if (erro instanceof MicrosoftMailError) {
       console.error("[processos] envio do e-mail de acordo:", erro.message);
-      const motivo = erro.status === 403 || erro.code === "ErrorAccessDenied" ? "o ORQESTRAI não tem permissão de enviar pela sua caixa" : erro.status === 404 ? "a sua caixa não foi encontrada no Microsoft 365" : "o Microsoft 365 recusou o envio";
+      const motivo = erro.status === 403 || erro.code === "ErrorAccessDenied" ? `o ORQESTRAI não tem permissão de enviar pela caixa ${remetente}` : erro.status === 404 ? `a caixa ${remetente} não foi encontrada no Microsoft 365` : "o Microsoft 365 recusou o envio";
       throw new ProcessosError(`Não foi possível enviar: ${motivo}. Baixe o rascunho (.eml) e envie pelo seu Outlook.`, 502);
     }
     throw erro;

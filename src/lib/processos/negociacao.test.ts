@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   agruparPorAdvogado,
+  assuntoDeResposta,
   chaveDoAdvogado,
   conferirDestinatarios,
+  conversaDosEventos,
+  destinatariosDaResposta,
   gerarEml,
+  juntarAdvogados,
   lerPlanilhaDeValores,
   listaPorExtenso,
   montarEmailDeAcordo,
@@ -14,6 +18,7 @@ import {
   textoParaHtml,
   valorDaCelula,
   type Advogado,
+  type EventoNegociacao,
   type LinhaNegociacao,
 } from "./negociacao";
 
@@ -103,6 +108,15 @@ describe("e-mail padrão", () => {
     expect(() => conferirDestinatarios([])).toThrow(/destinatário/);
   });
 
+  it("a cópia (Cc) pode vir vazia e entra no .eml", () => {
+    expect(conferirDestinatarios("", { opcional: true })).toEqual([]);
+    expect(() => conferirDestinatarios("x", { opcional: true, rotulo: "Cc" })).toThrow(/em Cc/);
+    const eml = gerarEml({ para: ["ana@exemplo.adv.br"], cc: ["equipe@exemplo.com.br"], assunto: "A", texto: "B", de: "caixa@exemplo.com.br" });
+    expect(eml).toContain("From: caixa@exemplo.com.br\r\n");
+    expect(eml).toContain("Cc: equipe@exemplo.com.br\r\n");
+    expect(gerarEml({ para: ["ana@exemplo.adv.br"], assunto: "A", texto: "B" })).not.toContain("Cc:");
+  });
+
   it("o .eml abre como rascunho, com o título codificado", () => {
     const eml = gerarEml({ para: ["ana@exemplo.adv.br"], assunto: "Pretensão para acordo", texto: "Olá" });
     expect(eml).toContain("To: ana@exemplo.adv.br\r\n");
@@ -124,6 +138,32 @@ describe("agrupamento por advogado", () => {
     expect(grupos[0].emails).toEqual(["ana@exemplo.adv.br", "bia@exemplo.adv.br"]);
     expect(grupos[0].advogados.map((item) => item.nome)).toEqual(["Ana Exemplo", "Bia Exemplo"]);
     expect(grupos[2].advogados).toEqual([]);
+  });
+
+  it("o advogado sugerido pela leitura entra no grupo e leva as sugestões para confirmar", () => {
+    const anaSugerida: Advogado = { ...ANA, emails: ["ana.outra@exemplo.adv.br"], sugestaoIds: ["s1"] };
+    const grupos = agruparPorAdvogado([linha("1", CNJ_A, [ANA]), linha("2", CNJ_B, [anaSugerida]), linha("3", CNJ_C, [{ ...BIA, sugestaoIds: ["s2"] }])]);
+    expect(grupos.map((grupo) => grupo.linhas.map((item) => item.processoId))).toEqual([["1", "2"], ["3"]]);
+    expect(grupos[0].advogados[0].sugestaoIds).toEqual(["s1"]);
+    expect(grupos[0].emails).toEqual(["ana@exemplo.adv.br", "ana.outra@exemplo.adv.br"]);
+    expect(grupos[1].advogados[0].sugestaoIds).toEqual(["s2"]);
+  });
+
+  it("junta o cadastro com o que a leitura sugeriu, só do polo do reclamante e sem repetir", () => {
+    const juntos = juntarAdvogados(
+      [{ ...ANA }],
+      [
+        { sugestaoId: "s1", polo: "ativo", advogado: { nome: "Ana Exemplo", oab: "OAB/SP 100001", emails: ["ana@exemplo.adv.br"] } },
+        { sugestaoId: "s2", polo: "ativo", advogado: BIA },
+        { sugestaoId: "s3", polo: "passivo", advogado: CAIO },
+        { sugestaoId: "s4", polo: "ativo", advogado: { ...BIA, emails: ["bia2@exemplo.adv.br"] } },
+      ],
+      "ativo"
+    );
+    expect(juntos.map((item) => item.nome)).toEqual(["Ana Exemplo", "Bia Exemplo"]);
+    // Ana já está no cadastro: a sugestão repetida não volta para confirmar.
+    expect(juntos[0].sugestaoIds).toBeUndefined();
+    expect(juntos[1]).toMatchObject({ sugestaoIds: ["s2", "s4"], emails: ["bia@exemplo.adv.br", "bia2@exemplo.adv.br"] });
   });
 
   it("o mesmo advogado com empresas diferentes sai em e-mails separados", () => {
@@ -167,5 +207,51 @@ describe("planilha devolvida", () => {
     expect(valorDaCelula("1.234,56")).toBe(1234.56);
     expect(valorDaCelula("")).toBeNull();
     expect(valorDaCelula("x")).toBeNaN();
+  });
+});
+
+describe("conversa por e-mail", () => {
+  const evento = (dados: Partial<EventoNegociacao>): EventoNegociacao => ({
+    id: "e",
+    tipo: "email_enviado",
+    descricao: "",
+    valor: null,
+    para: [],
+    cc: [],
+    remetente: null,
+    assunto: null,
+    corpo: null,
+    autor: null,
+    quando: "2026-11-01T10:00:00Z",
+    caixa: "caixa@exemplo.com.br",
+    mensagemId: null,
+    mensagemEm: null,
+    ...dados,
+  });
+
+  it("só os e-mails, do mais antigo ao mais novo", () => {
+    const conversa = conversaDosEventos([
+      evento({ id: "3", tipo: "email_recebido", mensagemEm: "2026-11-03T10:00:00Z" }),
+      evento({ id: "s", tipo: "status" }),
+      evento({ id: "1", mensagemEm: "2026-11-01T10:00:00Z" }),
+      evento({ id: "2", quando: "2026-11-02T10:00:00Z" }),
+    ]);
+    expect(conversa.map((item) => item.id)).toEqual(["1", "2", "3"]);
+  });
+
+  it("responder: o autor e o Para, sem a própria caixa; a cópia padrão entra no Cc", () => {
+    const recebido = evento({ tipo: "email_recebido", remetente: "Ana@Exemplo.adv.br", para: ["caixa@exemplo.com.br", "bia@exemplo.adv.br"], cc: ["equipe@exemplo.com.br"] });
+    expect(destinatariosDaResposta(recebido, "caixa@exemplo.com.br", ["equipe@exemplo.com.br", "bia@exemplo.adv.br"])).toEqual({
+      para: ["ana@exemplo.adv.br", "bia@exemplo.adv.br"],
+      cc: ["equipe@exemplo.com.br"],
+    });
+    const enviado = evento({ remetente: "caixa@exemplo.com.br", para: ["ana@exemplo.adv.br"] });
+    expect(destinatariosDaResposta(enviado, "caixa@exemplo.com.br").para).toEqual(["ana@exemplo.adv.br"]);
+  });
+
+  it("assunto da resposta", () => {
+    expect(assuntoDeResposta("Pretensão para acordo")).toBe("RE: Pretensão para acordo");
+    expect(assuntoDeResposta("RES: Pretensão")).toBe("RES: Pretensão");
+    expect(assuntoDeResposta("re: Pretensão")).toBe("re: Pretensão");
   });
 });

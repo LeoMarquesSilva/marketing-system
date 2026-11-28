@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCheck, Download, FileSpreadsheet, FileUp, Handshake, History, LoaderCircle, Mail, MailCheck, PencilLine, RefreshCw, Scale, Send, TriangleAlert, Users } from "lucide-react";
+import { CheckCheck, ChevronDown, ChevronUp, Download, FileSpreadsheet, FileUp, Handshake, History, LoaderCircle, Mail, MailCheck, MailSearch, PencilLine, RefreshCw, Scale, Send, Settings2, Sparkles, TriangleAlert, UserCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,13 +19,15 @@ import {
   type Negociacao,
   type StatusNegociacao,
 } from "@/lib/processos/negociacao";
-import type { PainelDeNegociacao, ResultadoImportacao } from "@/lib/processos/negociacao-server";
+import type { ConfiguracaoDosAcordos, PainelDeNegociacao, ResultadoImportacao } from "@/lib/processos/negociacao-server";
+import type { ResultadoDaConferencia } from "@/lib/processos/negociacao-conversa-server";
 import { formatarReais } from "@/lib/processos/trabalhista";
 import { cn } from "@/lib/utils";
 import { CampoData } from "../vistagem/campo-data";
 import { DialogoAcao } from "../vistagem/dialogo-acao";
 import { Seletor, type OpcaoSeletor } from "../vistagem/seletor";
 import { Aviso, Busca, Campo, Carregando, Indicador, Indicadores, Painel, PainelTopo, Selo, Vazio, type TomSelo } from "../vistagem/ui";
+import { CompositorDeEmail, ConversaDoAcordo, DialogoConfiguracaoDoEnvio, ResumoDoEnvio, listaDeEmails } from "./acordos-conversa";
 import { formatarDataHora, mensagemDeErro, processosApi } from "./processos-api";
 
 const BASE = "/acordos-trabalhistas";
@@ -43,7 +45,7 @@ const TOM_STATUS: Record<StatusNegociacao, TomSelo> = {
 const real = (valor: number | null) => (valor === null ? "—" : formatarReais(valor));
 const dia = (iso: string | null) => (iso ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(iso)) : "");
 
-type Dialogo = { tipo: "email"; grupo: GrupoDeAdvogado } | { tipo: "negociacao"; linha: LinhaNegociacao } | null;
+type Dialogo = { tipo: "email"; grupo: GrupoDeAdvogado } | { tipo: "negociacao"; linha: LinhaNegociacao } | { tipo: "configuracao" } | null;
 
 /**
  * Aba Acordos da Carteira Trabalhista: a tentativa de acordo de cada processo, agrupada pelo advogado do reclamante.
@@ -60,7 +62,11 @@ export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
   const [dialogo, setDialogo] = useState<Dialogo>(null);
   const [baixando, setBaixando] = useState(false);
   const [importando, setImportando] = useState(false);
+  const [conferindo, setConferindo] = useState(false);
+  const [avisoConversa, setAvisoConversa] = useState("");
+  const [confirmando, setConfirmando] = useState("");
   const arquivo = useRef<HTMLInputElement>(null);
+  const conferiuAoAbrir = useRef(false);
 
   useEffect(() => {
     let ativo = true;
@@ -78,6 +84,13 @@ export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
       ativo = false;
     };
   }, [tentativa, atualizacao]);
+
+  // Ao abrir, uma conferência das respostas na caixa (sem travar a tela); a pessoa confere de novo pelo botão.
+  useEffect(() => {
+    if (!dados || conferiuAoAbrir.current) return;
+    conferiuAoAbrir.current = true;
+    void conferirRespostas(true);
+  }, [dados]);
 
   const todas = useMemo(() => dados?.linhas ?? [], [dados]);
   const filtradas = useMemo(() => {
@@ -99,10 +112,58 @@ export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
   const somaRisco = filtradas.reduce((total, linha) => total + (linha.riscoTotal ?? 0), 0);
   const somaMaximo = filtradas.reduce((total, linha) => total + (linha.negociacao.valorMaximoCliente ?? 0), 0);
   const semEmail = filtradas.filter((linha) => !linha.advogados.some((item) => item.emails.length)).length;
+  const sugeridos = new Set(filtradas.flatMap((linha) => linha.advogados.flatMap((item) => item.sugestaoIds ?? []))).size;
   const opcoesStatus: OpcaoSeletor[] = STATUS_NEGOCIACAO.map((item) => ({ valor: item.valor, rotulo: item.rotulo, contagem: contar(item.valor) }));
   const opcoesGrupo: OpcaoSeletor[] = [...new Set(todas.map((linha) => linha.grupoCliente).filter((valor): valor is string => Boolean(valor)))]
     .sort((a, b) => a.localeCompare(b, "pt-BR"))
     .map((valor) => ({ valor, rotulo: valor, contagem: todas.filter((linha) => linha.grupoCliente === valor).length }));
+
+  async function conferirRespostas(silencioso = false) {
+    setConferindo(true);
+    if (!silencioso) setAvisoConversa("");
+    try {
+      const resultado = await processosApi.post<ResultadoDaConferencia>(`${BASE}/respostas`, {});
+      if (resultado.novas) setTentativa((atual) => atual + 1);
+      const resumo = resultado.novas
+        ? `${resultado.novas} e-mail${resultado.novas === 1 ? "" : "s"} novo${resultado.novas === 1 ? "" : "s"} nas conversas${resultado.respondidos ? `; ${resultado.respondidos} processo${resultado.respondidos === 1 ? "" : "s"} passou${resultado.respondidos === 1 ? "" : "aram"} a respondido` : ""}.`
+        : silencioso
+          ? ""
+          : resultado.conversas
+            ? `Nada novo nas ${resultado.conversas} conversa${resultado.conversas === 1 ? "" : "s"} acompanhada${resultado.conversas === 1 ? "" : "s"}.`
+            : "Nenhuma conversa acompanhada ainda: os e-mails enviados pelo Outlook entram aqui.";
+      setAvisoConversa([resultado.aviso, resumo].filter(Boolean).join(" "));
+    } catch (falha) {
+      if (!silencioso) setAvisoConversa(mensagemDeErro(falha));
+    } finally {
+      setConferindo(false);
+    }
+  }
+
+  /** Aprova as sugestões da leitura que trazem os advogados do grupo: eles entram nas partes de cada processo. */
+  async function confirmarAdvogados(grupo: GrupoDeAdvogado) {
+    const ids = [...new Set(grupo.advogados.flatMap((item) => item.sugestaoIds ?? []))];
+    if (!ids.length) return;
+    setConfirmando(grupo.chave);
+    setErro("");
+    setFeito("");
+    let aprovados = 0;
+    try {
+      for (const id of ids) {
+        await processosApi.post(`/autos/sugestoes/${id}`, { acao: "aprovar" });
+        aprovados += 1;
+      }
+      setFeito(`${aprovados} advogado${aprovados === 1 ? "" : "s"} confirmado${aprovados === 1 ? "" : "s"} nas partes dos processos.`);
+    } catch (falha) {
+      setErro(`${aprovados ? `${aprovados} confirmado${aprovados === 1 ? "" : "s"}; ` : ""}${mensagemDeErro(falha)}`);
+    } finally {
+      setConfirmando("");
+      setTentativa((atual) => atual + 1);
+    }
+  }
+
+  function atualizarConfiguracao(configuracao: ConfiguracaoDosAcordos) {
+    setDados((atual) => (atual ? { ...atual, configuracao, remetente: configuracao.remetente ?? atual.remetente } : atual));
+  }
 
   function atualizarLinha(processoId: string, negociacao: Negociacao) {
     setDados((atual) => (atual ? { ...atual, linhas: atual.linhas.map((linha) => (linha.processoId === processoId ? { ...linha, negociacao } : linha)) } : atual));
@@ -178,12 +239,26 @@ export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
       ) : null}
       {dados && !dados.envioPeloOutlook ? (
         <Aviso tom="alerta" titulo="Envio pelo Outlook indisponível">
-          {dados.remetente ? "O envio pelo Microsoft 365 não está configurado neste ambiente." : "A sua sessão não tem e-mail."} Baixe o rascunho (.eml), envie pelo seu Outlook e marque como enviado.
+          {dados.remetente ? "O envio pelo Microsoft 365 não está configurado neste ambiente." : "Sem caixa para enviar: configure a caixa que envia em Envio."} Baixe o rascunho (.eml), envie pelo seu Outlook e marque como enviado.
         </Aviso>
       ) : null}
+      {avisoConversa ? <Aviso tom={/permiss|migration|não está configurado|não foi encontrada/i.test(avisoConversa) ? "alerta" : "sucesso"}>{avisoConversa}</Aviso> : null}
 
       <Painel>
-        <PainelTopo titulo="Acordos trabalhistas" descricao="Um e-mail por advogado do reclamante, com todos os processos dele. Nada sai sem a sua confirmação.">
+        <PainelTopo
+          titulo="Acordos trabalhistas"
+          descricao={
+            dados?.remetente
+              ? `Um e-mail por advogado do reclamante, com todos os processos dele. Sai da caixa ${dados.remetente}${dados.configuracao.cc.length ? `, com cópia para ${dados.configuracao.cc.join(", ")}` : ""}. Nada sai sem a sua confirmação.`
+              : "Um e-mail por advogado do reclamante, com todos os processos dele. Nada sai sem a sua confirmação."
+          }
+        >
+          <Button size="sm" variant="outline" onClick={() => void conferirRespostas()} disabled={conferindo} title="Busca na caixa do Outlook as respostas dos e-mails enviados">
+            {conferindo ? <LoaderCircle className="animate-spin" /> : <MailSearch />} Conferir respostas
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setDialogo({ tipo: "configuracao" })} title="A caixa que envia e a cópia padrão">
+            <Settings2 /> Envio
+          </Button>
           <Button size="sm" variant="outline" onClick={() => void baixar()} disabled={baixando || !filtradas.length} title="Planilha dos processos filtrados; o cliente preenche o valor máximo para acordo e devolve">
             {baixando ? <LoaderCircle className="animate-spin" /> : <FileSpreadsheet />} Exportar planilha
           </Button>
@@ -198,14 +273,26 @@ export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
           {opcoesGrupo.length > 1 ? <Seletor valor={grupoCliente} onChange={setGrupoCliente} opcoes={opcoesGrupo} todos={{ rotulo: "Todos os clientes" }} rotulo="Grupo do cliente" className="sm:w-56" /> : null}
           {semEmail ? (
             <span className="flex items-center gap-1 text-xs text-amber-800">
-              <TriangleAlert className="size-3.5" aria-hidden /> {semEmail} processo{semEmail === 1 ? "" : "s"} sem e-mail do advogado: complete nas partes da ficha.
+              <TriangleAlert className="size-3.5" aria-hidden /> {semEmail} processo{semEmail === 1 ? "" : "s"} sem e-mail do advogado: complete nas partes da ficha ou digite no e-mail.
+            </span>
+          ) : null}
+          {sugeridos ? (
+            <span className="flex items-center gap-1 text-xs text-violet-800">
+              <Sparkles className="size-3.5" aria-hidden /> {sugeridos} advogado{sugeridos === 1 ? "" : "s"} sugerido{sugeridos === 1 ? "" : "s"} pela leitura dos autos, a confirmar.
             </span>
           ) : null}
         </div>
         {grupos.length ? (
           <ul className="divide-y divide-[#e6eef0]">
             {grupos.map((grupo) => (
-              <GrupoNaLista key={`${grupo.empresa}|${grupo.chave}`} grupo={grupo} onEmail={() => setDialogo({ tipo: "email", grupo })} onAbrir={(linha) => setDialogo({ tipo: "negociacao", linha })} />
+              <GrupoNaLista
+                key={`${grupo.empresa}|${grupo.chave}`}
+                grupo={grupo}
+                confirmando={confirmando === grupo.chave}
+                onConfirmar={() => void confirmarAdvogados(grupo)}
+                onEmail={() => setDialogo({ tipo: "email", grupo })}
+                onAbrir={(linha) => setDialogo({ tipo: "negociacao", linha })}
+              />
             ))}
           </ul>
         ) : (
@@ -225,9 +312,22 @@ export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
           }}
         />
       ) : null}
-      {dialogo?.tipo === "negociacao" ? (
+      {dialogo?.tipo === "configuracao" && dados ? (
+        <DialogoConfiguracaoDoEnvio
+          configuracao={dados.configuracao}
+          onFechar={() => setDialogo(null)}
+          onSalvo={(configuracao) => {
+            atualizarConfiguracao(configuracao);
+            setDialogo(null);
+            setFeito("Envio dos e-mails de acordo salvo.");
+            setTentativa((atual) => atual + 1);
+          }}
+        />
+      ) : null}
+      {dialogo?.tipo === "negociacao" && dados ? (
         <DialogoNegociacao
           linha={dialogo.linha}
+          painel={dados}
           onFechar={() => setDialogo(null)}
           onSalvo={(negociacao) => {
             atualizarLinha(dialogo.linha.processoId, negociacao);
@@ -240,14 +340,40 @@ export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
   );
 }
 
-function GrupoNaLista({ grupo, onEmail, onAbrir }: { grupo: GrupoDeAdvogado; onEmail: () => void; onAbrir: (linha: LinhaNegociacao) => void }) {
+function GrupoNaLista({
+  grupo,
+  confirmando,
+  onConfirmar,
+  onEmail,
+  onAbrir,
+}: {
+  grupo: GrupoDeAdvogado;
+  confirmando: boolean;
+  onConfirmar: () => void;
+  onEmail: () => void;
+  onAbrir: (linha: LinhaNegociacao) => void;
+}) {
   const aEnviar = grupo.linhas.filter((linha) => linha.negociacao.status === "a_enviar").length;
+  const aConfirmar = grupo.advogados.filter((item) => item.sugestaoIds?.length).length;
   return (
     <li>
       <header className="flex flex-wrap items-start gap-3 bg-[#f7fbfc] px-4 py-2.5">
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-sm font-semibold text-[#10293a]">
-            {grupo.advogados.length ? grupo.advogados.map((item) => `${item.nome}${item.oab ? ` (OAB ${item.oab})` : ""}`).join(" · ") : "Sem advogado do reclamante no cadastro"}
+            {grupo.advogados.length
+              ? grupo.advogados.map((item, indice) => (
+                  <span key={`${item.nome}|${item.oab ?? ""}`}>
+                    {indice ? " · " : ""}
+                    {item.nome}
+                    {item.oab ? ` (OAB ${item.oab})` : ""}
+                    {item.sugestaoIds?.length ? (
+                      <Selo tom="ia" icone={Sparkles} className="ml-1 align-middle" titulo="Achado pela leitura dos autos; ainda não está nas partes do processo">
+                        a confirmar
+                      </Selo>
+                    ) : null}
+                  </span>
+                ))
+              : "Sem advogado do reclamante no cadastro"}
             <span className="ml-2 text-xs font-normal text-muted-foreground">
               {grupo.linhas.length} processo{grupo.linhas.length === 1 ? "" : "s"} · {grupo.empresa || "sem cliente no cadastro"}
             </span>
@@ -266,9 +392,16 @@ function GrupoNaLista({ grupo, onEmail, onAbrir }: { grupo: GrupoDeAdvogado; onE
             )}
           </div>
         </div>
-        <Button size="sm" variant={aEnviar ? "default" : "outline"} onClick={onEmail} disabled={!grupo.advogados.length}>
-          <Send /> E-mail {aEnviar ? `(${aEnviar} a enviar)` : ""}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {aConfirmar ? (
+            <Button size="sm" variant="outline" onClick={onConfirmar} disabled={confirmando} title="Aprova as sugestões da leitura: o advogado entra nas partes de cada processo do grupo">
+              {confirmando ? <LoaderCircle className="animate-spin" /> : <UserCheck />} Confirmar no cadastro
+            </Button>
+          ) : null}
+          <Button size="sm" variant={aEnviar ? "default" : "outline"} onClick={onEmail}>
+            <Send /> E-mail {aEnviar ? `(${aEnviar} a enviar)` : ""}
+          </Button>
+        </div>
       </header>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[52rem] text-sm">
@@ -348,6 +481,8 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
   const inicial = grupo.linhas.filter((linha) => linha.negociacao.status === "a_enviar").map((linha) => linha.processoId);
   const [escolhidos, setEscolhidos] = useState<string[]>(inicial.length ? inicial : grupo.linhas.map((linha) => linha.processoId));
   const [para, setPara] = useState(grupo.emails.join("; "));
+  const [cc, setCc] = useState(painel.configuracao.cc.filter((item) => !grupo.emails.includes(item)).join("; "));
+  const [verProcessos, setVerProcessos] = useState(grupo.linhas.length <= 6);
   const [editado, setEditado] = useState(false);
   const [assunto, setAssunto] = useState("");
   const [texto, setTexto] = useState("");
@@ -373,12 +508,10 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
     }
   }, [chaveDosNumeros, editado, grupo.empresa, painel.remetenteNome]);
 
-  const destinatarios = para
-    .split(/[;,\s]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const destinatarios = listaDeEmails(para);
+  const copias = listaDeEmails(cc).filter((item) => !destinatarios.includes(item));
   const pronto = escolhidos.length > 0 && destinatarios.length > 0 && assunto.trim() && texto.trim();
-  const corpo = { processoIds: escolhidos, para: destinatarios, assunto, texto };
+  const corpo = { processoIds: escolhidos, para: destinatarios, cc: copias, assunto, texto };
 
   async function enviar() {
     setOcupado("enviar");
@@ -408,7 +541,7 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
   }
 
   function baixarRascunho() {
-    baixarArquivo(gerarEml({ para: destinatarios, assunto, texto }), `pretensao-acordo-${(numeros[0] ?? "processo").replace(/\D/g, "")}.eml`, "message/rfc822");
+    baixarArquivo(gerarEml({ para: destinatarios, cc: copias, assunto, texto, de: painel.remetente }), `pretensao-acordo-${(numeros[0] ?? "processo").replace(/\D/g, "")}.eml`, "message/rfc822");
     setRascunhoBaixado(true);
   }
 
@@ -420,7 +553,7 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
         ocupado={ocupado === "enviar"}
         icone={Send}
         titulo="Confirmar o envio"
-        descricao="O e-mail sai agora da sua caixa do Outlook, com cópia nos seus Itens Enviados."
+        descricao={`O e-mail sai agora da caixa ${painel.remetente ?? ""} do Outlook, com cópia nos Itens Enviados dela. As respostas são acompanhadas aqui.`}
         rodape={
           <>
             <Button variant="outline" onClick={() => setConfirmando(false)} disabled={ocupado === "enviar"}>
@@ -433,25 +566,19 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
         }
       >
         {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
-        <dl className="space-y-2 text-sm">
-          <div>
-            <dt className="text-xs text-muted-foreground">De</dt>
-            <dd className="font-medium">{painel.remetente}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Para</dt>
-            <dd className="font-medium">{destinatarios.join(", ")}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Título</dt>
-            <dd className="font-medium">{assunto}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Processos</dt>
-            <dd className="tabular-nums">{numeros.join(", ")}</dd>
-          </div>
-        </dl>
-        <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-md border border-[#dce9eb] bg-[#f7fbfc] p-3 font-sans text-sm">{texto}</pre>
+        <ResumoDoEnvio
+          de={painel.remetente}
+          para={destinatarios}
+          cc={copias}
+          assunto={assunto}
+          texto={texto}
+          extra={
+            <div className="flex gap-3">
+              <dt className="w-16 shrink-0 text-xs text-muted-foreground">Processos</dt>
+              <dd className="min-w-0 flex-1 tabular-nums">{numeros.join(", ")}</dd>
+            </div>
+          }
+        />
       </DialogoAcao>
     );
   }
@@ -465,7 +592,7 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
       titulo="Pretensão para acordo"
       descricao={grupo.advogados.map((item) => item.nome).join(" · ")}
       className="sm:max-w-3xl"
-      aviso={!destinatarios.length ? "Sem destinatário: complete o e-mail do advogado nas partes da ficha ou digite aqui." : undefined}
+      aviso={!destinatarios.length ? "Sem destinatário: digite o e-mail do advogado em Para (ou complete nas partes da ficha)." : undefined}
       rodape={
         <>
           <Button variant="outline" onClick={baixarRascunho} disabled={!pronto || Boolean(ocupado)} title="Abre no Outlook como rascunho, para enviar da sua caixa">
@@ -485,57 +612,61 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
       }
     >
       {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
-      <fieldset className="space-y-1.5">
-        <legend className="text-xs font-medium text-muted-foreground">Processos no e-mail</legend>
-        <ul className="max-h-40 space-y-1 overflow-y-auto">
-          {grupo.linhas.map((linha) => (
-            <li key={linha.processoId}>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-[#285f7a]"
-                  checked={escolhidos.includes(linha.processoId)}
-                  onChange={(evento) => setEscolhidos((atual) => (evento.target.checked ? [...atual, linha.processoId] : atual.filter((id) => id !== linha.processoId)))}
-                />
-                <span className="tabular-nums">{linha.cnj ?? linha.ci}</span>
-                <span className="text-xs text-muted-foreground">{linha.reclamante}</span>
-                <Selo tom={TOM_STATUS[linha.negociacao.status]} className="ml-auto">
-                  {rotuloDoStatus(linha.negociacao.status)}
-                </Selo>
-              </label>
-            </li>
-          ))}
-        </ul>
-      </fieldset>
-      <Campo rotulo="Para" dica="Separe os e-mails com ponto e vírgula.">
-        <Input value={para} onChange={(evento) => setPara(evento.target.value)} />
-      </Campo>
-      <Campo rotulo="Título">
-        <Input
-          value={assunto}
-          onChange={(evento) => {
-            setEditado(true);
-            setAssunto(evento.target.value);
-          }}
-        />
-      </Campo>
-      <Campo rotulo="Texto" dica={editado ? "Editado à mão: trocar os processos não refaz o texto." : "O nome da empresa vem do cliente do processo; a assinatura, do seu cadastro."}>
-        <Textarea
-          value={texto}
-          rows={12}
-          onChange={(evento) => {
-            setEditado(true);
-            setTexto(evento.target.value);
-          }}
-        />
-      </Campo>
+      <CompositorDeEmail
+        de={painel.remetente}
+        para={para}
+        onPara={setPara}
+        cc={cc}
+        onCc={setCc}
+        assunto={assunto}
+        onAssunto={(valor) => {
+          setEditado(true);
+          setAssunto(valor);
+        }}
+        texto={texto}
+        onTexto={(valor) => {
+          setEditado(true);
+          setTexto(valor);
+        }}
+        dicaDoTexto={editado ? "Editado à mão: trocar os processos não refaz o texto." : "O nome da empresa vem do cliente do processo; a assinatura, do seu cadastro."}
+        antesDoTexto={
+          <fieldset className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-2">
+            <legend className="sr-only">Processos no e-mail</legend>
+            <button type="button" className="flex w-full items-center gap-2 text-left text-xs font-medium text-[#285f7a]" onClick={() => setVerProcessos((atual) => !atual)}>
+              {verProcessos ? <ChevronUp className="size-3.5" aria-hidden /> : <ChevronDown className="size-3.5" aria-hidden />}
+              {escolhidos.length} de {grupo.linhas.length} processo{grupo.linhas.length === 1 ? "" : "s"} no e-mail
+            </button>
+            {verProcessos ? (
+              <ul className="mt-1.5 max-h-40 space-y-1 overflow-y-auto">
+                {grupo.linhas.map((linha) => (
+                  <li key={linha.processoId}>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-[#285f7a]"
+                        checked={escolhidos.includes(linha.processoId)}
+                        onChange={(evento) => setEscolhidos((atual) => (evento.target.checked ? [...atual, linha.processoId] : atual.filter((id) => id !== linha.processoId)))}
+                      />
+                      <span className="tabular-nums">{linha.cnj ?? linha.ci}</span>
+                      <span className="truncate text-xs text-muted-foreground">{linha.reclamante}</span>
+                      <Selo tom={TOM_STATUS[linha.negociacao.status]} className="ml-auto shrink-0">
+                        {rotuloDoStatus(linha.negociacao.status)}
+                      </Selo>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </fieldset>
+        }
+      />
     </DialogoAcao>
   );
 }
 
 /* ------------------------------------------------------- negociação */
 
-function DialogoNegociacao({ linha, onFechar, onSalvo }: { linha: LinhaNegociacao; onFechar: () => void; onSalvo: (negociacao: Negociacao) => void }) {
+function DialogoNegociacao({ linha, painel, onFechar, onSalvo }: { linha: LinhaNegociacao; painel: PainelDeNegociacao; onFechar: () => void; onSalvo: (negociacao: Negociacao) => void }) {
   const n = linha.negociacao;
   const valor = (numero: number | null) => (numero === null ? "" : numero.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const [f, setF] = useState<Record<string, string>>({
@@ -552,6 +683,7 @@ function DialogoNegociacao({ linha, onFechar, onSalvo }: { linha: LinhaNegociaca
     observacoes: n.observacoes ?? "",
   });
   const [eventos, setEventos] = useState<EventoNegociacao[] | null>(null);
+  const [versaoEventos, setVersaoEventos] = useState(0);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
   const mudar = (chave: string) => (novo: string) => setF((atual) => ({ ...atual, [chave]: novo }));
@@ -561,7 +693,7 @@ function DialogoNegociacao({ linha, onFechar, onSalvo }: { linha: LinhaNegociaca
       (resposta) => setEventos(resposta.eventos),
       () => setEventos([])
     );
-  }, [linha.processoId]);
+  }, [linha.processoId, versaoEventos]);
 
   async function salvar() {
     setSalvando(true);
@@ -631,15 +763,22 @@ function DialogoNegociacao({ linha, onFechar, onSalvo }: { linha: LinhaNegociaca
           <Textarea value={f.observacoes} onChange={(evento) => mudar("observacoes")(evento.target.value)} rows={2} />
         </Campo>
       </div>
+      <ConversaDoAcordo
+        processoId={linha.processoId}
+        eventos={eventos}
+        ccPadrao={painel.configuracao.cc}
+        envioPeloOutlook={painel.envioPeloOutlook}
+        onAtualizar={() => setVersaoEventos((atual) => atual + 1)}
+      />
       <section aria-label="Histórico" className="space-y-1.5">
         <h3 className="flex items-center gap-1 text-xs font-semibold uppercase text-[#285f7a]">
           <History className="size-3.5" aria-hidden /> Histórico
         </h3>
         {eventos === null ? (
           <p className="text-xs text-muted-foreground">Carregando…</p>
-        ) : eventos.length ? (
+        ) : eventos.some((evento) => evento.tipo !== "email_recebido") ? (
           <ul className="max-h-48 divide-y divide-[#eef3f5] overflow-y-auto rounded-md border border-[#e6eef0]">
-            {eventos.map((evento) => (
+            {eventos.filter((evento) => evento.tipo !== "email_recebido").map((evento) => (
               <li key={evento.id} className="px-3 py-1.5">
                 <p className="text-sm">{evento.descricao}</p>
                 {evento.assunto ? <p className="text-xs text-muted-foreground">{evento.assunto}</p> : null}

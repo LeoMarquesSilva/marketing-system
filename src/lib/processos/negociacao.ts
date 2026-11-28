@@ -1,4 +1,5 @@
 import { ProcessosError } from "./errors";
+import type { PoloParte } from "./types";
 
 /**
  * Negociação de acordo nos processos trabalhistas (o cliente é a reclamada), na parte que não depende de banco:
@@ -30,6 +31,11 @@ export interface Advogado {
   nome: string;
   oab: string | null;
   emails: string[];
+  /**
+   * Sugestões da leitura dos autos ainda não aprovadas que trazem este advogado (vazio: já está no cadastro).
+   * Aprovar inclui o advogado nas partes do processo.
+   */
+  sugestaoIds?: string[];
 }
 
 export interface Negociacao {
@@ -76,10 +82,42 @@ export interface EventoNegociacao {
   descricao: string;
   valor: number | null;
   para: string[];
+  cc: string[];
   remetente: string | null;
   assunto: string | null;
+  /** Texto do e-mail (enviado ou recebido). */
+  corpo: string | null;
   autor: string | null;
   quando: string;
+  /** E-mail da conversa no Microsoft 365: a caixa dela, o id da mensagem (para responder) e quando saiu ou chegou. */
+  caixa: string | null;
+  mensagemId: string | null;
+  mensagemEm: string | null;
+}
+
+/** Os e-mails da negociação, do mais antigo ao mais novo (a conversa, como no Outlook). */
+export function conversaDosEventos(eventos: EventoNegociacao[]): EventoNegociacao[] {
+  return eventos
+    .filter((evento) => evento.tipo === "email_enviado" || evento.tipo === "email_recebido" || evento.tipo === "email_rascunho")
+    .sort((a, b) => (a.mensagemEm ?? a.quando).localeCompare(b.mensagemEm ?? b.quando));
+}
+
+/** "Assunto" → "RE: Assunto" (sem repetir o RE). */
+export function assuntoDeResposta(assunto: string | null | undefined): string {
+  const limpo = (assunto ?? "").trim();
+  return /^(re|res|resp)\s*:/i.test(limpo) ? limpo : `RE: ${limpo}`;
+}
+
+/**
+ * Para quem vai a resposta a um e-mail da conversa: o autor dele e quem estava em "Para" (sem a própria caixa); em
+ * cópia, o Cc dele mais a cópia padrão, sem repetir quem já está em "Para".
+ */
+export function destinatariosDaResposta(evento: Pick<EventoNegociacao, "tipo" | "remetente" | "para" | "cc">, caixa: string | null, ccPadrao: string[] = []): { para: string[]; cc: string[] } {
+  const propria = (caixa ?? "").trim().toLowerCase();
+  const limpar = (lista: (string | null | undefined)[]) => [...new Set(lista.map((item) => (item ?? "").trim().toLowerCase()).filter((item) => item && item !== propria))];
+  const para = evento.tipo === "email_recebido" ? limpar([evento.remetente, ...evento.para]) : limpar(evento.para);
+  const cc = limpar([...evento.cc, ...ccPadrao]).filter((item) => !para.includes(item));
+  return { para, cc };
 }
 
 /** Uma linha do painel: o processo, o reclamante, os advogados dele, o risco e a negociação. */
@@ -170,14 +208,19 @@ export function textoParaHtml(texto: string): string {
 
 const EMAIL = /^[^\s@,;<>]+@[^\s@,;<>]+\.[a-z]{2,}$/i;
 
-/** E-mails válidos, sem repetir, em minúsculas. Erro se algum não serve. */
-export function conferirDestinatarios(lista: unknown): string[] {
+/** "a@x.com; b@y.com, c@z.com" → lista (aceita também uma lista pronta). */
+export function separarEmails(lista: unknown): string[] {
   const brutos = Array.isArray(lista) ? lista : typeof lista === "string" ? lista.split(/[;,\s]+/) : [];
-  const emails = [...new Set(brutos.map((item) => String(item).trim().toLowerCase()).filter(Boolean))];
+  return [...new Set(brutos.map((item) => String(item).trim().toLowerCase()).filter(Boolean))];
+}
+
+/** E-mails válidos, sem repetir, em minúsculas. Erro se algum não serve; com `opcional`, a lista pode vir vazia (Cc). */
+export function conferirDestinatarios(lista: unknown, opcoes: { opcional?: boolean; rotulo?: string } = {}): string[] {
+  const emails = separarEmails(lista);
   const invalidos = emails.filter((item) => !EMAIL.test(item));
-  if (invalidos.length) throw new ProcessosError(`E-mail inválido: ${invalidos.join(", ")}.`, 400);
-  if (!emails.length) throw new ProcessosError("Informe ao menos um destinatário.", 400);
-  if (emails.length > 20) throw new ProcessosError("No máximo 20 destinatários por e-mail.", 400);
+  if (invalidos.length) throw new ProcessosError(`E-mail inválido${opcoes.rotulo ? ` em ${opcoes.rotulo}` : ""}: ${invalidos.join(", ")}.`, 400);
+  if (!emails.length && !opcoes.opcional) throw new ProcessosError("Informe ao menos um destinatário.", 400);
+  if (emails.length > 20) throw new ProcessosError(`No máximo 20 e-mails${opcoes.rotulo ? ` em ${opcoes.rotulo}` : " por campo"}.`, 400);
   return emails;
 }
 
@@ -201,12 +244,13 @@ function quebrarBase64(texto: string): string {
  * Rascunho em .eml: o Outlook abre como mensagem não enviada (X-Unsent), com destinatários, título e texto, para a
  * pessoa conferir e enviar da própria caixa.
  */
-export function gerarEml(params: { para: string[]; assunto: string; texto: string; de?: string | null }): string {
+export function gerarEml(params: { para: string[]; cc?: string[]; assunto: string; texto: string; de?: string | null }): string {
   const html = textoParaHtml(params.texto);
   const fronteira = "=_orqestrai_acordo";
   const linhas = [
     ...(params.de ? [`From: ${params.de}`] : []),
     `To: ${params.para.join(", ")}`,
+    ...(params.cc?.length ? [`Cc: ${params.cc.join(", ")}`] : []),
     `Subject: ${cabecalhoMime(params.assunto)}`,
     "X-Unsent: 1",
     "MIME-Version: 1.0",
@@ -239,6 +283,32 @@ export function chaveDoAdvogado(advogado: Pick<Advogado, "nome" | "oab">): strin
   const oab = (advogado.oab ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
   if (/\d{3,}/.test(oab)) return `oab:${oab.replace(/^OAB/, "")}`;
   return `nome:${semAcento(advogado.nome).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}`;
+}
+
+/** Um advogado que a leitura dos autos sugeriu num processo (sugestão "parte nova" ainda pendente). */
+export interface SugestaoDeAdvogado {
+  sugestaoId: string;
+  polo: PoloParte | null;
+  advogado: Advogado;
+}
+
+/** Os do cadastro primeiro; o sugerido do polo do reclamante entra se não for um que o cadastro já tem. */
+export function juntarAdvogados(doCadastro: Advogado[], sugeridos: SugestaoDeAdvogado[], poloReclamante: PoloParte): Advogado[] {
+  const lista = doCadastro.map((item) => ({ ...item }));
+  for (const sugerido of sugeridos) {
+    if (sugerido.polo && sugerido.polo !== poloReclamante) continue;
+    const chave = chaveDoAdvogado(sugerido.advogado);
+    const existente = lista.find((item) => chaveDoAdvogado(item) === chave);
+    if (!existente) {
+      lista.push({ ...sugerido.advogado, emails: [...sugerido.advogado.emails], sugestaoIds: [sugerido.sugestaoId] });
+      continue;
+    }
+    // Já está no cadastro: só completa e-mail que falta (a sugestão continua lá para aprovar).
+    if (!existente.sugestaoIds?.length) continue;
+    existente.emails = [...new Set([...existente.emails, ...sugerido.advogado.emails])];
+    existente.sugestaoIds = [...new Set([...existente.sugestaoIds, sugerido.sugestaoId])];
+  }
+  return lista;
 }
 
 export interface GrupoDeAdvogado {
@@ -291,8 +361,12 @@ export function agruparPorAdvogado(linhas: LinhaNegociacao[]): GrupoDeAdvogado[]
     grupo.linhas.push(linha);
     for (const advogado of linha.advogados) {
       const existente = grupo.advogados.find((item) => chaveDoAdvogado(item) === chaveDoAdvogado(advogado));
-      if (existente) existente.emails = [...new Set([...existente.emails, ...advogado.emails])];
-      else grupo.advogados.push({ ...advogado, emails: [...advogado.emails] });
+      if (existente) {
+        existente.emails = [...new Set([...existente.emails, ...advogado.emails])];
+        // No cadastro em algum processo e sugerido em outro: as sugestões pendentes continuam para aprovar.
+        const sugestoes = [...new Set([...(existente.sugestaoIds ?? []), ...(advogado.sugestaoIds ?? [])])];
+        if (sugestoes.length) existente.sugestaoIds = sugestoes;
+      } else grupo.advogados.push({ ...advogado, emails: [...advogado.emails], ...(advogado.sugestaoIds?.length ? { sugestaoIds: [...advogado.sugestaoIds] } : {}) });
     }
   }
   for (const grupo of grupos.values()) {
