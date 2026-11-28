@@ -134,6 +134,8 @@ export interface ConfiguracaoDosAcordos {
   remetente: string | null;
   /** Em cópia em todo e-mail de acordo (ex.: a caixa da equipe trabalhista). */
   cc: string[];
+  /** Assinatura no fim do e-mail (texto). O Graph não traz a assinatura do Outlook, então ela é cadastrada aqui. */
+  assinatura: string | null;
   /** A tabela de configurações existe (sem a migration, a tela avisa e usa o padrão). */
   disponivel: boolean;
   atualizadoPorNome: string | null;
@@ -149,27 +151,33 @@ export function faltaMigration(erro: { code?: string; message?: string } | null)
 export async function configuracaoDosAcordos(): Promise<ConfiguracaoDosAcordos> {
   const { data, error } = await db().from("proc_configuracoes").select("valor, atualizado_por_nome, updated_at").eq("chave", CHAVE_CONFIGURACAO).maybeSingle();
   if (error) {
-    if (faltaMigration(error)) return { remetente: null, cc: [], disponivel: false, atualizadoPorNome: null, atualizadoEm: null };
+    if (faltaMigration(error)) return { remetente: null, cc: [], assinatura: null, disponivel: false, atualizadoPorNome: null, atualizadoEm: null };
     falhou("carregar a configuração do envio", error);
   }
   const valor = ((data?.valor ?? {}) as Record<string, unknown>) ?? {};
   return {
     remetente: texto(valor.remetente)?.trim().toLowerCase() ?? null,
     cc: Array.isArray(valor.cc) ? (valor.cc as unknown[]).filter((item): item is string => typeof item === "string") : [],
+    assinatura: texto(valor.assinatura)?.trim() || null,
     disponivel: true,
     atualizadoPorNome: texto(data?.atualizado_por_nome),
     atualizadoEm: texto(data?.updated_at),
   };
 }
 
-/** PUT { remetente?, cc? } — a caixa que envia (vazia: quem está logado) e a cópia padrão. */
+/** Tamanho máximo da assinatura (texto). */
+const ASSINATURA_MAXIMA = 1500;
+
+/** PUT { remetente?, cc?, assinatura? } — a caixa que envia (vazia: quem está logado), a cópia padrão e a assinatura. */
 export async function salvarConfiguracaoDosAcordos(entrada: Record<string, unknown>, ator: Ator): Promise<ConfiguracaoDosAcordos> {
   const remetente = conferirDestinatarios(entrada.remetente ?? "", { opcional: true, rotulo: "Caixa que envia" });
   if (remetente.length > 1) throw new ProcessosError("Informe uma caixa só para enviar.", 400);
   const cc = conferirDestinatarios(entrada.cc ?? [], { opcional: true, rotulo: "Cópia" });
+  const assinatura = typeof entrada.assinatura === "string" ? entrada.assinatura.replace(/\r\n/g, "\n").trim() : "";
+  if (assinatura.length > ASSINATURA_MAXIMA) throw new ProcessosError(`A assinatura passa de ${ASSINATURA_MAXIMA} caracteres.`, 400);
   const { error } = await db()
     .from("proc_configuracoes")
-    .upsert({ chave: CHAVE_CONFIGURACAO, valor: { remetente: remetente[0] ?? null, cc }, atualizado_por_nome: ator.nome, updated_at: new Date().toISOString() }, { onConflict: "chave" });
+    .upsert({ chave: CHAVE_CONFIGURACAO, valor: { remetente: remetente[0] ?? null, cc, assinatura: assinatura || null }, atualizado_por_nome: ator.nome, updated_at: new Date().toISOString() }, { onConflict: "chave" });
   if (error) {
     if (faltaMigration(error)) throw new ProcessosError("Falta aplicar a migration das conversas dos acordos (20261127210000) para guardar a configuração.", 409);
     falhou("salvar a configuração do envio", error);

@@ -116,6 +116,7 @@ export function ResumoDoEnvio({ de, para, cc, assunto, texto, extra }: { de: str
 export function DialogoConfiguracaoDoEnvio({ configuracao, onFechar, onSalvo }: { configuracao: ConfiguracaoDosAcordos; onFechar: () => void; onSalvo: (configuracao: ConfiguracaoDosAcordos) => void }) {
   const [remetente, setRemetente] = useState(configuracao.remetente ?? "");
   const [cc, setCc] = useState(juntar(configuracao.cc));
+  const [assinatura, setAssinatura] = useState(configuracao.assinatura ?? "");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -123,7 +124,7 @@ export function DialogoConfiguracaoDoEnvio({ configuracao, onFechar, onSalvo }: 
     setSalvando(true);
     setErro("");
     try {
-      const resposta = await processosApi.put<{ configuracao: ConfiguracaoDosAcordos }>(`${BASE}/configuracao`, { remetente: remetente.trim(), cc: listaDeEmails(cc) });
+      const resposta = await processosApi.put<{ configuracao: ConfiguracaoDosAcordos }>(`${BASE}/configuracao`, { remetente: remetente.trim(), cc: listaDeEmails(cc), assinatura });
       onSalvo(resposta.configuracao);
     } catch (falha) {
       setErro(mensagemDeErro(falha));
@@ -158,6 +159,12 @@ export function DialogoConfiguracaoDoEnvio({ configuracao, onFechar, onSalvo }: 
       </Campo>
       <Campo rotulo="Cópia (Cc) padrão" dica="Entra em cópia em todo e-mail de acordo; dá para tirar no e-mail. Separe com ponto e vírgula.">
         <Input value={cc} onChange={(evento) => setCc(evento.target.value)} placeholder="equipe@escritorio.com.br" inputMode="email" />
+      </Campo>
+      <Campo
+        rotulo="Assinatura"
+        dica="Vai no fim de todo e-mail de acordo, como no Outlook (o Microsoft 365 não entrega a assinatura do Outlook para o sistema). Vazia: o nome de quem está logado."
+      >
+        <Textarea value={assinatura} onChange={(evento) => setAssinatura(evento.target.value)} rows={5} placeholder={"Nome\nCargo | OAB\nEscritório\nTelefone"} maxLength={1500} />
       </Campo>
       {configuracao.atualizadoPorNome ? (
         <p className="text-xs text-muted-foreground">
@@ -213,12 +220,15 @@ export function ConversaDoAcordo({
   processoId,
   eventos,
   ccPadrao,
+  assinatura,
   envioPeloOutlook,
   onAtualizar,
 }: {
   processoId: string;
   eventos: EventoNegociacao[] | null;
   ccPadrao: string[];
+  /** Vai no fim da resposta, como no e-mail de acordo. */
+  assinatura?: string | null;
   envioPeloOutlook: boolean;
   onAtualizar: () => void;
 }) {
@@ -246,7 +256,7 @@ export function ConversaDoAcordo({
   function responder(evento: EventoNegociacao) {
     const destino = destinatariosDaResposta(evento, evento.caixa, ccPadrao);
     setErro("");
-    setResposta({ evento, para: juntar(destino.para), cc: juntar(destino.cc), texto: "", confirmando: false });
+    setResposta({ evento, para: juntar(destino.para), cc: juntar(destino.cc), texto: assinatura?.trim() ? `\n\n${assinatura.trim()}` : "", confirmando: false });
   }
 
   async function enviarResposta() {

@@ -283,7 +283,7 @@ export function PainelDeAcordos({ atualizacao = 0 }: { atualizacao?: number }) {
           ) : null}
         </div>
         {grupos.length ? (
-          <ul className="divide-y divide-[#e6eef0]">
+          <ul className="space-y-4 bg-[#f3f7f8] p-4">
             {grupos.map((grupo) => (
               <GrupoNaLista
                 key={`${grupo.empresa}|${grupo.chave}`}
@@ -378,8 +378,8 @@ function GrupoNaLista({
   const escondidos = advogados.length - visiveis.length;
   const comEmail = grupo.advogados.filter((item) => item.emails.length).length;
   return (
-    <li>
-      <header className="space-y-2.5 bg-[#f7fbfc] px-4 py-3">
+    <li className="overflow-hidden rounded-xl border border-[#cfe0e4] bg-white shadow-sm">
+      <header className="space-y-2.5 border-b border-[#dce9eb] bg-[#f7fbfc] px-4 py-3">
         <div className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-1.5 text-sm font-semibold text-[#10293a]">
@@ -557,6 +557,8 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
   const [confirmando, setConfirmando] = useState(false);
   const [rascunhoBaixado, setRascunhoBaixado] = useState(false);
 
+  // A assinatura configurada em Envio (a do Outlook não vem pelo Graph); sem ela, o nome de quem está logado.
+  const assinatura = painel.configuracao.assinatura || painel.remetenteNome;
   const linhasEscolhidas = grupo.linhas.filter((linha) => escolhidos.includes(linha.processoId));
   const numeros = linhasEscolhidas.map((linha) => linha.cnj ?? linha.ci ?? "").filter(Boolean);
   const chaveDosNumeros = numeros.join("|");
@@ -565,14 +567,14 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
   useEffect(() => {
     if (editado) return;
     try {
-      const email = montarEmailDeAcordo({ empresa: grupo.empresa, processos: chaveDosNumeros ? chaveDosNumeros.split("|") : [], saudacao: saudacaoPelaHora(), assinatura: painel.remetenteNome });
+      const email = montarEmailDeAcordo({ empresa: grupo.empresa, processos: chaveDosNumeros ? chaveDosNumeros.split("|") : [], saudacao: saudacaoPelaHora(), assinatura });
       setAssunto(email.assunto);
       setTexto(email.texto);
       setErro("");
     } catch (falha) {
       setErro(mensagemDeErro(falha));
     }
-  }, [chaveDosNumeros, editado, grupo.empresa, painel.remetenteNome]);
+  }, [chaveDosNumeros, editado, grupo.empresa, assinatura]);
 
   const destinatarios = listaDeEmails(para);
   const copias = listaDeEmails(cc).filter((item) => !destinatarios.includes(item));
@@ -656,7 +658,11 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
       ocupado={Boolean(ocupado)}
       icone={Mail}
       titulo="Pretensão para acordo"
-      descricao={grupo.advogados.map((item) => item.nome).join(" · ")}
+      descricao={
+        grupo.advogados.length
+          ? `${nomeLegivel(grupo.advogados[0].nome)}${grupo.advogados.length > 1 ? ` e mais ${grupo.advogados.length - 1}` : ""} · ${grupo.empresa || "sem cliente no cadastro"}`
+          : grupo.empresa || undefined
+      }
       className="sm:max-w-3xl"
       aviso={!destinatarios.length ? "Sem destinatário: digite o e-mail do advogado em Para (ou complete nas partes da ficha)." : undefined}
       rodape={
@@ -669,11 +675,13 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
               {ocupado === "marcar" ? <LoaderCircle className="animate-spin" /> : <CheckCheck />} Marcar como enviado
             </Button>
           ) : null}
-          {painel.envioPeloOutlook ? (
-            <Button onClick={() => setConfirmando(true)} disabled={!pronto || Boolean(ocupado)}>
-              <Send /> Enviar pelo Outlook…
-            </Button>
-          ) : null}
+          <Button
+            onClick={() => setConfirmando(true)}
+            disabled={!pronto || Boolean(ocupado) || !painel.envioPeloOutlook}
+            title={painel.envioPeloOutlook ? `Sai da caixa ${painel.remetente ?? ""}` : "O envio pelo Microsoft 365 não está ligado neste ambiente: baixe o rascunho"}
+          >
+            <Send /> Enviar
+          </Button>
         </>
       }
     >
@@ -694,7 +702,7 @@ function DialogoEmail({ grupo, painel, onFechar, onFeito }: { grupo: GrupoDeAdvo
           setEditado(true);
           setTexto(valor);
         }}
-        dicaDoTexto={editado ? "Editado à mão: trocar os processos não refaz o texto." : "O nome da empresa vem do cliente do processo; a assinatura, do seu cadastro."}
+        dicaDoTexto={editado ? "Editado à mão: trocar os processos não refaz o texto." : painel.configuracao.assinatura ? "O nome da empresa vem do cliente do processo; a assinatura, de Envio." : "O nome da empresa vem do cliente do processo. A assinatura é o seu nome: cadastre a assinatura completa em Envio."}
         antesDoTexto={
           <fieldset className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-2">
             <legend className="sr-only">Processos no e-mail</legend>
@@ -833,6 +841,7 @@ function DialogoNegociacao({ linha, painel, onFechar, onSalvo }: { linha: LinhaN
         processoId={linha.processoId}
         eventos={eventos}
         ccPadrao={painel.configuracao.cc}
+        assinatura={painel.configuracao.assinatura || painel.remetenteNome}
         envioPeloOutlook={painel.envioPeloOutlook}
         onAtualizar={() => setVersaoEventos((atual) => atual + 1)}
       />
